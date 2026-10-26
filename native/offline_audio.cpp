@@ -8,9 +8,13 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 
 namespace music {
 namespace {
@@ -77,6 +81,12 @@ std::string make_riff_wave_header(uint32_t pcm_data_size) {
 } // namespace
 
 std::string render_midi_wav(const std::string& midi, const std::string& soundfont) {
+#ifdef __GLIBC__
+    // Construct before the synth/player so their large SoundFont allocations
+    // are freed first, then return unused heap pages after this offline job.
+    // This releases only free pages; live allocations remain measurable.
+    struct ReleaseUnusedPages { ~ReleaseUnusedPages() { malloc_trim(0); } } release_unused_pages;
+#endif
     for (int level = FLUID_PANIC; level <= FLUID_DBG; ++level) {
         fluid_set_log_function(level, [](int severity, const char* message, void*) {
             std::fprintf(stderr, "FluidSynth[%d]: %s\n", severity, message ? message : "");
