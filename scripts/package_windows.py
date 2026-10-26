@@ -15,12 +15,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/windows-package")
     parser.add_argument("--no-qt", action="store_true", help="Package the Qt-free backend and external resources")
+    parser.add_argument("--binary", type=Path, help="Override the built executable")
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         raise SystemExit("Package output must be empty; choose a new --output directory")
-    library = ROOT / ".pixi/envs/default/Library"
+    environment = ROOT / ".pixi/envs" / ("native" if args.no_qt else "default")
+    library = environment / "Library"
     redist = Path(os.environ["VCToolsRedistDir"]) / "x64"
     available = {p.name.lower(): p for p in redist.rglob("*.dll") if "debug" not in str(p).lower()}
     available.update({p.name.lower(): p for p in (library / "bin").glob("*.dll")})
@@ -33,8 +35,8 @@ def main():
         origins[str(destination.relative_to(output))] = str(source)
         queue.append(destination)
 
-    build = "noqt-windows" if args.no_qt else "windows"
-    copy(ROOT / f"build/{build}/musescore-mcp.exe", output / "musescore-mcp.exe")
+    build = "native-windows" if args.no_qt else "windows"
+    copy(args.binary or ROOT / f"build/{build}/musescore-mcp.exe", output / "musescore-mcp.exe")
     if not args.no_qt:
         copy(library / "lib/qt6/plugins/platforms/qoffscreen.dll", output / "plugins/platforms/qoffscreen.dll")
     system = Path(os.environ["SystemRoot"]) / "System32"
@@ -64,9 +66,9 @@ def main():
     licenses.mkdir()
     for source in (ROOT / ".upstream/webmscore").glob("LICENSE*"):
         if source.is_file(): shutil.copy2(source, licenses / source.name)
-    for directory in (ROOT / ".pixi/envs/default/conda-meta",):
+    for directory in (environment / "conda-meta",):
         # Package metadata contains license/provenance, not user environment credentials.
-        for source in directory.glob("qt6-main-*.json"):
+        for source in directory.glob("*.json"):
             shutil.copy2(source, licenses / source.name)
     manifest = {str(p.relative_to(output)): {"bytes": p.stat().st_size, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
                 for p in output.rglob("*") if p.is_file()}

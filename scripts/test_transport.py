@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import time
@@ -40,7 +41,7 @@ def _run_server(exe: str, payload: str) -> dict:
     started = time.monotonic()
     try:
         completed = subprocess.run(
-            [exe],
+            [exe] + (["--resources", os.environ["MUSIC_MCP_RESOURCES"]] if os.environ.get("MUSIC_MCP_RESOURCES") else []),
             input=payload,
             text=True,
             encoding="utf-8",

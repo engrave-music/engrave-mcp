@@ -87,3 +87,22 @@ viewport/window；重复缩放会造成错误。空遮罩语义也核对了实�
 Qt-free 的加强压力测试每十次实际导出 PDF 或 WAV，再关闭文档。每种模式均 120 次，
 40→120 次私有内存增长分别 77,824 字节和 2,211,840 字节；不会把“仅传入音色路径”
 误当作实际反复合成的测试。
+
+## 独立 CMake 构建
+
+根 CMakeLists.txt 在完全不含 Qt 的 Pixi native 环境完成 Windows 构建。
+`artifacts/native-cmake-002` 通过六工具、九格式、20 次循环及独立 PDF 栅格化检验；
+文件系统/设置检查和四类畸形输入拒绝后恢复均通过。
+`artifacts/windows-native-001` 为 117 文件、51,610,288 字节，DLL 闭包排除 Qt，
+只含 System32 PATH 的 SDK 全流程及原始传输测试通过。
+
+Argon、Opus 5.5 均进行了独立源码审阅。已修正 schema 的构建依赖和构建目录隔离、
+强制 NDEBUG、Pixi 锁文件约束、完整源码树校验，以及首次 bootstrap 入口。
+prepare.py 用临时 Git index 校验整个源码树等于固定提交加补丁，不改用户真实 index。
+bootstrap.py 的已存在源码/音色幂等路径已运行；干净网络 clone 路径尚未单独验收。
+
+审阅中的条件性风险经核对：VorbisDecoder 使用内置 stb_vorbis，不依赖系统 Ogg/Vorbis；
+DRAW_NO_INTERNAL 使 draw 跳过字体库初始化，因此根目录初始化没有重复。
+QTTEXTDRAW 仅影响移入 noqt_support 的字体内部类，该宏在这些编译单元中一致。
+Cairo 的原始 library 查找配合独立 dumpbin 递归打包已实际通过洁净运行，
+并非依赖 TARGET_RUNTIME_DLLS。Linux 静态库顺序和工具链另在下一阶段实测。

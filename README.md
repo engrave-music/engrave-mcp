@@ -6,9 +6,10 @@
 
 ## 当前状态与里程碑
 
-- **M1（当前）**：已完成 Windows x64 + Qt 原生基线与 6 个标准 MCP 工具实现。已通过纯净环境（`PATH` 仅含 `System32`）验证绿色发布包 `artifacts/windows-001`（24 个文件，120,530,913 字节）。
-- **M2（进行中）**：解耦并剥离 Qt 依赖。
-- **M3 & M4（规划中）**：构建系统现代化重构与 Linux 原生支持。
+- **M1**：保留 Windows x64 + Qt 原生基线及真实 LLM 创作会话作为对照。
+- **M2**：已移除 Qt，使用原生文件系统、Cairo/FreeType/HarfBuzz 和离线 FluidSynth 完成六工具、九格式工作流。
+- **M3**：独立 CMake 模块图和不含 Qt 的依赖环境已经构建运行；最新本地部署包 `artifacts/windows-native-001` 为 51,610,288 字节，通过仅含系统 PATH 的验证。
+- **M4（进行中）**：Linux 原生构建与部署验证。
 - **分发范围**：当前验证的是本地部署包；公开分发所需的完整依赖许可证和对应源码清单尚待整理。
 
 ## MCP 工具与技术规格
@@ -33,8 +34,9 @@
 ## 验证与稳定性测试
 
 - **官方 SDK 测试**：通过 MCP 官方 Python SDK 集成验证。
-- **压力测试**：经受 120 次新建与关闭循环测试（覆盖挂载/未挂载 SoundFont 两种模式），早期 40→120 次循环增长低于 16 MiB，但最新 Qt 回归出现约 19 MiB 增长，压力稳定性仍在调查（注：阈值测试通过不等于完全杜绝内存泄漏）。
-- **真实 Agent 会话验证**：DeepSeek Flash 驱动的真实 MCP 交互测试中，模型成功编排了 3 声部 8 小节乐谱，修正了终止式并导出 4 类格式文件；独立校验确认 MusicXML 音乐语义、85 个 MIDI note-on 的音高/起始时间及实际音色一致，WAV 为 44.1 kHz 双声道、23 秒且非静音。PDF 只检查格式，未试听音频。。
+- **压力测试**：Qt-free 后端两种模式各 120 次创建/关闭，每十次实际导出 PDF 或 WAV；40→120 次私有内存增长约 76 KiB / 2.1 MiB，低于 16 MiB 阈值。历史 Qt 基线有一次约 19 MiB 的未收敛回归。阈值通过不等于证明没有泄漏。
+- **真实 Agent 会话验证**：DeepSeek Flash 在 Qt 基线上成功编排了 3 声部 8 小节乐谱，修正终止式并导出 4 类格式；独立校验确认 MusicXML 语义、85 个 MIDI note-on 的音高/起始时间及音色一致，WAV 为 44.1 kHz 双声道、23 秒且非静音。未试听音频。
+- **排版回归**：Qt-free 的 PDF 文字可提取，PNG/PDF 尺寸及内容边界一致，并与 Qt 基线做墨迹密度对比；属于结构和数值验证，未做人工视觉验收。嵌入图片、完整字体回退及 RTL 段落布局暂不支持。
 
 ## 构建与测试
 
@@ -46,21 +48,25 @@
 ### 构建命令
 ```powershell
 # 1. 安装锁定依赖
-pixi install --locked
+pixi install -e native --locked
+pixi run -e native python scripts/bootstrap.py --soundfont
 
 # 2. 编译（构建脚本自动应用 patch 并校验 upstream.lock.json）
-./scripts/windows.ps1 -Action build -Jobs 12
+./scripts/build-native.ps1 -Jobs 12
 
 # 3. 运行冒烟与传输测试（需 pixi 环境）
-pixi run python scripts/mcp_smoke.py
-pixi run python scripts/test_transport.py build/windows/musescore-mcp.exe
-pixi run python scripts/stress_mcp.py
+$env:MUSIC_MCP_BINARY = "$PWD/build/native-windows/musescore-mcp.exe"
+$env:MUSIC_MCP_RESOURCES = "$PWD/.runtime/assets"
+pixi run -e native python scripts/mcp_smoke.py
+pixi run -e native python scripts/test_transport.py $env:MUSIC_MCP_BINARY
+pixi run -e native python scripts/stress_mcp.py
 
 # 4. 打包独立发布包（运行时无需 pixi 环境）
-./scripts/windows.ps1 -Action package -OutputDirectory artifacts/windows-next
+# 在 VS 开发人员终端执行
+pixi run -e native python scripts/package_windows.py --no-qt --output artifacts/windows-next
 ```
 
-> **音频配置说明**：WAV 渲染所需的音色库 `.runtime/soundfonts/FluidR3Mono_GM.sf3` 当前需手动放置，打包脚本会自动将其归档进发布包。
+`bootstrap.py --soundfont` 下载并校验音色库，打包脚本自动归档。更多细节见 [构建指南](docs/dev/build.md)。
 
 ## 客户端配置示例
 
@@ -70,10 +76,10 @@ pixi run python scripts/stress_mcp.py
 {
   "mcpServers": {
     "musescore": {
-      "command": "C:/path/to/musescore-mcp/artifacts/windows-001/musescore-mcp.exe",
+      "command": "C:/path/to/musescore-mcp/artifacts/windows-native-001/musescore-mcp.exe",
       "args": [
         "--soundfont",
-        "C:/path/to/musescore-mcp/artifacts/windows-001/soundfonts/FluidR3Mono_GM.sf3"
+        "C:/path/to/musescore-mcp/artifacts/windows-native-001/soundfonts/FluidR3Mono_GM.sf3"
       ]
     }
   }
