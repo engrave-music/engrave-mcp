@@ -25,25 +25,27 @@ def main():
     actual = subprocess.check_output(["git", "-C", str(SOURCE / "thirdparty/brotli"), "rev-parse", "HEAD"], text=True).strip()
     if actual != expected:
         raise RuntimeError("Initialize the pinned brotli submodule with scripts/bootstrap.py")
-    patch = ROOT / "patches/native-platform.patch"
-    if not patch.is_file():
-        raise RuntimeError("Missing patches/native-platform.patch")
+    patches = [ROOT / "patches/native-platform.patch", ROOT / "patches/native-imports.patch"]
     command = ["git", "-C", str(SOURCE), "apply", "--check"]
-    if subprocess.run(command + [str(patch)], capture_output=True).returncode == 0:
-        subprocess.run(["git", "-C", str(SOURCE), "apply", str(patch)], check=True)
-    elif subprocess.run(command + ["--reverse", str(patch)], capture_output=True).returncode:
-        raise RuntimeError("Upstream patch conflicts; refusing to overwrite changes")
+    for patch in patches:
+        if not patch.is_file():
+            raise RuntimeError(f"Missing {patch.relative_to(ROOT)}")
+        if subprocess.run(command + [str(patch)], capture_output=True).returncode == 0:
+            subprocess.run(["git", "-C", str(SOURCE), "apply", str(patch)], check=True)
+        elif subprocess.run(command + ["--reverse", str(patch)], capture_output=True).returncode:
+            raise RuntimeError(f"Upstream patch conflicts: {patch.name}; refusing to overwrite changes")
     # Validate the whole tracked tree, not just whether individual hunks apply.
     # A temporary index leaves the developer's real index and edits untouched.
     with tempfile.TemporaryDirectory(prefix="musescore-index-") as temporary:
         environment = {**os.environ, "GIT_INDEX_FILE": str(Path(temporary) / "index")}
         git = ["git", "-C", str(SOURCE)]
         subprocess.run(git + ["read-tree", "HEAD"], env=environment, check=True)
-        subprocess.run(git + ["apply", "--cached", str(patch)], env=environment, check=True)
+        for patch in patches:
+            subprocess.run(git + ["apply", "--cached", str(patch)], env=environment, check=True)
         expected_tree = subprocess.check_output(git + ["write-tree"], env=environment, text=True).strip()
-        if subprocess.run(git + ["diff", "--quiet", expected_tree, "--"]).returncode:
+        if subprocess.run(git + ["diff", "--quiet", expected_tree, "--"], env=environment).returncode:
             raise RuntimeError("Upstream contains changes beyond the pinned revision plus reviewed patch")
-        if subprocess.check_output(git + ["ls-files", "--others", "--exclude-standard"], text=True).strip():
+        if subprocess.check_output(git + ["ls-files", "--others", "--exclude-standard"], env=environment, text=True).strip():
             raise RuntimeError("Upstream contains untracked files; inspect them before building")
     files = json.loads((ROOT / "resources.json").read_text(encoding="utf-8-sig"))
     manifest = {}

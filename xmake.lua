@@ -446,3 +446,20 @@ target("score_positions_test")
     else
         add_links("m")
     end
+
+
+-- Import algorithms retain their upstream module boundary and explicit source lists.
+includes("xmake/imports.lua")
+local function add_import_module(name, sources, extra_includes)
+    target(name)
+        set_kind("static")
+        add_deps("muse_generated", "noqt_support")
+        add_defines(manifest.targets.music_core.defines)
+        add_includedirs(expand_list(manifest.targets.music_core.includes))
+        for _, source in ipairs(sources) do add_files(path.join(source_root, source)) end
+        if extra_includes then add_includedirs(path.join(source_root, extra_includes)) end
+    target_end()
+end
+add_import_module("iex_guitarpro", IMPORT_SOURCES.guitarpro, "src/importexport/guitarpro")
+local midi_sources = table.join(IMPORT_SOURCES.midi, IMPORT_SOURCES.beatroot)
+add_import_module("iex_midi_import", midi_sources, "src/importexport/midi")
