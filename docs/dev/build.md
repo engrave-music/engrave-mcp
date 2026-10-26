@@ -6,7 +6,7 @@
 
 ## 1. 架构设计与约束
 
-- **构建系统**：新入口采用 `xmake.lua` 与显式源码清单 `xmake/manifest.lua`，标准为 **C++23**（Windows 已验证，Linux 迁移验证中）。原 CMake / C++20 路径保留作行为基线，不参与 xmake 构建。
+- **构建系统**：新入口采用 `xmake.lua` 与显式源码清单 `xmake/manifest.lua`，标准为 **C++23**（Windows / Arch WSL2 x86_64 已验证）。原 CMake / C++20 路径保留作行为基线，不参与 xmake 构建。
 - **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml` 以及选定的 `MIDI` 与 `FluidSynth` 组件。
 - **底层适配**：采用原生文件系统、进程内设置和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
 
@@ -41,7 +41,7 @@ pixi run -e native python scripts/bootstrap.py --soundfont --harfbuzz
 
 xmake 的生成目标在各自构建目录写入框架配置与工具定义；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。源码清单已提交，常规构建不运行 `capture_xmake_manifest.py`，也不读取 CMake 构建目录。
 
-Windows 已验证长 UTF-8 schema 的完整传递、修改 schema 只重编译 `noqt_engine.cpp`，以及恢复后的无变化构建不编译/链接。生成器分块编码字符串，避免 MSVC 单个字符串长度限制。验收命令：
+Windows 和 Linux 已验证长 UTF-8 schema 的完整传递、修改 schema 只重编译 `noqt_engine.cpp`，以及恢复后的无变化构建不编译/链接。生成器分块编码字符串，避免 MSVC 单个字符串长度限制。验收命令：
 
 ```powershell
 pixi run -e native python scripts/test_xmake_incremental.py --binary build/xmake-windows/musescore-mcp.exe --output artifacts/xmake-incremental
@@ -100,7 +100,7 @@ Qt-free CMake 基线另外保留在 `scripts/build-cmake-native.ps1` 和 `script
 
 ## 7. Linux 原生构建
 
-原 CMake 路径已在 Arch WSL2 x86_64 验证；新 xmake 路径尚待验证。使用 Pixi 锁定的 GCC 15.3 / glibc 2.28 编译 sysroot，
+CMake 基线与新 xmake 路径均已在 Arch WSL2 x86_64 验证。使用 Pixi 锁定的 GCC 15.3 / glibc 2.28 编译 sysroot，
 运行宿主为 glibc 2.44。宿主版本不等于已验证的最低运行版本。
 
 ```bash
@@ -132,3 +132,5 @@ Windows 和 Linux 必须使用各自的源码/依赖目录；不要共用同一�
 | **图像元素** | 暂不支持嵌入式光栅图及外部图片对象（images unsupported）。 |
 | **排版与文字** | 尚未实现完整的字体回退（font fallback）机制；不支持从右到左（RTL）书写文字。 |
 | **绘制模型** | 仅支持定义明确的纯色画刷（solid brushes）与指定混合模式，渐变/复杂贴图绘制受限。 |
+
+Linux 使用显式 `gcc@` / `g++@` 工具类型识别 Pixi 的长名称编译器，避免 xmake 探测丢失标准、优化及 PIC 参数。C++ 为 `-std=c++23`；FluidSynth C 目标使用 GNU17，以保留上游 NO_GLIB 分支的 alloca 扩展。Windows 的该 C 目标仍为 C11。

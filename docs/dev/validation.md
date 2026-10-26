@@ -205,3 +205,26 @@ MSVC string literal round-trips through `tools/list`, exactly one translation
 unit recompiles, the source is restored, and a subsequent no-op build neither
 compiles nor links. The test performs real schema changes, not only timestamp
 inspection. Linux xmake verification remains in progress at this checkpoint.
+
+## xmake / C++23 Linux milestone
+
+The explicit xmake graph and all native probe targets built on Arch WSL2 x86_64
+with xmake 3.1.1 and Pixi GCC 15.3. Actual C++ invocations use `-std=c++23`, `-O3`
+and `-fPIC`. FluidSynth retains the upstream GNU C extension needed for `alloca`
+through GNU17; Windows C11 and the C++23 standard are unchanged.
+`PIXI_NO_INSTALL=true bash scripts/build-native.sh 8` passed after the full build.
+
+`artifacts/xmake-linux-001` in the Linux validation checkout contains 152 files /
+87,458,652 bytes. Package dependency closure and `ldd -r` checks passed, with no Qt.
+The packaged binary passed the official SDK suite (20 cycles), all export-option
+checks including audible WAV, malformed-input/recovery tests, and raw JSON-RPC
+checks (zero reported failures). Direct PNG ink/bounds match the previous Linux
+baseline; independent PDF rasterization remains within the rendering threshold.
+The SDK WAV is 44.1 kHz stereo, 7.558095 seconds, peak approximately 0.047760.
+
+The Linux large UTF-8 schema test also passed: one translation unit recompiles,
+the schema round-trips through MCP, original bytes are restored, and the no-op
+build does not compile/link. Evidence copies live in
+`artifacts/xmake-linux-evidence/`; compiler/reviewer transcripts remain ignored.
+This completes the two tested platforms for M5, not Linux-distribution coverage,
+a typed core, webmscore parity, or asynchronous editing.

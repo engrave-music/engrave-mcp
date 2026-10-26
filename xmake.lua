@@ -357,7 +357,12 @@ target("iex_musicxml")
 
 target("native_fluidsynth")
     set_kind("static")
-    set_languages("c11", "cxx23")
+    if is_plat("windows") then
+        set_languages("c11", "cxx23")
+    else
+        -- Upstream's NO_GLIB fallback uses alloca from GNU libc headers.
+        set_languages("gnu17", "cxx23")
+    end
     add_manifest_target("native_fluidsynth")
     set_warnings("none")
 
