@@ -1,6 +1,7 @@
 .upstream/
 .runtime/
 .pixi/
+.xmake/
 build/
 artifacts/
 notes/

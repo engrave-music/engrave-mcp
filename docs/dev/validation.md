@@ -179,3 +179,29 @@ existing dimension/pixel-count limits.
 Evidence: `artifacts/xmake-export-options-validated/`,
 `artifacts/xmake-export-options-no-sf/`, and `artifacts/xmake-smoke-first/`.
 These checks do not establish full webmscore parity or asynchronous editing.
+
+## xmake / C++23 Windows milestone
+
+The revised xmake graph built successfully with MSVC 14.51 (VS 18.10.3), xmake
+3.1.2, `/std:c++23preview`, `/MD` and `/EHsc`. Compilation is driven by explicit
+per-target source/define/include lists; the regular build never invokes CMake or
+reads its build directory. HarfBuzz bootstrap is independently pinned and hashed.
+`scripts/build-native.ps1` was executed successfully after the full build.
+
+Argon and Opus 5.5 independently reviewed the migration (Opus via Claude Code).
+Fixes cover Windows platform macros, missing Linux FreeType system source,
+per-target includes with system dependency headers, deterministic generated-file
+paths, pinned source checks, and explicit compiler/linker selection on Linux.
+The core is a static target but still contains the existing MCP adapter; the
+typed protocol-independent interface is a later milestone, not completed here.
+
+`artifacts/xmake-windows-001` contains 117 files / 51,628,720 bytes. Its clean-PATH
+SDK smoke run passed 20 cycles. The reviewed graph also passed malformed-input,
+raw protocol and export-option suites; the final schema-generation-only change
+passed the large UTF-8 schema probe and another packaged SDK smoke run.
+
+`artifacts/xmake-incremental/evidence.json` confirms a schema larger than one
+MSVC string literal round-trips through `tools/list`, exactly one translation
+unit recompiles, the source is restored, and a subsequent no-op build neither
+compiles nor links. The test performs real schema changes, not only timestamp
+inspection. Linux xmake verification remains in progress at this checkpoint.

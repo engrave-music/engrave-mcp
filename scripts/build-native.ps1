@@ -1,4 +1,4 @@
-param([int]$Jobs = 12, [string]$BuildDirectory = 'build/native-windows')
+param([int]$Jobs = 12, [string]$BuildDirectory = 'build/xmake-windows')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $projectRoot
@@ -10,9 +10,12 @@ try {
     Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
     & pixi run --locked -e native python scripts/prepare.py
     if ($LASTEXITCODE) { throw 'Native source preparation failed' }
-    $prefix = (Join-Path $projectRoot '.pixi/envs/native/Library').Replace('\', '/')
-    & pixi run --locked -e native cmake -S . -B $BuildDirectory -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$prefix"
+    & pixi run --locked -e native python scripts/bootstrap.py --harfbuzz
+    if ($LASTEXITCODE) { throw 'HarfBuzz source preparation failed' }
+    & pixi run --locked -e native python scripts/prepare_xmake.py --check
+    if ($LASTEXITCODE) { throw 'xmake input validation failed' }
+    & xmake f -y -m release -o $BuildDirectory
     if ($LASTEXITCODE) { throw 'Native configuration failed' }
-    & pixi run --locked -e native cmake --build $BuildDirectory --parallel $Jobs
+    & xmake build -y -j $Jobs musescore_mcp
     if ($LASTEXITCODE) { throw 'Native build failed' }
 } finally { Pop-Location }
