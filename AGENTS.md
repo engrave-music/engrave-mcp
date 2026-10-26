@@ -14,7 +14,7 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
 - The user authorized Gemini 3.8 Flash via `agy` for worker/documentation tasks and
   DeepSeek Flash via `dsh headless` for worker/simple verification tasks. Honor those model choices.
-- At major milestones, use Argon and Opus 5.5 via `agy` for independent reviews.
+- At major milestones, use Argon via `agy` and Opus 5.5 via Claude Code for independent reviews.
 - Do not print credentials or read credential files. Use existing CLI authentication.
 - State which claims are source-reviewed, compiled, or actually executed; never conflate them.
 - Commit each verified milestone as it is reached. Keep review fixes in small follow-up commits; do not defer all commits to the end.
