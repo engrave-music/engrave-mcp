@@ -228,3 +228,39 @@ build does not compile/link. Evidence copies live in
 `artifacts/xmake-linux-evidence/`; compiler/reviewer transcripts remain ignored.
 This completes the two tested platforms for M5, not Linux-distribution coverage,
 a typed core, webmscore parity, or asynchronous editing.
+
+## Position mapping increment (Windows and Linux)
+
+`measurePositions` and `segmentPositions` export the upstream position schema.
+The adapted algorithm uses LayoutData bounds, explicit expanded repeat-list
+access, and one cached list reference throughout event generation. Opus 5.5
+reviewed this through Claude Code, including a follow-up on fixes; Argon reviewed
+the original adaptation independently. Findings were checked against source and
+tests. This is not a claim of complete playback-navigation coverage.
+
+The SDK test `scripts/test_positions.py` passes on both native binaries and both
+standalone packages with a clean child PATH. The two-measure fixture includes a
+rest, 120→60 BPM tempo changes and a repeat: measure times are 0/2000/6000/8000 ms;
+12 segment events have exact independently specified times. Widths in these
+visible-note/rest fixtures are positive, segment positions fall inside their measures, and PNG dimensions
+match the documented 1200-DPI layout conversion. The 60-measure two-part fixture
+spans two pages and produces 240 correctly timed segment events. Invalid
+format-specific options preserve an output sentinel; repeated queries are equal.
+
+The C++ `score_positions_test` directly verifies both initial expand-repeats
+settings stay unchanged, plus null-score rejection. The separate SDK MIDI byte
+comparison proves unchanged MIDI output, not the internal flag invariant.
+Evidence: `artifacts/positions-windows-acceptance/` and
+`artifacts/positions-linux-acceptance/`, including the native probe logs.
+Pinned upstream fixtures repeat06/07/08/14 also pass on both packages, matching
+upstream's expected measure order for volta, D.C. al Fine, D.S. al Coda and a
+combined roadmap. Segment geometry and monotonic event times are checked too.
+Multi-measure rests still need dedicated coverage; hidden/gap-only segments may
+legitimately have zero width. Segment x/y JSON integer types are tested explicitly.
+Both formats reject three incompatible options each without changing sentinels.
+
+Final position-enabled packages are `artifacts/positions-windows-001` and
+`artifacts/positions-linux-001` (the latter in the Linux validation checkout).
+The reviewed implementation additionally passed the general 20-cycle SDK
+regression on both platforms before the final integer-type/defensive-check fixes;
+the final packages passed the full position suite and direct flag-invariant probe.

@@ -2,6 +2,7 @@
 #include "noqt_filesystem.h"
 #include "offline_audio.h"
 #include "score_metadata.h"
+#include "score_positions.h"
 #include "score_render.h"
 #include "global/log.h"
 #include "global/io/buffer.h"
@@ -175,6 +176,8 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
                                 const ExportOptions& options, const std::string& soundfont) {
     auto* score = project->masterScore();
     if (format == "metadata") return score_metadata(score).dump();
+    if (format == "measurePositions" || format == "segmentPositions")
+        return score_positions(score, format == "segmentPositions").dump();
     if (format == "svg" || format == "png" || format == "pdf") return render_score(score, format, options);
     ByteArray data;
     io::Buffer buffer(&data);

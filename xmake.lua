@@ -430,3 +430,16 @@ target("offline_audio_probe")
     if is_plat("windows") then
         add_files(path.join(project_root, "native", "utf8.manifest"))
     end
+
+target("score_positions_test")
+    set_kind("binary")
+    add_deps("muse_generated", "music_core")
+    add_files(path.join(project_root, "native", "score_positions_test.cpp"))
+    add_defines(manifest.targets.music_core.defines)
+    add_includedirs(expand_list(manifest.targets.music_core.includes))
+    add_links("cairo", "z")
+    if is_plat("windows") then
+        add_files(path.join(project_root, "native", "utf8.manifest"))
+    else
+        add_links("m")
+    end

@@ -221,7 +221,7 @@
   },
   {
     "name": "score_export",
-    "description": "Export to a local file atomically, replacing an existing file. Parent directory must exist. page is zero-based for SVG/PNG; PDF exports all pages. WAV requires --soundfont at startup.",
+    "description": "Export to a local file atomically, replacing an existing file. Parent directory must exist. page is zero-based for SVG/PNG; PDF exports all pages. WAV requires --soundfont at startup. measurePositions/segmentPositions follow the webmscore position schema, with corrected segment widths and always repeat-expanded times (ms). Coordinates use 1200-DPI layout units, independent of PNG DPI; id/elid are local to each result, not stable edit IDs.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -241,6 +241,8 @@
             "png",
             "pdf",
             "metadata",
+            "measurePositions",
+            "segmentPositions",
             "wav"
           ]
         },

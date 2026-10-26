@@ -231,6 +231,7 @@ add_executable(noqt_mcp
     ${NATIVE_HOST}/native/mcp_transport.cpp
     ${NATIVE_HOST}/native/atomic_file.cpp
     ${NATIVE_HOST}/native/score_metadata.cpp
+    ${NATIVE_HOST}/native/score_positions.cpp
     ${NATIVE_HOST}/native/score_render.cpp
     ${NATIVE_HOST}/native/cairo_painter.cpp)
 target_include_directories(noqt_mcp PRIVATE ${CAIRO_INCLUDE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/generated)
