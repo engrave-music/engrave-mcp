@@ -9,7 +9,7 @@ import subprocess
 import threading
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "artifacts/stress"
+OUT = Path(os.environ.get("MUSIC_MCP_STRESS_OUTPUT", ROOT / "artifacts/stress"))
 
 
 class Counters(ctypes.Structure):
@@ -34,7 +34,9 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     reports = []
     for soundfont in [False, True]:
-        command = [str(ROOT / "build/windows/musescore-mcp.exe")]
+        command = [os.environ.get("MUSIC_MCP_BINARY", str(ROOT / "build/windows/musescore-mcp.exe"))]
+        if os.environ.get("MUSIC_MCP_RESOURCES"):
+            command += ["--resources", os.environ["MUSIC_MCP_RESOURCES"]]
         if soundfont: command += ["--soundfont", str(ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3")]
         with (OUT / f"stderr-{soundfont}.log").open("wb") as log:
             process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, cwd=OUT)
@@ -76,9 +78,14 @@ def main():
                 samples = []
                 for iteration in range(120):
                     doc = call("score_create", {"score": score})
+                    if iteration % 10 == 9:
+                        fmt = "wav" if soundfont else "pdf"
+                        call("score_export", {"documentId": doc["documentId"], "format": fmt,
+                                              "path": str(OUT / f"cycle.{fmt}")})
                     call("score_close", {"documentId": doc["documentId"]})
                     if iteration % 10 == 9: samples.append({"cycle": iteration + 1, "private_bytes": memory(process)})
                 growth = samples[-1]["private_bytes"] - samples[3]["private_bytes"]
+                (OUT / f"memory-{soundfont}.json").write_text(json.dumps(samples, indent=2), encoding="utf-8")
                 assert growth < 16 * 1024 * 1024, f"Memory grew after warmup: {growth}"
                 call("score_create", {"score": {"title": "\ufffe", **score}}, error=True)
                 call("score_open", {"path": "missing-♯-乐谱.musicxml"}, error=True)
