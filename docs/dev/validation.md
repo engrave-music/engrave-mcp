@@ -79,4 +79,11 @@ MusicXML 音高最小值/非法字符、结构化结果对象约束、文档所�
 Qt-free Opus 审阅已修正独立合成粗体/斜体 FT_Face、Cairo clip 分配异常清理，以及
 PNG 单边尺寸溢出。其“缺少 DPI 缩放”判断不适用当前上游：paintScore 已设置不同的
 viewport/window；重复缩放会造成错误。空遮罩语义也核对了实际 QPainterProvider，
-上游是移除遮罩，并非始终裁剪 background。Argon 首次超时无有效报告，已重新发起。
+上游是移除遮罩，并非始终裁剪 background。Argon 首次超时，重试已获得报告并修正
+初始化前路径检查、MXL 解压后根文件限额、XML 扫描错误检查和导出参数检查顺序。
+其空 parts/bars 下溢报告仍被 composition_xml 验证阻断；JSON 缺键异常由 MCP 统一
+转为工具错误，属于已处理路径。render_score 本来已有 PDF 零页检查，入口也补充同样检查。
+
+Qt-free 的加强压力测试每十次实际导出 PDF 或 WAV，再关闭文档。每种模式均 120 次，
+40→120 次私有内存增长分别 77,824 字节和 2,211,840 字节；不会把“仅传入音色路径”
+误当作实际反复合成的测试。

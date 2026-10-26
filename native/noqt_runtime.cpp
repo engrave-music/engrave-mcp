@@ -74,13 +74,14 @@ void check_zip(ZipReader& zip) {
 void initialize_native_runtime(const std::string& assets) {
     static bool initialized = false;
     if (initialized) throw std::runtime_error("Only one engine instance per process is supported");
+    const auto root = std::filesystem::u8path(assets);
+    if (!std::filesystem::is_regular_file(root / "instruments.xml"))
+        throw std::invalid_argument("Missing native resources: " + assets);
+    // Once IoC mutation begins, a failed initialization cannot safely be retried.
     initialized = true;
     auto* logger = logger::Logger::instance();
     logger->clearDests();
     logger->addDest(new StderrLog());
-    const auto root = std::filesystem::u8path(assets);
-    if (!std::filesystem::is_regular_file(root / "instruments.xml"))
-        throw std::invalid_argument("Missing native resources: " + assets);
     modularity::globalIoc()->registerExport<io::IFileSystem>("native", new NativeFileSystem(root));
     modularity::globalIoc()->registerExport<draw::IFontsDatabase>("native", new draw::FontsDatabase());
     auto fonts = std::make_shared<draw::FontsEngine>(modularity::globalCtx());
@@ -114,13 +115,15 @@ ScoreProject load_native_score(const std::string& input, const std::string& form
             std::string root;
             while (!xml.atEnd()) {
                 xml.readNext();
-                if (xml.isStartElement() && xml.name() == "rootfile") {
+                if (root.empty() && xml.isStartElement() && xml.name() == "rootfile") {
                     root = xml.attribute("full-path").toStdString();
-                    break;
                 }
             }
+            if (xml.error() != XmlStreamReader::NoError) throw std::invalid_argument("Malformed MXL container.xml");
             if (root.empty()) throw std::invalid_argument("MXL has no rootfile");
             data = zip.fileData(root);
+            if (zip.hasError() || data.empty() || data.size() > 8 * 1024 * 1024)
+                throw std::invalid_argument("MXL rootfile must contain 1..8388608 bytes");
         }
     }
     if (format == "mscz" || format == "mscx") {
@@ -150,6 +153,7 @@ ScoreProject load_native_score(const std::string& input, const std::string& form
             if (scan.isStartElement() && scan.name() == "image")
                 throw std::invalid_argument("Embedded score images are not yet supported by the native backend");
         }
+        if (scan.error() != XmlStreamReader::NoError) throw std::invalid_argument("Malformed MusicXML");
         if (iex::musicxml::importMusicXmlfromBuffer(project->masterScore(), u"input.musicxml", data) != engraving::Err::NoError)
             throw std::runtime_error("MusicXML import failed");
     } else throw std::invalid_argument("Unsupported score input format");

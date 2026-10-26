@@ -74,14 +74,15 @@ struct Engine::Impl {
 };
 
 Engine::Engine(int&, char** argv, const std::string& soundfont, const std::string& resources) : impl_(std::make_unique<Impl>()) {
+    if (resources.empty() && (!argv || !argv[0])) throw std::invalid_argument("Missing executable path");
     impl_->assets = std::filesystem::absolute(resources.empty() ? std::filesystem::u8path(argv[0]).parent_path() / "assets"
                                                              : std::filesystem::u8path(resources));
-    initialize_native_runtime(path_utf8(impl_->assets));
     if (!soundfont.empty()) {
         const auto path = std::filesystem::absolute(std::filesystem::u8path(soundfont));
         if (!std::filesystem::is_regular_file(path)) throw std::invalid_argument("SoundFont does not exist");
         impl_->soundfont = path_utf8(path);
     }
+    initialize_native_runtime(path_utf8(impl_->assets));
 }
 Engine::~Engine() = default;
 std::string Engine::tools_json() {
@@ -146,9 +147,9 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         const auto format = text_arg(args, "format");
         const auto path = std::filesystem::absolute(std::filesystem::u8path(text_arg(args, "path")));
         const auto pages = doc.project->masterScore()->npages();
-        if ((format == "svg" || format == "png") && !pages) throw std::runtime_error("Score has no pages");
-        const int page = args.contains("page") ? static_cast<int>(index_arg(args, "page", pages ? pages - 1 : 0)) : 0;
+        if ((format == "svg" || format == "png" || format == "pdf") && !pages) throw std::runtime_error("Score has no pages");
         if (args.contains("page") && format != "svg" && format != "png") throw std::invalid_argument("page only applies to svg/png");
+        const int page = args.contains("page") ? static_cast<int>(index_arg(args, "page", pages ? pages - 1 : 0)) : 0;
         const auto data = export_native_score(doc.project, format, page, impl_->soundfont);
         if (data.empty()) throw std::runtime_error("Exporter returned no data");
         write_atomic(path, data);
