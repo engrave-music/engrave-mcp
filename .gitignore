@@ -1,0 +1,9 @@
+.upstream/
+.runtime/
+.pixi/
+build/
+artifacts/
+notes/
+.env
+__pycache__/
+
