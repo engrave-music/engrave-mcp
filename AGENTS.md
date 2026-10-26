@@ -17,4 +17,5 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 - At major milestones, use Argon and Opus 5.5 via `agy` for independent reviews.
 - Do not print credentials or read credential files. Use existing CLI authentication.
 - State which claims are source-reviewed, compiled, or actually executed; never conflate them.
+- Commit each verified milestone as it is reached. Keep review fixes in small follow-up commits; do not defer all commits to the end.
 

@@ -1,0 +1,280 @@
+[
+  {
+    "name": "score_create",
+    "description": "Create an editable score. Fixed 4/4, 480 ticks/quarter; each bar totals 1920 ticks. pitches is a MIDI chord; [] means rest. All parts have equal measure counts. tempo defaults to 100.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "score": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "tempo": {
+              "type": "integer",
+              "minimum": 20,
+              "maximum": 300
+            },
+            "parts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "midiProgram": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 128
+                  },
+                  "measures": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "pitches": {
+                                "type": "array",
+                                "items": {
+                                  "type": "integer",
+                                  "minimum": 12,
+                                  "maximum": 127
+                                },
+                                "maxItems": 8,
+                                "uniqueItems": true
+                              },
+                              "ticks": {
+                                "type": "integer",
+                                "enum": [
+                                  120,
+                                  240,
+                                  480,
+                                  960,
+                                  1920
+                                ]
+                              }
+                            },
+                            "required": [
+                              "pitches",
+                              "ticks"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "minItems": 1,
+                          "maxItems": 16
+                        }
+                      },
+                      "required": [
+                        "notes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 128
+                  }
+                },
+                "required": [
+                  "name",
+                  "midiProgram",
+                  "measures"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 15
+            }
+          },
+          "required": [
+            "parts"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "score"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_open",
+    "description": "Import MusicXML text or local MusicXML/MXL/MSCZ/MSCX path (exactly one). Imported documents support reading/export; structured measure replacement requires score_create.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "musicxml": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_get",
+    "description": "Read title, pages, parts, metadata, canonical MusicXML and editable composition if present.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "documentId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_replace_measures",
+    "description": "Atomically replace existing measures in a score_create document. partIndex and startMeasure are zero-based. Invalid replacement leaves original intact.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "partIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14
+        },
+        "startMeasure": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "measures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pitches": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 12,
+                        "maximum": 127
+                      },
+                      "maxItems": 8,
+                      "uniqueItems": true
+                    },
+                    "ticks": {
+                      "type": "integer",
+                      "enum": [
+                        120,
+                        240,
+                        480,
+                        960,
+                        1920
+                      ]
+                    }
+                  },
+                  "required": [
+                    "pitches",
+                    "ticks"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 16
+              }
+            },
+            "required": [
+              "notes"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "documentId",
+        "partIndex",
+        "startMeasure",
+        "measures"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_export",
+    "description": "Export to a local file atomically, replacing an existing file. Parent directory must exist. page is zero-based for SVG/PNG; PDF exports all pages. WAV requires --soundfont at startup.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "musicxml",
+            "mxl",
+            "mscz",
+            "midi",
+            "svg",
+            "png",
+            "pdf",
+            "metadata",
+            "wav"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "documentId",
+        "format",
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_close",
+    "description": "Close a document and release score/playback resources. Handles expire after close.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "documentId"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

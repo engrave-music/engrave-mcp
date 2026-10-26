@@ -1,0 +1,29 @@
+[workspace]
+name = "musescore-mcp"
+version = "0.1.0"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64"]
+
+[dependencies]
+python = "3.13.*"
+cmake = "4.*"
+ninja = "*"
+zlib = "*"
+cairo = "*"
+nlohmann_json = "3.12.*"
+
+[feature.baseline.target.win-64.dependencies]
+qt6-main = "6.10.2.*"
+libogg = "*"
+libvorbis = "*"
+
+[environments]
+default = { features = ["baseline"] }
+native = { features = [] }
+
+[pypi-dependencies]
+mcp = "==2.3.0"
+numpy = "==2.5.4"
+soundfile = "==0.14.0"
+pillow = ">=13.0.0, <14"
+pymupdf = ">=2.0, <3"
