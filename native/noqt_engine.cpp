@@ -151,15 +151,32 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         if (!impl_->documents.erase(text_arg(args, "documentId"))) throw std::invalid_argument("Unknown or closed documentId");
         result = {{"closed", true}};
     } else if (tool == "score_export") {
-        only_keys(args, {"documentId", "format", "path", "page"});
+        only_keys(args, {"documentId", "format", "path", "page", "pngDpi", "drawPageBackground",
+                         "transparent", "expandRepeats", "exportRPNs"});
         const auto& doc = impl_->select(args);
         const auto format = text_arg(args, "format");
         const auto path = std::filesystem::absolute(std::filesystem::u8path(text_arg(args, "path")));
         const auto pages = doc.project->masterScore()->npages();
         if ((format == "svg" || format == "png" || format == "pdf") && !pages) throw std::runtime_error("Score has no pages");
         if (args.contains("page") && format != "svg" && format != "png") throw std::invalid_argument("page only applies to svg/png");
-        const int page = args.contains("page") ? static_cast<int>(index_arg(args, "page", pages ? pages - 1 : 0)) : 0;
-        const auto data = export_native_score(doc.project, format, page, impl_->soundfont);
+        ExportOptions options;
+        options.page = args.contains("page") ? static_cast<int>(index_arg(args, "page", pages ? pages - 1 : 0)) : 0;
+        if (args.contains("pngDpi")) {
+            if (format != "png") throw std::invalid_argument("pngDpi only applies to png");
+            options.png_dpi = static_cast<int>(index_arg(args, "pngDpi", 1200));
+            if (options.png_dpi < 36) throw std::invalid_argument("pngDpi must be between 36 and 1200");
+        }
+        const auto boolean_option = [&](const char* key, bool& value, bool supported) {
+            if (!args.contains(key)) return;
+            if (!supported) throw std::invalid_argument(std::string(key) + " does not apply to this format");
+            if (!args.at(key).is_boolean()) throw std::invalid_argument(std::string(key) + " must be a boolean");
+            value = args.at(key).get<bool>();
+        };
+        boolean_option("drawPageBackground", options.draw_page_background, format == "svg" || format == "png");
+        boolean_option("transparent", options.transparent, format == "png");
+        boolean_option("expandRepeats", options.midi_expand_repeats, format == "midi" || format == "wav");
+        boolean_option("exportRPNs", options.midi_export_rpns, format == "midi" || format == "wav");
+        const auto data = export_native_score(doc.project, format, options, impl_->soundfont);
         if (data.empty()) throw std::runtime_error("Exporter returned no data");
         write_atomic(path, data);
         result = {{"path", path_utf8(path)}, {"format", format}, {"bytes", data.size()}};

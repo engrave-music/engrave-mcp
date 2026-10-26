@@ -166,16 +166,23 @@ ScoreProject load_native_score(const std::string& input, const std::string& form
 }
 
 std::string export_native_score(const ScoreProject& project, const std::string& format, int page, const std::string& soundfont) {
+    ExportOptions options;
+    options.page = page;
+    return export_native_score(project, format, options, soundfont);
+}
+
+std::string export_native_score(const ScoreProject& project, const std::string& format,
+                                const ExportOptions& options, const std::string& soundfont) {
     auto* score = project->masterScore();
     if (format == "metadata") return score_metadata(score).dump();
-    if (format == "svg" || format == "png" || format == "pdf") return render_score(score, format, page);
+    if (format == "svg" || format == "png" || format == "pdf") return render_score(score, format, options);
     ByteArray data;
     io::Buffer buffer(&data);
     buffer.open(io::IODevice::WriteOnly);
     bool success = false;
     if (format == "musicxml") success = iex::musicxml::saveXml(score, &buffer);
     else if (format == "mxl") success = iex::musicxml::saveMxl(score, &buffer);
-    else if (format == "mscz") {
+    else if (format == "mscz" || format == "mscx") {
         engraving::MscWriter::Params params;
         params.device = &buffer;
         params.mainFileName = u"score.mscx";
@@ -184,9 +191,23 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
         success = project->writeMscz(writer, false);
         writer.close();
         success = success && !writer.hasError();
+        if (format == "mscx" && success) {
+            buffer.close();
+            ByteArray msczData = std::move(data);
+            data = ByteArray();
+            io::Buffer msczBuf(&msczData);
+            engraving::MscReader::Params rparams;
+            rparams.device = &msczBuf;
+            rparams.mode = engraving::MscIoMode::Zip;
+            engraving::MscReader reader(rparams);
+            check(reader.open());
+            data = reader.readScoreFile();
+            reader.close();
+            success = !data.empty();
+        }
     } else if (format == "midi" || format == "wav") {
         iex::midi::ExportMidi writer(score);
-        success = writer.write(&buffer, true, true);
+        success = writer.write(&buffer, options.midi_expand_repeats, options.midi_export_rpns);
     } else throw std::invalid_argument("Unsupported export format");
     buffer.close();
     if (!success || data.empty()) throw std::runtime_error("Score export failed");

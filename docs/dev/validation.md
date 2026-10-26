@@ -146,3 +146,36 @@ Qt-free 真实 LLM 会话见 `artifacts/llm-native/`：DeepSeek Flash 的 11 次
 三声部八小节创建、三个末小节替换、查询、四格式导出及关闭，所有调用成功。
 独立校验全部 XML 音符/休止/和弦/时值/位置，103 个 MIDI note-on 和实际 GM 音色；
 WAV 为 44.1 kHz 双声道、22.755556 秒，峰值约 0.058533。该会话 PDF 仅检查格式头。
+
+## Export options increment (Windows)
+
+The first xmake / MSVC C++23 binary (`artifacts/xmake-windows-first`) passed the
+official SDK smoke suite (20 cycles), the new `test_export_options.py` suite with
+and without a SoundFont, and numerical rendering comparison against the previous
+Windows baseline. This validates these runtime changes; the subsequently revised
+xmake build graph still requires its own final build and cross-platform checks.
+
+- MSCX export/reopen preserves the test score's 3 parts, 2 measures per part and
+  22 note events.
+- PNG resolution changes from 596×842 at 72 DPI to 1191×1684 at 144 DPI. Transparent
+  output has zero-alpha pixels; opaque output has alpha 255 everywhere and a white
+  page corner. SVG/PNG page-background toggles are checked against artifact content.
+- The two-measure repeat fixture produces 4 versus 2 MIDI note-on events. WAV
+  duration changes from 6.577052 to 10.576689 seconds with repeat expansion.
+- RPN output changes from 35 relevant controller events to none when disabled,
+  while musical note-on events remain identical.
+- Nineteen malformed/out-of-format/out-of-range options preserve existing output
+  sentinels and leave the session usable. WAV without a SoundFont fails cleanly.
+- Direct PNG ink density/bounds, composited on white, equal the earlier baseline;
+  independently rasterized PDF differs in ink fraction by less than 0.00005.
+
+PNG/SVG now default to no page background; PNG defaults to transparent. Use
+`transparent: false` for opaque PNG or `drawPageBackground: true` to paint the
+page. This is an explicit default change from the earlier always-white renderer.
+The PNG default resolution remains 144 DPI; webmscore's 360-DPI output can be
+requested through `pngDpi: 360`. Accepted range: 36–1200, still subject to the
+existing dimension/pixel-count limits.
+
+Evidence: `artifacts/xmake-export-options-validated/`,
+`artifacts/xmake-export-options-no-sf/`, and `artifacts/xmake-smoke-first/`.
+These checks do not establish full webmscore parity or asynchronous editing.

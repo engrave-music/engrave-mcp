@@ -1,4 +1,5 @@
 #pragma once
+#include "export_options.h"
 #include <memory>
 #include <string>
 
@@ -9,4 +10,6 @@ void initialize_native_runtime(const std::string& assets);
 ScoreProject load_native_score(const std::string& bytes, const std::string& format);
 std::string export_native_score(const ScoreProject& project, const std::string& format, int page,
                                 const std::string& soundfont);
+std::string export_native_score(const ScoreProject& project, const std::string& format,
+                                const ExportOptions& options, const std::string& soundfont);
 }

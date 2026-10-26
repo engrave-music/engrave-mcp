@@ -21,14 +21,27 @@ void check(cairo_status_t status) {
     if (status != CAIRO_STATUS_SUCCESS) throw std::runtime_error(cairo_status_to_string(status));
 }
 }
+
 std::string render_score(mu::engraving::Score* score, const std::string& format, int page) {
+    ExportOptions options;
+    options.page = page;
+    return render_score(score, format, options);
+}
+
+std::string render_score(mu::engraving::Score* score, const std::string& format, const ExportOptions& options) {
     using namespace mu::engraving;
     if (!score || !score->npages()) throw std::runtime_error("Score has no pages");
-    if (page < 0 || static_cast<size_t>(page) >= score->npages()) throw std::invalid_argument("Page out of range");
+    if (options.page < 0 || (format != "pdf" && static_cast<size_t>(options.page) >= score->npages()))
+        throw std::invalid_argument("Page out of range");
     const auto renderer = muse::modularity::ioc(score->iocContext())->resolve<rendering::IScoreRenderer>("native");
     if (!renderer) throw std::runtime_error("Score renderer unavailable");
     const auto inches = renderer->pageSizeInch(score);
-    const int dpi = format == "png" ? 144 : 72;
+    int dpi = 72;
+    if (format == "png") {
+        if (!std::isfinite(static_cast<double>(options.png_dpi)) || options.png_dpi < 36 || options.png_dpi > 1200)
+            throw std::invalid_argument("PNG DPI must be between 36 and 1200");
+        dpi = options.png_dpi;
+    }
     const double width = inches.width() * dpi, height = inches.height() * dpi;
     if (!std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0
         || width > 32767 || height > 32767 || width * height > 64e6)
@@ -46,6 +59,13 @@ std::string render_score(mu::engraving::Score* score, const std::string& format,
     // Vector surfaces start with an unbounded clip, which Cairo cannot enumerate.
     cairo_rectangle(context.get(), 0, 0, std::ceil(width), std::ceil(height));
     cairo_clip(context.get());
+    if (format == "png" && !options.transparent) {
+        cairo_save(context.get());
+        cairo_set_source_rgb(context.get(), 1.0, 1.0, 1.0);
+        cairo_paint(context.get());
+        cairo_restore(context.get());
+        check(cairo_status(context.get()));
+    }
     auto provider = std::make_shared<muse::draw::CairoPainter>(context.get(), dpi);
     const bool wasPrinting = score->printing(), wasPdf = MScore::pdfPrinting;
     struct Restore {
@@ -54,13 +74,14 @@ std::string render_score(mu::engraving::Score* score, const std::string& format,
     } restore{score, wasPrinting, wasPdf};
     {
         muse::draw::Painter painter(provider, "native-export");
-        rendering::IScoreRenderer::ScorePaintOptions options;
-        options.isPrinting = true;
-        options.deviceDpi = dpi;
-        options.fromPage = format == "pdf" ? 0 : page;
-        options.toPage = format == "pdf" ? static_cast<int>(score->npages()) - 1 : page;
-        options.onNewPage = [&] { cairo_show_page(context.get()); check(cairo_status(context.get())); };
-        renderer->paintScore(&painter, score, options);
+        rendering::IScoreRenderer::ScorePaintOptions paintOptions;
+        paintOptions.isPrinting = true;
+        paintOptions.deviceDpi = dpi;
+        paintOptions.fromPage = format == "pdf" ? 0 : options.page;
+        paintOptions.toPage = format == "pdf" ? static_cast<int>(score->npages()) - 1 : options.page;
+        paintOptions.onNewPage = [&] { cairo_show_page(context.get()); check(cairo_status(context.get())); };
+        paintOptions.printPageBackground = format == "pdf" ? true : options.draw_page_background;
+        renderer->paintScore(&painter, score, paintOptions);
         if (!painter.endDraw()) throw std::runtime_error("Painter did not finish");
     }
     check(cairo_status(context.get()));

@@ -235,6 +235,7 @@
             "musicxml",
             "mxl",
             "mscz",
+            "mscx",
             "midi",
             "svg",
             "png",
@@ -250,6 +251,33 @@
         "page": {
           "type": "integer",
           "minimum": 0
+        },
+        "pngDpi": {
+          "type": "integer",
+          "minimum": 36,
+          "maximum": 1200,
+          "default": 144,
+          "description": "PNG resolution in dots per inch; rendering size limits still apply."
+        },
+        "drawPageBackground": {
+          "type": "boolean",
+          "default": false,
+          "description": "Draw the score page background for SVG/PNG."
+        },
+        "transparent": {
+          "type": "boolean",
+          "default": true,
+          "description": "PNG only. False paints an opaque white background."
+        },
+        "expandRepeats": {
+          "type": "boolean",
+          "default": true,
+          "description": "Expand score repeats in MIDI/WAV playback."
+        },
+        "exportRPNs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include registered parameter messages in MIDI/WAV playback."
         }
       },
       "required": [
