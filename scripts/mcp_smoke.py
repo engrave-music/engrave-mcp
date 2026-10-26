@@ -39,8 +39,11 @@ async def main():
     soundfont = Path(os.environ.get("MUSIC_MCP_SOUNDFONT", ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"))
     child_env = dict(os.environ)
     if os.environ.get("MUSIC_MCP_CLEAN_ENV"):
-        child_env = {"SystemRoot": os.environ["SystemRoot"], "PATH": str(Path(os.environ["SystemRoot"]) / "System32"),
-                     "TEMP": os.environ["TEMP"], "TMP": os.environ["TMP"]}
+        if os.name == "nt":
+            child_env = {"SystemRoot": os.environ["SystemRoot"], "PATH": str(Path(os.environ["SystemRoot"]) / "System32"),
+                         "TEMP": os.environ["TEMP"], "TMP": os.environ["TMP"]}
+        else:
+            child_env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
     child_args = ["--soundfont", str(soundfont)]
     if os.environ.get("MUSIC_MCP_RESOURCES"):
         child_args += ["--resources", os.environ["MUSIC_MCP_RESOURCES"]]

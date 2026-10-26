@@ -20,6 +20,11 @@ class Counters(ctypes.Structure):
 
 
 def memory(process):
+    if os.name != "nt":
+        # Private resident pages; Linux and Windows absolute values are not comparable.
+        fields = (Path(f"/proc/{process.pid}/smaps_rollup").read_text()).splitlines()
+        return sum(int(line.split()[1]) * 1024 for line in fields
+                   if line.startswith(("Private_Clean:", "Private_Dirty:", "Private_Hugetlb:")))
     counters = Counters()
     counters.cb = ctypes.sizeof(counters)
     fn = ctypes.WinDLL("psapi", use_last_error=True).GetProcessMemoryInfo

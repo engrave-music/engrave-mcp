@@ -76,7 +76,7 @@ pixi run -e native python scripts/package_windows.py --no-qt --output artifacts/
 打包产物已完成严格的洁净环境验证：
 - 运行时环境变量 `PATH` 仅保留 `C:\Windows\System32`。
 - 完全脱离桌面版 MuseScore 安装、Node.js、WASM、Python 及 Pixi 运行环境。
-- 当前验证包体积为 51,610,288 字节（包含 Conda 元数据）。当前为本地验证包，公开分发所需的完整许可证与对应源码清单尚待整理。
+- 最新 Windows 验证包体积为 51,613,872 字节（包含 Conda 元数据）。当前为本地验证包，公开分发所需的完整许可证与对应源码清单尚待整理。
 
 ---
 
@@ -87,10 +87,29 @@ pixi run -e native python scripts/package_windows.py --no-qt --output artifacts/
 
 ---
 
-## 7. Linux 适配进展
+## 7. Linux 原生构建
 
-- Linux 平台的原生构建与环境验证正在进行中。
-- 当前阶段未完成验收。
+已在 Arch WSL2 x86_64 验证，使用 Pixi 锁定的 GCC 15.3 / glibc 2.28 编译 sysroot，
+运行宿主为 glibc 2.44。宿主版本不等于已验证的最低运行版本。
+
+```bash
+pixi install -e native --locked
+pixi run --locked -e native python scripts/bootstrap.py --soundfont
+bash scripts/build-native.sh 8
+pixi run --locked -e native python scripts/package_linux.py --output artifacts/linux-next
+```
+
+构建产物为 `build/native-linux/musescore-mcp`。打包器验证 ELF 解释器及 `ldd -r` 符号解析，
+要求所有非 glibc 共享库来自锁定环境，复制后设置相对 RUNPATH，拒绝 Qt 依赖。
+运行时资源根据 `/proc/self/exe` 定位；SoundFont 仍需通过 `--soundfont` 指定。
+
+本次 WSL 的大 wheel 下载不稳定，测试包经 Windows 下载、按 pixi.lock SHA-256 校验后，
+用 uv 从本地 wheel 安装到独立 Linux native 环境。之后使用 `--no-install --locked`
+执行测试；构建入口也通过 `PIXI_NO_INSTALL=true bash scripts/build-native.sh 8` 验证。
+这是本次网络绕行记录，未修改锁定版本，运行包不含 Python。
+
+Windows 和 Linux 必须使用各自的源码/依赖目录；不要共用同一个 `.pixi/envs/native`。
+本次 Linux 工作副本位于 `/path/to/musescore-mcp-validation`，Windows 主库保持在 E 盘。
 
 ---
 

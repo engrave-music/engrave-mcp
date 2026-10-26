@@ -105,4 +105,44 @@ bootstrap.py 的已存在源码/音色幂等路径已运行；干净网络 clone
 DRAW_NO_INTERNAL 使 draw 跳过字体库初始化，因此根目录初始化没有重复。
 QTTEXTDRAW 仅影响移入 noqt_support 的字体内部类，该宏在这些编译单元中一致。
 Cairo 的原始 library 查找配合独立 dumpbin 递归打包已实际通过洁净运行，
-并非依赖 TARGET_RUNTIME_DLLS。Linux 静态库顺序和工具链另在下一阶段实测。
+并非依赖 TARGET_RUNTIME_DLLS。Linux 静态库顺序和工具链的实测结果见下文。
+
+## Linux 与最终部署验收
+
+Arch WSL2 x86_64 使用锁定的 GCC 15.3、glibc 2.28 sysroot 完成原生编译，运行于
+glibc 2.44。只需补齐上游 logger 的 `<memory>` 和 Unix 栈日志的流操作；GNU 静态库
+顺序实际链接通过，无需调整音乐算法。HarfBuzz 下载失败会给出明确错误并移除空文件。
+
+Linux 官方 SDK 六工具、九格式、20 次循环，畸形 XML/MXL 拒绝后恢复，原始传输及
+文件系统/设置测试全部通过。PNG 尺寸、墨迹比例和内容边界与 Windows 数值一致；
+PDF 文字可提取，独立栅格化通过。相同短曲 WAV 在两端均为 44.1 kHz 双声道、
+7.558095 秒，峰值 0.047760；仍未做听觉或人工视觉质量评价。
+
+首次 Linux 音频压力测试私有驻留内存在 111–172 MB 间波动，40→120 次增长约 19 MB，
+未通过原阈值。FluidSynth 对象销毁后调用 glibc `malloc_trim(0)` 释放空闲页，保持原阈值：
+两种模式各 120 次、每十次导出 PDF/WAV，增长分别为 0 和 -524,288 字节。
+额外通过测试期 LD_PRELOAD 观测 mallinfo2：40→120 次实际存活分配仅增长 227,104 字节，
+trim 前后存活分配相同。由此支持“大幅 RSS 波动来自空闲堆页保留”的解释；
+这仍是有限次数测试，不是零泄漏证明。非 glibc 平台不启用此回收策略。
+
+Argon 和 Opus 5.5 独立审阅了 Linux 打包与原子导出，Opus 另审阅回收策略。
+已修正：系统库意外混入、glibc 分库分类、ldd 符号/版本错误漏检、真实可执行路径解析、
+临时文件名长度、O_CLOEXEC、零字节写入错误和 fsync 被 EINTR 中断的处理。
+POSIX 导出保证同目录 rename 的原子可见性；未承诺崩溃后的目录项持久性或保留旧文件权限。
+
+最终 Windows 包 `artifacts/windows-native-002` 为 117 文件、51,613,872 字节；
+最终 Linux 包为 152 文件、90,692,740 字节，压缩归档
+`artifacts/linux-native-001.tar.gz` 为 40,166,751 字节。两者都通过不带开发环境 PATH
+的完整 SDK 回归。Linux 符号链接启动通过；另外临时移走开发副本的 `.pixi`、`.runtime`
+和 `.upstream`，开启 LD_BIND_NOW，使用系统 Python 的原始 JSON-RPC 客户端再次完成
+九格式导出、XML/MIDI/PDF 和非静音 WAV 检查，证明所测流程不依赖这些目录。
+库中的构建路径字符串（诊断信息、fontconfig/X11 默认值）记录在 manifest，不据此声称
+不存在任何未测试功能的外部资源依赖。没有验证其他发行版或 glibc 版本。
+
+证据副本在 `artifacts/linux-validation/`；构建、审阅及网络绕行日志在忽略的 notes/。
+最终 Windows SDK 记录为 `artifacts/windows-final-validation/`。
+
+Qt-free 真实 LLM 会话见 `artifacts/llm-native/`：DeepSeek Flash 的 11 次 MCP 调用完成
+三声部八小节创建、三个末小节替换、查询、四格式导出及关闭，所有调用成功。
+独立校验全部 XML 音符/休止/和弦/时值/位置，103 个 MIDI note-on 和实际 GM 音色；
+WAV 为 44.1 kHz 双声道、22.755556 秒，峰值约 0.058533。该会话 PDF 仅检查格式头。
