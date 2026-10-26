@@ -12,6 +12,11 @@ zlib = "*"
 cairo = "*"
 nlohmann_json = "3.12.*"
 
+[target.linux-64.dependencies]
+c-compiler = "*"
+cxx-compiler = "*"
+patchelf = "*"
+
 [feature.baseline.target.win-64.dependencies]
 qt6-main = "6.10.2.*"
 libogg = "*"

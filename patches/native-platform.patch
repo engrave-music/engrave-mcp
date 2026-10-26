@@ -560,10 +560,10 @@ index 28522cba..2762613d 100644
 -endif(OS_IS_WIN)
 +# Native host supplies pinned dependencies through its Pixi environment.
 diff --git a/src/framework/draw/cmake/SetupHarfBuzz.cmake b/src/framework/draw/cmake/SetupHarfBuzz.cmake
-index 6c2ec608..133959e4 100644
+index 6c2ec608..60a99ad9 100644
 --- a/src/framework/draw/cmake/SetupHarfBuzz.cmake
 +++ b/src/framework/draw/cmake/SetupHarfBuzz.cmake
-@@ -37,7 +37,7 @@ endif()
+@@ -37,14 +37,20 @@ endif()
  # If not MUE_COMPILE_USE_SYSTEM_HARFBUZZ, or if it was not found,
  # download and build harfbuzz
  
@@ -572,6 +572,19 @@ index 6c2ec608..133959e4 100644
  set(remote_url ${REMOTE_ROOT_URL}/harfbuzz/12.3.0)
  set(local_path ${PROJECT_BINARY_DIR}/_deps/harfbuzz)
  if (NOT EXISTS ${local_path}/harfbuzz.cmake)
+     file(MAKE_DIRECTORY ${local_path})
+     file(DOWNLOAD ${remote_url}/harfbuzz.cmake ${local_path}/harfbuzz.cmake
+         HTTPHEADER "Cache-Control: no-cache"
++        STATUS download_status
+     )
++    list(GET download_status 0 download_result)
++    if (NOT download_result EQUAL 0)
++        file(REMOVE ${local_path}/harfbuzz.cmake)
++        message(FATAL_ERROR "Could not download pinned HarfBuzz setup: ${download_status}")
++    endif()
+ endif()
+ 
+ include(${local_path}/harfbuzz.cmake)
 diff --git a/src/framework/global/CMakeLists.txt b/src/framework/global/CMakeLists.txt
 index 29e8b8c1..21228c05 100644
 --- a/src/framework/global/CMakeLists.txt
@@ -633,6 +646,34 @@ index cee128fc..6b5ce848 100644
  
      QSettings* m_settings = nullptr;
      mutable Items m_items;
+diff --git a/src/framework/global/thirdparty/kors_logger/src/log_base.h b/src/framework/global/thirdparty/kors_logger/src/log_base.h
+index 0527e4e6..a734c96e 100644
+--- a/src/framework/global/thirdparty/kors_logger/src/log_base.h
++++ b/src/framework/global/thirdparty/kors_logger/src/log_base.h
+@@ -66,9 +66,9 @@ SOFTWARE.
+         int numFrames = backtrace(stackFrames, maxStackFrames); \
+         char** symbols = backtrace_symbols(stackFrames, numFrames); \
+         if (symbols) { \
+-            LOGE() << "Call stack:" << std::endl; \
++            LOGE() << "Call stack:"; \
+             for (int i = 0; i < numFrames; ++i) { \
+-                LOGE() << symbols[i] << std::endl; \
++                LOGE() << symbols[i]; \
+             } \
+             free(symbols); \
+         } \
+diff --git a/src/framework/global/thirdparty/kors_logger/src/logger.h b/src/framework/global/thirdparty/kors_logger/src/logger.h
+index ac86d4d1..956740e5 100644
+--- a/src/framework/global/thirdparty/kors_logger/src/logger.h
++++ b/src/framework/global/thirdparty/kors_logger/src/logger.h
+@@ -29,6 +29,7 @@ SOFTWARE.
+ #include <thread>
+ #include <vector>
+ #include <mutex>
++#include <memory>
+ 
+ #include "logstream.h"
+ 
 diff --git a/src/framework/mpe/CMakeLists.txt b/src/framework/mpe/CMakeLists.txt
 index 8d45b03b..6a7dc382 100644
 --- a/src/framework/mpe/CMakeLists.txt
