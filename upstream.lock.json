@@ -6,6 +6,9 @@
   "harfbuzzDependency": {
     "repository": "https://github.com/musescore/muse_deps.git",
     "revision": "c9a299e19df04e40435d1c4649548c69ce152bd8",
-    "version": "12.3.0"
+    "version": "12.3.0",
+    "archiveUrl": "https://raw.githubusercontent.com/musescore/muse_deps/c9a299e19df04e40435d1c4649548c69ce152bd8/harfbuzz/12.3.0/harfbuzz_src.7z",
+    "sha256": "a09fceea714ce3e33972d13634b1726a2ed8558bd136e3ff9ab75ae64758c3b9",
+    "sourceDirectory": ".upstream/harfbuzz"
   }
 }
