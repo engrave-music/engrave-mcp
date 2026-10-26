@@ -75,8 +75,17 @@ struct Engine::Impl {
 
 Engine::Engine(int&, char** argv, const std::string& soundfont, const std::string& resources) : impl_(std::make_unique<Impl>()) {
     if (resources.empty() && (!argv || !argv[0])) throw std::invalid_argument("Missing executable path");
-    impl_->assets = std::filesystem::absolute(resources.empty() ? std::filesystem::u8path(argv[0]).parent_path() / "assets"
-                                                             : std::filesystem::u8path(resources));
+    if (resources.empty()) {
+        auto executable = std::filesystem::u8path(argv[0]);
+#ifdef __linux__
+        std::error_code error;
+        const auto resolved = std::filesystem::canonical("/proc/self/exe", error);
+        if (!error) executable = resolved;
+#endif
+        impl_->assets = std::filesystem::absolute(executable.parent_path() / "assets");
+    } else {
+        impl_->assets = std::filesystem::absolute(std::filesystem::u8path(resources));
+    }
     if (!soundfont.empty()) {
         const auto path = std::filesystem::absolute(std::filesystem::u8path(soundfont));
         if (!std::filesystem::is_regular_file(path)) throw std::invalid_argument("SoundFont does not exist");
