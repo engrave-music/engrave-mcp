@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <museScore version="4.70">
   <Score>
-    <eid>eid-0</eid>
+    <eid/>
     <Division>480</Division>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
@@ -21,7 +21,7 @@
     <metaTag name="workTitle">drums</metaTag>
     <Part id="1">
       <Staff>
-        <eid>eid-1</eid>
+        <eid/>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
@@ -316,70 +316,70 @@
     <Staff id="1">
       <VBox>
         <height>10</height>
-        <eid>eid-2</eid>
+        <eid/>
         <Text>
-          <eid>eid-3</eid>
+          <eid/>
           <style>title</style>
           <text><font size="24"/>drums</text>
           </Text>
         </VBox>
       <Measure>
-        <eid>eid-4</eid>
+        <eid/>
         <voice>
           <Clef>
             <concertClefType>PERC</concertClefType>
             <transposingClefType>PERC</transposingClefType>
             <isHeader>1</isHeader>
-            <eid>eid-5</eid>
+            <eid/>
             </Clef>
           <TimeSig>
-            <eid>eid-6</eid>
+            <eid/>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Tempo>
             <tempo>2</tempo>
             <followText>1</followText>
-            <eid>eid-7</eid>
+            <eid/>
             <text><sym>metNoteQuarterUp</sym> = 120</text>
             </Tempo>
           <Chord>
-            <eid>eid-8</eid>
+            <eid/>
             <durationType>quarter</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid>eid-9</eid>
+              <eid/>
               <pitch>36</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>eid-10</eid>
+            <eid/>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>eid-11</eid>
+              <eid/>
               <pitch>38</pitch>
               <tpc>16</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>eid-12</eid>
+            <eid/>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>eid-13</eid>
+              <eid/>
               <pitch>51</pitch>
               <tpc>11</tpc>
               <head>cross</head>
               </Note>
             </Chord>
           <Chord>
-            <eid>eid-14</eid>
+            <eid/>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>eid-15</eid>
+              <eid/>
               <pitch>42</pitch>
               <tpc>20</tpc>
               <head>cross</head>
@@ -388,44 +388,44 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>eid-16</eid>
+        <eid/>
         <voice>
           <Chord>
-            <eid>eid-17</eid>
+            <eid/>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>eid-18</eid>
+              <eid/>
               <pitch>47</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>eid-19</eid>
+            <eid/>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>eid-20</eid>
+              <eid/>
               <pitch>45</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>eid-21</eid>
+            <eid/>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>eid-22</eid>
+              <eid/>
               <pitch>41</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>eid-23</eid>
+            <eid/>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>eid-24</eid>
+              <eid/>
               <pitch>81</pitch>
               <tpc>17</tpc>
               </Note>
@@ -433,26 +433,26 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>eid-25</eid>
+        <eid/>
         <voice>
           <Rest>
-            <eid>eid-26</eid>
+            <eid/>
             <durationType>measure</durationType>
             <duration>1/1</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid>eid-27</eid>
+        <eid/>
         <voice>
           <Rest>
-            <eid>eid-28</eid>
+            <eid/>
             <durationType>measure</durationType>
             <duration>1/1</duration>
             </Rest>
           <BarLine>
             <subtype>end</subtype>
-            <eid>eid-29</eid>
+            <eid/>
             </BarLine>
           </voice>
         </Measure>

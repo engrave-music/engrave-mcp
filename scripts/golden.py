@@ -5,10 +5,16 @@ normalizes known-volatile fields, and stores one directory per fixture plus an
 ``index.json`` manifest of sha256 values. Compare re-captures the same tree and
 diffs it against the stored goldens, honoring an explicit allow-list.
 
+Allow entries match a fixture/output glob pair and only accept the expected
+``kind`` (``different``, ``missing`` or ``extra``). Differences and extras must
+also pin the actual file's normalized sha256 for the current platform, so an
+entry cannot silently cover future changes. ``pin`` prints skeleton entries for
+the un-allowed differences in an existing compare report.
+
 Volatile fields removed by normalization (observed by running twice):
-  * MSCX/MSCZ inner ``<eid>`` values: random per created document. Each unique
-    value is replaced by ``eid-<n>`` in first-occurrence order so equalities
-    between references survive.
+  * Every MSCX/MSCZ inner ``<eid>`` value (events, spanners and excerpt scores)
+    is replaced with the constant ``<eid/>``; the values are random per created
+    document and carry no cross-reference meaning once made constant.
   * MSCX ``programVersion``/``programRevision`` and metaTag ``creationDate``/
     ``platform``; MusicXML ``encoding-date``/``software`` and the mirrored
     ``miscellaneous-field`` creationDate/platform values.
@@ -22,9 +28,12 @@ Everything else is compared byte for byte, except ``audio.json`` which uses
 the documented numeric tolerances.
 
 Usage:
-  golden.py capture --binary B --resources R --soundfont SF --golden DIR
+  golden.py capture --binary B --resources R --soundfont SF --golden DIR \\
+                    [--allow-errors]
   golden.py compare --binary B --resources R --soundfont SF --golden DIR \\
-                    --allow tests/golden/allow.json --output OUTDIR
+                    --allow tests/golden/allow.json --output OUTDIR \\
+                    [--platform windows|linux]
+  golden.py pin --golden DIR --output OUTDIR [--platform windows|linux]
 """
 
 from __future__ import annotations
@@ -48,8 +57,11 @@ from mcp.client.stdio import stdio_client
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_DIR = ROOT / "fixtures" / "golden"
 EXTRA_FIXTURES = (ROOT / "fixtures" / "evening.musicxml",)
-AUDIO_TOLERANCES = {"peak": 1e-4, "rms": 1e-4, "rmsEnvelope": 1e-4, "spectralCentroidHz": 1.0}
+AUDIO_TOLERANCES = {"peak": 1e-4, "rms": 1e-4, "rmsEnvelope": 1e-4,
+                    "spectralCentroidHz": 1.0, "centroidEnvelope": 2.0}
 AUDIO_EXACT = {"sampleRate", "channels", "frames"}
+ALLOW_KINDS = ("different", "missing", "extra")
+DEFAULT_PLATFORM = "windows" if sys.platform.startswith("win") else "linux"
 
 
 def sha256(data: bytes) -> str:
@@ -71,15 +83,7 @@ def write_json(path: Path, value, indent: int = 1) -> None:
 
 
 def normalize_mscx(text: str) -> str:
-    seen: dict[str, str] = {}
-
-    def eid(match: re.Match) -> str:
-        value = match.group(1)
-        if value not in seen:
-            seen[value] = f"eid-{len(seen)}"
-        return f"<eid>{seen[value]}</eid>"
-
-    text = re.sub(r"<eid>([^<]*)</eid>", eid, text)
+    text = re.sub(r"<eid>[^<]*</eid>", "<eid/>", text)
     for tag in ("programVersion", "programRevision"):
         text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", rf"\1\2", text)
     for name in ("creationDate", "platform"):
@@ -156,12 +160,18 @@ def describe_audio(path: Path) -> dict:
     peak = [round(float(np.max(np.abs(audio[:, channel]))), 6) for channel in range(channels)]
     rms = [round(float(np.sqrt(np.mean(audio[:, channel] ** 2))), 6) for channel in range(channels)]
     window = max(1, int(round(rate * 0.25)))
-    envelope = []
+    mono = audio.mean(axis=1)
+    envelope, centroids = [], []
     for start in range(0, frames, window):
         chunk = audio[start:start + window]
         envelope.append([round(float(np.sqrt(np.mean(chunk[:, channel] ** 2))), 5)
                          for channel in range(channels)])
-    mono = audio.mean(axis=1)
+        segment = mono[start:start + window]
+        spectrum = np.abs(np.fft.rfft(segment))
+        frequencies = np.fft.rfftfreq(len(segment), 1.0 / rate)
+        weight = float(spectrum.sum())
+        centroids.append(round(float(np.dot(frequencies, spectrum)) / weight, 1)
+                         if weight else 0.0)
     block = 1 << 20
     weighted = 0.0
     weight = 0.0
@@ -173,6 +183,7 @@ def describe_audio(path: Path) -> dict:
         weight += float(spectrum.sum())
     return {"sampleRate": int(rate), "channels": int(channels), "frames": int(frames),
             "peak": peak, "rms": rms, "rmsEnvelope": envelope,
+            "centroidEnvelope": centroids,
             "spectralCentroidHz": round(weighted / weight, 1) if weight else 0.0}
 
 
@@ -399,6 +410,13 @@ async def capture_excerpts(session, identity, raw, out_dir, roots):
         folder = out_dir / f"excerpt-{index}"
         await text_export(session, identity, "mscx", raw / f"excerpt-{index}.mscx", folder,
                           "score.mscx", normalize_mscx, roots, excerptId=index)
+        await text_export(session, identity, "musicxml", raw / f"excerpt-{index}.musicxml",
+                          folder, "score.musicxml", normalize_musicxml, roots, excerptId=index)
+        await value_export(session, identity, "midi", raw / f"excerpt-{index}.mid", folder,
+                           "midi.json", lambda path: describe_midi(path.read_bytes()), roots,
+                           excerptId=index)
+        await value_export(session, identity, "metadata", raw / f"excerpt-{index}-metadata.json",
+                           folder, "metadata.json", load_rounded, roots, excerptId=index)
         await text_export(session, identity, "svg", raw / f"excerpt-{index}-page-0.svg",
                           folder, "page-0.svg", normalize_svg, roots, excerptId=index, page=0)
 
@@ -476,20 +494,48 @@ async def capture_tree(binary, resources, soundfont, target, log_path):
 def load_allow(path: Path) -> list[dict]:
     if not path.is_file():
         return []
-    document = json.loads(read_text(path))
-    entries = document.get("entries", [])
+    entries = json.loads(read_text(path)).get("entries", [])
     for entry in entries:
         missing = [key for key in ("fixture", "output", "step", "reason") if key not in entry]
         if missing:
             raise ValueError(f"allow entry {entry!r} is missing {', '.join(missing)}")
+        if entry.setdefault("kind", "different") not in ALLOW_KINDS:
+            raise ValueError(f"allow entry has invalid kind: {entry['kind']!r}")
     return entries
 
 
-def allow_match(entries, fixture, output):
-    for position, entry in enumerate(entries):
-        if fnmatch(fixture, entry["fixture"]) and fnmatch(output, entry["output"]):
-            return position, entry
-    return None, None
+def allow_accept(entries, fixture, output, kind, actual_sha, platform):
+    """Return (position, entry, problem) for the first matching allow entry."""
+    matches = [(position, entry) for position, entry in enumerate(entries)
+               if fnmatch(fixture, entry["fixture"]) and fnmatch(output, entry["output"])]
+    problems = []
+    for position, entry in matches:
+        if entry["kind"] != kind:
+            problems.append(f"entry {position}: kind {entry['kind']} != {kind}")
+            continue
+        if kind == "missing":
+            return position, entry, None
+        pinned = entry.get("sha256")
+        pinned = pinned.get(platform) if isinstance(pinned, dict) else None
+        if not pinned:
+            problems.append(f"entry {position}: no sha256 for {platform}")
+        elif str(pinned).lower() != actual_sha:
+            problems.append(f"entry {position}: pinned {pinned} != actual {actual_sha}")
+        else:
+            return position, entry, None
+    return None, None, "; ".join(problems) if problems else None
+
+
+def verify_golden_index(root: Path, index: dict) -> list[str]:
+    on_disk = {path.name for path in root.iterdir() if path.is_dir()}
+    issues = [f"unindexed fixture {name}" for name in sorted(on_disk - set(index))]
+    issues += [f"missing fixture folder {name}" for name in sorted(set(index) - on_disk)]
+    for name in sorted(on_disk & set(index)):
+        present = {path.relative_to(root / name).as_posix()
+                   for path in (root / name).rglob("*") if path.is_file()}
+        issues += [f"missing indexed file {name}/{entry}" for entry in sorted(set(index[name]) - present)]
+        issues += [f"unindexed file {name}/{entry}" for entry in sorted(present - set(index[name]))]
+    return issues
 
 
 def audio_equal(golden, actual, key=None) -> bool:
@@ -528,74 +574,73 @@ def write_diff(root: Path, fixture: str, output: str, golden: Path, actual: Path
                "".join(line if line.endswith("\n") else line + "\n" for line in lines))
 
 
-def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], output: Path) -> int:
+def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], output: Path,
+                  platform: str) -> int:
     golden_index = json.loads(read_text(golden_root / "index.json"))
+    counts = {key: 0 for key in ("identical", "allowed", "different", "missing", "extra",
+                                 "goldenError", "extraFixture", "index")}
     report = {"golden": str(golden_root), "actual": str(actual_root), "fixtures": {},
-              "stale": [], "counts": {}, "status": "pass"}
-    counts = {"identical": 0, "allowed": 0, "different": 0, "missing": 0, "extra": 0}
+              "stale": [], "extraFixtures": [], "indexIssues": [], "counts": counts,
+              "status": "pass"}
     matched_allow: set[int] = set()
     diff_root = output / "diff"
     if diff_root.exists():
         shutil.rmtree(diff_root)
 
+    report["indexIssues"] = verify_golden_index(golden_root, golden_index)
+    counts["index"] = len(report["indexIssues"])
+    for issue in report["indexIssues"]: print(f"index    {issue}")
+    actual_fixtures = {path.name for path in actual_root.iterdir() if path.is_dir()}
+    for fixture in sorted(actual_fixtures - set(golden_index)):
+        report["extraFixtures"].append(fixture)
+        counts["extraFixture"] += 1
+        print(f"extra fixture  {fixture}")
+
     for fixture in sorted(golden_index):
         expected = golden_index[fixture]
-        golden_dir = golden_root / fixture
-        actual_dir = actual_root / fixture
-        actual_files = set()
-        if actual_dir.is_dir():
-            actual_files = {path.relative_to(actual_dir).as_posix()
-                            for path in actual_dir.rglob("*") if path.is_file()}
-        results = {}
+        golden_dir, actual_dir = golden_root / fixture, actual_root / fixture
+        actual_files = ({path.relative_to(actual_dir).as_posix()
+                         for path in actual_dir.rglob("*") if path.is_file()}
+                        if actual_dir.is_dir() else set())
+        results = report["fixtures"].setdefault(fixture, {})
         for name in sorted(set(expected) | actual_files):
             golden_file, actual_file = golden_dir / name, actual_dir / name
-            if name not in expected:
-                position, entry = allow_match(allow, fixture, name)
-                if entry:
-                    matched_allow.add(position)
-                    counts["allowed"] += 1
-                    results[name] = {"status": "allowed", "step": entry["step"],
-                                     "reason": entry["reason"]}
-                    print(f"allowed  {fixture}/{name} ({entry['step']}: {entry['reason']})")
-                else:
-                    counts["extra"] += 1
-                    results[name] = {"status": "extra"}
-                    print(f"extra    {fixture}/{name}")
-            elif not actual_file.is_file():
-                position, entry = allow_match(allow, fixture, name)
-                if entry:
-                    matched_allow.add(position)
-                    counts["allowed"] += 1
-                    results[name] = {"status": "allowed", "step": entry["step"],
-                                     "reason": entry["reason"]}
-                    print(f"allowed  {fixture}/{name} (missing; {entry['step']}: {entry['reason']})")
-                else:
-                    counts["missing"] += 1
-                    results[name] = {"status": "missing"}
-                    print(f"missing  {fixture}/{name}")
-            elif files_equal(golden_file, actual_file, name):
-                counts["identical"] += 1
-                results[name] = {"status": "identical",
-                                 "sha256": sha256(actual_file.read_bytes())}
+            golden_sha = sha256(golden_file.read_bytes()) if golden_file.is_file() else None
+            actual_sha = sha256(actual_file.read_bytes()) if actual_file.is_file() else None
+            golden_error = golden_sha is not None and name.endswith(".error.txt")
+            if actual_sha is None:
+                kind = "missing"
+            elif name not in expected:
+                kind = "extra"
+            elif golden_sha is None:
+                kind = "different"
+            elif files_equal(golden_file, actual_file, name) and not golden_error:
+                kind = None
             else:
-                position, entry = allow_match(allow, fixture, name)
-                if entry:
-                    matched_allow.add(position)
-                    counts["allowed"] += 1
-                    results[name] = {"status": "allowed", "step": entry["step"],
-                                     "reason": entry["reason"],
-                                     "goldenSha256": sha256(golden_file.read_bytes()),
-                                     "actualSha256": sha256(actual_file.read_bytes())}
-                    print(f"allowed  {fixture}/{name} ({entry['step']}: {entry['reason']})")
-                else:
-                    counts["different"] += 1
-                    results[name] = {"status": "different",
-                                     "goldenSha256": sha256(golden_file.read_bytes()),
-                                     "actualSha256": sha256(actual_file.read_bytes())}
-                    print(f"DIFF     {fixture}/{name}")
-                    write_diff(diff_root, fixture, name, golden_file, actual_file)
-        if results:
-            report["fixtures"][fixture] = results
+                kind = "different"
+            if kind is None:
+                counts["identical"] += 1
+                results[name] = {"status": "identical", "sha256": actual_sha}
+                continue
+
+            position, entry, problem = allow_accept(allow, fixture, name, kind, actual_sha, platform)
+            if entry:
+                matched_allow.add(position)
+                counts["allowed"] += 1
+                results[name] = {"status": "allowed", "kind": kind, "step": entry["step"],
+                                 "reason": entry["reason"], "actualSha256": actual_sha,
+                                 "goldenSha256": golden_sha}
+                print(f"allowed  {fixture}/{name} ({kind}; {entry['step']}: {entry['reason']})")
+            else:
+                status = "golden-error" if golden_error else kind
+                counts["goldenError" if golden_error else kind] += 1
+                results[name] = {"status": status, "kind": kind, "goldenSha256": golden_sha,
+                                 "actualSha256": actual_sha}
+                suffix = f" (allow mismatch: {problem})" if problem else ""
+                label = "missing" if kind == "missing" else status
+                print(f"{label:<12} {fixture}/{name} actual sha256={actual_sha or 'none'}{suffix}")
+            if kind == "different" and golden_file.is_file() and actual_sha != golden_sha:
+                write_diff(diff_root, fixture, name, golden_file, actual_file)
 
     for position, entry in enumerate(allow):
         if position not in matched_allow:
@@ -603,14 +648,14 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
             print(f"stale    allow entry fixture={entry['fixture']} output={entry['output']} "
                   f"({entry['step']}: {entry['reason']})")
 
-    report["counts"] = counts
-    failing = counts["different"] + counts["missing"] + counts["extra"]
+    failing = sum(counts[key] for key in ("different", "missing", "extra", "goldenError",
+                                          "extraFixture", "index"))
     report["status"] = "pass" if failing == 0 else "fail"
     write_json(output / "report.json", report, indent=2)
-    total = sum(counts.values())
+    total = sum(counts[key] for key in ("identical", "allowed", "different", "missing",
+                                        "extra", "goldenError"))
     print(f"golden compare: {len(golden_index)} fixtures, {total} outputs")
-    for key in ("identical", "allowed", "different", "missing", "extra"):
-        print(f"{key}: {counts[key]}")
+    for key in counts: print(f"{key}: {counts[key]}")
     print(f"result: {'PASS' if failing == 0 else 'FAIL'}")
     return 0 if failing == 0 else 1
 
@@ -624,6 +669,12 @@ def command_capture(args) -> int:
     count = sum(len(files) for files in index.values())
     size = sum(path.stat().st_size for path in args.golden.rglob("*") if path.is_file())
     print(f"captured {len(index)} fixtures, {count} outputs, {size} bytes into {args.golden}")
+    errors = sorted(args.golden.rglob("*.error.txt"))
+    for path in errors:
+        print(f"error    {path.relative_to(args.golden).as_posix()}: {read_text(path).strip()}")
+    if errors and not args.allow_errors:
+        print(f"capture failed: {len(errors)} error file(s); pass --allow-errors to accept")
+        return 1
     return 0
 
 
@@ -637,7 +688,25 @@ def command_compare(args) -> int:
             Path(temporary) / "server-stderr.log"), timeout=1800))
         # Keep a copy of the server log for debugging (outside the compared tree).
         shutil.copyfile(Path(temporary) / "server-stderr.log", args.output / "server-stderr.log")
-    return compare_trees(args.golden, actual, allow, args.output)
+    return compare_trees(args.golden, actual, allow, args.output, args.platform)
+
+
+def command_pin(args) -> int:
+    report_path = args.output / "report.json"
+    if not report_path.is_file():
+        raise SystemExit(f"report does not exist: {report_path}")
+    report = json.loads(read_text(report_path))
+    entries = []
+    for fixture, results in sorted(report.get("fixtures", {}).items()):
+        for name, result in sorted(results.items()):
+            if result.get("status") not in ("different", "missing", "extra", "golden-error"):
+                continue
+            kind = result.get("kind") or result["status"]
+            sha = {} if kind == "missing" else {"sha256": {args.platform: result["actualSha256"]}}
+            entries.append({"fixture": fixture, "output": name, "step": "TODO",
+                            "reason": "TODO", "kind": kind, **sha})
+    print(json.dumps(entries, indent=1, sort_keys=True))
+    return 0
 
 
 def main() -> int:
@@ -650,10 +719,19 @@ def main() -> int:
         sub.add_argument("--resources", type=Path, required=True)
         sub.add_argument("--soundfont", type=Path, required=True)
         sub.add_argument("--golden", type=Path, required=True)
-        if name == "compare":
+        if name == "capture":
+            sub.add_argument("--allow-errors", action="store_true")
+        else:
             sub.add_argument("--allow", type=Path, required=True)
             sub.add_argument("--output", type=Path, required=True)
+            sub.add_argument("--platform", choices=("windows", "linux"), default=DEFAULT_PLATFORM)
+    pin = subparsers.add_parser("pin")
+    pin.add_argument("--golden", type=Path, required=True)
+    pin.add_argument("--output", type=Path, required=True)
+    pin.add_argument("--platform", choices=("windows", "linux"), default=DEFAULT_PLATFORM)
     args = parser.parse_args()
+    if args.command == "pin":
+        return command_pin(args)
     for label, path in (("binary", args.binary), ("resources", args.resources),
                         ("soundfont", args.soundfont)):
         if not path.exists():

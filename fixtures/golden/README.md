@@ -18,5 +18,7 @@ not depend on the vendored source path.
 | `perc_stem_dir.musicxml` | MuseScore v4.7.6 `src/importexport/musicxml/tests/data/testInferredPercStemDir.xml` |
 | `bend.gp` | webmscore-4.7.5-1 `src/importexport/guitarpro/tests/data/bend.gp` |
 | `bends.mid` | webmscore-4.7.5-1 `src/importexport/midi/tests/midiexport_data/testBends1-ref.mid` |
+| `layout_elements.mscx` | webmscore-4.7.5-1 `src/engraving/tests/all_elements_data/layout_elements.mscx` (one of nearly every element type, 3.01 format) |
+| `coverage.musicxml` | hand-written: pickup measure, triplets, slashed grace, tie across a barline, ottava, clef changes, Fine / D.C. al Fine |
 
 `../evening.musicxml` is also part of the golden set.
