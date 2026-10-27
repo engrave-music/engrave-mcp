@@ -6,20 +6,25 @@
 
 ## 1. 架构设计与约束
 
-- **构建系统**：新入口采用 `xmake.lua` 与显式源码清单 `xmake/manifest.lua`，标准为 **C++23**（Windows / Arch WSL2 x86_64 已验证）。原 CMake / C++20 路径保留作行为基线，不参与 xmake 构建。
-- **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml` 以及选定的 `MIDI` 与 `FluidSynth` 组件。
-- **底层适配**：采用原生文件系统、进程内设置和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
+- **构建系统**：以 `xmake.lua` 与显式源码清单 `xmake/manifest.lua` 为**主要构建系统 (primary build)**，采用 **C++23** 标准（Windows 与 Linux Linux / Arch WSL2 x86_64 均已验证）。根目录 `CMakeLists.txt` 是冻结的 Qt 时代 / C++20 历史基线，不参与当前构建，也不构建 M6–M9 的原生宿主。
+- **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件、`FluidSynth` 以及 `dr_mp3`/`libvorbis`/`libogg`/`flac` 音频编码器。
+- **底层适配**：采用原生文件系统、进程内设置、FreeType/HarfBuzz 字体引擎和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
 
 ---
 
 ## 2. 环境要求
 
 ### Windows 构建环境
-- **编译器**：Visual Studio x64 MSVC 工具链；构建脚本自动初始化开发环境，单独打包需在 VS 开发人员终端执行。
+- **编译器**：Visual Studio x64 MSVC 工具链（推荐 VS 2022 / 18.10+，MSVC 14.51+）；构建脚本自动初始化开发环境，单独打包需在 VS 开发人员终端执行。
 - **包管理器**：Pixi。
   - `native` 环境（`-e native`）：剔除了所有 Qt 依赖的纯原生编译环境。
   - 默认环境（`default`）：保留供历史 Qt 基线使用。
 - **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）；首次下载 HarfBuzz 需要 PATH 中的 `7z` 或 `7zz`。
+
+### Linux 构建环境
+- **验证宿主**：Linux x86_64 (`ssh <linux-host>`, kernel 7.3, Pixi GCC 15.3, C++23) 及 Arch WSL2 x86_64。
+- **编译器**：Pixi GCC 15.3，采用 `-std=c++23`、`-O3`、`-fPIC`。
+- **构建工具**：xmake ≥ 3.1.1。
 
 ---
 
@@ -35,9 +40,15 @@ pixi run -e native python scripts/bootstrap.py --soundfont --harfbuzz
 
 ### 3.2 补丁应用与资源准备
 `scripts/prepare.py` 会执行以下幂等操作：
-1. 校验上游修订版本（revision）一致性。
-2. 幂等应用 `patches/native-platform.patch`。
-3. 根据 `resources.json` 将资源别名复制到 `.runtime/assets`。
+1. 校验上游修订版本（`upstream.lock.json` 与 Brotli 子模块）一致性。
+2. 依次幂等校验并应用以下 5 个经审阅的补丁集：
+   - `patches/native-platform.patch`
+   - `patches/native-imports.patch`
+   - `patches/native-edit.patch`
+   - `patches/native-archive.patch`
+   - `patches/native-fonts.patch`
+3. 使用临时 Git index 严格验证上游源码树完全等于固定提交加上述补丁集，严禁存在任何未跟踪或未授权修改。
+4. 根据 `resources.json` 将资源别名复制到 `.runtime/assets`。
 
 xmake 的生成目标在各自构建目录写入框架配置与工具定义；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。源码清单已提交，常规构建不运行 `capture_xmake_manifest.py`，也不读取 CMake 构建目录。
 
@@ -47,20 +58,19 @@ Windows 和 Linux 已验证长 UTF-8 schema 的完整传递、修改 schema 只�
 pixi run -e native python scripts/test_xmake_incremental.py --binary build/xmake-windows/musescore-mcp.exe --output artifacts/xmake-incremental
 ```
 
-该测试临时修改 `tools.json`，在 finally 中恢复原始字节并重新构建；不要与另一个构建或 schema 编辑同时运行。
-
 ---
 
 ## 4. Windows 原生构建流程
 
-使用原生脚本进行编译：
+使用原生包装脚本进行编译（禁止直接调用原始 xmake）：
 
 ```powershell
-./scripts/build-native.ps1 -Jobs 12
+pwsh -NoProfile -File notes/claude-scripts/build.ps1 musescore_mcp
 ```
+*(日常开发可使用 `./scripts/build-native.ps1 -Jobs 12`。)*
 
 ### 直接运行构建产物
-新构建产物位于 `build/xmake-windows/musescore-mcp.exe`。未经打包直接从构建目录启动时，必须传入资源的绝对路径：
+构建产物位于 `build/xmake-windows/musescore-mcp.exe`。未经打包直接从构建目录启动时，必须传入资源的绝对路径：
 
 ```powershell
 pixi run -e native build/xmake-windows/musescore-mcp.exe --resources "C:/path/to/musescore-mcp/.runtime/assets" --soundfont "C:/path/to/musescore-mcp/.runtime/soundfonts/FluidR3Mono_GM.sf3"
@@ -85,42 +95,39 @@ pixi run -e native python scripts/package_windows.py --no-qt --binary build/xmak
 打包产物已完成严格的洁净环境验证：
 - 运行时环境变量 `PATH` 仅保留 `C:\Windows\System32`。
 - 完全脱离桌面版 MuseScore 安装、Node.js、WASM、Python 及 Pixi 运行环境。
-- 前一 CMake 基线 Windows 验证包体积为 51,613,872 字节（包含 Conda 元数据）；新 xmake 记录见 `validation.md`。当前为本地验证包，公开分发所需的完整许可证与对应源码清单尚待整理。
+- 当前 xmake 产物通过全部 19 条测试道回归。
 
 ---
 
 ## 6. 历史 Qt 基线 (Legacy Baseline)
 
-Qt-free CMake 基线另外保留在 `scripts/build-cmake-native.ps1` 和 `scripts/build-cmake-native.sh`，输出仍为 `build/native-windows` / `build/native-linux`。
+根目录 `CMakeLists.txt` 是一个冻结的 Qt 时代 / C++20 历史基线。该文件**不构建**当前的 M6–M9 原生 C++23 宿主，仅作为早期迁移对照参考保留。
 
+- 历史 Qt-free CMake 脚本保留在 `scripts/build-cmake-native.ps1` 和 `scripts/build-cmake-native.sh`。
 - 仓库内保留的 `scripts/windows.ps1` 与 `prepare_native.py` 属于历史遗留脚本。
-- 其作用严格限于维护可执行的 Qt 原型基线用于对照验证，不属于当前的 Native 生产发布链路。
+- 其作用严格限于维护可执行的早期原型基线用于行为比对，严禁作为生产发布构建入口。
 
 ---
 
-## 7. Linux 原生构建
+## 7. Linux 原生构建与 Linux 验证
 
-CMake 基线与新 xmake 路径均已在 Arch WSL2 x86_64 验证。使用 Pixi 锁定的 GCC 15.3 / glibc 2.28 编译 sysroot，
-运行宿主为 glibc 2.44。宿主版本不等于已验证的最低运行版本。
+Linux 构建与验证现已常态化运行于 Linux x86_64 宿主机器（`ssh <linux-host>`，路径 `~/OSS/musescore-mcp`），同时也保留了早期的 Arch WSL2 x86_64 验证记录。宿主运行环境为 Linux kernel 7.3、Pixi GCC 15.3、C++23。
+
+### 7.1 构建与打包命令
 
 ```bash
 pixi install -e native --locked
 pixi run --locked -e native python scripts/bootstrap.py --soundfont --harfbuzz
+pixi run --locked -e native python scripts/prepare.py
 bash scripts/build-native.sh 8
 pixi run --locked -e native python scripts/package_linux.py --binary build/xmake-linux/musescore-mcp --output artifacts/linux-next
 ```
 
-新构建产物为 `build/xmake-linux/musescore-mcp`。打包器验证 ELF 解释器及 `ldd -r` 符号解析，
-要求所有非 glibc 共享库来自锁定环境，复制后设置相对 RUNPATH，拒绝 Qt 依赖。
-运行时资源根据 `/proc/self/exe` 定位；SoundFont 仍需通过 `--soundfont` 指定。
+- **构建产物**：`build/xmake-linux/musescore-mcp`。
+- **打包规格**：`package_linux.py` 提取 ELF 依赖并设置相对 RUNPATH，排除了所有 Qt 依赖。生成的打包目录包含 167 个文件，体积约为 94 MB。
+- **洁净运行验证**：在完全脱离开发环境 PATH 的纯净隔离环境下，运行打包二进制完整通过官方 SDK `mcp_smoke`（20 次创建/修改/导出循环及真实可听音频输出）。全部 19 条测试道在 Linux 宿主上 100% 通过（exit=0）。
 
-本次 WSL 的大 wheel 下载不稳定，测试包经 Windows 下载、按 pixi.lock SHA-256 校验后，
-用 uv 从本地 wheel 安装到独立 Linux native 环境。之后使用 `--no-install --locked`
-执行测试；构建入口也通过 `PIXI_NO_INSTALL=true bash scripts/build-native.sh 8` 验证。
-这是本次网络绕行记录，未修改锁定版本，运行包不含 Python。
-
-Windows 和 Linux 必须使用各自的源码/依赖目录；不要共用同一个 `.pixi/envs/native`。
-本次 Linux 工作副本位于 `/path/to/musescore-mcp-validation`，Windows 主库保持在 E 盘。
+Linux 使用显式 `gcc@` / `g++@` 工具类型识别 Pixi 的编译器，确保 xmake 正确继承 `-std=c++23`、`-O3` 与 `-fPIC` 参数。FluidSynth C 目标使用 GNU17 以保留上游 `alloca` 扩展；Windows 的该 C 目标仍为 C11。
 
 ---
 
@@ -130,7 +137,6 @@ Windows 和 Linux 必须使用各自的源码/依赖目录；不要共用同一�
 | :--- | :--- |
 | **乐谱渲染算法** | 完整保留原生排版、分行、跨小节与记谱逻辑。 |
 | **图像元素** | 暂不支持嵌入式光栅图及外部图片对象（images unsupported）。 |
-| **排版与文字** | 尚未实现完整的字体回退（font fallback）机制；不支持从右到左（RTL）书写文字。 |
+| **排版与文字** | 尚未实现完整的全字集回退（font fallback）；动态注册 Medium 字重字体不会替换 regular 已缓存的 fallback；不支持从右到左（RTL）书写文字。 |
 | **绘制模型** | 仅支持定义明确的纯色画刷（solid brushes）与指定混合模式，渐变/复杂贴图绘制受限。 |
-
-Linux 使用显式 `gcc@` / `g++@` 工具类型识别 Pixi 的长名称编译器，避免 xmake 探测丢失标准、优化及 PIC 参数。C++ 为 `-std=c++23`；FluidSynth C 目标使用 GNU17，以保留上游 NO_GLIB 分支的 alloca 扩展。Windows 的该 C 目标仍为 C11。
+| **音频流并发槽位** | 音频流与后台导出任务共享 2 个运行子进程槽位；2 个活动流会饿死后台导出。 |
