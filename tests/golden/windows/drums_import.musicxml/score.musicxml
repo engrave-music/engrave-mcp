@@ -355,7 +355,7 @@
         <instrument id="P1-I37"/>
         <voice>1</voice>
         <type>quarter</type>
-        <stem>down</stem>
+        <stem>up</stem>
         </note>
       <note default-x="125.69" default-y="-15">
         <unpitched>

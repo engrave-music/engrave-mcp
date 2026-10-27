@@ -220,7 +220,61 @@
     }
    ],
    [
-    5664,
+    5760,
+    {
+     "ch": 0,
+     "pitch": 64,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    7583,
+    {
+     "ch": 0,
+     "pitch": 64,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    7680,
+    {
+     "ch": 0,
+     "pitch": 65,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    9503,
+    {
+     "ch": 0,
+     "pitch": 65,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    9600,
+    {
+     "ch": 0,
+     "pitch": 67,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    11423,
+    {
+     "ch": 0,
+     "pitch": 67,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    11424,
     {
      "data": "",
      "metaType": 47,

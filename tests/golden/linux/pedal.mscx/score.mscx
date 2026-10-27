@@ -179,6 +179,8 @@
             </TimeSig>
           <Spanner type="Pedal">
             <Pedal>
+              <placement>above</placement>
+              <offset x="1.5" y="-2.5"/>
               <lineVisible>0</lineVisible>
               <continueTextPlace>auto</continueTextPlace>
               <endTextPlace>auto</endTextPlace>

@@ -550,7 +550,7 @@
           <Chord>
             <eid/>
             <durationType>quarter</durationType>
-            <StemDirection>up</StemDirection>
+            <StemDirection>down</StemDirection>
             <Note>
               <eid/>
               <pitch>63</pitch>
@@ -568,7 +568,7 @@
           <Chord>
             <eid/>
             <durationType>quarter</durationType>
-            <StemDirection>up</StemDirection>
+            <StemDirection>down</StemDirection>
             <Note>
               <eid/>
               <pitch>63</pitch>
@@ -680,7 +680,7 @@
             <eid/>
             <dots>1</dots>
             <durationType>quarter</durationType>
-            <StemDirection>up</StemDirection>
+            <StemDirection>down</StemDirection>
             <Note>
               <eid/>
               <pitch>63</pitch>
@@ -691,7 +691,7 @@
             <eid/>
             <BeamMode>no</BeamMode>
             <durationType>eighth</durationType>
-            <StemDirection>up</StemDirection>
+            <StemDirection>down</StemDirection>
             <Note>
               <eid/>
               <pitch>63</pitch>
@@ -701,7 +701,7 @@
           <Chord>
             <eid/>
             <durationType>quarter</durationType>
-            <StemDirection>up</StemDirection>
+            <StemDirection>down</StemDirection>
             <Note>
               <eid/>
               <pitch>63</pitch>
@@ -782,7 +782,7 @@
             <eid/>
             <dots>1</dots>
             <durationType>quarter</durationType>
-            <StemDirection>up</StemDirection>
+            <StemDirection>down</StemDirection>
             <Note>
               <eid/>
               <pitch>61</pitch>
@@ -793,7 +793,7 @@
             <eid/>
             <BeamMode>no</BeamMode>
             <durationType>eighth</durationType>
-            <StemDirection>up</StemDirection>
+            <StemDirection>down</StemDirection>
             <Note>
               <eid/>
               <pitch>61</pitch>
@@ -803,7 +803,7 @@
           <Chord>
             <eid/>
             <durationType>quarter</durationType>
-            <StemDirection>up</StemDirection>
+            <StemDirection>down</StemDirection>
             <Note>
               <eid/>
               <pitch>61</pitch>

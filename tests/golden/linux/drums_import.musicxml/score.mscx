@@ -346,7 +346,7 @@
           <Chord>
             <eid/>
             <durationType>quarter</durationType>
-            <StemDirection>down</StemDirection>
+            <StemDirection>up</StemDirection>
             <Note>
               <eid/>
               <pitch>36</pitch>
