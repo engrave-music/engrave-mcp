@@ -43,7 +43,7 @@ def main():
     while queue:
         binary = queue.pop()
         result = subprocess.run(["dumpbin", "/dependents", str(binary)], capture_output=True, check=True)
-        for name in re.findall(r"^\s+([A-Za-z0-9_.-]+\.dll)\s*$", result.stdout.decode("utf-8", errors="replace"), re.M):
+        for name in re.findall(r"^\s+([A-Za-z0-9_.-]+\.dll)\s*$", result.stdout.decode("utf-8", errors="replace"), re.M | re.I):
             key = name.lower()
             if args.no_qt and key.startswith(("qt5", "qt6")):
                 raise RuntimeError(f"Qt dependency found in Qt-free package: {name}")
