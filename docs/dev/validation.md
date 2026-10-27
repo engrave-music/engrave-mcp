@@ -293,4 +293,10 @@ the final packages passed the full position suite and direct flag-invariant prob
 - **M6（结构化核心）**：类型化 `MusicCore` 接口、区域读取快照（`score_query_region`）、原子音高编辑（`score_set_pitches`，支持 OCC 自动变基与重试去重）、明确的资源生命周期与错误码系统均已实现并执行验证。
 - **M7（webmscore 功能覆盖）**：已实现全格式输入（MSCZ/MSCX/MXL/MusicXML/MIDI/KAR/GP3–GP7/GPX/PTB，支持 base64 内存数据导入）、14 种导出格式（含 OGG/FLAC/MP3）、分谱系统（`score_generate_excerpts`/`score_list_excerpts` 及 `excerptId` 导出）、小节与片段几何映射（涵盖多小节休止 MMRest）、动态字体与音色库装载、`titleFilenameSafe` 等价字段、`metadata.tracks` 导出生效混音、局部混音 patch。剩余差异见 `webmscore-parity.md` 第 5 节（有意排除 doLayout=false、stdio base64 约 6 MiB 传输上限、音频保真度约束）。
 - **M8（音频能力）**：已实现分块流式合成（`score_audio_start`/`read`/`seek`，512 帧/块，精准秒级 seek 与取消）、多音轨混音（`score_audio_tracks`, `score_audio_get_mix`, `score_audio_set_mix`）、真实压缩音频编码（WAV/FLAC/OGG/MP3）。真实可听波形在两端执行验证。
-- **M9（并发与后台任务）**：三层执行边界架构（Engine owner 线程、I/O 调度上下文、隔离工作子进程）、乐观并发编辑与冲突检测、不可变版本快照投影、后台文件导出任务（`score_export_start`/`get`/`cancel`）与流式音频进程已完整实现并通过 review 修正（commit `1992ec1`：临时目录隔离防泄漏、所有者线程安全 join、单文档毒化隔离、`ok:false` 会话保活、输出路径互斥）。保留开放项：stdin EOF 退出清理、所有者线程耗时未基准测试（流式音频与导出已分离各 2 个独立 worker 槽位预算，voice-filter spanner 回归已覆盖）。
+- **M9（并发与后台任务）**：三层执行边界架构（Engine owner 线程、I/O 调度上下文、隔离工作子进程）、乐观并发编辑与冲突检测、不可变版本快照投影、后台文件导出任务（`score_export_start`/`get`/`cancel`）与流式音频进程已完整实现并通过 review 修正（commit `1992ec1`：临时目录隔离防泄漏、所有者线程安全 join、单文档毒化隔离、`ok:false` 会话保活、输出路径互斥）。后续最终 review 修正见 547d02f、bcce79（含 stdin EOF 带未完成请求时正常退出）。保留开放项：所有者线程耗时未基准测试（流式音频与导出已分离各 2 个独立 worker 槽位预算，voice-filter spanner 回归已覆盖）。
+
+### 4. 最终状态（2026-10-27，bcce79）
+
+- Windows（MSVC，xmake）与 Linux（Linux `linux-host`，GCC 15.3）在 `ebcce79` 均通过 20 条测试道（新增 `open_data`）。
+- Linux 重新打包为 167 个文件 / 94 MB，打包产物在洁净环境中通过 `mcp_smoke`（20 次循环与可听音频）。
+- 最终 review：Opus 5.5 与 Argon 独立审阅 `c5b5563..364544d`，确认的问题均已修正并回归（`547d02f`、`ebcce79`）。
