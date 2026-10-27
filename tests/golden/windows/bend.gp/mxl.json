@@ -1,0 +1,10 @@
+{
+ "entries": [
+  "META-INF/container.xml",
+  "score.xml"
+ ],
+ "musicxml": {
+  "name": "score.xml",
+  "sha256": "b818f31ca30285117b0f785c1343a7468967d000b05d93115af32dea9b8db3ad"
+ }
+}

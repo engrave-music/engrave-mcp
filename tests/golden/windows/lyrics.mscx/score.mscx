@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="4.70">
+  <Score>
+    <eid>eid-0</eid>
+    <Division>480</Division>
+    <showInvisible>1</showInvisible>
+    <showUnprintable>1</showUnprintable>
+    <showFrames>1</showFrames>
+    <showMargins>0</showMargins>
+    <metaTag name="arranger"></metaTag>
+    <metaTag name="composer"></metaTag>
+    <metaTag name="copyright"></metaTag>
+    <metaTag name="creationDate"></metaTag>
+    <metaTag name="lyricist"></metaTag>
+    <metaTag name="movementNumber"></metaTag>
+    <metaTag name="movementTitle"></metaTag>
+    <metaTag name="platform"></metaTag>
+    <metaTag name="source"></metaTag>
+    <metaTag name="translator"></metaTag>
+    <metaTag name="workNumber"></metaTag>
+    <metaTag name="workTitle"></metaTag>
+    <Part id="1">
+      <Staff>
+        <eid>eid-1</eid>
+        <StaffType group="pitched">
+          <name>stdNormal</name>
+          </StaffType>
+        </Staff>
+      <Staff>
+        <eid>eid-2</eid>
+        <StaffType group="pitched">
+          <name>stdNormal</name>
+          </StaffType>
+        <defaultClef>F</defaultClef>
+        </Staff>
+      <trackName>Piano</trackName>
+      <Instrument id="piano">
+        <shortName>Pno.</shortName>
+        <trackName>Piano</trackName>
+        <minPitchP>21</minPitchP>
+        <maxPitchP>108</maxPitchP>
+        <minPitchA>21</minPitchA>
+        <maxPitchA>108</maxPitchA>
+        <instrumentId>keyboard.piano</instrumentId>
+        <Articulation>
+          <velocity>100</velocity>
+          <gateTime>70</gateTime>
+          </Articulation>
+        <Articulation name="staccato">
+          <velocity>100</velocity>
+          <gateTime>40</gateTime>
+          </Articulation>
+        <Articulation name="tenuto">
+          <velocity>100</velocity>
+          <gateTime>100</gateTime>
+          </Articulation>
+        <Articulation name="sforzato">
+          <velocity>120</velocity>
+          <gateTime>100</gateTime>
+          </Articulation>
+        <Channel>
+          <program value="0"/>
+          <synti>Fluid</synti>
+          </Channel>
+        </Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure>
+        <eid>eid-3</eid>
+        <voice>
+          <TimeSig>
+            <eid>eid-4</eid>
+            <sigN>4</sigN>
+            <sigD>4</sigD>
+            </TimeSig>
+          <Chord>
+            <eid>eid-5</eid>
+            <durationType>whole</durationType>
+            <Lyrics>
+              <eid>eid-6</eid>
+              <text>12321</text>
+              </Lyrics>
+            <Note>
+              <eid>eid-7</eid>
+              <pitch>72</pitch>
+              <tpc>14</tpc>
+              </Note>
+            </Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <eid>eid-8</eid>
+        <voice>
+          <Chord>
+            <eid>eid-9</eid>
+            <durationType>whole</durationType>
+            <Lyrics>
+              <eid>eid-10</eid>
+              <text>12321</text>
+              </Lyrics>
+            <StemDirection>down</StemDirection>
+            <Note>
+              <eid>eid-11</eid>
+              <pitch>60</pitch>
+              <tpc>14</tpc>
+              </Note>
+            </Chord>
+          <BarLine>
+            <subtype>end</subtype>
+            <eid>eid-12</eid>
+            </BarLine>
+          </voice>
+        </Measure>
+      </Staff>
+    <Staff id="2">
+      <Measure>
+        <voice>
+          <TimeSig>
+            <eid>eid-13</eid>
+            <sigN>4</sigN>
+            <sigD>4</sigD>
+            </TimeSig>
+          <Chord>
+            <eid>eid-14</eid>
+            <durationType>whole</durationType>
+            <Lyrics>
+              <eid>eid-15</eid>
+              <text>12321</text>
+              </Lyrics>
+            <Note>
+              <eid>eid-16</eid>
+              <pitch>48</pitch>
+              <tpc>14</tpc>
+              </Note>
+            </Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Chord>
+            <eid>eid-17</eid>
+            <durationType>whole</durationType>
+            <Lyrics>
+              <eid>eid-18</eid>
+              <text>12321</text>
+              </Lyrics>
+            <StemDirection>up</StemDirection>
+            <Note>
+              <eid>eid-19</eid>
+              <pitch>60</pitch>
+              <tpc>14</tpc>
+              </Note>
+            </Chord>
+          <BarLine>
+            <subtype>end</subtype>
+            <eid>eid-20</eid>
+            </BarLine>
+          </voice>
+        </Measure>
+      </Staff>
+    </Score>
+  </museScore>

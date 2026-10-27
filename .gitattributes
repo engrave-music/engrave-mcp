@@ -1,2 +1,5 @@
 * text=auto eol=lf
 *.patch -whitespace
+fixtures/**/*.mid binary
+fixtures/**/*.gp binary
+fixtures/**/*.mscz binary
