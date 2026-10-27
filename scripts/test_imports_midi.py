@@ -98,7 +98,7 @@ async def run(args):
                     # entry to BestTrack.matchedLyricTimes for every note track matching a
                     # lyric onset, then inserts all of them into the single best track's
                     # staff. Both fixture tracks start a note on every lyric onset, so the
-                    # melody staff receives two copies of each syllable. Kept for webmscore
+                    # melody staff receives two copies of each syllable. Kept for vendor/musescore
                     # parity rather than diverging from the pinned import algorithm.
                     if karaoke: assert lyrics==[s for s in '你好世界' for _ in range(2)],lyrics
                     else: assert not lyrics,lyrics
@@ -163,5 +163,5 @@ if __name__=='__main__':
     p.add_argument('--binary',type=Path,required=True)
     p.add_argument('--resources',type=Path)
     p.add_argument('--output',type=Path,required=True)
-    p.add_argument('--upstream',type=Path,default=Path(__file__).resolve().parents[1]/'.upstream/webmscore')
+    p.add_argument('--upstream',type=Path,default=Path(__file__).resolve().parents[1]/'vendor/musescore')
     asyncio.run(run(p.parse_args()))

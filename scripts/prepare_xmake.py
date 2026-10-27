@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -47,11 +46,11 @@ def _find_native_root(project_root: Path) -> Path:
 def validate(project_root: Path, require_harfbuzz: bool) -> list[str]:
     errors: list[str] = []
     pin = json.loads((project_root / "upstream.lock.json").read_text(encoding="utf-8-sig"))
-    source_root = project_root / ".upstream" / "webmscore"
+    source_root = project_root / "vendor" / "musescore"
     native_root = _find_native_root(project_root)
 
     required_files = {
-        "pinned MuseScore checkout": source_root / "version.cmake",
+        "MuseScore submodule": source_root / "version.cmake",
         "MuseScore module selection": source_root / "src" / "framework" / "global" / "globalmodule.cpp",
         "framework config template": source_root
         / "src"
@@ -67,13 +66,6 @@ def validate(project_root: Path, require_harfbuzz: bool) -> list[str]:
     for label, path in required_files.items():
         if not path.is_file():
             errors.append(f"missing {label}: {path}")
-    revision = subprocess.run(
-        ["git", "-C", str(source_root), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=False,
-    )
-    if revision.returncode or revision.stdout.strip() != pin["revision"]:
-        errors.append("MuseScore HEAD does not match upstream.lock.json")
-
     harfbuzz_root = _find_harfbuzz(project_root)
     if harfbuzz_root is None:
         message = (
@@ -143,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
             manifest = capture.capture(
                 compile_commands.resolve(),
                 project_root,
-                (project_root / ".upstream" / "webmscore").resolve(),
+                (project_root / "vendor" / "musescore").resolve(),
                 harfbuzz_root,
             )
             capture.write_manifest(manifest, output)

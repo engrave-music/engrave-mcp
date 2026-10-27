@@ -64,7 +64,7 @@ def main():
         copy(soundfont, output / "soundfonts/FluidR3Mono_GM.sf3")
     licenses = output / "licenses"
     licenses.mkdir()
-    for source in (ROOT / ".upstream/webmscore").glob("LICENSE*"):
+    for source in (ROOT / "vendor/musescore").glob("LICENSE*"):
         if source.is_file(): shutil.copy2(source, licenses / source.name)
     for directory in (environment / "conda-meta",):
         # Package metadata contains license/provenance, not user environment credentials.

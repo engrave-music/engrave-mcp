@@ -1,8 +1,4 @@
 {
-  "repository": "https://github.com/partitioncloud/webmscore.git",
-  "tag": "webmscore-4.7.5-1",
-  "revision": "8ec6401a60deac5582403e6914595d12c384d9ae",
-  "sourceDirectory": ".upstream/webmscore",
   "harfbuzzDependency": {
     "repository": "https://github.com/musescore/muse_deps.git",
     "revision": "c9a299e19df04e40435d1c4649548c69ce152bd8",

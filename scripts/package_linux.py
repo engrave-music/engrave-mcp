@@ -231,7 +231,7 @@ def main():
     output = args.output.resolve()
     binary = (args.binary or ROOT / "build/native-linux/musescore-mcp").resolve()
     assets = (ROOT / ".runtime/assets").resolve()
-    upstream = ROOT / ".upstream/webmscore"
+    upstream = ROOT / "vendor/musescore"
 
     if output.is_relative_to(assets):
         raise SystemExit("Package output must not be inside .runtime/assets")

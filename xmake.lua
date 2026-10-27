@@ -4,7 +4,7 @@
 -- initially captured from the previous CMake baseline and is now maintained here.
 --
 -- Layout:
---   freetype / brotli / harfbuzz     bundled dependency libraries
+--   freetype / harfbuzz              bundled dependency libraries
 --   muse_global / muse_draw / muse_mpe / engraving / iex_musicxml
 --   native_fluidsynth / native_audio FluidSynth sessions and audio codecs
 --   noqt_support                     native filesystem/settings/font/MIDI adapters
@@ -18,7 +18,7 @@ set_xmakever("3.1.1")
 set_version("0.1.0")
 set_languages("cxx23")
 set_targetdir("$(builddir)")
-add_rules("mode.debug", "mode.release")
+add_rules("mode.debug", "mode.release", "mode.releasedbg")
 set_policy("package.install_locally", true)
 includes("xmake/packages/asio.lua")
 add_requires("asio 1.36.0", {system = false})
@@ -28,8 +28,17 @@ option("harfbuzz_root")
     set_showmenu(true)
     set_description("HarfBuzz source tree containing src/harfbuzz.cc")
 
+option("musescore_source")
+    set_default("")
+    set_showmenu(true)
+    set_description("MuseScore source tree (default: the vendor/musescore submodule)")
+
 local project_root = os.projectdir()
-local source_root = path.join(project_root, ".upstream", "webmscore")
+local source_root = get_config("musescore_source")
+if not source_root or source_root == "" then
+    source_root = path.join(project_root, "vendor", "musescore")
+end
+source_root = path.absolute(source_root, project_root)
 local manifest_path = path.join(project_root, "xmake", "manifest.lua")
 
 local function find_harfbuzz()
@@ -291,11 +300,6 @@ end
 -- Bundled dependencies
 -------------------------------------------------------------------------------
 
-target("brotli")
-    set_kind("static")
-    set_languages("c11")
-    add_manifest_target("brotli")
-
 target("freetype")
     set_kind("static")
     set_languages("c11")
@@ -305,13 +309,12 @@ target("freetype")
     else
         add_files(expand_list(freetype.unix_sources))
     end
-    add_defines("FT2_BUILD_LIBRARY", "FT_CONFIG_OPTION_USE_BROTLI")
+    add_defines("FT2_BUILD_LIBRARY")
     if not is_plat("windows") then
         -- FreeType's CMake build patches these into the generated unix
         -- ftconfig.h after check_include_file().
         add_defines("HAVE_UNISTD_H=1", "HAVE_FCNTL_H=1")
     end
-    add_deps("brotli")
     add_links("z", {public = true})
     set_warnings("none")
 
@@ -335,7 +338,7 @@ target("muse_global")
 
 target("muse_draw")
     set_kind("static")
-    add_deps("muse_generated", "muse_global", "harfbuzz", "freetype", "brotli")
+    add_deps("muse_generated", "muse_global", "harfbuzz", "freetype")
     add_manifest_target("muse_draw")
 
 target("muse_mpe")
@@ -377,7 +380,7 @@ target("native_audio")
 target("noqt_support")
     set_kind("static")
     add_deps("muse_generated", "muse_global", "muse_draw", "muse_mpe",
-        "engraving", "iex_musicxml", "harfbuzz", "freetype", "brotli")
+        "engraving", "iex_musicxml", "harfbuzz", "freetype")
     add_manifest_target("noqt_support")
     add_links("z", {public = true})
 

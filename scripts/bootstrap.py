@@ -1,4 +1,4 @@
-"""Bootstrap the pinned upstream checkout and optional SoundFont asset."""
+"""Bootstrap the pinned engine submodule and optional SoundFont asset."""
 import argparse
 import hashlib
 import json
@@ -10,6 +10,7 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+SUBMODULE = "vendor/musescore"
 SOUNDFONT = ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
 SOUNDFONT_URL = "https://cdn.jsdelivr.net/gh/musescore/MuseScore@2.1/share/sound/FluidR3Mono_GM.sf3"
 SOUNDFONT_SHA256 = "cfcd66d89e8386823400eca64934b14fbea7bf48ba1f00d21189af1262794ec2"
@@ -31,38 +32,23 @@ def digest(path):
     return value.hexdigest()
 
 
-def ensure_brotli(source):
-    relative = "thirdparty/brotli"
-    path = source / relative
-    status = query("git", "-C", str(source), "submodule", "status", "--", relative)
+def ensure_source():
+    path = ROOT / SUBMODULE
+    status = query("git", "-C", str(ROOT), "submodule", "status", "--", SUBMODULE)
     if not status:
-        raise RuntimeError(f"Missing submodule entry: {relative}")
+        raise RuntimeError(f"Missing submodule entry: {SUBMODULE}")
     if status[0] == "-":
         if path.exists() and (not path.is_dir() or any(path.iterdir())):
-            raise RuntimeError(f"{relative} is present but not an initialized submodule; refusing to overwrite")
-        run("git", "-C", str(source), "submodule", "update", "--init", "--", relative)
-        status = query("git", "-C", str(source), "submodule", "status", "--", relative)
+            raise RuntimeError(f"{SUBMODULE} is present but not an initialized submodule; refusing to overwrite")
+        run("git", "-C", str(ROOT), "submodule", "update", "--init", "--depth", "1", "--", SUBMODULE)
+        status = query("git", "-C", str(ROOT), "submodule", "status", "--", SUBMODULE)
     if not status or status[0] != " ":
-        raise RuntimeError(f"{relative} is modified or at a different commit; refusing to overwrite")
-
-
-def ensure_source():
-    pin = json.loads((ROOT / "upstream.lock.json").read_text(encoding="utf-8-sig"))
-    source = ROOT / pin["sourceDirectory"]
-    if not source.exists():
-        source.parent.mkdir(parents=True, exist_ok=True)
-        run("git", "clone", "--no-recurse-submodules", pin["repository"], str(source))
-        run("git", "-C", str(source), "checkout", "--detach", pin["revision"])
+        raise RuntimeError(f"{SUBMODULE} is modified or at a different commit; refusing to reset or overwrite")
     try:
-        revision = query("git", "-C", str(source), "rev-parse", "HEAD")
+        revision = query("git", "-C", str(path), "rev-parse", "HEAD")
     except subprocess.CalledProcessError as error:
-        raise RuntimeError(f"{source} is not a Git checkout") from error
-    if revision != pin["revision"]:
-        raise RuntimeError(
-            f"Upstream HEAD {revision} does not match {pin['revision']}; refusing to reset or overwrite"
-        )
-    ensure_brotli(source)
-    print(f"Upstream ready at {revision}")
+        raise RuntimeError(f"{path} is not a Git checkout") from error
+    print(f"Engine submodule ready at {revision}")
 
 
 def ensure_soundfont():
