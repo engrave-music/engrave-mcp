@@ -300,3 +300,28 @@ the final packages passed the full position suite and direct flag-invariant prob
 - Windows（MSVC，xmake）与 Linux（Linux `linux-host`，GCC 15.3）在 `ebcce79` 均通过 20 条测试道（新增 `open_data`）。
 - Linux 重新打包为 167 个文件 / 94 MB，打包产物在洁净环境中通过 `mcp_smoke`（20 次循环与可听音频）。
 - 最终 review：Opus 5.5 与 Argon 独立审阅 `c5b5563..364544d`，确认的问题均已修正并回归（`547d02f`、`ebcce79`）。
+
+## Roadmap step 0: golden baseline (2026-10-27)
+
+Tools: `scripts/golden.py` (capture/compare, allow-list `tests/golden/allow.json`)
+and `scripts/test_roundtrip.py`; inputs in `fixtures/golden/` (provenance in its
+README). Lanes `golden` and `roundtrip` added to both suite runners.
+
+- Executed, Windows (MSVC, engine code of `f8e7d26`): goldens captured into
+  `tests/golden/windows` (13 fixtures, 159 outputs, 1.49 MB); two captures
+  byte-identical; compare passes; a hand-edited golden fails with a diff; a
+  matching allow entry reports `allowed` and a non-matching one `stale` (exit 0).
+- Executed, Linux (GCC 15.3): `tests/golden/linux` captured twice,
+  byte-identical. 53 of 159 outputs differ from Windows (SVG/PNG/PDF float
+  formatting and WAV features), so goldens are per platform.
+- Executed: full suite, 22/22 lanes exit 0 on both hosts (tags `step0-win`,
+  `step0-linux`).
+- Round trip: 14 cases (create+edit, 12 imports, 1 excerpt). MSCZ round trips are
+  exact on the semantic MSCX model. MusicXML has baseline losses, pinned by
+  digest: grace-after notes return as grace-before notes (bend.gp,
+  linked_parts, slurs), an invisible `fff` is not exported (hairpins_and_repeats),
+  and the linked_parts tie on the moved grace note is lost on a second import.
+  `--self-test` (one dropped note) fails as intended.
+- Source-reviewed: `pedal.mscx` carries a user placement/offset override that
+  v4.7.5 drops on write; v4.7.6 (twrite Pedal fix) is expected to keep it.
+- Baseline tag: local tag `pre-fork-baseline` on `f8e7d26` (not pushed).

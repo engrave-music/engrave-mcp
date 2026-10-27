@@ -1,0 +1,21 @@
+{
+ "entries": [
+  {
+   "name": "META-INF/container.xml",
+   "size": 224
+  },
+  {
+   "name": "automation.json",
+   "size": 3
+  },
+  {
+   "name": "score.mscx",
+   "sha256": "1d442e5bcba3e91d70434bb503abe6e5afcb0443c6c868d1d8bf2044c68c5846"
+  },
+  {
+   "name": "score_style.mss",
+   "size": 103683
+  }
+ ],
+ "texts": {}
+}
