@@ -9,7 +9,7 @@
 //   - src/engraving/dom/excerpt.cpp, MasterScore::initExcerpt()
 //   - src/engraving/dom/masterscore.cpp, addExcerpt() and removeExcerpt()
 //   - web/score.cpp, MainScore::maybeUseExcerpt()
-// Upstream revision is recorded in upstream.lock.json.
+// The pinned engine revision is the vendor/musescore submodule (docs/dev/fork.md).
 //
 // These are private core helpers, not a public API. They take raw pointers to
 // document-owned objects and must be called on the MasterScore's owner thread.

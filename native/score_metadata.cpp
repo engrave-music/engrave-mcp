@@ -21,7 +21,7 @@
  */
 
 // Adapted for the Qt-free native host from
-// .upstream/webmscore/src/converter/internal/compat/notationmeta.cpp
+// webmscore-4.7.5-1 src/converter/internal/compat/notationmeta.cpp
 // (mu::converter::NotationMeta, Score* overload and helpers).
 //
 // The JSON field schema and the title/composer recognition heuristics are kept

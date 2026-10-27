@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Adapted from partitioncloud/webmscore web/importexport/positionjsonwriter.cpp.
-// Upstream revision is recorded in upstream.lock.json.
+// The pinned engine revision is the vendor/musescore submodule (docs/dev/fork.md).
 #pragma once
 
 #include <nlohmann/json.hpp>

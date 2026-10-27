@@ -21,6 +21,8 @@ int main(int argc, char** argv) {
             return muse::io::path_t(std::string(value.begin(), value.end()));
         };
         expect(bool(fs.readFile(":/test.txt").ret), "Resource read");
+        expect(bool(fs.readFile("://test.txt").ret), "Resource read with a doubled slash");
+        expect(!fs.readFile("://../outside.txt").ret, "Doubled-slash traversal rejected");
         expect(!fs.readFile(":/../outside.txt").ret, "Resource traversal rejected");
         expect(!fs.writeFile(":/test.txt", muse::ByteArray("bad", 3)), "Resource write rejected");
         expect(!fs.writeFile(asPath(root / "assets/test.txt"), muse::ByteArray("bad", 3)), "Absolute resource write rejected");

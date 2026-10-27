@@ -469,7 +469,9 @@ NativeFileSystem::Target NativeFileSystem::resolve(const io::path_t& path) const
                 return target;
             }
 
-            fs::path relative = pathFromUtf8(raw.substr(2));
+            // Qt cleans resource paths, so ":/" and "://" name the same root (fret.cpp uses "://data/...").
+            const std::size_t start = raw.find_first_not_of('/', 1);
+            fs::path relative = pathFromUtf8(start == std::string::npos ? std::string() : raw.substr(start));
             if (relative.is_absolute() || relative.has_root_name() || relative.has_root_directory()) {
                 return target;
             }

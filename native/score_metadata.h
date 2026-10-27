@@ -21,7 +21,7 @@
  */
 
 // Qt-free native adaptation of the Score* overload in
-// .upstream/webmscore/src/converter/internal/compat/notationmeta.cpp
+// webmscore-4.7.5-1 src/converter/internal/compat/notationmeta.cpp
 // (mu::converter::NotationMeta). The JSON field schema and the
 // title/composer recognition heuristics are preserved; QJson*/QString are
 // replaced by nlohmann::json and muse::String/std::string.

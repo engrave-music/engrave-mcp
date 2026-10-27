@@ -9,7 +9,7 @@
 //   - src/engraving/dom/excerpt.cpp, MasterScore::initExcerpt()
 //   - src/engraving/dom/masterscore.cpp, addExcerpt() and removeExcerpt()
 //   - web/score.cpp, MainScore::maybeUseExcerpt()
-// Upstream revision is recorded in upstream.lock.json.
+// The pinned engine revision is the vendor/musescore submodule (docs/dev/fork.md).
 //
 // This uses the upstream initialization routine without allocating a detached
 // AddExcerpt undo command, and owns each created excerpt until addExcerpt().

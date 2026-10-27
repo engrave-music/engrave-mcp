@@ -54,25 +54,33 @@ def read_asset(relative):
 
 def main():
     revision = verify_submodule()
+    import generate_resources  # same directory; resources.json must match the pinned qrc lists
+    if generate_resources.generate() != json.loads((ROOT / "resources.json").read_text(encoding="utf-8")):
+        raise RuntimeError("resources.json is out of date; run scripts/generate_resources.py")
     files = json.loads((ROOT / "resources.json").read_text(encoding="utf-8-sig"))
+    assets = ROOT / ".runtime/assets"
+    manifest_path = ROOT / ".runtime/assets-manifest.json"
+    previous = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
     manifest = {}
     for alias, relative in files.items():
         data = read_asset(relative)
         digest = hashlib.sha256(data).hexdigest()
-        target = ROOT / ".runtime/assets" / alias
+        target = assets / alias
         if not target.is_file() or target.read_bytes() != data:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
         manifest[alias] = {"source": relative, "sha256": digest}
-    # .runtime/assets is generated: drop files from earlier alias layouts so packages match resources.json.
-    assets = ROOT / ".runtime/assets"
-    for path in sorted(assets.rglob("*"), reverse=True):
-        relative = path.relative_to(assets).as_posix()
-        if path.is_file() and relative not in manifest:
-            path.unlink()
-        elif path.is_dir() and not any(path.iterdir()):
-            path.rmdir()
-    (ROOT / ".runtime/assets-manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    # Remove only files this script staged before (aliases dropped from resources.json);
+    # anything else under .runtime/assets is left alone.
+    for alias in sorted(set(previous) - set(manifest)):
+        stale = assets / alias
+        if stale.is_file() and not stale.is_symlink():
+            stale.unlink()
+            for parent in stale.parents:
+                if parent == assets or any(parent.iterdir()):
+                    break
+                parent.rmdir()
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"Verified vendor/musescore at {revision}; prepared {len(files)} native resources")
 
 
