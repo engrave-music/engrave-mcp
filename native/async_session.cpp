@@ -20,6 +20,7 @@
 #include <chrono>
 #include <deque>
 #include <map>
+#include <set>
 #include <limits>
 #include <random>
 #include <stdexcept>
@@ -107,6 +108,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         bool terminal() const { return state == "completed" || state == "failed" || state == "cancelled"; }
         void cleanup() noexcept {
             process.reset();
+            if (!destination.empty()) {
+                release_output_path(destination);
+                destination.clear();
+            }
             std::error_code ignored;
             // Both directories were created exclusively by this Job; never client-provided paths.
             if (!directory.empty()) std::filesystem::remove_all(directory, ignored);
@@ -120,6 +125,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         Json payload;
         std::string closed_document;
         bool invalidate_snapshots = false;
+        std::vector<std::string> invalidated_documents;
+        std::vector<std::string> poisoned_documents;
         std::vector<std::shared_ptr<const ScoreReadSnapshot>> snapshots;
         ExportData snapshot;
         RuntimeOptions runtime;
@@ -131,6 +138,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     std::jthread owner_thread;
     std::size_t owner_pending = 0;
     std::map<std::string, std::shared_ptr<const ScoreReadSnapshot>> read_snapshots;
+    std::set<std::string> poisoned_documents;
     std::size_t snapshot_bytes = 0;
     std::filesystem::path executable;
     std::thread::id owner = std::this_thread::get_id();
@@ -165,17 +173,16 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         initialized.get();
     }
     ~Impl() {
+        shutdown();
         for (auto& [_, job] : jobs) job->cleanup();
-        owner_work.reset();
-        if (owner_thread.joinable()) owner_thread.join();
     }
-    asio::awaitable<OwnerResult> on_owner(std::function<OwnerResult(Engine&)> function) {
+    asio::awaitable<OwnerResult> on_owner(std::function<OwnerResult(Engine&)> function, std::string target_document = "") {
         check_owner();
         if (owner_pending >= 64) throw CoreError(CoreError::Code::resource_limit, "Engine queue full (limit 64)");
         auto self = shared_from_this();
         auto token = asio::use_awaitable;
         co_return co_await asio::async_initiate<decltype(token), void(std::exception_ptr, OwnerResult)>(
-            [self, function = std::move(function)](auto handler) mutable {
+            [self, function = std::move(function), target_document = std::move(target_document)](auto handler) mutable {
                 auto executor = asio::get_associated_executor(handler);
                 auto work = asio::make_work_guard(executor);
                 auto state = std::make_shared<std::atomic<int>>(0); // 0 queued, 1 running, 2 cancelled
@@ -189,7 +196,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 ++self->owner_pending;
                 try {
                 asio::post(self->owner_io, [self, function = std::move(function), handler = std::move(handler),
-                                           executor, work = std::move(work), state, slot]() mutable {
+                                           executor, work = std::move(work), state, slot,
+                                           target_document = std::move(target_document)]() mutable {
                     OwnerResult result;
                     std::exception_ptr error;
                     try {
@@ -200,21 +208,44 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                             throw asio::system_error(asio::error::operation_aborted);
                         result = function(*self->owner_engine);
                     } catch (const CoreError& failure) {
-                        result.invalidate_snapshots = failure.code() == CoreError::Code::poisoned_document;
+                        if (failure.code() == CoreError::Code::poisoned_document) {
+                            if (!target_document.empty()) {
+                                result.poisoned_documents.push_back(target_document);
+                            } else {
+                                result.invalidate_snapshots = true;
+                            }
+                        }
                         error = std::current_exception();
                     } catch (...) { error = std::current_exception(); }
-                    asio::post(executor, [self, handler = std::move(handler), result = std::move(result), error,
+                    function = nullptr;
+                    asio::post(executor, [self = std::move(self), handler = std::move(handler), result = std::move(result), error,
                                            work = std::move(work), slot]() mutable {
                         if (slot.is_connected()) slot.clear();
                         --self->owner_pending;
                         try {
                             if (result.invalidate_snapshots) self->read_snapshots.clear();
-                            if (!result.closed_document.empty()) self->read_snapshots.erase(result.closed_document);
-                            for (auto& snapshot : result.snapshots)
-                                self->read_snapshots[document_id_to_string(snapshot->info.id)] = std::move(snapshot);
+                            for (const auto& doc : result.invalidated_documents) {
+                                self->read_snapshots.erase(doc);
+                            }
+                            for (const auto& doc : result.poisoned_documents) {
+                                self->read_snapshots.erase(doc);
+                                self->poisoned_documents.insert(doc);
+                            }
+                            if (!result.closed_document.empty()) {
+                                self->read_snapshots.erase(result.closed_document);
+                                self->poisoned_documents.erase(result.closed_document);
+                            }
+                            for (auto& snapshot : result.snapshots) {
+                                const auto doc_id = document_id_to_string(snapshot->info.id);
+                                try {
+                                    self->poisoned_documents.erase(doc_id);
+                                    self->read_snapshots[doc_id] = std::move(snapshot);
+                                } catch (...) {
+                                    self->read_snapshots.erase(doc_id);
+                                }
+                            }
                         } catch (...) {
                             // Cache publication cannot invalidate an already committed operation.
-                            self->read_snapshots.clear();
                         }
                         handler(error, std::move(result));
                     });
@@ -286,6 +317,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             if (raw_path.filename().empty() || !std::filesystem::is_directory(raw_path.parent_path()))
                 throw std::invalid_argument("Export parent directory must exist");
             destination = std::filesystem::canonical(raw_path.parent_path()) / raw_path.filename();
+            if (is_output_path_reserved(destination))
+                throw ToolCallError("busy", "Another job owns this export destination");
             for (const auto& [_, job] : jobs)
                 if (!job->terminal() && !job->stream && same_output_path(job->destination, destination))
                     throw ToolCallError("busy", "Another job owns this export destination");
@@ -300,6 +333,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         job->format = *format;
         job->stream = stream;
         job->destination = destination;
+        // Reserved only once the job owns the path, so Job::cleanup always releases it.
+        if (!destination.empty()) reserve_output_path(destination);
         prune();
         jobs.emplace(job->id, job);
         order.push_back(job->id);
@@ -310,6 +345,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             if (!stream) job->staging_directory = private_directory(destination.parent_path());
             const auto directory = job->directory;
             const auto staging_directory = job->staging_directory;
+            const auto target_doc = document_id_to_string(document);
             auto captured = co_await on_owner([document, args = std::move(args), directory, staging_directory,
                                               format = *format, options, stream, start](Engine& engine) {
                 const auto info = engine.core().describe(document);
@@ -329,8 +365,12 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 write_atomic(directory / "snapshot.mscz", result.snapshot.bytes);
                 ExportWorkerRequest request{directory / "snapshot.mscz", staging_directory / "output",
                                             directory / "result.json", result.runtime, format, options};
+                request.cache_directory = directory / "runtime-cache";
                 request.stream = stream;
                 request.start_seconds = start;
+                if (!is_audio_format(format) && !stream) {
+                    request.runtime.soundfont.clear();
+                }
                 if (stream) request.output_path = directory / "unused-output";
                 if (is_audio_format(format)) {
                     request.mix = engine.core().audio_mix(document, options.excerpt_id).mix;
@@ -339,16 +379,24 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 write_atomic(directory / "request.json", worker_request_json(request).dump());
                 result.snapshot.bytes.clear();
                 return result;
-            });
-            if (closing || job->cancel_requested) throw std::runtime_error("Session is shutting down");
+            }, target_doc);
+            if (closing) throw std::runtime_error("Session is shutting down");
+            if (job->cancel_requested) throw ToolCallError("cancelled", "Job was cancelled");
             const auto size = captured.snapshot_size;
             snapshot_bytes -= job->captured_bytes - size;
             job->captured_bytes = size;
             job->revision = captured.snapshot.revision;
             job->state = "queued";
             co_return job;
+        } catch (const asio::system_error& error) {
+            const bool aborted = error.code() == asio::error::operation_aborted;
+            job->state = (closing || job->cancel_requested || aborted) ? "cancelled" : "failed";
+            if (aborted && job->error.empty()) job->error = "Capture aborted";
+            release(job);
+            if (aborted) throw ToolCallError("cancelled", "Job capture was aborted");
+            throw;
         } catch (...) {
-            job->state = closing || job->cancel_requested ? "cancelled" : "failed";
+            job->state = (closing || job->cancel_requested) ? "cancelled" : "failed";
             release(job);
             throw;
         }
@@ -392,7 +440,12 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             }
             if (job->cancel_requested || closing) job->state = "cancelled";
             else if (job->stream) {
-                throw std::runtime_error("Audio worker exited before cancellation");
+                if (*status == 0 && (std::chrono::steady_clock::now() - job->last_activity >= std::chrono::seconds(120))) {
+                    job->state = "cancelled";
+                    if (job->error.empty()) job->error = "Audio session idle timeout";
+                } else {
+                    throw std::runtime_error("Audio worker exited before cancellation");
+                }
             } else {
                 const auto result = Json::parse(read_bounded_file(job->directory / "result.json", 64 * 1024));
                 if (*status != 0 || !result.value("ok", false))
@@ -424,7 +477,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         if (!job->stream) throw std::invalid_argument("Job is not an audio session");
         if (job->terminal() || job->cancel_requested) throw ToolCallError("not_found", "Audio session has ended");
         if (job->command_busy) throw ToolCallError("busy", "Audio session already has a pending command");
-        if (job->state == "queued") throw ToolCallError("busy", "Audio session is waiting for a worker slot");
+        if (job->state != "running") throw ToolCallError("busy", job->state == "queued"
+            ? "Audio session is waiting for a worker slot" : "Audio session is preparing");
         Json command;
         if (name == "score_audio_read") {
             const auto count = args.value("batchSize", Json(1));
@@ -433,7 +487,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             command = {{"operation", "read"}, {"batchSize", count}};
         } else {
             if (!args.contains("seconds")) throw std::invalid_argument("seconds is required");
-            command = {{"operation", "seek"}, {"seconds", finite_seconds(args.at("seconds"))}};
+            if (!args.at("seconds").is_number()) throw std::invalid_argument("seconds must be numeric");
+            const auto sec = args.at("seconds").get<double>();
+            if (!std::isfinite(sec)) throw std::invalid_argument("seconds must be finite");
+            command = {{"operation", "seek"}, {"seconds", sec}};
         }
         job->command_busy = true;
         struct CommandGuard {
@@ -443,6 +500,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         const auto executor = co_await asio::this_coro::executor;
         asio::steady_timer timer(executor);
         const auto directory = job->directory;
+        bool worker_error = false;
+        std::string worker_error_message;
         try {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
             while (!job->ready) {
@@ -460,7 +519,11 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     std::filesystem::remove(directory / "reply.json");
                     if (reply.at("sequence").get<std::uint64_t>() != job->sequence)
                         throw std::runtime_error("Audio worker sequence mismatch");
-                    if (!reply.value("ok", false)) throw ToolCallError("engine_failure", reply.value("error", "Audio command failed"));
+                    if (!reply.value("ok", false)) {
+                        worker_error = true;
+                        worker_error_message = reply.value("error", "Audio command failed");
+                        break;
+                    }
                     reply.erase("version"); reply.erase("ok"); reply.erase("sequence");
                     reply["jobId"] = job->id;
                     reply["revision"] = job->revision.value;
@@ -475,6 +538,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             // Abandoning a command invalidates its sequence; kill only this owned child.
             cancel(job);
             throw;
+        }
+        if (worker_error) {
+            throw ToolCallError("engine_failure", worker_error_message);
         }
     }
     void launch(asio::any_io_executor executor) {
@@ -499,19 +565,34 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         }
     }
     void shutdown() noexcept {
+        bool expected = false;
+        if (!owner_closing.compare_exchange_strong(expected, true)) {
+            if (owner_thread.joinable() && std::this_thread::get_id() != owner_thread.get_id()) {
+                owner_thread.join();
+            }
+            return;
+        }
         closing = true;
-        owner_closing.store(true, std::memory_order_release);
         for (const auto& [_, job] : jobs) {
             try { cancel(job); }
             catch (...) { job->cancel_requested = true; }
+        }
+        owner_work.reset();
+        if (owner_thread.joinable() && std::this_thread::get_id() != owner_thread.get_id()) {
+            owner_thread.join();
         }
     }
 };
 
 AsyncSession::AsyncSession(RuntimeOptions options, std::filesystem::path executable)
     : impl_(std::make_shared<Impl>(std::move(options), std::move(executable))) {}
-AsyncSession::~AsyncSession() { shutdown(); }
-void AsyncSession::shutdown() noexcept { impl_->shutdown(); }
+AsyncSession::~AsyncSession() {
+    shutdown();
+    impl_.reset();
+}
+void AsyncSession::shutdown() noexcept {
+    if (impl_) impl_->shutdown();
+}
 asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json arguments) {
     auto self = impl_;
     self->check_owner();
@@ -524,17 +605,40 @@ asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json argume
     if (name == "test_owner_state")
         co_return Json{{"busy", self->test_owner_busy.load(std::memory_order_acquire)}};
     if (name == "test_owner_sleep") {
-        auto result = co_await self->on_owner([self](Engine&) {
-            self->test_owner_busy.store(true, std::memory_order_release);
+        auto result = co_await self->on_owner([&busy = self->test_owner_busy](Engine&) {
+            busy.store(true, std::memory_order_release);
             std::this_thread::sleep_for(std::chrono::seconds(2));
-            self->test_owner_busy.store(false, std::memory_order_release);
+            busy.store(false, std::memory_order_release);
             Impl::OwnerResult result;
             result.payload = {{"sleptMs", 2000}};
             return result;
         });
         co_return result.payload;
     }
+    if (name == "test_poison_document") {
+        only_keys(arguments, {"documentId"});
+        const auto id_str = text_arg(arguments, "documentId");
+        const auto id = document_id_from_string(id_str);
+        auto result = co_await self->on_owner([id, id_str](Engine& engine) {
+            engine.core().poison_document_for_testing(id);
+            Impl::OwnerResult result;
+            result.poisoned_documents.push_back(id_str);
+            result.payload = {{"poisoned", true}};
+            return result;
+        }, id_str);
+        co_return result.payload;
+    }
 #endif
+    if (name == "score_export") {
+        if (arguments.contains("path") && arguments.at("path").is_string()) {
+            const auto raw_path = std::filesystem::absolute(std::filesystem::u8path(text_arg(arguments, "path")));
+            if (!raw_path.filename().empty() && std::filesystem::is_directory(raw_path.parent_path())) {
+                const auto destination = std::filesystem::canonical(raw_path.parent_path()) / raw_path.filename();
+                if (is_output_path_reserved(destination))
+                    throw ToolCallError("busy", "Another job owns this export destination");
+            }
+        }
+    }
     if (name == "score_export_start" || name == "score_audio_start") {
         auto job = co_await self->create(std::move(arguments), name == "score_audio_start");
         self->launch(executor);
@@ -551,6 +655,8 @@ asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json argume
     if (name == "score_query_region") {
         only_keys(arguments, {"documentId", "partIndex", "firstMeasure", "measureCount", "voice"});
         const auto id = text_arg(arguments, "documentId");
+        if (self->poisoned_documents.contains(id))
+            throw CoreError(CoreError::Code::poisoned_document, "Document projection is poisoned");
         const auto found = self->read_snapshots.find(id);
         if (found == self->read_snapshots.end())
             throw CoreError(CoreError::Code::not_found, "No published score projection for document");
@@ -597,10 +703,19 @@ asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json argume
         // A projection failure must not turn an already committed edit into a reported failure.
         for (const auto id : refresh) {
             try { result.snapshots.push_back(engine.core().read_snapshot(id)); }
-            catch (...) { result.invalidate_snapshots = true; }
+            catch (const CoreError& failure) {
+                const auto doc_str = document_id_to_string(id);
+                if (failure.code() == CoreError::Code::poisoned_document) {
+                    result.poisoned_documents.push_back(doc_str);
+                } else {
+                    result.invalidated_documents.push_back(doc_str);
+                }
+            } catch (...) {
+                result.invalidated_documents.push_back(document_id_to_string(id));
+            }
         }
         return result;
-    });
+    }, context_document);
     co_return std::move(result.payload);
     } catch (const CoreError& error) {
         Json details = Json::object();

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cerrno>
 #include <fstream>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -286,6 +287,34 @@ bool same_output_path(const std::filesystem::path& first, const std::filesystem:
 #else
     return first.lexically_normal() == second.lexically_normal();
 #endif
+}
+
+namespace {
+std::mutex s_reserved_mutex;
+std::vector<std::filesystem::path> s_reserved_paths;
+}
+
+void reserve_output_path(const std::filesystem::path& path) {
+    if (path.empty()) return;
+    std::lock_guard lock(s_reserved_mutex);
+    s_reserved_paths.push_back(path);
+}
+
+void release_output_path(const std::filesystem::path& path) {
+    if (path.empty()) return;
+    std::lock_guard lock(s_reserved_mutex);
+    auto it = std::find_if(s_reserved_paths.begin(), s_reserved_paths.end(),
+        [&path](const auto& p) { return same_output_path(p, path); });
+    if (it != s_reserved_paths.end()) s_reserved_paths.erase(it);
+}
+
+bool is_output_path_reserved(const std::filesystem::path& path) {
+    if (path.empty()) return false;
+    std::lock_guard lock(s_reserved_mutex);
+    for (const auto& reserved : s_reserved_paths) {
+        if (same_output_path(reserved, path)) return true;
+    }
+    return false;
 }
 void publish_job_output(const std::filesystem::path& staged, const std::filesystem::path& destination) {
 #ifdef _WIN32

@@ -911,6 +911,10 @@ MusicCore::MusicCore(const RuntimeOptions& options) : impl_(std::make_unique<Imp
             }
         }
         normalized.font_paths.clear();
+        if (!options.cache_directory.empty()) {
+            normalized.cache_directory = path_utf8(std::filesystem::absolute(std::filesystem::u8path(options.cache_directory)));
+            set_runtime_cache_root(normalized.cache_directory);
+        }
 
         impl_->options = std::move(normalized);
         impl_->soundfont = impl_->options.soundfont;
@@ -1210,6 +1214,12 @@ RuntimeFontInfo MusicCore::add_font(const std::string& path) {
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
     }
+}
+
+void MusicCore::poison_document_for_testing(DocumentId id) {
+    impl_->check_owner();
+    auto& doc = impl_->find(id);
+    doc.poisoned = true;
 }
 
 } // namespace music

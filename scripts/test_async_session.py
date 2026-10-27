@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+import tempfile
 import time
 from test_export_options import canonical_notes, bar
 
@@ -80,6 +81,8 @@ class Client:
 async def run(args):
     out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
     evidence={'binary':str(args.binary.resolve())}
+    temp_dir = Path(tempfile.gettempdir())
+    initial_runtime_fonts = set(temp_dir.glob("musescore-runtime-fonts-*"))
     async with Client(args.binary,args.resources,args.soundfont,out) as client:
         score={'title':'Concurrent test','tempo':120,'parts':[
             {'name':'Melody','midiProgram':1,'measures':[bar(60,62,64,65) for _ in range(8)]},
@@ -141,6 +144,22 @@ async def run(args):
             assert (await stall)['sleptMs']==2000
             evidence['busy_owner_query_status_cancel_ms']=elapsed
             evidence['queued_request_cancel']=True
+            # Per-document cache invalidation regression check:
+            doc_a = (await client.tool('score_create', {'score': score}))['documentId']
+            doc_b = (await client.tool('score_create', {'score': score}))['documentId']
+            reg_a = await client.tool('score_query_region', {'documentId': doc_a, 'partIndex': 0, 'firstMeasure': 0, 'measureCount': 1})
+            reg_b = await client.tool('score_query_region', {'documentId': doc_b, 'partIndex': 0, 'firstMeasure': 0, 'measureCount': 1})
+            assert reg_a['notes'] and reg_b['notes']
+            await client.tool('test_poison_document', {'documentId': doc_a})
+            poison_res = await client.tool('score_query_region', {'documentId': doc_a, 'partIndex': 0, 'firstMeasure': 0, 'measureCount': 1}, error=True)
+            assert poison_res.get('structuredContent', {}).get('error', {}).get('code') == 'poisoned_document', poison_res
+            reg_b_after = await client.tool('score_query_region', {'documentId': doc_b, 'partIndex': 0, 'firstMeasure': 0, 'measureCount': 1})
+            assert reg_b_after['notes'] == reg_b['notes']
+            await client.tool('score_close', {'documentId': doc_a})
+            closed_res = await client.tool('score_query_region', {'documentId': doc_a, 'partIndex': 0, 'firstMeasure': 0, 'measureCount': 1}, error=True)
+            assert closed_res.get('structuredContent', {}).get('error', {}).get('code') == 'not_found'
+            await client.tool('score_close', {'documentId': doc_b})
+            evidence['per_document_poison_invalidation'] = True
         # Captured work survives live document close.
         closing=await client.tool('score_export_start',{'documentId':doc,'format':'musicxml','path':str(out/'closed.musicxml')})
         await client.tool('score_close',{'documentId':doc})
@@ -165,6 +184,12 @@ async def run(args):
             await client.tool('score_audio_seek',{'jobId':stream['jobId'],'seconds':0})
             again=await client.tool('score_audio_read',{'jobId':stream['jobId']})
             assert again['chunks'][0]['startTime']==0
+            # Verify ok:false seek keeps the session alive
+            bad_seek = await client.tool('score_audio_seek', {'jobId': stream['jobId'], 'seconds': -5}, error=True)
+            assert bad_seek.get('isError')
+            post_seek_chunks = await client.tool('score_audio_read', {'jobId': stream['jobId']})
+            assert post_seek_chunks['chunks']
+            evidence['stream_ok_false_seek_kept_alive'] = True
             await client.tool('score_close',{'documentId':audio_doc})
             assert (await client.tool('score_audio_read',{'jobId':stream['jobId']}))['chunks']
             await client.tool('score_job_cancel',{'jobId':stream['jobId']})
@@ -177,6 +202,10 @@ async def run(args):
                 for p in range(8)]}
             opened=await client.tool('score_create',{'score':large}); doc=opened['documentId']
             first=await client.tool('score_export_start',{'documentId':doc,'format':'wav','path':str(out/'cancel-first.wav')})
+            busy_sync = await client.tool('score_export', {'documentId': doc, 'format': 'wav', 'path': str(out/'cancel-first.wav')}, error=True)
+            assert busy_sync.get('isError')
+            assert busy_sync.get('structuredContent', {}).get('error', {}).get('code') in ('busy', 'conflict')
+            evidence['sync_export_destination_reservation_rejected'] = True
             second=await client.tool('score_export_start',{'documentId':doc,'format':'wav','path':str(out/'cancel-second.wav')})
             queued_path=out/'queued.musicxml';queued_path.write_bytes(b'preserved')
             queued=await client.tool('score_export_start',{'documentId':doc,'format':'musicxml','path':str(queued_path)})
@@ -197,6 +226,9 @@ async def run(args):
             await client.tool('score_export_start',{'documentId':doc,'format':'wav','path':str(out/'shutdown.wav')})
     assert not (out/'shutdown.wav').exists()
     assert not list(out.glob('.musescore-job-*'))
+    leaked_runtime_fonts = set(temp_dir.glob("musescore-runtime-fonts-*")) - initial_runtime_fonts
+    assert not leaked_runtime_fonts, f"Leaked worker runtime cache dirs in temp: {leaked_runtime_fonts}"
+    evidence['no_leaked_runtime_fonts'] = True
     evidence['status']='passed'
     (out/'evidence.json').write_text(json.dumps(evidence,indent=2),encoding='utf-8')
     print(json.dumps({k:v for k,v in evidence.items() if k!='ping_samples_ms'}))

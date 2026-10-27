@@ -24,6 +24,10 @@ struct RuntimeFontInfo {
 // Later install/add/list and draw-engine calls must come from that owner thread.
 void install_runtime_font_services();
 
+// Sets a custom parent directory where the runtime cache directory will be created.
+// Must be called before font/soundfont caches are created. Empty resets to default.
+void set_runtime_cache_root(const std::string& path);
+
 // Owner-thread final shutdown, after scores and background jobs have been
 // destroyed. Releases cached faces; retained files survive outstanding leases.
 // Upstream references may keep the registered service objects alive afterwards.

@@ -7,6 +7,9 @@
 
 namespace music {
 bool same_output_path(const std::filesystem::path& first, const std::filesystem::path& second);
+void reserve_output_path(const std::filesystem::path& path);
+void release_output_path(const std::filesystem::path& path);
+bool is_output_path_reserved(const std::filesystem::path& path);
 
 [[nodiscard]] std::filesystem::path current_executable_path();
 std::uint64_t current_process_id() noexcept;

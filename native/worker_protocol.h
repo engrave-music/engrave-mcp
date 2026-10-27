@@ -13,6 +13,7 @@ struct ExportWorkerRequest {
     RuntimeOptions runtime;
     ExportFormat format;
     ExportOptions options;
+    std::filesystem::path cache_directory;
     AudioMix mix;
     bool has_mix = false;
     bool stream = false;

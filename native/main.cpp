@@ -32,6 +32,11 @@ int main(int argc, char** argv) {
                              {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
             tools.push_back({{"name", "test_owner_sleep"}, {"description", "Test-only owner-thread stall"},
                              {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
+            tools.push_back({{"name", "test_poison_document"}, {"description", "Test-only poison document"},
+                             {"inputSchema", {{"type", "object"},
+                                              {"properties", {{"documentId", {{"type", "string"}}}}},
+                                              {"required", {"documentId"}},
+                                              {"additionalProperties", false}}}});
 #endif
             return tools;
         },

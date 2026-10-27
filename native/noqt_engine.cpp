@@ -1,6 +1,7 @@
 #include "engine.h"
 #include "music_core.h"
 #include "atomic_file.h"
+#include "background_job.h"
 
 #include <algorithm>
 #include <cctype>
@@ -635,6 +636,9 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         boolean_option("exportRPNs", options.midi_export_rpns,
                        format == ExportFormat::Midi || format == ExportFormat::Wav
                        || format == ExportFormat::Flac || format == ExportFormat::Ogg || format == ExportFormat::Mp3);
+
+        if (is_output_path_reserved(path))
+            throw CoreError(CoreError::Code::conflict, "Export destination is reserved by an active background job");
 
         const auto data = impl_->core->export_bytes(id, format, options);
         if (data.bytes.empty()) throw std::runtime_error("Exporter returned no data");

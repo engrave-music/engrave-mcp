@@ -90,6 +90,8 @@ struct RuntimeOptions {
     std::string soundfont;
     // Reserved for follow-up font discovery; initially empty.
     std::vector<std::string> font_paths;
+    // Optional cache directory for runtime assets (e.g. soundfont/font cache).
+    std::string cache_directory;
 };
 
 struct Note {
@@ -261,6 +263,7 @@ public:
     RuntimeOptions runtime_options() const;
     RuntimeSoundFontInfo set_soundfont(const std::string& path);
     RuntimeFontInfo add_font(const std::string& path);
+    void poison_document_for_testing(DocumentId id);
 
 private:
     struct Impl;

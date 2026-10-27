@@ -66,6 +66,8 @@ std::filesystem::path pathFromUtf8(const std::string& text)
 #endif
 }
 
+std::filesystem::path s_customCacheRoot;
+
 class CacheStore
 {
 public:
@@ -75,7 +77,9 @@ public:
     {
         if (m_owned) return;
         std::error_code error;
-        const std::filesystem::path base = std::filesystem::temp_directory_path(error);
+        const std::filesystem::path base = !s_customCacheRoot.empty()
+            ? s_customCacheRoot
+            : std::filesystem::temp_directory_path(error);
         if (error || base.empty()) {
             throw std::runtime_error("Failed to resolve the temporary directory for runtime fonts");
         }
@@ -617,6 +621,17 @@ void install_runtime_font_services()
     }
 }
 
+void set_runtime_cache_root(const std::string& path)
+{
+    if (!path.empty()) {
+        s_customCacheRoot = pathFromUtf8(path);
+        std::error_code error;
+        std::filesystem::create_directories(s_customCacheRoot, error);
+    } else {
+        s_customCacheRoot.clear();
+    }
+}
+
 void shutdown_runtime_assets()
 {
     if (s_shutdown) return;
@@ -628,6 +643,7 @@ void shutdown_runtime_assets()
     s_database->cacheStore()->shutdown();
     s_retainedFonts.clear();
     s_retainedSoundFonts.clear();
+    s_customCacheRoot.clear();
     s_shutdown = true;
     s_installed = false;
 }

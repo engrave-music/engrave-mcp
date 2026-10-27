@@ -66,7 +66,7 @@ void serve_audio_commands(AudioSession& session, const std::filesystem::path& di
     const auto command_path = directory / "command.json", reply_path = directory / "reply.json";
     for (;;) {
         if (!std::filesystem::exists(command_path)) {
-            if (std::chrono::steady_clock::now() - idle_since > std::chrono::seconds(120)) return;
+            if (std::chrono::steady_clock::now() - idle_since > std::chrono::seconds(150)) return;
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;
         }
@@ -187,6 +187,7 @@ Json worker_request_json(const ExportWorkerRequest& request) {
             {"output", path_utf8(request.output_path)}, {"result", path_utf8(request.result_path)},
             {"resources", request.runtime.resources_path}, {"soundfont", request.runtime.soundfont},
             {"format", format_name(request.format)}, {"options", std::move(options)}, {"fonts", request.runtime.font_paths}, {"stream", request.stream}, {"startTime", request.start_seconds}};
+    if (!request.cache_directory.empty()) result["cacheDirectory"] = path_utf8(request.cache_directory);
     if (request.has_mix) result["mix"] = mix_json(request.mix);
     return result;
 }
@@ -210,8 +211,16 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
         const auto format = export_format_from_name(string_field(request, "format"));
         if (!format) throw std::invalid_argument("Unsupported worker export format");
         const auto options = parse_export_options(request.at("options"), *format);
-        RuntimeOptions runtime{path_utf8(absolute_field(request, "resources")), request.at("soundfont").get<std::string>()};
+        const bool stream = request.value("stream", false);
+        RuntimeOptions runtime{path_utf8(absolute_field(request, "resources")),
+                               (is_audio_format(*format) || stream) ? request.at("soundfont").get<std::string>() : std::string{}};
         runtime.font_paths = request.at("fonts").get<std::vector<std::string>>();
+        if (request.contains("cacheDirectory")) {
+            const auto cache_dir = absolute_field(request, "cacheDirectory");
+            if (cache_dir.parent_path() != request_path.parent_path() && cache_dir != request_path.parent_path())
+                throw std::invalid_argument("Worker cache directory must be in its request directory");
+            runtime.cache_directory = path_utf8(cache_dir);
+        }
         MusicCore core(runtime);
         const auto score = core.open(read_bounded_file(snapshot, snapshot_limit), InputFormat::Mscz);
         if (request.contains("mix")) core.set_audio_mix(score.id, parse_mix(request.at("mix")), options.excerpt_id);
