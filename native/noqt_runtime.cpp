@@ -85,7 +85,7 @@ void initialize_native_runtime(const std::string& assets) {
     static bool initialized = false;
     if (initialized) throw std::runtime_error("Only one engine instance per process is supported");
     const auto root = std::filesystem::u8path(assets);
-    if (!std::filesystem::is_regular_file(root / "instruments.xml"))
+    if (!std::filesystem::is_regular_file(root / "engraving/instruments/instruments.xml"))
         throw std::invalid_argument("Missing native resources: " + assets);
     // Once IoC mutation begins, a failed initialization cannot safely be retried.
     initialized = true;
@@ -104,7 +104,7 @@ void initialize_native_runtime(const std::string& assets) {
     auto xml = std::make_shared<iex::musicxml::MusicXmlConfiguration>();
     modularity::globalIoc()->registerExport<iex::musicxml::IMusicXmlConfiguration>("native", xml);
     xml->init();
-    engraving::loadInstrumentTemplates(":/instruments.xml");
+    engraving::loadInstrumentTemplates(":/engraving/instruments/instruments.xml");
 }
 
 ScoreProject load_native_score(const std::string& input, const std::string& format) {

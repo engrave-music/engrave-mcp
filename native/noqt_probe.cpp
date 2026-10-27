@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
         auto xml = std::make_shared<iex::musicxml::MusicXmlConfiguration>();
         modularity::globalIoc()->registerExport<iex::musicxml::IMusicXmlConfiguration>("native", xml);
         xml->init();
-        engraving::loadInstrumentTemplates(":/instruments.xml");
+        engraving::loadInstrumentTemplates(":/engraving/instruments/instruments.xml");
         auto project = engraving::EngravingProject::create(modularity::globalCtx());
         auto input = fs->readFile(argv[2]);
         if (!input.ret) throw std::runtime_error(input.ret.toString());
