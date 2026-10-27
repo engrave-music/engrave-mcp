@@ -301,27 +301,40 @@ the final packages passed the full position suite and direct flag-invariant prob
 - Linux 重新打包为 167 个文件 / 94 MB，打包产物在洁净环境中通过 `mcp_smoke`（20 次循环与可听音频）。
 - 最终 review：Opus 5.5 与 Argon 独立审阅 `c5b5563..364544d`，确认的问题均已修正并回归（`547d02f`、`ebcce79`）。
 
-## Roadmap step 0: golden baseline (2026-10-27)
+## Roadmap step 0: golden baseline (2026-10-27/28)
 
-Tools: `scripts/golden.py` (capture/compare, allow-list `tests/golden/allow.json`)
+Tools: `scripts/golden.py` (capture/compare/pin; allow-list `tests/golden/allow.json`)
 and `scripts/test_roundtrip.py`; inputs in `fixtures/golden/` (provenance in its
-README). Lanes `golden` and `roundtrip` added to both suite runners.
+README). Lanes `golden` and `roundtrip` added to both suite runners. Baseline tag:
+local `pre-fork-baseline` on `f8e7d26` (not pushed).
 
-- Executed, Windows (MSVC, engine code of `f8e7d26`): goldens captured into
-  `tests/golden/windows` (13 fixtures, 159 outputs, 1.49 MB); two captures
-  byte-identical; compare passes; a hand-edited golden fails with a diff; a
-  matching allow entry reports `allowed` and a non-matching one `stale` (exit 0).
+Allow-list contract: an entry names fixture/output globs, the roadmap step, the
+reason, the kind (`different`/`missing`/`extra`) and, except for `missing`, the
+sha256 of the accepted actual output per platform. A different hash fails, so
+an entry cannot absorb unrelated changes. `golden.py pin` prints skeletons for
+reviewed differences.
+
+- Executed, Windows (MSVC, engine code of `f8e7d26`): `tests/golden/windows`,
+  15 fixtures, 186 outputs, 1.97 MB; two captures byte-identical; compare passes;
+  a hand-edited golden fails and prints its hash; a pinned entry passes; a
+  wrong pin fails; an unmatched entry is reported stale.
 - Executed, Linux (GCC 15.3): `tests/golden/linux` captured twice,
-  byte-identical. 53 of 159 outputs differ from Windows (SVG/PNG/PDF float
-  formatting and WAV features), so goldens are per platform.
-- Executed: full suite, 22/22 lanes exit 0 on both hosts (tags `step0-win`,
-  `step0-linux`).
-- Round trip: 14 cases (create+edit, 12 imports, 1 excerpt). MSCZ round trips are
-  exact on the semantic MSCX model. MusicXML has baseline losses, pinned by
-  digest: grace-after notes return as grace-before notes (bend.gp,
-  linked_parts, slurs), an invisible `fff` is not exported (hairpins_and_repeats),
-  and the linked_parts tie on the moved grace note is lost on a second import.
-  `--self-test` (one dropped note) fails as intended.
+  byte-identical. Outputs with float formatting (SVG/PNG/PDF) and WAV features
+  differ from Windows, so goldens are per platform.
+- Executed: full suite, 22/22 lanes exit 0 on both hosts (`step0c-win`,
+  `step0c-linux`).
+- Round trip, 16 cases (create+edit, 14 imports, 1 excerpt), identical digests on
+  both hosts. MSCZ round trips are exact on the semantic model and, except for
+  two pinned cases, on normalized MSCX text. Baseline losses (pinned by digest,
+  evidence in the script): MusicXML has no grace-after notes (bend.gp,
+  linked_parts, slurs); an invisible `fff` is not exported; layout_elements
+  harmony moves to staff 1 and a hairpin text becomes `mf`; the linked_parts tie
+  on the moved grace note is lost on a second import; the drums title gains
+  `<size>24</size>`.
+- Known host defect (executed, baseline): exporting an excerpt as MSCZ drops the
+  excerpt's `<Style><spatium>`, instrument `<name>` and `<linkedTo>` links, so a
+  reopened excerpt lays out with the default spatium.
 - Source-reviewed: `pedal.mscx` carries a user placement/offset override that
   v4.7.5 drops on write; v4.7.6 (twrite Pedal fix) is expected to keep it.
-- Baseline tag: local tag `pre-fork-baseline` on `f8e7d26` (not pushed).
+- Not exercised: v4.7.6's corrupted-measure flagging (check.cpp) is not visible
+  through any current output; no fixture triggers it.
