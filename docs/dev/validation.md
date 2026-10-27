@@ -338,3 +338,42 @@ reviewed differences.
   v4.7.5 drops on write; v4.7.6 (twrite Pedal fix) is expected to keep it.
 - Not exercised: v4.7.6's corrupted-measure flagging (check.cpp) is not visible
   through any current output; no fixture triggers it.
+
+## Roadmap step 1: MuseScore fork submodule (2026-10-28)
+
+Pin: `vendor/musescore` = Locietta/MuseScore `mcp/v4.7.5`, tag `mcp-4.7.5-1`
+(`e70fdef0`), ledger in fork.md. Commits `4303f71` (submodule, webmscore's trimmed
+font metadata kept in-repo), `67bced6` (qrc-generated resources), `e14e09d`
+(packaging fix).
+
+- Executed, Windows: fork tree with the old staged resources reproduced all 159
+  then-current goldens; after the submodule switch 186/186 identical; after the
+  qrc resources (full font metadata, orders.xml, string tunings, chord files)
+  still 186/186 identical. The roadmap expected layout changes from the full
+  metadata; they do not occur for these fixtures. The trimmed files lacked only
+  glyphBBoxes, glyphAdvanceWidths, ligatures, optionalGlyphs and sets.
+- Executed, Linux: `4303f71` and `67bced6`, 22/22 lanes each, goldens identical.
+- Executed: full suite 22/22 on both hosts after each commit. `async_session`
+  failed once in four Windows runs at `score_audio_seek` with "Cannot open
+  worker file" (worker_protocol.cpp read of a stream result file); not
+  reproduced in three reruns or on Linux. That code is removed in step 4.
+- Executed, packaging: Windows 147 files, 61 MB, mcp_smoke passes with
+  PATH=System32 only (needed `e14e09d`: dumpbin reports `libmp3lame.DLL` in
+  upper case). Linux 181 files, 94 MB, mcp_smoke passes under `env -i`.
+- Executed, clean clone + bootstrap (git clone of the branch,
+  `bootstrap.py --soundfont --harfbuzz`, prepare, build, mcp_smoke, golden
+  compare): Linux passes. linux-host cannot reach raw.githubusercontent.com (TLS
+  EOF), so `.upstream/harfbuzz` was seeded from the existing checkout; the
+  submodule and SoundFont were fetched by the clean run. Windows passes too
+  (HarfBuzz, submodule and SoundFont downloaded by bootstrap); xmake's aria2
+  download of the Asio archive failed the TLS handshake with GitHub twice
+  (curl reached the URL), so the project-local, SHA-pinned Asio cache was seeded.
+- Compiled and executed: dropped webmscore deltas (bbox shim, PrintStackTrace,
+  profiler/ret tweaks, brotli, renamed font/resource paths). Kept temporarily:
+  the IApplication version suppression (without it MSCX/MusicXML writers
+  dereference null; reproduced with a symbolized `releasedbg` build).
+- Not shown by goldens: no compiled code reads orders.xml or
+  string_tunings_presets.json (only the uncompiled notation module does), and
+  the fixtures use no ligatures, optional glyphs or stylistic sets.
+- Review fix (executed in noqt_support_test): `://` resource paths (fret.cpp's
+  harmony_to_diagram.xml) now resolve like `:/`; before, they were rejected.

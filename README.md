@@ -50,13 +50,13 @@
 ```powershell
 # 1. 安装锁定依赖
 pixi install -e native --locked
-pixi run -e native python scripts/bootstrap.py --soundfont
+pixi run -e native python scripts/bootstrap.py --soundfont --harfbuzz
 
-# 2. 编译（构建脚本自动应用 patch 并校验 upstream.lock.json）
+# 2. 编译（构建脚本自动校验 vendor/musescore 子模块并准备运行时资源）
 ./scripts/build-native.ps1 -Jobs 12
 
 # 3. 运行冒烟与传输测试（需 pixi 环境）
-$env:MUSIC_MCP_BINARY = "$PWD/build/native-windows/musescore-mcp.exe"
+$env:MUSIC_MCP_BINARY = "$PWD/build/xmake-windows/musescore-mcp.exe"
 $env:MUSIC_MCP_RESOURCES = "$PWD/.runtime/assets"
 pixi run -e native python scripts/mcp_smoke.py
 pixi run -e native python scripts/test_transport.py $env:MUSIC_MCP_BINARY
@@ -112,6 +112,6 @@ pixi run -e native python scripts/package_windows.py --no-qt --output artifacts/
 
 - **忽略目录**：`build/`、`.upstream/`、`.runtime/`、`artifacts/`、`notes/`。
 - **持久化文档**：设计决策与规范归档于 `docs/dev/`。
-- **上游基线**：锁定自 `partitioncloud/webmscore`（Tag `webmscore-4.7.5-1`，Commit `8ec6401a60deac5582403e6914595d12c384d9ae`）。检出版本信息由 `upstream.lock.json` 固化。
+- **上游基线**：以 Git 子模块 `vendor/musescore` 形式引入 Fork 仓库（https://github.com/Locietta/MuseScore ，分支 `mcp/v4.7.5`，Tag `mcp-4.7.5-1`，Commit `e70fdef0`），包含 MuseScore v4.7.5 官方发布及适配所需的专题提交（详见 `docs/dev/fork.md`）。HarfBuzz 依赖版本由 `upstream.lock.json` 固化。
 
 

@@ -22,13 +22,13 @@ Rules:
 | --- | --- | --- |
 | `40ca8e33` | engraving: EngravingConfiguration builds without Qt and UI (NO_QT_SUPPORT branches; Qt builds unchanged) | our patch + webmscore header |
 | `699f3142` | mpe: articulation profiles read with muse JSON instead of QJson | our patch |
-| `35706a70` | midi: Qt-free MIDI export and MidiFile | our patch |
+| `35706a70` | midi: Qt-free MIDI export and MidiFile (also in Qt builds: truncated headers throw "unexpected EOF", write failures are reported) | our patch |
 | `b53201e7` | midi: Qt-free MIDI import | our patch |
 | `12139a10` | guitarpro: import fixes (GPX nesting, bounds, PTB) and Qt-free build | our patch |
 | `244d9969` | global: harden ZIP container parsing and read-only seek | our patch |
 | `9894398d` | draw: select the requested face from TrueType collections | our patch |
 | `78760f6d` | engraving: `UndoStack::clearHistory` | our patch |
-| `66894604` | build: missing includes, default-constructible `RenderingContext`, `ushort` | our patch |
+| `66894604` | build: missing includes, `RenderingContext` aggregate again (brace-init in buildRenderingCtx), `unsigned short` for `ushort` | our patch |
 | `e70fdef0` | TEMPORARY: no `IApplication` version query in MSCX/MusicXML writers | webmscore; to be reverted in roadmap step 3 |
 
 Dropped from webmscore (source-reviewed, then compiled and executed without them):
@@ -37,5 +37,10 @@ public `Ret::m_data`, `mpemodule` comments, `__EMSCRIPTEN__` guards, renamed fon
 and resource paths (`/fonts/*.woff2`, `:/mpe/*`, `FinaleMaestroText-Regular.otf`),
 the brotli submodule with `FT_CONFIG_OPTION_USE_BROTLI`, and every hunk in files the
 native build does not compile (CMake, web/, audio module, notation, playback, project).
+
+Only the tip is built natively (the native build needs every topic); intermediate
+commits are not built on their own, and no Qt build of the fork is run.
+`.gitmodules` records `branch = mcp/v4.7.5` so `git submodule update --remote`
+stays on the pinned line.
 
 Evidence for this pin is in validation.md ("Roadmap step 1").
