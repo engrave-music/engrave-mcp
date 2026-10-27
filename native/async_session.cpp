@@ -145,13 +145,16 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     std::map<std::string, std::shared_ptr<Job>> jobs;
     std::deque<std::string> order;
     std::uint64_t serial = 0;
-    std::size_t running = 0;
+    std::size_t running_streams = 0, running_exports = 0;
     bool closing = false;
     std::atomic<bool> owner_closing{false};
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     std::atomic<bool> test_owner_busy{false};
 #endif
-    static constexpr std::size_t max_running = 2, max_active = 16, max_retained = 64;
+    // Streams live for the whole audio session, so exporting shares the active
+    // job cap but has its own worker budget rather than starving behind them.
+    static constexpr std::size_t max_running_streams = 2, max_running_exports = 2,
+                                 max_active = 16, max_retained = 64;
 
     Impl(RuntimeOptions options, std::filesystem::path executable) : executable(std::move(executable)) {
         std::promise<void> ready;
@@ -467,7 +470,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             if (job->state == "failed") job->error = "Unknown export worker failure";
         }
         release(job);
-        --running;
+        if (job->stream) --running_streams;
+        else --running_exports;
         launch(executor);
     }
     asio::awaitable<Json> audio_command(const std::string& name, Json args) {
@@ -546,18 +550,26 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     void launch(asio::any_io_executor executor) {
         if (closing) return;
         for (const auto& id : order) {
-            if (running >= max_running) break;
             auto job = jobs.at(id);
             if (job->state != "queued") continue;
+            // A full stream budget must not hold back queued exports, and vice versa.
+            if (job->stream ? running_streams >= max_running_streams
+                            : running_exports >= max_running_exports) {
+                continue;
+            }
             try {
                 job->process = std::make_unique<WorkerProcess>(executable, job->directory / "request.json", job->directory / "worker.log");
                 job->state = "running";
                 job->last_activity = std::chrono::steady_clock::now();
-                ++running;
+                if (job->stream) ++running_streams;
+                else ++running_exports;
                 auto self = shared_from_this();
                 asio::co_spawn(executor, [self, job]() -> asio::awaitable<void> { co_await self->monitor(job); }, asio::detached);
             } catch (const std::exception& error) {
-                if (job->state == "running") --running;
+                if (job->state == "running") {
+                    if (job->stream) --running_streams;
+                    else --running_exports;
+                }
                 job->state = "failed";
                 job->error = std::string(error.what()).substr(0, 2048);
                 release(job);

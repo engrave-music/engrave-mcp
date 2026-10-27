@@ -197,6 +197,20 @@ async def run(args):
             ended=await client.tool('score_audio_read',{'jobId':stream['jobId']},error=True)
             assert ended['structuredContent']['error']['code']=='not_found'
             evidence.update(stream_snapshot_mix=True,stream_read_seek=True,stream_survives_close=True)
+            # Streams own a separate worker budget: two open sessions must not
+            # leave an export queued behind them.
+            streams_doc=(await client.tool('score_create',{'score':score}))['documentId']
+            first_stream=await client.tool('score_audio_start',{'documentId':streams_doc})
+            second_stream=await client.tool('score_audio_start',{'documentId':streams_doc})
+            export=await client.tool('score_export_start',{'documentId':streams_doc,'format':'musicxml',
+                                                           'path':str(out/'streams-export.musicxml')})
+            assert (await client.terminal(export))['state']=='completed'
+            for session in (first_stream,second_stream):
+                assert (await client.tool('score_job_get',{'jobId':session['jobId']}))['state']=='running'
+                await client.tool('score_job_cancel',{'jobId':session['jobId']})
+                assert (await client.terminal(session))['state']=='cancelled'
+            await client.tool('score_close',{'documentId':streams_doc})
+            evidence['export_with_two_streams']=True
             large={'title':'Background audio','tempo':60,'parts':[
                 {'name':f'Part {p}','midiProgram':1+p,'measures':[bar(48+p,52+p,55+p,60+p) for _ in range(128)]}
                 for p in range(8)]}

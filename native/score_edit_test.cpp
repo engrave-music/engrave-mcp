@@ -162,6 +162,42 @@ const char* kVoiceSpannerScore = R"xml(<score-partwise version="4.0">
   </part>
 </score-partwise>)xml";
 
+// Measure 1 carries voice 1 (MuseScore voice 0) notes plus a slur fully
+// contained in it in MusicXML voice 2 (MuseScore voice 1). A second voice-2
+// slur crosses into measure 2, so a measure-1 voice-1 window cuts it.
+const char* kVoiceFilterScore = R"xml(<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Voice filter</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration>
+        <voice>2</voice><type>half</type>
+        <notations><slur type="start" number="1"/></notations></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration>
+        <voice>2</voice><type>half</type>
+        <notations><slur type="stop" number="1"/><slur type="start" number="2"/></notations></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><type>whole</type></note>
+      <backup><duration>4</duration></backup>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>4</duration>
+        <voice>2</voice><type>whole</type>
+        <notations><slur type="stop" number="2"/></notations></note>
+    </measure>
+  </part>
+</score-partwise>)xml";
+
 const char* kTwoPartScore = R"xml(<score-partwise version="4.0">
   <part-list>
     <score-part id="P1"><part-name>Piano</part-name></score-part>
@@ -577,6 +613,34 @@ int main(int argc, char** argv)
         expect(music::query_score_projection(voice_projection, make_region(0, 2, 1, 1))
                    .has_cross_region_spanners,
                "Projection lost the matching-voice cross-region slur");
+
+        // A contained slur in another voice is outside a voice-0 window, while
+        // a voice-1 window that cuts the voice-1 slur across the barline must
+        // report it. Both live and projected region queries share this filter.
+        const auto filter_project = music::load_native_score(kVoiceFilterScore, "musicxml");
+        auto* filter_score = filter_project->masterScore();
+        expect(!music::query_score_region(filter_score, make_region(0, 0, 1, 0))
+                    .has_cross_region_spanners,
+               "Voice-0 region reported a voice-1 spanner as cross-region");
+        const auto filter_projection = music::snapshot_score_projection(filter_score);
+        expect(filter_projection.complete, "Voice filter projection was unavailable");
+        size_t voice_filter_slurs = 0;
+        for (const auto& span : filter_projection.spans) {
+            if (!span.tie && span.start.voice && *span.start.voice == 1
+                && span.end.voice && *span.end.voice == 1) {
+                ++voice_filter_slurs;
+            }
+        }
+        expect(voice_filter_slurs == 2, "Voice filter fixture did not import both slurs");
+        expect(!music::query_score_projection(filter_projection, make_region(0, 0, 1, 0))
+                    .has_cross_region_spanners,
+               "Voice-0 projection reported a voice-1 spanner as cross-region");
+        expect(music::query_score_region(filter_score, make_region(0, 0, 1, 1))
+                   .has_cross_region_spanners,
+               "Voice-1 region lost the cross-measure slur");
+        expect(music::query_score_projection(filter_projection, make_region(0, 0, 1, 1))
+                   .has_cross_region_spanners,
+               "Voice-1 projection lost the cross-measure slur");
 
         std::cout << "Native pitch query/edit tests passed: stable EIDs, transposing "
                      "spelling, undo/redo, all-or-nothing validation and MusicXML round-trip\n";
