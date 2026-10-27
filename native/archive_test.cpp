@@ -26,7 +26,7 @@ int main(int argc, char** argv)
         output.write(extracted.constChar(), static_cast<std::streamsize>(extracted.size()));
         output.close();
         if (!output) throw std::runtime_error("Cannot write extracted test result");
-        std::cout << nlohmann::json{{"exists",exists},{"error",error},{"size",extracted.size()}}.dump() << '\n';
+        std::cout << nlohmann::json{{"exists",exists},{"error",error},{"size",extracted.size()},{"buffer_size",buffer.size()}}.dump() << '\n';
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

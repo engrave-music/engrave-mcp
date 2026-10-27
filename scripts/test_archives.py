@@ -103,6 +103,29 @@ def cases():
         "descriptor-flag-mismatch": archive(data, local_flags=8),
         "unsupported-central-version": archive(data, central_version=45),
         "unsupported-local-version": archive(data, local_version=45),
+        "one-byte": b"P",
+        "two-bytes": b"PK",
+        "three-bytes": b"PK\x03",
+        "truncated-signature": b"PK\x03\x04" + b"\x00" * 10,
+        "huge-dir-start-offset": struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 0, 0, 0, 0x7FFFFFFF, 0),
+        "huge-dir-start-offset-ffffffff": struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 0, 0, 0, 0xFFFFFFFF, 0),
+        "dir-offset-size-beyond-eod": struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 1, 1, 100, 0, 0),
+        "truncated-central-header": struct.pack("<IHHHHHHIIIHHHHHII", 0x02014B50, 20, 20, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0)[:20]
+                                    + struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 1, 1, 20, 0, 0),
+        "truncated-central-directory-entries": struct.pack("<IHHHHHHIIIHHHHHII", 0x02014B50, 20, 20, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0)
+                                               + b"payload"
+                                               + struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 2, 2, 53, 0, 0),
+        "truncated-central-filename": struct.pack("<IHHHHHHIIIHHHHHII", 0x02014B50, 20, 20, 0, 0, 0, 0, 0, 0, 0, 50, 0, 0, 0, 0, 0, 0)
+                                      + b"payl"
+                                      + struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 1, 1, 50, 0, 0),
+        "aggregate-uncompressed-cap": (
+            b"".join(
+                struct.pack("<IHHHHHHIIIHHHHHII", 0x02014B50, 20, 20, 0, 0, 0, 0, 0, 0, 60 * 1024 * 1024, len(f"e{i}"), 0, 0, 0, 0, 0, 0)
+                + f"e{i}".encode("ascii")
+                for i in range(5)
+            )
+            + struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 5, 5, (46 + 2) * 5, 0, 0)
+        ),
     }
     return valid, invalid
 
@@ -119,12 +142,16 @@ def run_probe(binary, out):
         (out/f"{name}.stderr.log").write_text(run.stderr, encoding="utf-8")
         assert run.returncode == 0, (name, run.returncode, run.stderr)
         response = json.loads(run.stdout.strip().splitlines()[-1])
-        assert response["exists"], (name, response)
         if expected is None:
             assert response["error"] and response["size"] == 0 and result.read_bytes() == b"", (name, response)
-            report["rejected"].append({"name":name,"seconds":round(time.monotonic()-started,4)})
+            assert response.get("buffer_size", len(packed)) == len(packed), (name, response)
+            elapsed = time.monotonic() - started
+            assert elapsed < 1.0, (name, elapsed)
+            report["rejected"].append({"name":name,"seconds":round(elapsed,4),"buffer_size":response.get("buffer_size", len(packed))})
         else:
+            assert response["exists"], (name, response)
             assert not response["error"] and result.read_bytes() == expected, (name, response)
+            assert response.get("buffer_size", len(packed)) == len(packed), (name, response)
             with zipfile.ZipFile(io.BytesIO(packed)) as check:
                 assert check.read("payload") == expected
             report["valid"].append(name)
