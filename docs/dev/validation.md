@@ -384,15 +384,24 @@ Pin `mcp-4.7.6-1` (`30387998`); range-diff identical (fork.md). Executed on Wind
 and Linux: build, 22/22 lanes, round trip 16/16 with the same loss digests.
 Golden differences, 23 per platform, all reviewed and pinned by hash in
 `tests/golden/allow.json` (step "2 (v4.7.6)"):
-- `pedal.mscx`: MSCX now writes the Pedal's user `placement`/`offset` (twrite fix).
+- `pedal.mscx`: MSCX now writes the Pedal's user `placement`/`offset` (twrite fix,
+  aef1934ee / PR #34917); the round trip keeps the override.
   Rendering was already correct; only the written file changes.
 - `repeat70.mscx`: playback now continues into the open volta after the
-  exhausted repeats (MIDI notes at ticks 5760/7680/9600, duration 2 s -> 4 s,
-  positions and audio follow) (repeatlist fix).
+  exhausted repeats (MIDI notes at ticks 5760/7680/9600; metadata duration 2 -> 4,
+  rounded, actual 1.8 s -> 3.6 s; positions and audio follow) (repeatlist fix,
+  upstream 6257400c2 + 97bc1a916; order 1;2;1;3;4;5 as in repeat_tests.cpp).
 - `drums_import.musicxml`: one chord's stem `down` -> `up`, the same line upstream
-  changed in testImportDrums_ref.mscx (MusicXML percussion import).
+  changed in testImportDrums_ref.mscx (MusicXML percussion import, e76569a8a).
 - `perc_stem_dir.musicxml`: 8 stems flip; all 16 stem directions equal upstream's
   testInferredPercStemDir_ref.mscx.
-Expected but not observed: the corrupted-measure flag (check.cpp) and the
-part-visibility fix are not exercised by any fixture or output (the latter is an
-edit-time toggle in the notation module, which is not compiled).
+Not visible through the host (source-reviewed): check.cpp's corrupted-measure flag
+(setupMasterScore ignores the sanity result, isCorruptedUponLoading is never read,
+and printing mode skips the overlay); Score::undoChangeVisible (edit.cpp, compiled,
+but no host tool calls it); noteentry addPitch; sig.cpp tickValues callers;
+chordarticulationsrenderer (only PlaybackModel, used from step 5).
+Reachable but not yet covered (follow-up fixtures added after step 3): other
+repeatlist volta cases (repeat71/72 and the full repeat_data set), ChordLine path
+copy into generated parts, parenthesis/tab-grace crash fixes on pre-4.6 MSCX,
+MusicXML named percussion noteheads, Pedal textSizeIsSpatiumDependent.
+Linux evidence: suite logs on linux-host (notes/claude-tests/step2-linux, not in git).
