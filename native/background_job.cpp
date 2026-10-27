@@ -289,6 +289,20 @@ bool same_output_path(const std::filesystem::path& first, const std::filesystem:
 #endif
 }
 
+std::filesystem::path normalize_output_path(const std::filesystem::path& path) {
+    if (path.empty()) throw std::invalid_argument("Export path is required");
+    const auto filename = path.filename();
+    if (filename.empty() || filename == "." || filename == "..")
+        throw std::invalid_argument("Export path must name a file");
+    std::error_code error;
+    if (std::filesystem::exists(path, error) && !error)
+        return std::filesystem::canonical(path);
+    const auto absolute = std::filesystem::absolute(path);
+    if (!std::filesystem::is_directory(absolute.parent_path(), error) || error)
+        throw std::invalid_argument("Export parent directory must exist");
+    return std::filesystem::canonical(absolute.parent_path()) / absolute.filename();
+}
+
 namespace {
 std::mutex s_reserved_mutex;
 std::vector<std::filesystem::path> s_reserved_paths;

@@ -20,7 +20,8 @@ def raw_deflate(data):
     return encoder.compress(data) + encoder.flush()
 
 
-def archive(data=b"archive fixture\n", *, method=8, descriptor=False, descriptor_signature=True, **changes):
+def archive(data=b"archive fixture\n", *, method=8, descriptor=False, descriptor_signature=True,
+            comment=b"", this_disk=0, directory_disk=0, entries_this_disk=None, **changes):
     """Two entries ensure a damaged second local header still reaches fileData()."""
     entries = []
     local_bytes = bytearray()
@@ -33,6 +34,7 @@ def archive(data=b"archive fixture\n", *, method=8, descriptor=False, descriptor
             "signature": 0x04034B50, "version": 20, "flags": flags,
             "method": current_method, "crc": crc, "compressed_size": len(compressed),
             "uncompressed_size": len(payload), "name_length": len(name), "extra_length": 0,
+            "disk_start": 0,
         }
         local = dict(values)
         if flags & 8:
@@ -59,15 +61,22 @@ def archive(data=b"archive fixture\n", *, method=8, descriptor=False, descriptor
         directory += struct.pack("<IHHHHHHIIIHHHHHII", 0x02014B50, 20, central["version"],
                                  central["flags"], central["method"], 0, 0, central["crc"],
                                  central["compressed_size"], central["uncompressed_size"], len(name),
-                                 0, 0, 0, 0, 0, central["offset"])
+                                 0, 0, central["disk_start"], 0, 0, central["offset"])
         directory += name
-    return bytes(local_bytes + directory + struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 2, 2,
-                                                      len(directory), len(local_bytes), 0))
+    if entries_this_disk is None:
+        entries_this_disk = len(entries)
+    return bytes(local_bytes + directory + struct.pack("<IHHHHIIH", 0x06054B50, this_disk,
+                                                      directory_disk, entries_this_disk,
+                                                      len(entries), len(directory),
+                                                      len(local_bytes), len(comment)) + comment)
 
 
 def cases():
     data = b"bounded decompression\n" * 200
     compressed = raw_deflate(data)
+    truncated_comment = bytearray(archive(data, comment=b"junk"))
+    # The record claims 100 comment bytes but only 4 follow it.
+    truncated_comment[-6:-4] = struct.pack("<H", 100)
     valid = {
         "stored": (archive(data, method=0), data),
         "deflated": (archive(data), data),
@@ -76,8 +85,17 @@ def cases():
         "descriptor-signature": (archive(data, descriptor=True), data),
         "descriptor-no-signature": (archive(data, descriptor=True, descriptor_signature=False), data),
         "stored-descriptor": (archive(data, method=0, descriptor=True), data),
+        "comment": (archive(data, comment=b"plain archive comment"), data),
+        # The comment contains an EndOfDirectory signature; only the real record
+        # has a comment length that spans the bytes after it.
+        "comment-with-signature": (archive(data, comment=b"note PK\x05\x06 inside"), data),
     }
     invalid = {
+        "truncated-comment": bytes(truncated_comment),
+        "multi-disk": archive(data, this_disk=1),
+        "multi-disk-directory": archive(data, directory_disk=1),
+        "multi-disk-entry-count": archive(data, entries_this_disk=1),
+        "multi-disk-central-entry": archive(data, central_disk_start=1),
         "underreported-output": archive(data, local_uncompressed_size=1, central_uncompressed_size=1),
         "overreported-output": archive(data, local_uncompressed_size=len(data)+1, central_uncompressed_size=len(data)+1),
         "declared-output-cap": archive(data, local_uncompressed_size=64*1024*1024+1, central_uncompressed_size=64*1024*1024+1),
@@ -152,8 +170,13 @@ def run_probe(binary, out):
             assert response["exists"], (name, response)
             assert not response["error"] and result.read_bytes() == expected, (name, response)
             assert response.get("buffer_size", len(packed)) == len(packed), (name, response)
-            with zipfile.ZipFile(io.BytesIO(packed)) as check:
-                assert check.read("payload") == expected
+            if name == "comment-with-signature":
+                # Python's zipfile uses rfind, so it picks the signature inside
+                # the comment; only the native parser must accept this archive.
+                pass
+            else:
+                with zipfile.ZipFile(io.BytesIO(packed)) as check:
+                    assert check.read("payload") == expected
             report["valid"].append(name)
     return report
 

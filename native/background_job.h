@@ -7,6 +7,11 @@
 
 namespace music {
 bool same_output_path(const std::filesystem::path& first, const std::filesystem::path& second);
+// Canonical form used for export destinations and reservations. Rejects a
+// missing, "." or ".." filename and requires an existing parent directory.
+// Returns canonical(path) when the file already exists, otherwise
+// canonical(parent) / filename.
+std::filesystem::path normalize_output_path(const std::filesystem::path& path);
 void reserve_output_path(const std::filesystem::path& path);
 void release_output_path(const std::filesystem::path& path);
 bool is_output_path_reserved(const std::filesystem::path& path);

@@ -187,6 +187,11 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     }
     asio::awaitable<OwnerResult> on_owner(std::function<OwnerResult(Engine&)> function, std::string target_document = "") {
         check_owner();
+        // shutdown() has joined the owner thread and its context will never run
+        // again. Posting now would leak the handler and the captured self, and
+        // the I/O context could never drain. Fail the request instead.
+        if (closing || owner_closing.load(std::memory_order_acquire))
+            throw asio::system_error(asio::error::operation_aborted);
         if (owner_pending >= 64) throw CoreError(CoreError::Code::resource_limit, "Engine queue full (limit 64)");
         auto self = shared_from_this();
         auto token = asio::use_awaitable;
@@ -346,10 +351,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         const auto options = parse_export_options(args, *format);
         std::filesystem::path destination;
         if (!stream) {
-            const auto raw_path = std::filesystem::absolute(std::filesystem::u8path(text_arg(args, "path")));
-            if (raw_path.filename().empty() || !std::filesystem::is_directory(raw_path.parent_path()))
-                throw std::invalid_argument("Export parent directory must exist");
-            destination = std::filesystem::canonical(raw_path.parent_path()) / raw_path.filename();
+            destination = normalize_output_path(std::filesystem::u8path(text_arg(args, "path")));
             if (is_output_path_reserved(destination))
                 throw ToolCallError("busy", "Another job owns this export destination");
             for (const auto& [_, job] : jobs)
@@ -366,17 +368,23 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         job->format = *format;
         job->stream = stream;
         job->destination = destination;
-        // Reserved only once the job owns the path, so Job::cleanup always releases it.
-        if (!destination.empty()) {
-            reserve_output_path(destination);
-            job->reserved = true;
-        }
-        prune();
-        jobs.emplace(job->id, job);
-        order.push_back(job->id);
-        job->captured_bytes = maximum_snapshot;
-        snapshot_bytes += maximum_snapshot;
+        // Registration and reservation are part of the guarded section: any
+        // failure below must erase the job and release its slot, reservation
+        // and snapshot budget instead of leaking them.
+        bool registered = false, ordered = false;
         try {
+            // Reserved only once the job owns the path, so Job::cleanup always releases it.
+            if (!destination.empty()) {
+                reserve_output_path(destination);
+                job->reserved = true;
+            }
+            prune();
+            jobs.emplace(job->id, job);
+            registered = true;
+            order.push_back(job->id);
+            ordered = true;
+            job->captured_bytes = maximum_snapshot;
+            snapshot_bytes += maximum_snapshot;
             job->directory = private_directory(std::filesystem::absolute(std::filesystem::temp_directory_path()));
             if (!stream) job->staging_directory = private_directory(destination.parent_path());
             const auto directory = job->directory;
@@ -409,8 +417,17 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 }
                 if (stream) request.output_path = directory / "unused-output";
                 if (is_audio_format(format) || format == ExportFormat::Metadata) {
-                    request.mix = engine.core().audio_mix(document, options.excerpt_id).mix;
-                    request.has_mix = true;
+                    try {
+                        request.mix = engine.core().audio_mix(document, options.excerpt_id).mix;
+                        request.has_mix = true;
+                    } catch (const CoreError& error) {
+                        // A score that cannot be planned as audio stems still
+                        // has metadata; it simply carries no mix or track list.
+                        if (format != ExportFormat::Metadata
+                            || error.code() != CoreError::Code::invalid_argument) {
+                            throw;
+                        }
+                    }
                 }
                 write_atomic(directory / "request.json", worker_request_json(request).dump());
                 result.snapshot.bytes.clear();
@@ -428,11 +445,15 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             const bool aborted = error.code() == asio::error::operation_aborted;
             job->state = (closing || job->cancel_requested || aborted) ? "cancelled" : "failed";
             if (aborted && job->error.empty()) job->error = "Capture aborted";
+            if (ordered) std::erase(order, job->id);
+            if (registered) jobs.erase(job->id);
             release(job);
             if (aborted) throw ToolCallError("cancelled", "Job capture was aborted");
             throw;
         } catch (...) {
             job->state = (closing || job->cancel_requested) ? "cancelled" : "failed";
+            if (ordered) std::erase(order, job->id);
+            if (registered) jobs.erase(job->id);
             release(job);
             throw;
         }
@@ -647,6 +668,10 @@ asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json argume
     self->check_owner();
     const auto executor = co_await asio::this_coro::executor;
     co_await asio::post(executor, asio::use_awaitable);
+    // The post above can resume after stdin EOF already ran shutdown(); no
+    // engine request may be started on the closed owner context.
+    if (self->closing || self->owner_closing.load(std::memory_order_acquire))
+        throw asio::system_error(asio::error::operation_aborted);
     const auto context_document = arguments.contains("documentId") && arguments.at("documentId").is_string()
         ? arguments.at("documentId").get<std::string>() : std::string{};
     try {
@@ -680,12 +705,9 @@ asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json argume
 #endif
     if (name == "score_export") {
         if (arguments.contains("path") && arguments.at("path").is_string()) {
-            const auto raw_path = std::filesystem::absolute(std::filesystem::u8path(text_arg(arguments, "path")));
-            if (!raw_path.filename().empty() && std::filesystem::is_directory(raw_path.parent_path())) {
-                const auto destination = std::filesystem::canonical(raw_path.parent_path()) / raw_path.filename();
-                if (is_output_path_reserved(destination))
-                    throw ToolCallError("busy", "Another job owns this export destination");
-            }
+            const auto destination = normalize_output_path(std::filesystem::u8path(text_arg(arguments, "path")));
+            if (is_output_path_reserved(destination))
+                throw ToolCallError("busy", "Another job owns this export destination");
         }
     }
     if (name == "score_export_start" || name == "score_audio_start") {

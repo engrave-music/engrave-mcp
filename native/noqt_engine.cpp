@@ -2,6 +2,7 @@
 #include "music_core.h"
 #include "atomic_file.h"
 #include "background_job.h"
+#include "mcp_transport.h"
 
 #include <algorithm>
 #include <cctype>
@@ -663,7 +664,7 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         const auto parsed_format = export_format_from_name(format_text);
         if (!parsed_format) throw std::invalid_argument("Unsupported export format");
         const auto format = *parsed_format;
-        const auto path = std::filesystem::absolute(std::filesystem::u8path(text_arg(args, "path")));
+        const auto path = normalize_output_path(std::filesystem::u8path(text_arg(args, "path")));
 
         if (args.contains("page") && format != ExportFormat::Svg && format != ExportFormat::Png)
             throw std::invalid_argument("page only applies to svg/png");
@@ -695,7 +696,7 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
                        || format == ExportFormat::Flac || format == ExportFormat::Ogg || format == ExportFormat::Mp3);
 
         if (is_output_path_reserved(path))
-            throw CoreError(CoreError::Code::conflict, "Export destination is reserved by an active background job");
+            throw ToolCallError("busy", "Another job owns this export destination");
 
         const auto data = impl_->core->export_bytes(id, format, options);
         if (data.bytes.empty()) throw std::runtime_error("Exporter returned no data");

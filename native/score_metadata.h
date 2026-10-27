@@ -52,8 +52,8 @@ struct MetadataTrack {
 };
 
 // Audio stem descriptor and mix state for metadata track export.
-// Fields match upstream TrackAudioOutputParams as closely as possible,
-// documenting unit differences (volumeDb in decibels [-120..24] vs upstream linear gain).
+// Fields match upstream TrackAudioOutputParams; volumeDb is the upstream
+// volume_db_t value in decibels [-120..24].
 struct ScoreMetadataTrack {
     std::int64_t track_id = 0;
     std::string part_id;

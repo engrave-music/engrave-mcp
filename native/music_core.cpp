@@ -527,13 +527,20 @@ struct MusicCore::Impl {
     }
 
     // Metadata must stay available for scores whose parts cannot be planned as
-    // audio stems (e.g. multi-instrument parts); their tracks are then empty.
+    // audio stems (e.g. multi-instrument parts or more than 15 parts); their
+    // tracks are then empty.
     static std::vector<ScoreMetadataTrack> metadata_tracks_or_empty(const Document& document,
                                                                    mu::engraving::Score* score,
                                                                    int excerpt_id) {
         std::vector<AudioTrackInfo> tracks;
         try {
             tracks = describe_audio_tracks(score);
+        } catch (const std::bad_alloc&) {
+            throw;
+        } catch (const std::invalid_argument&) {
+            // Unplannable scores (e.g. more than 15 parts) keep metadata but
+            // expose no tracks.
+            return {};
         } catch (const std::runtime_error&) {
             return {};
         }

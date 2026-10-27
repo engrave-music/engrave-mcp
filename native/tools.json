@@ -919,7 +919,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[^\\u0000]*$",
-          "description": "Opaque job id returned by score_export_start."
+          "description": "Opaque job id returned by score_export_start or score_audio_start."
         }
       },
       "required": [
@@ -938,7 +938,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[^\\u0000]*$",
-          "description": "Opaque job id returned by score_export_start."
+          "description": "Opaque job id returned by score_export_start or score_audio_start."
         }
       },
       "required": [
@@ -1154,7 +1154,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[^\\u0000]*$",
-          "description": "Opaque job id returned by score_export_start."
+          "description": "Opaque job id returned by score_audio_start."
         },
         "batchSize": {
           "type": "integer",
@@ -1179,7 +1179,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[^\\u0000]*$",
-          "description": "Opaque job id returned by score_export_start."
+          "description": "Opaque job id returned by score_audio_start."
         },
         "seconds": {
           "type": "number",

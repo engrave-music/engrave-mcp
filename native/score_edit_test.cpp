@@ -198,6 +198,31 @@ const char* kVoiceFilterScore = R"xml(<score-partwise version="4.0">
   </part>
 </score-partwise>)xml";
 
+// A slur starts on a voice-1 (MuseScore voice 0) note in measure 1 and stops
+// on a voice-2 (MuseScore voice 1) note in measure 2. One anchor belongs to the
+// queried voice, so a voice-0 window that cuts it must report a crossing.
+const char* kCrossVoiceSpanScore = R"xml(<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Cross voice</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type>
+        <notations><slur type="start" number="1"/></notations></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration>
+        <voice>2</voice><type>whole</type>
+        <notations><slur type="stop" number="1"/></notations></note>
+    </measure>
+  </part>
+</score-partwise>)xml";
+
 const char* kTwoPartScore = R"xml(<score-partwise version="4.0">
   <part-list>
     <score-part id="P1"><part-name>Piano</part-name></score-part>
@@ -641,6 +666,25 @@ int main(int argc, char** argv)
         expect(music::query_score_projection(filter_projection, make_region(0, 0, 1, 1))
                    .has_cross_region_spanners,
                "Voice-1 projection lost the cross-measure slur");
+
+        // A slur with one anchor in the queried voice and the other in another
+        // voice is a voice-window crossing, not an ignorable other-voice span.
+        const auto cross_project = music::load_native_score(kCrossVoiceSpanScore, "musicxml");
+        auto* cross_score = cross_project->masterScore();
+        expect(music::query_score_region(cross_score, make_region(0, 0, 1, 0))
+                   .has_cross_region_spanners,
+               "Voice-0 region lost a cross-voice slur");
+        const auto cross_projection = music::snapshot_score_projection(cross_score);
+        expect(cross_projection.complete, "Cross-voice projection was unavailable");
+        expect(music::query_score_projection(cross_projection, make_region(0, 0, 1, 0))
+                   .has_cross_region_spanners,
+               "Voice-0 projection lost a cross-voice slur");
+        expect(music::query_score_region(cross_score, make_region(0, 1, 1, 1))
+                   .has_cross_region_spanners,
+               "Voice-1 region lost a cross-voice slur");
+        expect(music::query_score_projection(cross_projection, make_region(0, 1, 1, 1))
+                   .has_cross_region_spanners,
+               "Voice-1 projection lost a cross-voice slur");
 
         std::cout << "Native pitch query/edit tests passed: stable EIDs, transposing "
                      "spelling, undo/redo, all-or-nothing validation and MusicXML round-trip\n";

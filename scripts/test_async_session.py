@@ -78,6 +78,73 @@ class Client:
                 await self.proc.wait()
             self.log.close()
 
+async def eof_exits_with_pending_owner_calls(args, out):
+    """Pipeline owner-bound calls and close stdin before their posts resume.
+
+    Without the shutdown guard, such a call resumes after AsyncSession::shutdown
+    joined the owner thread, posts a completion onto the stopped owner context
+    and keeps the I/O context alive forever, so the process never exits.
+    """
+    command = [str(args.binary.resolve())]
+    if args.resources: command += ['--resources', str(args.resources.resolve())]
+    if args.soundfont: command += ['--soundfont', str(args.soundfont.resolve())]
+    score = {'title': 'EOF pipeline', 'tempo': 120,
+             'parts': [{'name': 'Piano', 'midiProgram': 1, 'measures': [bar(60, 62, 64, 65)]}]}
+    messages = [
+        {'jsonrpc': '2.0', 'id': 0, 'method': 'initialize',
+         'params': {'protocolVersion': '2025-11-25', 'capabilities': {},
+                    'clientInfo': {'name': 'eof-regression', 'version': '1'}}},
+        {'jsonrpc': '2.0', 'method': 'notifications/initialized', 'params': {}},
+    ]
+    for identity in range(1, 4):
+        messages.append({'jsonrpc': '2.0', 'id': identity, 'method': 'tools/call',
+                         'params': {'name': 'score_create', 'arguments': {'score': score}}})
+    messages.append({'jsonrpc': '2.0', 'id': 4, 'method': 'tools/call',
+                     'params': {'name': 'score_get', 'arguments': {'documentId': 'score-1'}}})
+    with (out / 'eof-pipeline-stderr.log').open('wb') as errors:
+        proc = await asyncio.create_subprocess_exec(
+            *command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=errors, limit=16 * 1024 * 1024)
+
+        async def drain(stream):
+            while line := await stream.readline():
+                message = json.loads(line)
+                if 'id' in message:
+                    answers.add(message['id'])
+
+        answers = set()
+        reader = asyncio.create_task(drain(proc.stdout))
+        started = time.monotonic()
+        try:
+            proc.stdin.write(b''.join(
+                (json.dumps(message) + '\n').encode() for message in messages))
+            await proc.stdin.drain()
+            proc.stdin.close()
+            try:
+                await asyncio.wait_for(proc.wait(), 10)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                raise AssertionError('MCP host hung after stdin EOF with pending owner calls')
+            elapsed = time.monotonic() - started
+            assert proc.returncode == 0, proc.returncode
+            assert elapsed < 8, f'MCP host took {elapsed:.2f}s to exit after stdin EOF'
+            await asyncio.wait_for(reader, 5)
+            # Every pipelined request must still receive a response before exit.
+            assert answers == {0, 1, 2, 3, 4}, answers
+        finally:
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+            if not reader.done():
+                reader.cancel()
+                try:
+                    await reader
+                except asyncio.CancelledError:
+                    pass
+    return {'exit_seconds': round(elapsed, 3), 'returncode': proc.returncode}
+
+
 async def run(args):
     out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
     evidence={'binary':str(args.binary.resolve())}
@@ -239,6 +306,7 @@ async def run(args):
             evidence.update(queued_cancel=True,running_cancel=True,ping_p95_ms=p95,ping_samples_ms=latencies)
             # Leave a live worker for EOF/shutdown cancellation.
             await client.tool('score_export_start',{'documentId':doc,'format':'wav','path':str(out/'shutdown.wav')})
+    evidence['eof_with_pending_owner_calls'] = await eof_exits_with_pending_owner_calls(args, out)
     assert not (out/'shutdown.wav').exists()
     assert not list(out.glob('.musescore-job-*'))
     leaked_runtime_fonts = set(temp_dir.glob("musescore-runtime-fonts-*")) - initial_runtime_fonts

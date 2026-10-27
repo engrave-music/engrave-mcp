@@ -170,8 +170,10 @@ std::vector<NoteView> capture_region_notes(QueryCapture& capture, Score* score, 
 {
     std::vector<NoteView> notes;
     const std::vector<staff_idx_t> staff_indices = part_staff_indices(score, part);
+    // An anchor in another voice is outside the requested voice window rather
+    // than a reason to ignore the whole tie or spanner.
     const auto inside = [&](EngravingItem* anchor) {
-        return anchor_inside(capture, part, first, last, anchor);
+        return voice_matches(voice, anchor) && anchor_inside(capture, part, first, last, anchor);
     };
     const auto spanned = capture.spanned_chords.find(part);
     const std::unordered_set<const Chord*>* spanned_chords =
@@ -213,12 +215,10 @@ std::vector<NoteView> capture_region_notes(QueryCapture& capture, Score* score, 
                                                     && spanned_chords->count(chord) != 0);
 
                         if (detect_cross_region && tied) {
-                            if (note->tieFor() && voice_matches(voice, note->tieFor()->endNote())
-                                && !inside(note->tieFor()->endNote())) {
+                            if (note->tieFor() && !inside(note->tieFor()->endNote())) {
                                 cross_region = true;
                             }
-                            if (note->tieBack() && voice_matches(voice, note->tieBack()->startNote())
-                                && !inside(note->tieBack()->startNote())) {
+                            if (note->tieBack() && !inside(note->tieBack()->startNote())) {
                                 cross_region = true;
                             }
                         }
@@ -229,9 +229,10 @@ std::vector<NoteView> capture_region_notes(QueryCapture& capture, Score* score, 
                                     EngravingItem* start = spanner->startElement();
                                     EngravingItem* end = spanner->endElement();
                                     if (!start && !end) continue;
-                                    // A spanner anchored only to other voices is
-                                    // outside this query, not cross-region.
-                                    if (!voice_matches(voice, start) || !voice_matches(voice, end))
+                                    // Ignore a spanner only when neither anchor
+                                    // belongs to this query; one anchor in
+                                    // another voice lies outside the window.
+                                    if (!voice_matches(voice, start) && !voice_matches(voice, end))
                                         continue;
                                     if (!inside(start) || !inside(end)) return true;
                                 }
@@ -299,16 +300,21 @@ ScoreRegionView query_score_region(mu::engraving::MasterScore* score, const Scor
     if (last > first) {
         const int region_start = measures[first]->tick().ticks();
         const int region_end = measures[last - 1]->endTick().ticks();
+        const auto inside = [&](EngravingItem* anchor) {
+            return voice_matches(region.voice, anchor)
+                && anchor_inside(capture, part, first, last, anchor);
+        };
         for (Spanner* spanner : capture.spanners) {
             if (item_part(spanner) != part) continue;
+            // Skip only when neither anchor is in the requested voice; an
+            // anchor in another voice is outside the window, so such a spanner
+            // still crosses it.
             if (!voice_matches(region.voice, spanner->startElement())
-                || !voice_matches(region.voice, spanner->endElement())) {
+                && !voice_matches(region.voice, spanner->endElement())) {
                 continue;
             }
-            const bool start_inside = anchor_inside(capture, part, first, last,
-                                                    spanner->startElement());
-            const bool end_inside = anchor_inside(capture, part, first, last,
-                                                  spanner->endElement());
+            const bool start_inside = inside(spanner->startElement());
+            const bool end_inside = inside(spanner->endElement());
             if (start_inside != end_inside) {
                 cross_region = true;
             } else if (!start_inside && !end_inside && !spanner->isTie()) {
@@ -461,9 +467,9 @@ ScoreRegionView query_score_projection(const ScoreReadProjection& projection, co
                 || (span.start.part_index && *span.start.part_index == region.part_index)
                 || (span.end.part_index && *span.end.part_index == region.part_index);
             if (!belongs) continue;
-            // A spanner anchored only to other voices is outside this query,
-            // not cross-region.
-            if (!span_voice_matches(span.start) || !span_voice_matches(span.end)) continue;
+            // Skip a spanner only when neither anchor belongs to the requested
+            // voice; an anchor in another voice counts as outside the window.
+            if (!span_voice_matches(span.start) && !span_voice_matches(span.end)) continue;
             const bool start_inside = inside(span.start), end_inside = inside(span.end);
             if (start_inside != end_inside || (!start_inside && !end_inside && !span.tie
                 && span.last_tick > first_tick && span.first_tick < last_tick)) {

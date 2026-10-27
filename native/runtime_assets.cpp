@@ -432,7 +432,9 @@ public:
 
         // Built-in families keep priority; only a family the upstream database
         // cannot provide at all falls back to its registered runtime face.
-        if (baseKey.family() != requireKey.family()) {
+        // FontsEngine normalises Undefined/Unknown to Text before querying, so
+        // this fallback must not apply to symbol/music faces.
+        if (type == draw::Font::Type::Text && baseKey.family() != requireKey.family()) {
             if (const FontRecord* fallback = findRegularFamilyFallback(*m_active, requireKey)) {
                 return fallback->key;
             }

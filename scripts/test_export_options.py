@@ -758,6 +758,64 @@ async def main() -> None:
                     "first_track": first_meta_track,
                 }
 
+                # =========================================================================
+                # 10. Metadata stays available for a 16-part score (too many audio stems)
+                # =========================================================================
+                # score_create caps the composition contract at 15 parts, so the
+                # 16-part case is imported exactly as a client would encounter it.
+                part_names = [f"Part {index + 1}" for index in range(16)]
+                part_list_xml = "".join(
+                    f'<score-part id="P{index + 1}"><part-name>{name}</part-name></score-part>'
+                    for index, name in enumerate(part_names)
+                )
+                part_bodies = "".join(
+                    f'<part id="P{index + 1}"><measure number="1"><attributes><divisions>1</divisions>'
+                    '<time><beats>4</beats><beat-type>4</beat-type></time>'
+                    '<clef><sign>G</sign><line>2</line></clef></attributes>'
+                    '<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>'
+                    '<type>quarter</type></note>'
+                    '<note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration>'
+                    '<type>quarter</type></note>'
+                    '<note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration>'
+                    '<type>quarter</type></note>'
+                    '<note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration>'
+                    '<type>quarter</type></note></measure></part>'
+                    for index in range(16)
+                )
+                sixteen_part_xml = (
+                    '<?xml version="1.0" encoding="UTF-8"?>'
+                    '<score-partwise version="4.0"><part-list>'
+                    + part_list_xml + '</part-list>' + part_bodies + '</score-partwise>'
+                )
+                large_doc = await call("score_open", {"musicxml": sixteen_part_xml})
+                large_identity = {"documentId": large_doc["documentId"]}
+                large_get = await call("score_get", large_identity)
+                assert large_get["metadata"]["tracks"] == [], (
+                    "16-part metadata tracks must be empty, got "
+                    f"{large_get['metadata'].get('tracks')}"
+                )
+                large_meta_path = out_dir / "sixteen_parts_metadata.json"
+                large_meta_job = await call(
+                    "score_export_start",
+                    {**large_identity, "format": "metadata", "path": str(large_meta_path)},
+                )
+                deadline = time.monotonic() + 60
+                large_meta_state = None
+                while time.monotonic() < deadline:
+                    large_meta_state = await call("score_job_get", {"jobId": large_meta_job["jobId"]})
+                    if large_meta_state["state"] in ("completed", "failed", "cancelled"):
+                        break
+                    await asyncio.sleep(0.02)
+                assert large_meta_state is not None and large_meta_state["state"] == "completed", large_meta_state
+                assert json.loads(large_meta_path.read_text(encoding="utf-8"))["tracks"] == []
+                await call("score_close", large_identity)
+                report["evidence"]["sixteen_part_metadata"] = {
+                    "executed": True,
+                    "score_get_succeeded": True,
+                    "tracks": [],
+                    "background_metadata": "completed",
+                }
+
                 # Clean up main document
                 await call("score_close", doc_identity)
 
