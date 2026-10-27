@@ -26,14 +26,21 @@
 //
 // The JSON field schema and the title/composer recognition heuristics are kept
 // identical to the upstream implementation. QJsonArray/QJsonObject are replaced
-// by nlohmann::json arrays/objects, QString by muse::String/std::string, and the
-// notation/audio track overload is intentionally absent: "tracks" is empty here.
+// by nlohmann::json arrays/objects and QString by muse::String/std::string. The
+// notation/audio-settings dependency is not available in the Qt-free host, so
+// callers supply actual MetadataTrack descriptor values to the overload; the
+// base Score* overload reports no tracks rather than inventing resource state.
 
 #include "score_metadata.h"
 
+#include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <map>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -142,7 +149,7 @@ muse::String recognizeComposer(const Score* score)
     return rightmostText ? rightmostText->plainText() : muse::String();
 }
 
-std::string title(const Score* score)
+muse::String titleString(const Score* score)
 {
     muse::String title;
     const Text* text = score->getText(TextStyleType::TITLE);
@@ -162,7 +169,47 @@ std::string title(const Score* score)
         title = score->name();
     }
 
-    return title.toStdString();
+    return title;
+}
+
+std::string title(const Score* score)
+{
+    return titleString(score).toStdString();
+}
+
+// Exactly the character set of the JS regex
+// /[\s<>:{}"/\\|?*~.\0\cA-\cZ]+/g. The JS class includes NUL, the control range
+// U+0001..U+001A (which also covers TAB/LF/VT/FF/CR), ASCII space, and the
+// Unicode WhiteSpace/LineTerminator additions below. U+0085 and U+180E are not
+// JS whitespace and are deliberately not matched.
+bool isFilenameUnsafe(char32_t c)
+{
+    if (c <= 0x1A) {
+        return true; // U+0000, U+0001..U+001A
+    }
+
+    switch (c) {
+    case U' ': case U'<': case U'>': case U':': case U'{': case U'}':
+    case U'"': case U'/': case U'\\': case U'|': case U'?': case U'*':
+    case U'~': case U'.':
+        return true;
+    default:
+        break;
+    }
+
+    if (c < 0x7F) {
+        return false;
+    }
+
+    return c == 0x00A0
+           || c == 0x1680
+           || (c >= 0x2000 && c <= 0x200A)
+           || c == 0x2028
+           || c == 0x2029
+           || c == 0x202F
+           || c == 0x205F
+           || c == 0x3000
+           || c == 0xFEFF;
 }
 
 std::string subtitle(const Score* score)
@@ -255,6 +302,106 @@ std::pair<int, std::string> tempo(const Score* score)
     return { tempo, tempoText.toStdString() };
 }
 
+bool parsePartId(const std::string& text, std::uint64_t& value)
+{
+    if (text.empty()) {
+        return false;
+    }
+
+    std::uint64_t parsed = 0;
+    for (const char ch : text) {
+        if (ch < '0' || ch > '9') {
+            return false;
+        }
+
+        const std::uint64_t digit = static_cast<std::uint64_t>(ch - '0');
+        if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / 10) {
+            return false;
+        }
+        parsed = parsed * 10 + digit;
+    }
+
+    value = parsed;
+    return true;
+}
+
+Json trackJson(const InstrumentTrackId& id, const MetadataTrack& track)
+{
+    Json jsonTrack = Json::object();
+    jsonTrack["instrumentId"] = id.instrumentId.toStdString();
+    jsonTrack["partId"] = id.partId.toStdString();
+    jsonTrack["type"] = track.type;
+
+    // Upstream inserts vendor only for non-Fluid sources. The descriptor
+    // carries the actual vendor value; the type check preserves the upstream
+    // omission without inventing a vendor for Fluid.
+    if (track.vendor && track.type != "fluid_soundfont") {
+        jsonTrack["vendor"] = *track.vendor;
+    }
+
+    jsonTrack["name"] = track.name;
+
+    // Upstream only adds these keys when they differ from the display name.
+    if (track.sound_id && *track.sound_id != track.name) {
+        jsonTrack["soundId"] = *track.sound_id;
+    }
+    if (track.category && *track.category != track.name) {
+        jsonTrack["category"] = *track.category;
+    }
+
+    return jsonTrack;
+}
+
+Json tracksJsonArray(const Score* score, const std::vector<MetadataTrack>& tracks)
+{
+    Json jsonTracksArray = Json::array();
+    std::map<InstrumentTrackId, Json> sortedJsonTracks;
+
+    for (const MetadataTrack& track : tracks) {
+        std::uint64_t partIdValue = 0;
+        if (!parsePartId(track.part_id, partIdValue) || partIdValue == 0) {
+            throw std::invalid_argument("score_metadata: invalid part id '" + track.part_id + "'");
+        }
+
+        const Part* part = nullptr;
+        for (const Part* candidate : score->parts()) {
+            if (candidate && candidate->id().toUint64() == partIdValue) {
+                part = candidate;
+                break;
+            }
+        }
+        if (!part) {
+            throw std::invalid_argument("score_metadata: unknown part id '" + track.part_id + "'");
+        }
+
+        if (track.instrument_id.empty()) {
+            throw std::invalid_argument("score_metadata: empty instrument id for part '" + track.part_id + "'");
+        }
+
+        const InstrumentTrackIdSet ids = part->instrumentTrackIdSet();
+        const auto match = std::find_if(ids.begin(), ids.end(), [&track](const InstrumentTrackId& id) {
+            return id.instrumentId.toStdString() == track.instrument_id;
+        });
+        if (match == ids.end()) {
+            throw std::invalid_argument("score_metadata: unknown instrument id '" + track.instrument_id
+                                        + "' for part '" + track.part_id + "'");
+        }
+
+        const auto inserted = sortedJsonTracks.emplace(*match, Json::object());
+        if (!inserted.second) {
+            throw std::invalid_argument("score_metadata: duplicate track for part '" + track.part_id
+                                        + "' and instrument '" + track.instrument_id + "'");
+        }
+        inserted.first->second = trackJson(*match, track);
+    }
+
+    for (const auto& entry : sortedJsonTracks) {
+        jsonTracksArray.push_back(entry.second);
+    }
+
+    return jsonTracksArray;
+}
+
 Json partsJsonArray(const Score* score)
 {
     Json jsonPartsArray = Json::array();
@@ -331,10 +478,25 @@ Json excerptsJsonArray(const Score* score)
 {
     Json jsonExcerptsArray = Json::array();
 
-    const std::vector<Excerpt*>& excerpts = score->masterScore()->excerpts();
+    const MasterScore* master = score->masterScore();
+    if (!master) {
+        return jsonExcerptsArray;
+    }
+
+    const std::vector<Excerpt*>& excerpts = master->excerpts();
     for (size_t i = 0; i < excerpts.size(); ++i) {
         const Excerpt* e = excerpts[i];
+        if (!e) {
+            continue;
+        }
+
+        // Loaders can leave an excerpt entry without an excerpt score. Skip it
+        // instead of dereferencing null; the remaining entries keep their
+        // original master-list index as "id".
         Score* part = e->excerptScore();
+        if (!part) {
+            continue;
+        }
 
         Json jsonExcerpt = Json::object();
         jsonExcerpt["id"] = static_cast<int>(i);
@@ -348,11 +510,18 @@ Json excerptsJsonArray(const Score* score)
 }
 } // namespace
 
-nlohmann::json score_metadata(mu::engraving::Score* score)
+nlohmann::json score_metadata(mu::engraving::Score* score, const std::vector<MetadataTrack>& tracks)
 {
     if (!score) {
+        if (!tracks.empty()) {
+            throw std::invalid_argument("score_metadata: cannot validate tracks without a score");
+        }
         return nlohmann::json::object();
     }
+
+    // Validate and build the tracks before doing any other work, so an invalid
+    // descriptor cannot produce a partially populated result.
+    Json jsonTracks = tracksJsonArray(score, tracks);
 
     Json json = Json::object();
 
@@ -379,10 +548,50 @@ nlohmann::json score_metadata(mu::engraving::Score* score)
     json["parts"] = partsJsonArray(score);
     json["pageFormat"] = pageFormatJson(score->style());
     json["textFramesData"] = typeDataJson(score);
-    json["tracks"] = Json::array(); // the audio-track overload is not part of the Qt-free host
+    json["tracks"] = std::move(jsonTracks);
     json["excerpts"] = excerptsJsonArray(score);
 
     return json;
+}
+
+nlohmann::json score_metadata(mu::engraving::Score* score)
+{
+    // The base overload has no audio-resource state, so it must not invent
+    // track descriptors: "tracks" stays an empty array.
+    return score_metadata(score, std::vector<MetadataTrack>());
+}
+
+std::string score_title_filename_safe(const mu::engraving::Score* score)
+{
+    if (!score) {
+        return std::string();
+    }
+
+    // Work on Unicode code points. UTF-8 is not a fixed-width encoding, so a
+    // byte-wise character class would corrupt multibyte text (and would also
+    // be unable to match U+FEFF, U+2028, etc. correctly).
+    const std::u32string input = titleString(score).toStdU32String();
+    std::u32string output;
+    output.reserve(input.size());
+
+    bool inReplacementRun = false;
+    for (const char32_t ch : input) {
+        if (isFilenameUnsafe(ch)) {
+            if (!inReplacementRun) {
+                output.push_back(U'_');
+                inReplacementRun = true;
+            }
+        } else {
+            output.push_back(ch);
+            inReplacementRun = false;
+        }
+    }
+
+    if (output.empty()) {
+        return std::string();
+    }
+
+    return muse::String::fromUcs4(output.data(), output.size()).toStdString();
 }
 
 std::string score_title(const mu::engraving::Score* score)

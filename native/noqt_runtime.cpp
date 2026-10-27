@@ -2,6 +2,13 @@
 #include "noqt_filesystem.h"
 #include "offline_audio.h"
 #include "score_metadata.h"
+#include "score_excerpts.h"
+#include "score_imports.h"
+#include "midi_import_adapter.h"
+#include "runtime_assets.h"
+#include "audio_session.h"
+#include "audio_codecs.h"
+#include "engraving/rw/rwregister.h"
 #include "score_positions.h"
 #include "score_render.h"
 #include "global/log.h"
@@ -16,6 +23,8 @@
 #include "engraving/engravingproject.h"
 #include "engraving/dom/masterscore.h"
 #include "engraving/dom/instrtemplate.h"
+#include "engraving/dom/instrument.h"
+#include "engraving/dom/part.h"
 #include "engraving/infrastructure/localfileinfoprovider.h"
 #include "engraving/rw/inoutdata.h"
 #include "mpe/mpemodule.h"
@@ -84,11 +93,8 @@ void initialize_native_runtime(const std::string& assets) {
     logger->clearDests();
     logger->addDest(new StderrLog());
     modularity::globalIoc()->registerExport<io::IFileSystem>("native", new NativeFileSystem(root));
-    modularity::globalIoc()->registerExport<draw::IFontsDatabase>("native", new draw::FontsDatabase());
-    auto fonts = std::make_shared<draw::FontsEngine>(modularity::globalCtx());
-    modularity::globalIoc()->registerExport<draw::IFontsEngine>("native", fonts);
+    install_runtime_font_services();
     modularity::globalIoc()->registerExport<draw::IFontProvider>("native", new EngravingFontProvider());
-    fonts->init();
     // Module services live in the process-wide IoC; no desktop application is created.
     engraving::EngravingModule engraving;
     engraving.registerExports();
@@ -157,10 +163,29 @@ ScoreProject load_native_score(const std::string& input, const std::string& form
         if (scan.error() != XmlStreamReader::NoError) throw std::invalid_argument("Malformed MusicXML");
         if (iex::musicxml::importMusicXmlfromBuffer(project->masterScore(), u"input.musicxml", data) != engraving::Err::NoError)
             throw std::runtime_error("MusicXML import failed");
+    } else if (format == "mid" || format == "midi" || format == "kar") {
+        if (import_midi_score(project->masterScore(), input) != engraving::Err::NoError)
+            throw std::runtime_error("MIDI import failed");
+    } else if (format == "gp" || format == "gp3" || format == "gp4" || format == "gp5"
+               || format == "gp6" || format == "gp7" || format == "gpx" || format == "gtp" || format == "ptb") {
+        import_guitarpro_score(project->masterScore(), input);
     } else throw std::invalid_argument("Unsupported score input format");
     auto* score = project->masterScore();
     score->connectTies();
     check(project->setupMasterScore(true));
+    // MusicXML import can call Part::setMidiProgram after the MIDI mapping was
+    // built, leaving playback channels on the template program until an MSCZ
+    // reload rebuilds them. Sync now so playback is stable across reloads.
+    for (auto* part : score->parts()) {
+        for (const auto& pair : part->instruments()) {
+            for (auto* channel : pair.second->channel()) {
+                if (auto* playback = score->playbackChannel(channel)) {
+                    playback->setProgram(channel->program());
+                    playback->setBank(channel->bank());
+                }
+            }
+        }
+    }
     score->setLayoutAll();
     score->update();
     return project;
@@ -174,7 +199,7 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
 
 std::string export_native_score(const ScoreProject& project, const std::string& format,
                                 const ExportOptions& options, const std::string& soundfont) {
-    auto* score = project->masterScore();
+    auto* score = select_score(project->masterScore(), options.excerpt_id);
     if (format == "metadata") return score_metadata(score).dump();
     if (format == "measurePositions" || format == "segmentPositions")
         return score_positions(score, format == "segmentPositions").dump();
@@ -191,7 +216,28 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
         params.mainFileName = u"score.mscx";
         engraving::MscWriter writer(params);
         check(writer.open());
-        success = project->writeMscz(writer, false);
+        if (options.excerpt_id == -1) {
+            success = project->writeMscz(writer, false);
+        } else {
+            // Same upstream writer/style logic as MscSaver::exportPart, without a Qt thumbnail.
+            const auto original_tags = score->metaTags();
+            struct RestoreTags {
+                engraving::Score* score;
+                std::map<String, String> tags;
+                ~RestoreTags() { score->setMetaTags(tags); }
+            } restore{score, original_tags};
+            auto effective_tags = project->masterScore()->metaTags();
+            for (const auto& [key, value] : original_tags) effective_tags.insert_or_assign(key, value);
+            score->setMetaTags(effective_tags);
+            ByteArray style_data, score_data;
+            io::Buffer style_buffer(&style_data), score_buffer(&score_data);
+            style_buffer.open(io::IODevice::WriteOnly);
+            score_buffer.open(io::IODevice::WriteOnly);
+            score->style().write(&style_buffer);
+            success = engraving::rw::RWRegister::writer(score->iocContext())->writeScore(score, &score_buffer);
+            writer.writeStyleFile(style_data);
+            writer.writeScoreFile(score_data);
+        }
         writer.close();
         success = success && !writer.hasError();
         if (format == "mscx" && success) {
@@ -208,7 +254,7 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
             reader.close();
             success = !data.empty();
         }
-    } else if (format == "midi" || format == "wav") {
+    } else if (format == "midi" || format == "wav" || format == "flac" || format == "ogg" || format == "mp3") {
         iex::midi::ExportMidi writer(score);
         success = writer.write(&buffer, options.midi_expand_repeats, options.midi_export_rpns);
     } else throw std::invalid_argument("Unsupported export format");
@@ -217,6 +263,12 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
     if (format == "wav") {
         if (soundfont.empty()) throw std::runtime_error("Restart with --soundfont FILE to enable WAV export");
         return render_midi_wav(bytes(data), soundfont);
+    }
+    if (format == "flac" || format == "ogg" || format == "mp3") {
+        if (soundfont.empty()) throw std::runtime_error("Set a SoundFont to enable audio export");
+        AudioSession session({AudioTrack{0, bytes(data)}}, soundfont);
+        const auto codec = format == "flac" ? AudioFormat::Flac : format == "ogg" ? AudioFormat::Ogg : AudioFormat::Mp3;
+        return encode_audio(session, codec);
     }
     return bytes(data);
 }

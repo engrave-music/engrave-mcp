@@ -6,13 +6,12 @@ import time
 from pathlib import Path
 
 PROTOCOL_VERSION = "2025-11-25"
+# The advertised tool list must match the checked-in schema exactly.
 EXPECTED_TOOLS = [
-    "score_create",
-    "score_open",
-    "score_get",
-    "score_replace_measures",
-    "score_export",
-    "score_close",
+    tool["name"]
+    for tool in json.loads(
+        (Path(__file__).resolve().parents[1] / "native/tools.json").read_text(encoding="utf-8")
+    )
 ]
 EXPECTED_RESPONSE_IDS = [None, None, None, None, None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 EXPECTED_RESPONSE_COUNT = 15

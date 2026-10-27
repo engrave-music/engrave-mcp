@@ -3,6 +3,8 @@
 #include <string>
 
 namespace music {
+class MusicCore;
+
 // Keep the host interface independent of Qt while the implementation is migrated.
 class Engine {
 public:
@@ -12,6 +14,7 @@ public:
     Engine& operator=(const Engine&) = delete;
     static std::string tools_json();
     std::string call(const std::string& tool, const std::string& arguments_json);
+    MusicCore& core();
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

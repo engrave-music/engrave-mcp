@@ -1,4 +1,5 @@
 #include "offline_audio.h"
+#include "audio_synth_support.h"
 
 #include "audio/engine/internal/codecs/vorbisdecoder.h"
 #include "audio/thirdparty/fluidsynth/vorbis_decode.h"
@@ -10,6 +11,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <stdexcept>
 #include <string>
 #ifdef __GLIBC__
@@ -17,6 +20,23 @@
 #endif
 
 namespace music {
+namespace detail {
+void initialize_fluid_runtime() {
+    static const auto owner = std::this_thread::get_id();
+    if (std::this_thread::get_id() != owner)
+        throw std::logic_error("FluidSynth requires one audio owner thread per process");
+    static std::once_flag initialized;
+    std::call_once(initialized, [] {
+        for (int level = FLUID_PANIC; level <= FLUID_DBG; ++level) {
+            fluid_set_log_function(level, [](int severity, const char* message, void*) {
+                std::fprintf(stderr, "FluidSynth[%d]: %s\n", severity, message ? message : "");
+            }, nullptr);
+        }
+        static muse::audio::codec::VorbisDecoder decoder;
+        muse::audio::fluid::FluidVorbisDecoder::decoder = &decoder;
+    });
+}
+}
 namespace {
 
 struct SettingsDeleter {
@@ -87,11 +107,7 @@ std::string render_midi_wav(const std::string& midi, const std::string& soundfon
     // This releases only free pages; live allocations remain measurable.
     struct ReleaseUnusedPages { ~ReleaseUnusedPages() { malloc_trim(0); } } release_unused_pages;
 #endif
-    for (int level = FLUID_PANIC; level <= FLUID_DBG; ++level) {
-        fluid_set_log_function(level, [](int severity, const char* message, void*) {
-            std::fprintf(stderr, "FluidSynth[%d]: %s\n", severity, message ? message : "");
-        }, nullptr);
-    }
+    detail::initialize_fluid_runtime();
     if (soundfont.empty()) {
         throw std::runtime_error("Soundfont path cannot be empty");
     }
@@ -125,9 +141,7 @@ std::string render_midi_wav(const std::string& midi, const std::string& soundfon
         throw std::runtime_error("Failed to set player.timing-source setting");
     }
 
-    // 2. Vorbis decoder registration prior to synth instantiation
-    static muse::audio::codec::VorbisDecoder decoder;
-    muse::audio::fluid::FluidVorbisDecoder::decoder = &decoder;
+    // 2. Shared decoder/log setup was completed by initialize_fluid_runtime().
 
     // 3. Synth creation & SoundFont loading
     std::unique_ptr<fluid_synth_t, SynthDeleter> synth(new_fluid_synth(settings.get()));

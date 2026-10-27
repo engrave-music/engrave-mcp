@@ -1,0 +1,299 @@
+#include "background_job.h"
+#include <array>
+#include <algorithm>
+#include <cstdio>
+#include <cerrno>
+#include <fstream>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#else
+#include <fcntl.h>
+#include <signal.h>
+#include <spawn.h>
+#include <sys/prctl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char** environ;
+#endif
+
+namespace music {
+namespace {
+constexpr std::size_t log_limit = 64 * 1024;
+#ifdef _WIN32
+struct Handle {
+    HANDLE value = nullptr;
+    Handle() = default;
+    explicit Handle(HANDLE value) : value(value) {}
+    ~Handle() { reset(); }
+    Handle(const Handle&) = delete;
+    Handle& operator=(const Handle&) = delete;
+    void reset(HANDLE next = nullptr) noexcept {
+        if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value);
+        value = next;
+    }
+};
+[[noreturn]] void windows_error(const char* what) {
+    throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), what);
+}
+std::wstring quote_arg(const std::wstring& arg) {
+    std::wstring result = L"\"";
+    std::size_t slashes = 0;
+    for (wchar_t c : arg) {
+        if (c == L'\\') ++slashes;
+        else {
+            result.append(slashes * (c == L'"' ? 2 : 1) + (c == L'"' ? 1 : 0), L'\\');
+            result.push_back(c);
+            slashes = 0;
+        }
+    }
+    result.append(slashes * 2, L'\\');
+    result.push_back(L'"');
+    return result;
+}
+#else
+struct Fd {
+    int value = -1;
+    ~Fd() { if (value >= 0) ::close(value); }
+    Fd() = default;
+    explicit Fd(int value) : value(value) {}
+    Fd(const Fd&) = delete;
+    Fd& operator=(const Fd&) = delete;
+};
+void spawn_check(int error, const char* message) {
+    if (error) throw std::system_error(error, std::generic_category(), message);
+}
+#endif
+}
+
+std::uint64_t current_process_id() noexcept {
+#ifdef _WIN32
+    return GetCurrentProcessId();
+#else
+    return static_cast<std::uint64_t>(::getpid());
+#endif
+}
+void enforce_worker_parent(std::uint64_t expected_parent) {
+#ifndef _WIN32
+    if (::prctl(PR_SET_PDEATHSIG, SIGKILL) < 0)
+        throw std::system_error(errno, std::generic_category(), "Cannot configure worker parent-death signal");
+    // Parent may have died between spawn and prctl. Check after installing the signal.
+    if (expected_parent != static_cast<std::uint64_t>(::getppid()))
+        throw std::runtime_error("Worker parent has exited");
+#else
+    (void)expected_parent; // Parent creates the process suspended and attaches a kill-on-close JobObject.
+#endif
+}
+std::filesystem::path current_executable_path() {
+#ifdef _WIN32
+    std::vector<wchar_t> buffer(512);
+    for (;;) {
+        const auto count = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (!count) windows_error("GetModuleFileNameW failed");
+        if (count < buffer.size()) return std::filesystem::path(std::wstring(buffer.data(), count));
+        if (buffer.size() >= 65536) throw std::runtime_error("Executable path too long");
+        buffer.resize(buffer.size() * 2);
+    }
+#else
+    std::vector<char> buffer(512);
+    for (;;) {
+        const auto count = ::readlink("/proc/self/exe", buffer.data(), buffer.size());
+        if (count < 0) throw std::system_error(errno, std::generic_category(), "readlink failed");
+        if (static_cast<std::size_t>(count) < buffer.size()) return std::filesystem::path(std::string(buffer.data(), count));
+        if (buffer.size() >= 65536) throw std::runtime_error("Executable path too long");
+        buffer.resize(buffer.size() * 2);
+    }
+#endif
+}
+
+struct WorkerProcess::Impl {
+#ifdef _WIN32
+    Handle process, job, log_read;
+#else
+    pid_t pid = -1;
+    Fd log_read;
+#endif
+    std::optional<int> exit_code;
+    std::jthread log_reader;
+
+    void start_log(const std::filesystem::path& path) {
+        log_reader = std::jthread([this, path] {
+            // Keep the first 64 KiB for diagnostics, then drain/discard so the child never blocks on logs.
+#ifdef _WIN32
+            FILE* output = _wfopen(path.c_str(), L"wb");
+#else
+            FILE* output = std::fopen(path.c_str(), "wb");
+#endif
+            struct CloseLog { FILE* file; ~CloseLog() { if (file) std::fclose(file); } } close_log{output};
+            std::size_t retained = 0;
+            std::array<char, 8192> buffer{};
+            for (;;) {
+#ifdef _WIN32
+                DWORD count = 0;
+                if (!ReadFile(log_read.value, buffer.data(), static_cast<DWORD>(buffer.size()), &count, nullptr) || !count) break;
+#else
+                const auto count = ::read(log_read.value, buffer.data(), buffer.size());
+                if (count < 0 && errno == EINTR) continue;
+                if (count <= 0) break;
+#endif
+                const auto keep = std::min<std::size_t>(count, log_limit - retained);
+                if (keep && output) (void)std::fwrite(buffer.data(), 1, keep, output);
+                retained += keep;
+            }
+        });
+    }
+
+    Impl(const std::filesystem::path& executable, const std::filesystem::path& request,
+         const std::filesystem::path& log) {
+#ifdef _WIN32
+        SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+        Handle input(CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &security,
+                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+        if (input.value == INVALID_HANDLE_VALUE) windows_error("Cannot open worker stdin");
+        Handle log_write;
+        if (!CreatePipe(&log_read.value, &log_write.value, &security, 0)) windows_error("Cannot create worker log pipe");
+        if (!SetHandleInformation(log_read.value, HANDLE_FLAG_INHERIT, 0)) windows_error("Cannot protect worker log reader");
+        job.reset(CreateJobObjectW(nullptr, nullptr));
+        if (!job.value) windows_error("Cannot create worker job object");
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
+            windows_error("Cannot configure worker job object");
+        SIZE_T attribute_size = 0;
+        InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
+        std::vector<unsigned char> attributes(attribute_size);
+        auto* list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
+        if (!InitializeProcThreadAttributeList(list, 1, 0, &attribute_size)) windows_error("Cannot initialize worker handle list");
+        struct AttributeCleanup { LPPROC_THREAD_ATTRIBUTE_LIST value; ~AttributeCleanup() { DeleteProcThreadAttributeList(value); } } cleanup{list};
+        std::array<HANDLE, 2> inherited{input.value, log_write.value};
+        if (!UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited.data(), sizeof(inherited), nullptr, nullptr))
+            windows_error("Cannot constrain worker handles");
+        STARTUPINFOEXW startup{};
+        startup.StartupInfo.cb = sizeof(startup);
+        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+        startup.StartupInfo.wShowWindow = SW_HIDE;
+        startup.StartupInfo.hStdInput = input.value;
+        startup.StartupInfo.hStdOutput = startup.StartupInfo.hStdError = log_write.value;
+        startup.lpAttributeList = list;
+        auto command = quote_arg(executable.wstring()) + L" --worker " + quote_arg(request.wstring());
+        PROCESS_INFORMATION created{};
+        if (!CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, TRUE,
+                            CREATE_NO_WINDOW | CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
+                            nullptr, nullptr, &startup.StartupInfo, &created)) windows_error("Cannot start worker");
+        process.reset(created.hProcess);
+        Handle thread(created.hThread);
+        try {
+            if (!AssignProcessToJobObject(job.value, process.value)) windows_error("Cannot contain worker process");
+            if (ResumeThread(thread.value) == static_cast<DWORD>(-1)) windows_error("Cannot resume worker");
+            start_log(log);
+        } catch (...) {
+            TerminateProcess(process.value, 1);
+            WaitForSingleObject(process.value, INFINITE);
+            throw;
+        }
+#else
+        int pipes[2];
+        if (::pipe2(pipes, O_CLOEXEC) != 0) throw std::system_error(errno, std::generic_category(), "Cannot create worker log pipe");
+        log_read.value = pipes[0];
+        Fd log_write(pipes[1]);
+        posix_spawn_file_actions_t actions;
+        spawn_check(posix_spawn_file_actions_init(&actions), "Cannot initialize spawn actions");
+        struct ActionsCleanup { posix_spawn_file_actions_t* actions; ~ActionsCleanup() { posix_spawn_file_actions_destroy(actions); } } cleanup{&actions};
+        spawn_check(posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0), "Cannot redirect worker stdin");
+        spawn_check(posix_spawn_file_actions_adddup2(&actions, log_write.value, STDOUT_FILENO), "Cannot redirect worker stdout");
+        spawn_check(posix_spawn_file_actions_adddup2(&actions, log_write.value, STDERR_FILENO), "Cannot redirect worker stderr");
+        spawn_check(posix_spawn_file_actions_addclose(&actions, log_read.value), "Cannot close worker log reader");
+        spawn_check(posix_spawn_file_actions_addclose(&actions, log_write.value), "Cannot close worker log writer");
+        auto exe = executable.string(), request_text = request.string();
+        char mode[] = "--worker";
+        char* argv[] = {exe.data(), mode, request_text.data(), nullptr};
+        spawn_check(posix_spawn(&pid, exe.c_str(), &actions, nullptr, argv, environ), "Cannot start worker");
+        try { start_log(log); }
+        catch (...) {
+            ::kill(pid, SIGKILL);
+            while (::waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}
+            pid = -1;
+            throw;
+        }
+#endif
+    }
+    ~Impl() noexcept {
+        terminate();
+#ifdef _WIN32
+        if (process.value) WaitForSingleObject(process.value, INFINITE);
+        // Closing job also closes any descendants' inherited log writers.
+        job.reset();
+#else
+        if (pid > 0) {
+            while (::waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}
+            pid = -1;
+        }
+#endif
+        if (log_reader.joinable()) log_reader.join();
+    }
+    std::optional<int> poll() {
+        if (exit_code) return exit_code;
+#ifdef _WIN32
+        const auto status = WaitForSingleObject(process.value, 0);
+        if (status == WAIT_TIMEOUT) return std::nullopt;
+        if (status != WAIT_OBJECT_0) windows_error("Cannot inspect worker status");
+        DWORD code;
+        if (!GetExitCodeProcess(process.value, &code)) windows_error("Cannot get worker exit code");
+        exit_code = static_cast<int>(code);
+#else
+        int status = 0;
+        pid_t result;
+        do { result = ::waitpid(pid, &status, WNOHANG); } while (result < 0 && errno == EINTR);
+        if (!result) return std::nullopt;
+        if (result < 0) {
+            const int error = errno;
+            if (error == ECHILD) pid = -1;
+            throw std::system_error(error, std::generic_category(), "Cannot inspect worker status");
+        }
+        pid = -1;
+        exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+#endif
+        return exit_code;
+    }
+    void terminate() noexcept {
+#ifdef _WIN32
+        if (process.value && !exit_code) TerminateProcess(process.value, 1);
+#else
+        if (pid > 0) ::kill(pid, SIGKILL);
+#endif
+    }
+};
+WorkerProcess::WorkerProcess(const std::filesystem::path& executable, const std::filesystem::path& request,
+                             const std::filesystem::path& log) : impl_(std::make_unique<Impl>(executable, request, log)) {}
+WorkerProcess::~WorkerProcess() noexcept = default;
+WorkerProcess::WorkerProcess(WorkerProcess&&) noexcept = default;
+WorkerProcess& WorkerProcess::operator=(WorkerProcess&&) noexcept = default;
+std::optional<int> WorkerProcess::poll() { return impl_ ? impl_->poll() : std::optional<int>{}; }
+void WorkerProcess::terminate() { if (impl_) impl_->terminate(); }
+bool same_output_path(const std::filesystem::path& first, const std::filesystem::path& second) {
+#ifdef _WIN32
+    const auto a = first.lexically_normal().wstring(), b = second.lexically_normal().wstring();
+    return CompareStringOrdinal(a.c_str(), static_cast<int>(a.size()), b.c_str(), static_cast<int>(b.size()), TRUE) == CSTR_EQUAL;
+#else
+    return first.lexically_normal() == second.lexically_normal();
+#endif
+}
+void publish_job_output(const std::filesystem::path& staged, const std::filesystem::path& destination) {
+#ifdef _WIN32
+    if (!MoveFileExW(staged.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        windows_error("Cannot publish job output");
+#else
+    if (::rename(staged.c_str(), destination.c_str()) != 0)
+        throw std::system_error(errno, std::generic_category(), "Cannot publish job output");
+#endif
+}
+}

@@ -25,7 +25,9 @@ def main():
     actual = subprocess.check_output(["git", "-C", str(SOURCE / "thirdparty/brotli"), "rev-parse", "HEAD"], text=True).strip()
     if actual != expected:
         raise RuntimeError("Initialize the pinned brotli submodule with scripts/bootstrap.py")
-    patches = [ROOT / "patches/native-platform.patch", ROOT / "patches/native-imports.patch"]
+    patches = [ROOT / "patches/native-platform.patch", ROOT / "patches/native-imports.patch",
+               ROOT / "patches/native-edit.patch", ROOT / "patches/native-archive.patch",
+               ROOT / "patches/native-fonts.patch"]
     command = ["git", "-C", str(SOURCE), "apply", "--check"]
     for patch in patches:
         if not patch.is_file():

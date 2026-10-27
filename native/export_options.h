@@ -4,6 +4,7 @@ namespace music {
 
 struct ExportOptions {
     int page = 0;
+    int excerpt_id = -1;
     int png_dpi = 144;
     bool draw_page_background = false;
     bool transparent = true;

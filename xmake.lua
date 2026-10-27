@@ -1,16 +1,15 @@
 -- Qt-free xmake build for the pinned MuseScore native engine.
 --
--- This is a parallel build path, not a CMake wrapper.  CMakeLists.txt remains
--- the executable baseline and is never invoked from here.  The only migration
--- input taken from the old build is the checked-in xmake/manifest.lua, captured
--- once by scripts/capture_xmake_manifest.py.
+-- This is the primary build. CMake is not invoked. The checked-in manifest was
+-- initially captured from the previous CMake baseline and is now maintained here.
 --
 -- Layout:
 --   freetype / brotli / harfbuzz     bundled dependency libraries
 --   muse_global / muse_draw / muse_mpe / engraving / iex_musicxml
---   native_fluidsynth / native_audio FluidSynth and offline WAV rendering
+--   native_fluidsynth / native_audio FluidSynth sessions and audio codecs
 --   noqt_support                     native filesystem/settings/font/MIDI adapters
---   music_core                       engine, runtime, composition, render, metadata
+--   score_engine                     private engraving and format adapters
+--   music_core                       typed owner-thread document facade
 --   musescore_mcp                    stdio JSON-RPC host (musescore-mcp binary)
 --   probe targets                    existing noqt/offline audio probes
 
@@ -373,6 +372,7 @@ target("native_audio")
     set_kind("static")
     add_deps("native_fluidsynth")
     add_manifest_target("native_audio")
+    add_links("sndfile", {public = true})
 
 target("noqt_support")
     set_kind("static")
@@ -381,15 +381,21 @@ target("noqt_support")
     add_manifest_target("noqt_support")
     add_links("z", {public = true})
 
-target("music_core")
+target("score_engine")
     set_kind("static")
     add_deps("muse_generated", "noqt_support", "native_audio", "muse_draw",
         "engraving", "iex_musicxml")
-    add_manifest_target("music_core")
+    add_deps("iex_guitarpro", "iex_midi_import")
+    add_manifest_target("score_engine")
     add_links("cairo", "z", {public = true})
     if not is_plat("windows") then
         add_links("m", {public = true})
     end
+
+target("music_core")
+    set_kind("static")
+    add_deps("muse_generated", "score_engine")
+    add_manifest_target("music_core")
 
 -------------------------------------------------------------------------------
 -- Host and existing probes
@@ -400,6 +406,11 @@ target("musescore_mcp")
     set_basename("musescore-mcp")
     add_deps("muse_generated", "music_core")
     add_manifest_target("musescore_mcp")
+    add_packages("asio")
+    if is_plat("windows") then
+        add_defines("_WIN32_WINNT=0x0A00")
+        add_syslinks("ws2_32", "mswsock")
+    end
     add_links("cairo", "z")
     if is_plat("windows") then
         add_files(path.join(project_root, "native", "utf8.manifest"))
@@ -414,6 +425,22 @@ target("noqt_probe")
     add_links("z")
     if is_plat("windows") then
         add_files(path.join(project_root, "native", "utf8.manifest"))
+    end
+
+target("musescore_mcp_test")
+    set_kind("binary")
+    set_basename("musescore-mcp-test")
+    add_deps("muse_generated", "music_core")
+    add_manifest_target("musescore_mcp")
+    add_packages("asio")
+    add_defines("MUSIC_ASYNC_TEST_HOOKS")
+    add_links("cairo", "z")
+    if is_plat("windows") then
+        add_defines("_WIN32_WINNT=0x0A00")
+        add_syslinks("ws2_32", "mswsock")
+        add_files(path.join(project_root, "native", "utf8.manifest"))
+    else
+        add_links("m")
     end
 
 target("noqt_support_test")
@@ -436,7 +463,7 @@ target("offline_audio_probe")
 
 target("score_positions_test")
     set_kind("binary")
-    add_deps("muse_generated", "music_core")
+    add_deps("muse_generated", "score_engine")
     add_files(path.join(project_root, "native", "score_positions_test.cpp"))
     add_defines(manifest.targets.music_core.defines)
     add_includedirs(expand_list(manifest.targets.music_core.includes))
@@ -463,3 +490,38 @@ end
 add_import_module("iex_guitarpro", IMPORT_SOURCES.guitarpro, "src/importexport/guitarpro")
 local midi_sources = table.join(IMPORT_SOURCES.midi, IMPORT_SOURCES.beatroot)
 add_import_module("iex_midi_import", midi_sources, "src/importexport/midi")
+
+
+local function add_engine_test(name, file)
+    target(name)
+        set_kind("binary")
+        add_deps("muse_generated", "score_engine")
+        add_defines(manifest.targets.score_engine.defines)
+        add_includedirs(expand_list(manifest.targets.score_engine.includes))
+        add_files(path.join(project_root, "native", file))
+        add_links("cairo", "z")
+        if is_plat("windows") then add_files(path.join(project_root, "native", "utf8.manifest"))
+        else add_links("m") end
+    target_end()
+end
+add_engine_test("excerpts_test", "excerpts_test.cpp")
+add_engine_test("assets_test", "assets_test.cpp")
+add_engine_test("archive_test", "archive_test.cpp")
+add_engine_test("score_audio_test", "score_audio_test.cpp")
+add_engine_test("score_edit_test", "score_edit_test.cpp")
+target("score_edit_test")
+    add_defines("MUSIC_CORE_TESTING")
+    add_files(path.join(project_root, "native", "score_edit.cpp"))
+target_end()
+add_engine_test("music_core_test", "music_core_test.cpp")
+target("music_core_test")
+    add_deps("music_core")
+target_end()
+
+target("audio_test")
+    set_kind("binary")
+    add_deps("native_audio")
+    add_files(path.join(project_root, "native", "audio_test.cpp"))
+    add_links("sndfile")
+    if is_plat("windows") then add_files(path.join(project_root, "native", "utf8.manifest")) end
+target_end()

@@ -10,6 +10,7 @@
  */
 
 #include "cairo_painter.h"
+#include "draw/internal/fontfaceutils.h"
 
 #include <algorithm>
 #include <array>
@@ -434,8 +435,8 @@ public:
             throw std::runtime_error("CairoPainter: empty font file");
         }
 
-        FT_Error ftError = FT_New_Memory_Face(m_ftLibrary, entry->data.data(),
-                                              static_cast<FT_Long>(entry->data.size()), 0, &entry->ft);
+        FT_Error ftError = newMatchingMemoryFace(m_ftLibrary, entry->data.data(),
+                                               static_cast<FT_Long>(entry->data.size()), fontData.key, &entry->ft);
         if (ftError != 0 || !entry->ft) {
             throw std::runtime_error("CairoPainter: FT_New_Memory_Face failed for family '"
                                      + fontData.key.family().id().toStdString() + "'");

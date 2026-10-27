@@ -56,7 +56,7 @@ async def main():
                 initialized = await session.initialize()
                 report["protocol"] = initialized.protocol_version
                 listed = await session.list_tools()
-                assert len(listed.tools) == 6
+                assert {"score_create", "score_open", "score_get", "score_replace_measures", "score_export", "score_close"} <= {tool.name for tool in listed.tools}
                 async def call(name, arguments, expect_error=False):
                     response = await session.call_tool(name, arguments)
                     assert bool(response.is_error) == expect_error, response

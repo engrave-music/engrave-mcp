@@ -29,17 +29,59 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace mu::engraving {
 class Score;
 }
 
 namespace music {
-// Same fields and values as upstream NotationMeta::metaJson(Score*), except
-// that "tracks" is always an empty array here: the audio-track overload is
-// not part of the Qt-free host. Returns an empty object when score is null.
+// One audio/instrument track descriptor supplied by the caller. IDs must name
+// an existing InstrumentTrackId in the score; this layer never derives names
+// or resource metadata from the score's Parts.
+struct MetadataTrack {
+    std::string part_id;
+    std::string instrument_id;
+    std::string type;
+    std::string name;
+    std::optional<std::string> sound_id;
+    std::optional<std::string> category;
+    std::optional<std::string> vendor;
+};
+
+// Same fields and values as upstream NotationMeta::metaJson(Score*). The base
+// overload always emits an empty "tracks" array: it has no audio-resource
+// state to report and does not invent any. Returns an empty object when score
+// is null. Excerpt entries whose excerpt or excerptScore pointer is null are
+// skipped rather than dereferenced; skipped entries are not represented and
+// surviving excerpts keep their MasterScore::excerpts() index as "id".
 nlohmann::json score_metadata(mu::engraving::Score* score);
+
+// Same JSON as score_metadata(score), with "tracks" built from the supplied
+// descriptors. Every descriptor must reference an existing part in score and
+// an instrument ID owned by that part; duplicate (part, instrument) pairs are
+// rejected. Tracks are emitted sorted by numeric part ID and then instrument
+// ID, using mu::engraving::InstrumentTrackId ordering.
+//
+// soundId and category are omitted when absent and also when they equal name,
+// matching upstream. vendor is emitted only when supplied and type is not
+// "fluid_soundfont"; the Fluid type omits it even if one was supplied, as
+// upstream does. Values are copied from the descriptors, never synthesized.
+//
+// Throws std::invalid_argument for a malformed/unknown part ID, an unknown
+// instrument ID, a duplicate pair, or non-empty tracks with a null score.
+// Excerpts are handled as documented for the base overload.
+nlohmann::json score_metadata(mu::engraving::Score* score, const std::vector<MetadataTrack>& tracks);
+
+// Upstream webmscore titleFilenameSafe(), converted to UTF-8 std::string:
+//   title.replace(/[\s<>:{}"/\\|?*~.\0\cA-\cZ]+/g, '_')
+// Runs of matching characters become one '_'. JS whitespace covers ASCII
+// whitespace plus U+00A0, U+1680, U+2000..U+200A, U+2028, U+2029, U+202F,
+// U+205F, U+3000 and U+FEFF. Matching is by Unicode code point, not UTF-8
+// byte. Returns an empty string when score is null.
+std::string score_title_filename_safe(const mu::engraving::Score* score);
 
 // Upstream NotationMeta::title(), converted to std::string. Returns an empty
 // string when score is null.

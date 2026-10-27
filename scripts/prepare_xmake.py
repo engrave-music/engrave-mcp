@@ -61,6 +61,7 @@ def validate(project_root: Path, require_harfbuzz: bool) -> list[str]:
         "tool schema source": project_root / "native" / "tools.json",
         "native env cairo header": native_root / "include" / "cairo" / "cairo.h",
         "native env zlib header": native_root / "include" / "zlib.h",
+        "native env libsndfile header": native_root / "include" / "sndfile.h",
         "native env nlohmann header": native_root / "include" / "nlohmann" / "json.hpp",
     }
     for label, path in required_files.items():
@@ -94,7 +95,7 @@ def validate(project_root: Path, require_harfbuzz: bool) -> list[str]:
     if not library_dir.is_dir():
         errors.append(f"missing native library directory: {library_dir}")
     else:
-        expected = ("cairo.lib", "z.lib") if sys.platform == "win32" else ("libcairo.so", "libz.so")
+        expected = ("cairo.lib", "z.lib", "sndfile.lib") if sys.platform == "win32" else ("libcairo.so", "libz.so", "libsndfile.so")
         for name in expected:
             if not (library_dir / name).is_file():
                 errors.append(f"missing native link library: {library_dir / name}")

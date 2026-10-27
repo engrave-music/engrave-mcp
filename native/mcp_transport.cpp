@@ -1,18 +1,98 @@
 #include "mcp_transport.h"
-#include <iostream>
-#include <string>
-#include <functional>
-#include <cctype>
+
 #include <algorithm>
-#include <nlohmann/json.hpp>
+#include <atomic>
+#include <cctype>
+#include <cerrno>
+#include <chrono>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <deque>
+#include <exception>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <stop_token>
+#include <string>
+#include <system_error>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#include <asio.hpp>
+#include <asio/async_result.hpp>
+#include <asio/bind_cancellation_slot.hpp>
+#include <asio/cancellation_signal.hpp>
+#include <asio/cancellation_state.hpp>
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
+#include <asio/executor_work_guard.hpp>
+#include <asio/io_context.hpp>
+#include <asio/post.hpp>
+#include <asio/this_coro.hpp>
+#include <asio/use_awaitable.hpp>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <fcntl.h>
+#include <io.h>
+#else
+#include <csignal>
+#include <fcntl.h>
+#include <poll.h>
+#include <unistd.h>
+#endif
 
 namespace music {
 
-using Json = nlohmann::json;
+ToolCallError::ToolCallError(std::string error_code,
+                             std::string message,
+                             Json error_details)
+    : std::runtime_error(std::move(message)),
+      code(std::move(error_code)),
+      details(std::move(error_details)) {}
 
 namespace {
 
-constexpr size_t MAX_LINE_BYTES = 8 * 1024 * 1024; // 8 MiB strict maximum
+constexpr std::size_t kMaxLineBytes = 8u * 1024u * 1024u; // 8 MiB strict maximum
+constexpr std::size_t kMaxPendingLines = 64u;
+constexpr std::size_t kMaxPendingBytes = 32u * 1024u * 1024u;
+
+constexpr std::size_t kMaxInflightCalls = 64u;
+constexpr std::size_t kDrainBatch = 64u;
+
+// A single wire response is capped at 16 MiB (including its newline). The
+// output budget covers both serialised-but-not-yet-queued responses and
+// messages queued for (or being written by) the writer thread, so the total
+// response memory held by the transport is bounded independently of how fast
+// the client reads stdout.
+constexpr std::size_t kMaxResponseBytes = 16u * 1024u * 1024u;
+constexpr std::size_t kOutputBudgetBytes = 48u * 1024u * 1024u;
+constexpr std::size_t kMaxOutputMessages = 256u;
+
+// Successful results carry the payload both as legacy text and as
+// structuredContent. Duplicating a large (e.g. ~8 MiB score_get) payload
+// would exceed the 16 MiB wire cap even though the structured payload itself
+// fits. Above this threshold the legacy text becomes a short pointer to
+// structuredContent, keeping the authoritative structured result intact.
+constexpr std::size_t kMaxLegacyTextBytes = 4u * 1024u * 1024u;
+
+constexpr int kPollMilliseconds = 5;
+
+constexpr int kReadError = -1;
+constexpr int kReadEof = 0;
+constexpr int kReadStopped = -2;
 
 enum class ServerState {
     Uninitialized,
@@ -20,78 +100,1122 @@ enum class ServerState {
     Ready
 };
 
+enum class WireStatus {
+    Ok,
+    TooLarge,
+    Failed
+};
+
 bool is_valid_id(const Json& id) {
     return id.is_string() || id.is_number_integer();
 }
 
-bool send_json(const Json& j) {
+bool is_cancellation_code(const std::string& code) {
+    return code == "operation_aborted" || code == "cancelled" ||
+           code == "canceled" || code == "aborted";
+}
+
+struct ReaderEvent {
+    enum class Kind {
+        Line,
+        Oversize,
+        Error,
+        Eof
+    };
+
+    Kind kind = Kind::Line;
+    std::string data;
+};
+
+struct CallState {
+    Json id;
+    std::shared_ptr<asio::cancellation_signal> cancel;
+    bool cancel_requested = false;
+    bool responded = false;
+};
+
+using CallStatePtr = std::shared_ptr<CallState>;
+
+// A type-erased suspended coroutine completion handler. The use_awaitable
+// handler is move-only, so it cannot live directly in std::function.
+class OutputWaiter {
+public:
+    virtual ~OutputWaiter() = default;
+    virtual void resume() noexcept = 0;
+};
+
+template <typename Handler>
+class TypedOutputWaiter final : public OutputWaiter {
+public:
+    explicit TypedOutputWaiter(Handler handler) : handler_(std::move(handler)) {}
+
+    void resume() noexcept override {
+        try {
+            auto handler = std::move(handler_);
+            handler();
+        } catch (...) {
+        }
+    }
+
+private:
+    Handler handler_;
+};
+
+bool is_operation_aborted_code(const std::system_error& error) noexcept {
+    return error.code().value() ==
+           static_cast<int>(asio::error::operation_aborted);
+}
+
+bool is_operation_aborted(const std::exception_ptr& error) noexcept {
+    if (!error) {
+        return false;
+    }
     try {
-        std::string out = j.dump(-1, ' ', false, Json::error_handler_t::replace);
-        out.push_back('\n');
-        std::cout.write(out.data(), static_cast<std::streamsize>(out.size()));
-        std::cout.flush();
-        return !std::cout.fail();
+        std::rethrow_exception(error);
+    } catch (const std::system_error& e) {
+        return is_operation_aborted_code(e);
     } catch (...) {
         return false;
     }
 }
 
-bool send_error(const Json& id, int code, const std::string& message) {
-    Json err = {
-        {"jsonrpc", "2.0"},
-        {"id", is_valid_id(id) ? id : Json(nullptr)},
-        {"error", {
-            {"code", code},
-            {"message", message}
-        }}
-    };
-    return send_json(err);
-}
+class Session : public std::enable_shared_from_this<Session> {
+public:
+    Session(asio::io_context& ioc,
+            const std::function<Json()>& list_tools,
+            const AsyncToolCall& call_tool,
+            const std::function<void()>& shutdown)
+        : ioc_(ioc),
+          list_tools_(list_tools),
+          call_tool_(call_tool),
+          shutdown_(shutdown),
+          work_(asio::make_work_guard(ioc)) {
+        inflight_.reserve(kMaxInflightCalls);
+    }
 
-bool send_result(const Json& id, const Json& result) {
-    Json res = {
-        {"jsonrpc", "2.0"},
-        {"id", id},
-        {"result", result}
-    };
-    return send_json(res);
-}
+    Session(const Session&) = delete;
+    Session& operator=(const Session&) = delete;
 
-} // namespace
+    ~Session() {
+        stop_threads();
+#if defined(_WIN32)
+        close_os_handles();
+#endif
+    }
 
-int serve_stdio(const std::function<Json()>& list_tools,
-                const std::function<Json(const std::string&, const Json&)>& call_tool) {
-    ServerState state = ServerState::Uninitialized;
+    void start_threads() {
+        auto self = shared_from_this();
+        writer_thread_ = std::jthread([self](std::stop_token) {
+            self->writer_main();
+        });
+        reader_thread_ = std::jthread([self](std::stop_token stop) {
+            self->reader_main(stop);
+        });
+    }
 
-    auto process_line = [&](const std::string& line) -> bool {
+    void stop_threads() noexcept {
+        request_reader_stop();
+        request_writer_abort();
+        if (reader_thread_.joinable()) {
+            reader_thread_.request_stop();
+            reader_thread_.join();
+        }
+        if (writer_thread_.joinable()) {
+            writer_thread_.join();
+        }
+    }
+
+    void finalize() noexcept {
+        if (!shutdown_called_) {
+            shutdown_once();
+        }
+        work_.reset();
+    }
+
+    int exit_code() const noexcept {
+        return failed_.load(std::memory_order_relaxed) ? 1 : 0;
+    }
+
+    // Called on the session/io thread after io_context::run() itself threw.
+    void fatal_from_owner(const char* reason) noexcept {
+        fatal_shutdown(reason != nullptr ? std::string(reason)
+                                         : std::string("io_context handler failure"));
+    }
+
+private:
+    // ---------------------------------------------------------------------
+    // Reader thread
+    // ---------------------------------------------------------------------
+
+    void reader_main(std::stop_token stop) noexcept {
+#if defined(_WIN32)
+        HANDLE handle = ::OpenThread(THREAD_TERMINATE, FALSE, ::GetCurrentThreadId());
+        if (handle != nullptr) {
+            reader_handle_.store(handle, std::memory_order_release);
+        }
+#endif
+        try {
+            reader_loop(stop);
+        } catch (...) {
+            stop_reader_.store(true, std::memory_order_release);
+            queue_cv_.notify_all();
+            post_reader_failure("stdin reader exception");
+        }
+    }
+
+    void request_reader_stop() noexcept {
+        {
+            // Pair the state change with the mutex so a reader already inside
+            // condition_variable::wait cannot miss the wake-up.
+            std::lock_guard<std::mutex> lock(queue_mutex_);
+            stop_reader_.store(true, std::memory_order_release);
+        }
+        queue_cv_.notify_all();
+#if defined(_WIN32)
+        HANDLE handle = reader_handle_.load(std::memory_order_acquire);
+        if (handle != nullptr) {
+            ::CancelSynchronousIo(handle);
+        }
+#endif
+    }
+
+    void reader_loop(std::stop_token stop) {
+        std::string current;
+        current.reserve(4096);
+        bool oversized = false;
+        bool saw_eof = false;
+        bool saw_error = false;
+        std::string read_error;
+        char buffer[65536];
+
+        for (;;) {
+            if (stop.stop_requested() ||
+                stop_reader_.load(std::memory_order_acquire)) {
+                return;
+            }
+
+            const int n = read_chunk(buffer, sizeof(buffer), stop, read_error);
+            if (n == kReadStopped) {
+                return;
+            }
+            if (n < 0) {
+                saw_error = true;
+                break;
+            }
+            if (n == 0) {
+                saw_eof = true;
+                break;
+            }
+            if (!consume_bytes(buffer, static_cast<std::size_t>(n), current, oversized)) {
+                return;
+            }
+        }
+
+        if (saw_eof) {
+            if (oversized) {
+                ReaderEvent event;
+                event.kind = ReaderEvent::Kind::Oversize;
+                if (!enqueue(std::move(event))) {
+                    return;
+                }
+            } else if (!current.empty()) {
+                std::string line;
+                line.swap(current);
+                if (!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+                ReaderEvent event;
+                event.kind = ReaderEvent::Kind::Line;
+                event.data = std::move(line);
+                if (!enqueue(std::move(event))) {
+                    return;
+                }
+            }
+
+            ReaderEvent eof;
+            eof.kind = ReaderEvent::Kind::Eof;
+            (void)enqueue(std::move(eof));
+        } else if (saw_error) {
+            ReaderEvent event;
+            event.kind = ReaderEvent::Kind::Error;
+            event.data = read_error.empty()
+                ? std::string("unknown stdin read error")
+                : read_error;
+            (void)enqueue(std::move(event));
+        }
+    }
+
+    bool consume_bytes(const char* data,
+                       std::size_t size,
+                       std::string& current,
+                       bool& oversized) {
+        std::size_t pos = 0;
+        while (pos < size) {
+            if (oversized) {
+                const void* newline = std::memchr(data + pos, '\n', size - pos);
+                if (newline == nullptr) {
+                    return true;
+                }
+                const std::size_t newline_pos =
+                    static_cast<std::size_t>(static_cast<const char*>(newline) - data);
+
+                ReaderEvent event;
+                event.kind = ReaderEvent::Kind::Oversize;
+                if (!enqueue(std::move(event))) {
+                    return false;
+                }
+
+                oversized = false;
+                current.clear();
+                pos = newline_pos + 1;
+                continue;
+            }
+
+            const void* newline = std::memchr(data + pos, '\n', size - pos);
+            const std::size_t segment_end = newline
+                ? static_cast<std::size_t>(static_cast<const char*>(newline) - data)
+                : size;
+            const std::size_t segment_size = segment_end - pos;
+            const std::size_t room = kMaxLineBytes - current.size();
+
+            if (segment_size > room) {
+                if (room > 0) {
+                    current.append(data + pos, room);
+                }
+                oversized = true;
+                current.clear();
+                pos += room;
+                continue;
+            }
+
+            if (segment_size > 0) {
+                current.append(data + pos, segment_size);
+            }
+            pos = segment_end;
+
+            if (newline != nullptr) {
+                std::string line;
+                line.swap(current);
+                if (!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+
+                ReaderEvent event;
+                event.kind = ReaderEvent::Kind::Line;
+                event.data = std::move(line);
+                if (!enqueue(std::move(event))) {
+                    return false;
+                }
+
+                current.reserve(4096);
+                ++pos;
+            }
+        }
+        return true;
+    }
+
+    int read_chunk(char* buffer,
+                   std::size_t capacity,
+                   const std::stop_token& stop,
+                   std::string& error) {
+#if defined(_WIN32)
+        const int fd = _fileno(stdin);
+        bool pipe_mode = false;
+        HANDLE handle = INVALID_HANDLE_VALUE;
+
+        const auto raw = _get_osfhandle(fd);
+        if (raw >= 0) {
+            handle = reinterpret_cast<HANDLE>(raw);
+            pipe_mode = ::GetFileType(handle) == FILE_TYPE_PIPE;
+        }
+
+        if (pipe_mode) {
+            for (;;) {
+                if (stop.stop_requested() ||
+                    stop_reader_.load(std::memory_order_acquire)) {
+                    return kReadStopped;
+                }
+
+                DWORD available = 0;
+                if (!::PeekNamedPipe(handle, nullptr, 0, nullptr, &available, nullptr)) {
+                    const DWORD last_error = ::GetLastError();
+                    if (last_error == ERROR_BROKEN_PIPE ||
+                        last_error == ERROR_PIPE_NOT_CONNECTED ||
+                        last_error == ERROR_HANDLE_EOF) {
+                        return kReadEof;
+                    }
+                    if (last_error == ERROR_INVALID_HANDLE ||
+                        last_error == ERROR_INVALID_FUNCTION) {
+                        // Fall back to a blocking CRT read below.
+                        break;
+                    }
+                    error = "PeekNamedPipe failed with error " +
+                        std::to_string(static_cast<unsigned long>(last_error));
+                    return kReadError;
+                }
+
+                if (available > 0) {
+                    const std::size_t wanted =
+                        static_cast<std::size_t>(available) < capacity
+                            ? static_cast<std::size_t>(available)
+                            : capacity;
+                    const unsigned int want = static_cast<unsigned int>(wanted);
+                    const int n = _read(fd, buffer, want);
+                    if (n < 0) {
+                        if (stop.stop_requested() ||
+                            stop_reader_.load(std::memory_order_acquire)) {
+                            return kReadStopped;
+                        }
+                        if (errno == EINTR) {
+                            continue;
+                        }
+                        if (errno == EAGAIN) {
+                            std::this_thread::sleep_for(
+                                std::chrono::milliseconds(kPollMilliseconds));
+                            continue;
+                        }
+                        error = "stdin read failed: " +
+                            std::error_code(errno, std::generic_category()).message();
+                        return kReadError;
+                    }
+                    if (n == 0) {
+                        return kReadEof;
+                    }
+                    return n;
+                }
+
+                // Pipe polling is deliberately short: cancellation and EOF
+                // must be observed promptly even when stdin is idle.
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(kPollMilliseconds));
+            }
+        }
+
+        for (;;) {
+            if (stop.stop_requested() ||
+                stop_reader_.load(std::memory_order_acquire)) {
+                return kReadStopped;
+            }
+
+            constexpr std::size_t max_read = 0x7fffffffu;
+            const std::size_t wanted = capacity < max_read ? capacity : max_read;
+            const unsigned int want = static_cast<unsigned int>(wanted);
+            const int n = _read(fd, buffer, want);
+            if (n < 0) {
+                if (stop.stop_requested() ||
+                    stop_reader_.load(std::memory_order_acquire)) {
+                    return kReadStopped;
+                }
+                if (errno == EINTR) {
+                    continue;
+                }
+                if (errno == EAGAIN) {
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(kPollMilliseconds));
+                    continue;
+                }
+                error = "stdin read failed: " +
+                    std::error_code(errno, std::generic_category()).message();
+                return kReadError;
+            }
+            return n;
+        }
+#else
+        for (;;) {
+            if (stop.stop_requested() ||
+                stop_reader_.load(std::memory_order_acquire)) {
+                return kReadStopped;
+            }
+
+            struct pollfd descriptor;
+            descriptor.fd = STDIN_FILENO;
+            descriptor.events = static_cast<short>(POLLIN);
+            descriptor.revents = 0;
+
+            const int ready = ::poll(&descriptor, 1, 100);
+            if (ready < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                error = "stdin poll failed: " +
+                    std::error_code(errno, std::generic_category()).message();
+                return kReadError;
+            }
+            if (ready == 0) {
+                continue;
+            }
+            if ((descriptor.revents & (POLLERR | POLLNVAL)) != 0) {
+                error = "stdin poll reported an error";
+                return kReadError;
+            }
+            if ((descriptor.revents & (POLLIN | POLLHUP)) == 0) {
+                continue;
+            }
+
+            const ssize_t n = ::read(STDIN_FILENO, buffer, capacity);
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    continue;
+                }
+                error = "stdin read failed: " +
+                    std::error_code(errno, std::generic_category()).message();
+                return kReadError;
+            }
+            if (n == 0) {
+                return kReadEof;
+            }
+            return static_cast<int>(n);
+        }
+#endif
+    }
+
+    bool enqueue(ReaderEvent event) noexcept {
+        bool schedule = false;
+        try {
+            const std::size_t line_bytes = event.kind == ReaderEvent::Kind::Line
+                ? event.data.size()
+                : 0;
+
+            {
+                std::unique_lock<std::mutex> lock(queue_mutex_);
+                queue_cv_.wait(lock, [&] {
+                    if (stop_reader_.load(std::memory_order_acquire) ||
+                        fatal_.load(std::memory_order_acquire)) {
+                        return true;
+                    }
+                    if (queue_.size() >= kMaxPendingLines) {
+                        return false;
+                    }
+                    if (line_bytes != 0 &&
+                        queued_bytes_ + line_bytes > kMaxPendingBytes) {
+                        return false;
+                    }
+                    return true;
+                });
+
+                if (stop_reader_.load(std::memory_order_acquire) ||
+                    fatal_.load(std::memory_order_acquire)) {
+                    return false;
+                }
+
+                queue_.push_back(std::move(event));
+                queued_bytes_ += line_bytes;
+                if (!drain_scheduled_) {
+                    drain_scheduled_ = true;
+                    schedule = true;
+                }
+            }
+
+            if (schedule) {
+                auto self = shared_from_this();
+                asio::post(ioc_.get_executor(), [self]() { self->start_drain(); });
+            }
+            return true;
+        } catch (...) {
+            stop_reader_.store(true, std::memory_order_release);
+            queue_cv_.notify_all();
+            post_reader_failure("stdin reader queue failure");
+            return false;
+        }
+    }
+
+    void post_reader_failure(const char* reason) noexcept {
+        try {
+            auto self = shared_from_this();
+            const std::string text = reason != nullptr
+                ? std::string(reason)
+                : std::string("stdin reader failure");
+            asio::post(ioc_.get_executor(), [self, text]() {
+                self->fatal_shutdown(text);
+            });
+        } catch (...) {
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Output writer thread
+    // ---------------------------------------------------------------------
+
+    void writer_main() noexcept {
+#if defined(_WIN32)
+        HANDLE handle = ::OpenThread(THREAD_TERMINATE, FALSE, ::GetCurrentThreadId());
+        if (handle != nullptr) {
+            writer_handle_.store(handle, std::memory_order_release);
+        }
+#else
+        original_stdout_flags_ = ::fcntl(STDOUT_FILENO, F_GETFL, 0);
+        if (original_stdout_flags_ >= 0) {
+            (void)::fcntl(STDOUT_FILENO, F_SETFL,
+                          original_stdout_flags_ | O_NONBLOCK);
+        }
+#endif
+        try {
+            writer_loop();
+        } catch (...) {
+            post_writer_failure("stdout writer exception");
+        }
+#if !defined(_WIN32)
+        if (original_stdout_flags_ >= 0) {
+            (void)::fcntl(STDOUT_FILENO, F_SETFL, original_stdout_flags_);
+        }
+#endif
+        post_writer_exited();
+    }
+
+    void request_writer_abort() noexcept {
+        writer_abort_.store(true, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(out_mutex_);
+            out_abort_ = true;
+        }
+        out_cv_.notify_all();
+#if defined(_WIN32)
+        HANDLE handle = writer_handle_.load(std::memory_order_acquire);
+        if (handle != nullptr) {
+            ::CancelSynchronousIo(handle);
+        }
+#endif
+    }
+
+    void writer_loop() {
+        for (;;) {
+            std::string message;
+            {
+                std::unique_lock<std::mutex> lock(out_mutex_);
+                out_cv_.wait(lock, [&] {
+                    return writer_abort_.load(std::memory_order_acquire) ||
+                           out_abort_ || !out_messages_.empty() ||
+                           out_graceful_stop_;
+                });
+
+                if (writer_abort_.load(std::memory_order_acquire) || out_abort_) {
+                    return;
+                }
+                if (out_messages_.empty()) {
+                    if (out_graceful_stop_) {
+                        return;
+                    }
+                    continue;
+                }
+
+                message = std::move(out_messages_.front());
+                out_messages_.pop_front();
+            }
+
+            const bool written = write_all(message.data(), message.size());
+
+            {
+                std::lock_guard<std::mutex> lock(out_mutex_);
+                if (out_budget_used_ >= message.size()) {
+                    out_budget_used_ -= message.size();
+                } else {
+                    out_budget_used_ = 0;
+                }
+                if (out_message_slots_ > 0) {
+                    --out_message_slots_;
+                }
+            }
+
+            if (!written) {
+                if (!writer_abort_.load(std::memory_order_acquire)) {
+                    post_writer_failure("stdout write failed");
+                }
+                return;
+            }
+
+            schedule_output_progress();
+        }
+    }
+
+    bool write_all(const char* data, std::size_t size) noexcept {
+        std::size_t offset = 0;
+#if defined(_WIN32)
+        const auto raw = _get_osfhandle(_fileno(stdout));
+        if (raw < 0) {
+            return false;
+        }
+        HANDLE handle = reinterpret_cast<HANDLE>(raw);
+        while (offset < size) {
+            if (writer_abort_.load(std::memory_order_acquire)) {
+                return false;
+            }
+            const std::size_t remaining = size - offset;
+            const DWORD chunk = static_cast<DWORD>(
+                remaining < 0x7fffffffu ? remaining : 0x7fffffffu);
+            DWORD written = 0;
+            if (!::WriteFile(handle, data + offset, chunk, &written, nullptr)) {
+                // Broken pipe, closed reader and cancellation are all fatal;
+                // the owner decides how to unwind pending work.
+                return false;
+            }
+            if (written == 0) {
+                return false;
+            }
+            offset += written;
+        }
+        return true;
+#else
+        while (offset < size) {
+            if (writer_abort_.load(std::memory_order_acquire)) {
+                return false;
+            }
+            const std::size_t remaining = size - offset;
+            const ssize_t n = ::write(STDOUT_FILENO, data + offset, remaining);
+            if (n > 0) {
+                offset += static_cast<std::size_t>(n);
+                continue;
+            }
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    struct pollfd descriptor;
+                    descriptor.fd = STDOUT_FILENO;
+                    descriptor.events = static_cast<short>(POLLOUT);
+                    descriptor.revents = 0;
+                    const int ready = ::poll(&descriptor, 1, kPollMilliseconds);
+                    if (ready < 0 && errno == EINTR) {
+                        continue;
+                    }
+                    if (ready < 0) {
+                        return false;
+                    }
+                    continue;
+                }
+                return false;
+            }
+            return false;
+        }
+        return true;
+#endif
+    }
+
+    void schedule_output_progress() noexcept {
+        if (output_progress_pending_.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        try {
+            auto self = shared_from_this();
+            asio::post(ioc_.get_executor(), [self]() {
+                self->output_progress_pending_.store(false,
+                                                     std::memory_order_release);
+                self->resume_output_waiters();
+                self->maybe_finish_graceful();
+            });
+        } catch (...) {
+            output_progress_pending_.store(false, std::memory_order_release);
+        }
+    }
+
+    void post_writer_failure(const char* reason) noexcept {
+        try {
+            auto self = shared_from_this();
+            const std::string text = reason != nullptr
+                ? std::string(reason)
+                : std::string("stdout write failure");
+            asio::post(ioc_.get_executor(), [self, text]() {
+                self->fatal_shutdown(text);
+            });
+        } catch (...) {
+        }
+    }
+
+    void post_writer_exited() noexcept {
+        try {
+            auto self = shared_from_this();
+            asio::post(ioc_.get_executor(), [self]() {
+                self->resume_output_waiters();
+                // No response producer can legitimately still be waiting:
+                // graceful stop is only requested with no in-flight calls,
+                // and fatal stop aborts all waiters. The guard is released
+                // only here, after the writer thread can no longer post.
+                self->work_.reset();
+            });
+        } catch (...) {
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Owner/session-thread output queue and backpressure
+    // ---------------------------------------------------------------------
+
+    bool output_closed() noexcept {
+        std::lock_guard<std::mutex> lock(out_mutex_);
+        return out_abort_ || out_graceful_stop_ ||
+               writer_abort_.load(std::memory_order_acquire);
+    }
+
+    bool try_reserve_output(std::size_t bytes) noexcept {
+        std::lock_guard<std::mutex> lock(out_mutex_);
+        if (out_abort_ || out_graceful_stop_ ||
+            writer_abort_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        if (out_message_slots_ >= kMaxOutputMessages) {
+            return false;
+        }
+        if (out_budget_used_ + bytes > kOutputBudgetBytes) {
+            return false;
+        }
+        out_budget_used_ += bytes;
+        ++out_message_slots_;
+        return true;
+    }
+
+    void release_output_reservation(std::size_t reserved) noexcept {
+        {
+            std::lock_guard<std::mutex> lock(out_mutex_);
+            if (out_budget_used_ >= reserved) {
+                out_budget_used_ -= reserved;
+            } else {
+                out_budget_used_ = 0;
+            }
+            if (out_message_slots_ > 0) {
+                --out_message_slots_;
+            }
+        }
+        resume_output_waiters();
+    }
+
+    bool commit_output(std::size_t reserved, std::string& message) noexcept {
+        const std::size_t actual = message.size();
+        try {
+            std::lock_guard<std::mutex> lock(out_mutex_);
+            if (out_abort_ || writer_abort_.load(std::memory_order_acquire)) {
+                if (out_budget_used_ >= reserved) {
+                    out_budget_used_ -= reserved;
+                } else {
+                    out_budget_used_ = 0;
+                }
+                if (out_message_slots_ > 0) {
+                    --out_message_slots_;
+                }
+                return false;
+            }
+            try {
+                out_messages_.push_back(std::move(message));
+            } catch (...) {
+                if (out_budget_used_ >= reserved) {
+                    out_budget_used_ -= reserved;
+                } else {
+                    out_budget_used_ = 0;
+                }
+                if (out_message_slots_ > 0) {
+                    --out_message_slots_;
+                }
+                return false;
+            }
+            if (out_budget_used_ >= reserved) {
+                out_budget_used_ -= reserved;
+            } else {
+                out_budget_used_ = 0;
+            }
+            out_budget_used_ += actual;
+        } catch (...) {
+            return false;
+        }
+        out_cv_.notify_one();
+        return true;
+    }
+
+    asio::awaitable<void> wait_for_output_room() {
+        if (fatal_.load(std::memory_order_acquire)) {
+            co_return;
+        }
+        auto token = asio::use_awaitable;
+        co_await asio::async_initiate<decltype(token), void()>(
+            [this](auto handler) {
+                output_waiters_.push_back(
+                    std::make_unique<TypedOutputWaiter<decltype(handler)>>(
+                        std::move(handler)));
+            },
+            token);
+    }
+
+    void resume_output_waiters() noexcept {
+        while (!output_waiters_.empty()) {
+            auto waiter = std::move(output_waiters_.front());
+            output_waiters_.pop_front();
+            try {
+                asio::post(ioc_.get_executor(),
+                           [waiter = std::move(waiter)]() mutable {
+                               waiter->resume();
+                           });
+            } catch (...) {
+                // Never abandon a suspended coroutine merely because posting
+                // its wake-up failed; resume inline instead.
+                waiter->resume();
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Response serialisation and writer submission
+    // ---------------------------------------------------------------------
+
+    asio::awaitable<WireStatus> send_wire(const Json& value) {
+        if (fatal_.load(std::memory_order_acquire)) {
+            co_return WireStatus::Failed;
+        }
+
+        for (;;) {
+            if (fatal_.load(std::memory_order_acquire)) {
+                co_return WireStatus::Failed;
+            }
+            if (try_reserve_output(kMaxResponseBytes)) {
+                break;
+            }
+            if (output_closed()) {
+                co_return WireStatus::Failed;
+            }
+            co_await wait_for_output_room();
+        }
+
+        std::string wire;
+        try {
+            wire = value.dump(-1, ' ', false, Json::error_handler_t::replace);
+            wire.push_back('\n');
+        } catch (...) {
+            release_output_reservation(kMaxResponseBytes);
+            fatal_shutdown("cannot serialise MCP response");
+            co_return WireStatus::Failed;
+        }
+
+        if (wire.size() > kMaxResponseBytes) {
+            release_output_reservation(kMaxResponseBytes);
+            co_return WireStatus::TooLarge;
+        }
+
+        if (!commit_output(kMaxResponseBytes, wire)) {
+            co_return WireStatus::Failed;
+        }
+        co_return WireStatus::Ok;
+    }
+
+    asio::awaitable<WireStatus> send_result_status(const Json& id, Json result) {
+        try {
+            Json response = Json::object();
+            response["jsonrpc"] = "2.0";
+            response["id"] = id;
+            response["result"] = std::move(result);
+            co_return co_await send_wire(response);
+        } catch (...) {
+            fatal_shutdown("cannot build MCP result response");
+            co_return WireStatus::Failed;
+        }
+    }
+
+    asio::awaitable<bool> send_error(const Json& id,
+                                     int code,
+                                     const std::string& message) {
+        try {
+            Json error = Json::object();
+            error["jsonrpc"] = "2.0";
+            error["id"] = is_valid_id(id) ? id : Json(nullptr);
+            error["error"] = {
+                {"code", code},
+                {"message", message}
+            };
+            const WireStatus status = co_await send_wire(error);
+            if (status == WireStatus::TooLarge) {
+                fatal_shutdown("MCP error response exceeded the 16 MiB limit");
+            }
+            co_return status == WireStatus::Ok;
+        } catch (...) {
+            fatal_shutdown("cannot build MCP error response");
+            co_return false;
+        }
+    }
+
+    // Generic protocol results: if the response is over budget, replace it
+    // with a bounded protocol resource error rather than silently dropping it.
+    asio::awaitable<bool> send_result(const Json& id, Json result) {
+        const WireStatus status = co_await send_result_status(id, std::move(result));
+        if (status == WireStatus::Ok) {
+            co_return true;
+        }
+        if (status == WireStatus::TooLarge &&
+            !fatal_.load(std::memory_order_acquire)) {
+            co_return co_await send_error(
+                id, -32603,
+                "Internal error: response exceeds the 16 MiB transport limit");
+        }
+        co_return false;
+    }
+
+    // ---------------------------------------------------------------------
+    // Draining stdin events on the session thread
+    // ---------------------------------------------------------------------
+
+    void start_drain() noexcept {
+        if (fatal_.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> lock(queue_mutex_);
+            drain_scheduled_ = false;
+            return;
+        }
+        try {
+            auto self = shared_from_this();
+            asio::co_spawn(
+                ioc_.get_executor(),
+                [self]() -> asio::awaitable<void> {
+                    co_await self->drain_loop();
+                },
+                asio::detached);
+        } catch (...) {
+            {
+                std::lock_guard<std::mutex> lock(queue_mutex_);
+                drain_scheduled_ = false;
+            }
+            fatal_shutdown("cannot start MCP input dispatcher");
+        }
+    }
+
+    asio::awaitable<void> drain_loop() {
+        try {
+            std::size_t processed = 0;
+            for (;;) {
+                ReaderEvent event;
+                {
+                    std::lock_guard<std::mutex> lock(queue_mutex_);
+                    if (fatal_.load(std::memory_order_acquire) || queue_.empty()) {
+                        drain_scheduled_ = false;
+                        break;
+                    }
+
+                    event = std::move(queue_.front());
+                    queue_.pop_front();
+                    if (event.kind == ReaderEvent::Kind::Line) {
+                        queued_bytes_ -= event.data.size();
+                    }
+                }
+                queue_cv_.notify_all();
+
+                if (!co_await process_event(event)) {
+                    {
+                        std::lock_guard<std::mutex> lock(queue_mutex_);
+                        drain_scheduled_ = false;
+                    }
+                    break;
+                }
+
+                if (++processed >= kDrainBatch) {
+                    processed = 0;
+                    // Yield so queued owner completions and timers run even
+                    // while input is continuously available.
+                    co_await asio::post(ioc_.get_executor(),
+                                        asio::use_awaitable);
+                }
+            }
+        } catch (...) {
+            {
+                std::lock_guard<std::mutex> lock(queue_mutex_);
+                drain_scheduled_ = false;
+            }
+            fatal_shutdown("MCP input dispatch failed");
+        }
+
+        maybe_finish_graceful();
+    }
+
+    asio::awaitable<bool> process_event(ReaderEvent& event) {
+        switch (event.kind) {
+        case ReaderEvent::Kind::Line:
+            co_return co_await handle_line(event.data);
+
+        case ReaderEvent::Kind::Oversize:
+            co_return co_await send_error(
+                nullptr, -32700, "Parse error: line exceeds 8 MiB limit");
+
+        case ReaderEvent::Kind::Error:
+            try {
+                std::cerr << "stdin read error: " << event.data << '\n';
+            } catch (...) {
+            }
+            fatal_shutdown("stdin read error: " + event.data);
+            co_return false;
+
+        case ReaderEvent::Kind::Eof:
+            eof_ = true;
+            // This cancels queued engine work, but running committed
+            // operations still complete and their responses are drained.
+            shutdown_once();
+            co_return false;
+        }
+        co_return false;
+    }
+
+    asio::awaitable<bool> handle_line(const std::string& line) {
+        bool only_ws = true;
+        for (unsigned char ch : line) {
+            if (!std::isspace(ch)) {
+                only_ws = false;
+                break;
+            }
+        }
+        if (only_ws) {
+            co_return true;
+        }
+        co_return co_await process_line(line);
+    }
+
+    asio::awaitable<bool> process_line(const std::string& line) {
         Json req;
+        // A coroutine catch handler may not suspend, so classify the parse
+        // failure here and deliver the protocol error after the handler.
+        int parse_error_code = 0;
+        const char* parse_error_message = nullptr;
         try {
             req = Json::parse(line, [](int depth, Json::parse_event_t, Json&) {
-                if (depth > 64) throw std::length_error("JSON nesting exceeds 64 levels");
+                if (depth > 64) {
+                    throw std::length_error("JSON nesting exceeds 64 levels");
+                }
                 return true;
             });
         } catch (const std::length_error&) {
-            return send_error(nullptr, -32600, "Invalid Request: JSON nesting exceeds 64 levels");
+            parse_error_code = -32600;
+            parse_error_message =
+                "Invalid Request: JSON nesting exceeds 64 levels";
         } catch (const Json::parse_error&) {
-            return send_error(nullptr, -32700, "Parse error");
+            parse_error_code = -32700;
+            parse_error_message = "Parse error";
         } catch (const Json::exception&) {
-            return send_error(nullptr, -32700, "Parse error");
+            parse_error_code = -32700;
+            parse_error_message = "Parse error";
+        } catch (...) {
+            parse_error_code = -32700;
+            parse_error_message = "Parse error";
+        }
+        if (parse_error_code != 0) {
+            co_return co_await send_error(
+                nullptr, parse_error_code, parse_error_message);
         }
 
         if (req.is_array()) {
-            return send_error(nullptr, -32600, "Batch requests are not supported");
+            co_return co_await send_error(
+                nullptr, -32600, "Batch requests are not supported");
         }
         if (!req.is_object()) {
-            return send_error(nullptr, -32600, "Invalid Request");
+            co_return co_await send_error(nullptr, -32600, "Invalid Request");
         }
 
+        // Deferred protocol error, delivered after the try/catch because a
+        // coroutine handler must not suspend.
+        int protocol_error_code = 0;
+        std::string protocol_error_message;
+        Json protocol_error_id = nullptr;
         try {
             if (!req.contains("jsonrpc") || req["jsonrpc"] != "2.0") {
                 Json fallback_id = nullptr;
                 if (req.contains("id") && is_valid_id(req["id"])) {
                     fallback_id = req["id"];
                 }
-                return send_error(fallback_id, -32600, "Invalid Request: invalid or missing jsonrpc version");
+                co_return co_await send_error(
+                    fallback_id, -32600,
+                    "Invalid Request: invalid or missing jsonrpc version");
             }
 
             if (!req.contains("method") || !req["method"].is_string()) {
@@ -99,54 +1223,82 @@ int serve_stdio(const std::function<Json()>& list_tools,
                 if (req.contains("id") && is_valid_id(req["id"])) {
                     fallback_id = req["id"];
                 }
-                return send_error(fallback_id, -32600, "Invalid Request: method must be a string");
+                co_return co_await send_error(
+                    fallback_id, -32600,
+                    "Invalid Request: method must be a string");
             }
 
             std::string method = req["method"].get<std::string>();
 
-            // Check if notification or request
             if (!req.contains("id")) {
-                // Notifications have no id
                 if (method == "notifications/initialized") {
-                    if (state == ServerState::InitializedPending) {
-                        state = ServerState::Ready;
+                    if (state_ == ServerState::InitializedPending) {
+                        state_ = ServerState::Ready;
                     }
+                } else if (method == "notifications/cancelled") {
+                    handle_cancelled(req);
                 }
-                // Do not execute methods sent as notifications; ignore unknown notifications.
-                return true;
+                co_return true;
             }
 
             const Json& id = req["id"];
             if (!is_valid_id(id)) {
-                // Reject null/object/array/float/bool ids
-                return send_error(nullptr, -32600, "Invalid Request: id must be a string or integer");
+                co_return co_await send_error(
+                    nullptr, -32600,
+                    "Invalid Request: id must be a string or integer");
+            }
+
+            for (const auto& call : inflight_) {
+                if (call->id == id) {
+                    // The original request still owns this id. Returning the
+                    // duplicate with a null id avoids two responses that
+                    // claim the same request id.
+                    co_return co_await send_error(
+                        nullptr, -32600,
+                        "Invalid Request: request id is already in flight");
+                }
             }
 
             Json params = Json::object();
             if (req.contains("params")) {
                 if (!req["params"].is_object()) {
-                    return send_error(id, -32602, "Invalid params: must be an object");
+                    co_return co_await send_error(
+                        id, -32602, "Invalid params: must be an object");
                 }
                 params = req["params"];
             }
 
             if (method == "initialize") {
-                if (state != ServerState::Uninitialized) {
-                    return send_error(id, -32600, "Server already initialized");
+                if (state_ != ServerState::Uninitialized) {
+                    co_return co_await send_error(
+                        id, -32600, "Server already initialized");
                 }
-                if (!params.contains("protocolVersion") || !params["protocolVersion"].is_string()) {
-                    return send_error(id, -32602, "Invalid params: protocolVersion string required");
+                if (!params.contains("protocolVersion") ||
+                    !params["protocolVersion"].is_string()) {
+                    co_return co_await send_error(
+                        id, -32602,
+                        "Invalid params: protocolVersion string required");
                 }
-                if (!params.contains("capabilities") || !params["capabilities"].is_object()) {
-                    return send_error(id, -32602, "Invalid params: capabilities object required");
+                if (!params.contains("capabilities") ||
+                    !params["capabilities"].is_object()) {
+                    co_return co_await send_error(
+                        id, -32602,
+                        "Invalid params: capabilities object required");
                 }
-                if (!params.contains("clientInfo") || !params["clientInfo"].is_object()) {
-                    return send_error(id, -32602, "Invalid params: clientInfo object required");
+                if (!params.contains("clientInfo") ||
+                    !params["clientInfo"].is_object()) {
+                    co_return co_await send_error(
+                        id, -32602,
+                        "Invalid params: clientInfo object required");
                 }
                 const auto& client_info = params["clientInfo"];
-                if (!client_info.contains("name") || !client_info["name"].is_string() ||
-                    !client_info.contains("version") || !client_info["version"].is_string()) {
-                    return send_error(id, -32602, "Invalid params: clientInfo name and version strings required");
+                if (!client_info.contains("name") ||
+                    !client_info["name"].is_string() ||
+                    !client_info.contains("version") ||
+                    !client_info["version"].is_string()) {
+                    co_return co_await send_error(
+                        id, -32602,
+                        "Invalid params: clientInfo name and version strings required");
                 }
 
                 Json result = {
@@ -159,80 +1311,116 @@ int serve_stdio(const std::function<Json()>& list_tools,
                         {"version", "0.1.0"}
                     }}
                 };
-                if (!send_result(id, result)) {
-                    return false;
+                if (!co_await send_result(id, std::move(result))) {
+                    co_return false;
                 }
-                state = ServerState::InitializedPending;
-                return true;
+                state_ = ServerState::InitializedPending;
+                co_return true;
             }
 
             if (method == "ping") {
-                return send_result(id, Json::object());
+                co_return co_await send_result(id, Json::object());
             }
 
             if (method == "tools/list") {
-                if (state != ServerState::Ready) {
-                    return send_error(id, -32600, "Tools available only after initialized notification");
+                if (state_ != ServerState::Ready) {
+                    co_return co_await send_error(
+                        id, -32600,
+                        "Tools available only after initialized notification");
                 }
 
                 Json tools_raw;
+                bool list_tools_failed = false;
+                std::string list_tools_error;
                 try {
-                    tools_raw = list_tools();
+                    tools_raw = list_tools_();
                 } catch (const std::exception& e) {
-                    return send_error(id, -32603, std::string("Tool list callback error: ") + e.what());
+                    list_tools_failed = true;
+                    list_tools_error =
+                        std::string("Tool list callback error: ") + e.what();
                 } catch (...) {
-                    return send_error(id, -32603, "Unknown tool list callback error");
+                    list_tools_failed = true;
+                    list_tools_error = "Unknown tool list callback error";
+                }
+                if (list_tools_failed) {
+                    co_return co_await send_error(
+                        id, -32603, list_tools_error);
                 }
 
                 Json tools_list = Json::array();
                 if (tools_raw.is_array()) {
                     tools_list = tools_raw;
-                } else if (tools_raw.is_object() && tools_raw.contains("tools") && tools_raw["tools"].is_array()) {
+                } else if (tools_raw.is_object() &&
+                           tools_raw.contains("tools") &&
+                           tools_raw["tools"].is_array()) {
                     tools_list = tools_raw["tools"];
                 }
 
-                Json result = {
-                    {"tools", tools_list}
-                };
-                return send_result(id, result);
+                Json result = {{"tools", std::move(tools_list)}};
+                co_return co_await send_result(id, std::move(result));
             }
 
             if (method == "tools/call") {
-                if (state != ServerState::Ready) {
-                    return send_error(id, -32600, "Tools available only after initialized notification");
+                if (state_ != ServerState::Ready) {
+                    co_return co_await send_error(
+                        id, -32600,
+                        "Tools available only after initialized notification");
                 }
                 if (!params.contains("name") || !params["name"].is_string()) {
-                    return send_error(id, -32602, "Invalid params: tool name required and must be a string");
+                    co_return co_await send_error(
+                        id, -32602,
+                        "Invalid params: tool name required and must be a string");
                 }
 
                 std::string tool_name = params["name"].get<std::string>();
                 Json arguments = Json::object();
                 if (params.contains("arguments")) {
                     if (!params["arguments"].is_object()) {
-                        return send_error(id, -32602, "Invalid params: arguments must be an object");
+                        co_return co_await send_error(
+                            id, -32602,
+                            "Invalid params: arguments must be an object");
                     }
                     arguments = params["arguments"];
                 }
 
+                if (inflight_.size() >= kMaxInflightCalls) {
+                    co_return co_await send_error(
+                        id, -32000,
+                        "Server overload: 64 outstanding tool calls already in flight");
+                }
+
                 Json tools_raw;
+                bool list_tools_failed = false;
+                std::string list_tools_error;
                 try {
-                    tools_raw = list_tools();
+                    tools_raw = list_tools_();
                 } catch (const std::exception& e) {
-                    return send_error(id, -32603, std::string("Tool list callback error: ") + e.what());
+                    list_tools_failed = true;
+                    list_tools_error =
+                        std::string("Tool list callback error: ") + e.what();
                 } catch (...) {
-                    return send_error(id, -32603, "Unknown tool list callback error");
+                    list_tools_failed = true;
+                    list_tools_error = "Unknown tool list callback error";
+                }
+                if (list_tools_failed) {
+                    co_return co_await send_error(
+                        id, -32603, list_tools_error);
                 }
 
                 Json tools_list = Json::array();
                 if (tools_raw.is_array()) {
                     tools_list = tools_raw;
-                } else if (tools_raw.is_object() && tools_raw.contains("tools") && tools_raw["tools"].is_array()) {
+                } else if (tools_raw.is_object() &&
+                           tools_raw.contains("tools") &&
+                           tools_raw["tools"].is_array()) {
                     tools_list = tools_raw["tools"];
                 }
 
                 bool tool_found = false;
                 for (const auto& item : tools_list) {
-                    if (item.is_object() && item.contains("name") && item["name"].is_string()) {
+                    if (item.is_object() &&
+                        item.contains("name") &&
+                        item["name"].is_string()) {
                         if (item["name"].get<std::string>() == tool_name) {
                             tool_found = true;
                             break;
@@ -241,122 +1429,590 @@ int serve_stdio(const std::function<Json()>& list_tools,
                 }
 
                 if (!tool_found) {
-                    return send_error(id, -32602, "Unknown tool: " + tool_name);
+                    co_return co_await send_error(
+                        id, -32602, "Unknown tool: " + tool_name);
                 }
 
-                try {
-                    Json payload = call_tool(tool_name, arguments);
-                    if (!payload.is_object()) throw std::runtime_error("Tool result must be an object");
-                    Json result = {
-                        {"content", Json::array({
-                            {
-                                {"type", "text"},
-                                {"text", payload.dump(-1, ' ', false, Json::error_handler_t::replace)}
-                            }
-                        })},
-                        {"structuredContent", payload},
-                        {"isError", false}
-                    };
-                    return send_result(id, result);
-                } catch (const std::exception& e) {
-                    Json result = {
-                        {"content", Json::array({
-                            {
-                                {"type", "text"},
-                                {"text", e.what()}
-                            }
-                        })},
-                        {"isError", true}
-                    };
-                    return send_result(id, result);
-                } catch (...) {
-                    Json result = {
-                        {"content", Json::array({
-                            {
-                                {"type", "text"},
-                                {"text", "Unknown application error"}
-                            }
-                        })},
-                        {"isError", true}
-                    };
-                    return send_result(id, result);
-                }
+                co_return co_await start_tool_call(
+                    id, std::move(tool_name), std::move(arguments));
             }
 
-            return send_error(id, -32601, "Method not found: " + method);
+            co_return co_await send_error(
+                id, -32601, "Method not found: " + method);
         } catch (const Json::exception& e) {
-            Json fallback_id = nullptr;
+            protocol_error_code = -32600;
+            protocol_error_message =
+                std::string("Malformed request: ") + e.what();
             if (req.is_object() && req.contains("id") && is_valid_id(req["id"])) {
-                fallback_id = req["id"];
+                protocol_error_id = req["id"];
             }
-            return send_error(fallback_id, -32600, std::string("Malformed request: ") + e.what());
-        }
-    };
-
-    auto handle_line = [&](const std::string& l) -> bool {
-        bool only_ws = true;
-        for (unsigned char ch : l) {
-            if (!std::isspace(ch)) {
-                only_ws = false;
-                break;
+        } catch (...) {
+            protocol_error_code = -32603;
+            protocol_error_message = "Internal error";
+            if (req.is_object() && req.contains("id") && is_valid_id(req["id"])) {
+                protocol_error_id = req["id"];
             }
         }
-        if (only_ws) {
-            return true;
-        }
-        return process_line(l);
-    };
 
-    std::string current_line;
-    current_line.reserve(4096);
-    bool oversized = false;
-    int c = 0;
+        co_return co_await send_error(
+            protocol_error_id, protocol_error_code, protocol_error_message);
+    }
 
-    while ((c = std::cin.get()) != EOF) {
-        if (c == '\n') {
-            if (oversized) {
-                if (!send_error(nullptr, -32700, "Parse error: line exceeds 8 MiB limit")) {
-                    return 1;
+    void handle_cancelled(const Json& req) noexcept {
+        try {
+            if (!req.contains("params") || !req["params"].is_object()) {
+                return;
+            }
+            const Json& params = req["params"];
+            if (!params.contains("requestId") ||
+                !is_valid_id(params["requestId"])) {
+                return;
+            }
+
+            // Terminal cancellation is cooperative: it only takes effect
+            // before the tool callback yields its result. Once run_tool_call
+            // has a payload it disables incoming cancellation, so a late
+            // cancellation can neither discard the payload nor replace it
+            // with an error.
+            const Json& request_id = params["requestId"];
+            CallStatePtr target;
+            for (const auto& call : inflight_) {
+                if (call->id == request_id) {
+                    target = call;
+                    break;
                 }
-                oversized = false;
-                current_line.clear();
-                continue;
             }
-            if (!current_line.empty() && current_line.back() == '\r') {
-                current_line.pop_back();
+
+            if (target && target->cancel) {
+                target->cancel_requested = true;
+                target->cancel->emit(asio::cancellation_type::terminal);
             }
-            if (!handle_line(current_line)) {
-                return 1;
+        } catch (...) {
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Tool-call lifetime
+    // ---------------------------------------------------------------------
+
+    asio::awaitable<bool> start_tool_call(const Json& id,
+                                          std::string name,
+                                          Json arguments) {
+        CallStatePtr call;
+        bool allocation_failed = false;
+        try {
+            call = std::make_shared<CallState>();
+            call->id = id;
+            call->cancel = std::make_shared<asio::cancellation_signal>();
+            inflight_.push_back(call);
+        } catch (...) {
+            allocation_failed = true;
+        }
+        if (allocation_failed) {
+            co_return co_await send_error(
+                id, -32603, "Internal error: unable to start tool call");
+        }
+
+        bool spawn_failed = false;
+        try {
+            auto self = shared_from_this();
+            asio::co_spawn(
+                ioc_.get_executor(),
+                [self, call, name = std::move(name),
+                 arguments = std::move(arguments)]() mutable -> asio::awaitable<void> {
+                    co_await self->run_tool_call(
+                        call, std::move(name), std::move(arguments));
+                },
+                asio::bind_cancellation_slot(
+                    call->cancel->slot(),
+                    [self, call](std::exception_ptr error) {
+                        self->on_call_completion(call, std::move(error));
+                    }));
+        } catch (...) {
+            spawn_failed = true;
+        }
+        if (spawn_failed) {
+            erase_inflight(call);
+            if (call->responded) {
+                co_return true;
             }
-            current_line.clear();
+            co_return co_await send_error(
+                id, -32603, "Internal error: unable to start tool call");
+        }
+        co_return true;
+    }
+
+    void on_call_completion(CallStatePtr call,
+                            std::exception_ptr error) noexcept {
+        try {
+            auto self = shared_from_this();
+            asio::co_spawn(
+                ioc_.get_executor(),
+                [self, call, error]() -> asio::awaitable<void> {
+                    co_await self->finish_call(call, error);
+                },
+                asio::detached);
+        } catch (...) {
+            erase_inflight(call);
+            maybe_finish_graceful();
+        }
+    }
+
+    asio::awaitable<void> run_tool_call(CallStatePtr call,
+                                        std::string name,
+                                        Json arguments) {
+        enum class FailureDelivery { None, Cancelled, ToolError, Generic };
+        FailureDelivery delivery = FailureDelivery::None;
+        std::string error_code;
+        std::string error_message;
+        Json error_details;
+
+        try {
+            Json payload = co_await call_tool_(std::move(name), std::move(arguments));
+
+            // The callback returned success. From here on cancellation must
+            // not turn a committed operation into an error; late
+            // notifications/cancelled are ignored by this coroutine.
+            co_await asio::this_coro::reset_cancellation_state(
+                asio::disable_cancellation());
+
+            if (fatal_.load(std::memory_order_acquire)) {
+                call->responded = true;
+                erase_inflight(call);
+                maybe_finish_graceful();
+                co_return;
+            }
+            if (!payload.is_object()) {
+                co_await deliver_tool_error(
+                    call, "internal_error",
+                    "Tool result must be an object", Json::object());
+                co_return;
+            }
+
+            Json result = make_tool_result(std::move(payload));
+            co_await deliver_tool_result(call, std::move(result));
+            co_return;
+        } catch (const ToolCallError& error) {
+            // A coroutine catch handler must not suspend. Record the failure
+            // here only; the response is awaited after the handler.
+            if (call->cancel_requested && is_cancellation_code(error.code)) {
+                delivery = FailureDelivery::Cancelled;
+            } else {
+                delivery = FailureDelivery::ToolError;
+                error_code = error.code;
+                error_message = error.what();
+                error_details = error.details;
+            }
+        } catch (const std::system_error& error) {
+            if (call->cancel_requested &&
+                is_operation_aborted_code(error)) {
+                delivery = FailureDelivery::Cancelled;
+            } else {
+                delivery = FailureDelivery::Generic;
+                error_message = error.what();
+            }
+        } catch (const std::exception& error) {
+            delivery = FailureDelivery::Generic;
+            error_message = error.what();
+        } catch (...) {
+            delivery = FailureDelivery::Generic;
+            error_message = "Unknown application error";
+        }
+
+        // Delivering the failure must not itself be aborted because the
+        // cancellation state is still "cancelled"; the response is the
+        // acknowledgement of that cancellation (or the real tool error).
+        co_await asio::this_coro::reset_cancellation_state(
+            asio::disable_cancellation());
+
+        switch (delivery) {
+        case FailureDelivery::Cancelled:
+            co_await deliver_cancelled(call);
+            break;
+        case FailureDelivery::ToolError:
+            co_await deliver_tool_error(
+                call, std::move(error_code), std::move(error_message),
+                std::move(error_details));
+            break;
+        case FailureDelivery::Generic:
+            co_await deliver_generic_error(call, std::move(error_message));
+            break;
+        case FailureDelivery::None:
+            break;
+        }
+        co_return;
+    }
+
+    static Json make_tool_result(Json payload) {
+        std::string text = payload.dump(-1, ' ', false,
+                                        Json::error_handler_t::replace);
+        if (text.size() > kMaxLegacyTextBytes) {
+            text = "Tool result is available in structuredContent; its "
+                   "serialized form exceeds the legacy text budget.";
+        }
+        Json content_item = Json::object();
+        content_item["type"] = "text";
+        content_item["text"] = std::move(text);
+
+        Json result = Json::object();
+        result["content"] = Json::array({std::move(content_item)});
+        result["structuredContent"] = std::move(payload);
+        result["isError"] = false;
+        return result;
+    }
+
+    static Json make_tool_error_result(const std::string& code,
+                                       const std::string& message,
+                                       const Json& details,
+                                       bool structured) {
+        Json content_item = Json::object();
+        content_item["type"] = "text";
+        content_item["text"] = message;
+
+        Json result = Json::object();
+        result["content"] = Json::array({std::move(content_item)});
+        if (structured) {
+            result["structuredContent"] = {
+                {"error", {
+                    {"code", code},
+                    {"message", message},
+                    {"details", details}
+                }}
+            };
+        }
+        result["isError"] = true;
+        return result;
+    }
+
+    asio::awaitable<void> deliver_tool_result(CallStatePtr call, Json result) {
+        if (call->responded || fatal_.load(std::memory_order_acquire)) {
+            call->responded = true;
+            erase_inflight(call);
+            maybe_finish_graceful();
+            co_return;
+        }
+        call->responded = true;
+
+        const WireStatus status =
+            co_await send_result_status(call->id, std::move(result));
+        if (status == WireStatus::TooLarge &&
+            !fatal_.load(std::memory_order_acquire)) {
+            Json details = {
+                {"limit_bytes", kMaxResponseBytes},
+                {"operation_may_have_completed", true}
+            };
+            Json fallback = make_tool_error_result(
+                "resource_limit",
+                "Tool response exceeds the 16 MiB transport limit; "
+                "the requested operation may already have completed.",
+                details, true);
+            const WireStatus fallback_status =
+                co_await send_result_status(call->id, std::move(fallback));
+            if (fallback_status == WireStatus::TooLarge) {
+                fatal_shutdown("tool resource-limit response exceeded 16 MiB");
+            }
+        } else if (status == WireStatus::Failed) {
+            // The connection is already failing; stop producing output.
+        }
+
+        erase_inflight(call);
+        maybe_finish_graceful();
+        co_return;
+    }
+
+    asio::awaitable<void> deliver_tool_error(const CallStatePtr& call,
+                                             std::string code,
+                                             std::string message,
+                                             Json details) {
+        if (call->responded || fatal_.load(std::memory_order_acquire)) {
+            call->responded = true;
+            erase_inflight(call);
+            maybe_finish_graceful();
+            co_return;
+        }
+        call->responded = true;
+
+        Json result = make_tool_error_result(
+            code, message, details, true);
+        const WireStatus status =
+            co_await send_result_status(call->id, std::move(result));
+        if (status == WireStatus::TooLarge &&
+            !fatal_.load(std::memory_order_acquire)) {
+            // Even an error payload can exceed the budget if a tool supplied
+            // huge details. Fall back to a tiny bounded resource error.
+            Json fallback = make_tool_error_result(
+                "resource_limit",
+                "Tool error details exceed the 16 MiB transport limit.",
+                Json{{"limit_bytes", kMaxResponseBytes}}, true);
+            if (co_await send_result_status(call->id, std::move(fallback)) ==
+                WireStatus::TooLarge) {
+                fatal_shutdown("tool error response exceeded 16 MiB");
+            }
+        }
+
+        erase_inflight(call);
+        maybe_finish_graceful();
+        co_return;
+    }
+
+    asio::awaitable<void> deliver_generic_error(const CallStatePtr& call,
+                                                std::string message) {
+        if (call->responded || fatal_.load(std::memory_order_acquire)) {
+            call->responded = true;
+            erase_inflight(call);
+            maybe_finish_graceful();
+            co_return;
+        }
+        call->responded = true;
+
+        if (message.empty()) {
+            message = "Unknown application error";
+        }
+        // Preserve the legacy generic tool-error shape: legacy text content
+        // and isError, without a structured error object.
+        Json result = make_tool_error_result(
+            "internal_error", message, Json::object(), false);
+        const WireStatus status =
+            co_await send_result_status(call->id, std::move(result));
+        if (status == WireStatus::TooLarge) {
+            fatal_shutdown("generic tool error response exceeded 16 MiB");
+        }
+
+        erase_inflight(call);
+        maybe_finish_graceful();
+        co_return;
+    }
+
+    asio::awaitable<void> deliver_cancelled(const CallStatePtr& call) {
+        if (call->responded) {
+            erase_inflight(call);
+            maybe_finish_graceful();
+            co_return;
+        }
+        call->responded = true;
+
+        if (!fatal_.load(std::memory_order_acquire)) {
+            (void)co_await send_error(call->id, -32800, "Request cancelled");
+        }
+
+        erase_inflight(call);
+        maybe_finish_graceful();
+        co_return;
+    }
+
+    asio::awaitable<void> finish_call(CallStatePtr call,
+                                      std::exception_ptr error) {
+        if (call->responded) {
+            erase_inflight(call);
+            maybe_finish_graceful();
+            co_return;
+        }
+        call->responded = true;
+
+        if (fatal_.load(std::memory_order_acquire)) {
+            erase_inflight(call);
+            maybe_finish_graceful();
+            co_return;
+        }
+
+        if (error && call->cancel_requested && is_operation_aborted(error)) {
+            (void)co_await send_error(call->id, -32800, "Request cancelled");
         } else {
-            if (oversized) {
-                continue;
-            }
-            if (current_line.size() >= MAX_LINE_BYTES) {
-                oversized = true;
-                current_line.clear();
-                continue;
-            }
-            current_line.push_back(static_cast<char>(c));
+            (void)co_await send_error(call->id, -32603, "Internal error");
+        }
+
+        erase_inflight(call);
+        maybe_finish_graceful();
+        co_return;
+    }
+
+    void erase_inflight(const CallStatePtr& call) noexcept {
+        const auto it = std::find(inflight_.begin(), inflight_.end(), call);
+        if (it != inflight_.end()) {
+            inflight_.erase(it);
         }
     }
 
-    if (oversized) {
-        if (!send_error(nullptr, -32700, "Parse error: line exceeds 8 MiB limit")) {
-            return 1;
+    // ---------------------------------------------------------------------
+    // Shutdown coordination (all called on the session/io thread)
+    // ---------------------------------------------------------------------
+
+    void maybe_finish_graceful() noexcept {
+        if (fatal_.load(std::memory_order_acquire) || !eof_ ||
+            !inflight_.empty() || writer_stop_requested_) {
+            return;
         }
-    } else if (!current_line.empty()) {
-        if (current_line.back() == '\r') {
-            current_line.pop_back();
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex_);
+            if (drain_scheduled_ || !queue_.empty()) {
+                return;
+            }
         }
-        if (!handle_line(current_line)) {
-            return 1;
+
+        writer_stop_requested_ = true;
+        {
+            std::lock_guard<std::mutex> lock(out_mutex_);
+            out_graceful_stop_ = true;
+        }
+        out_cv_.notify_all();
+    }
+
+    void shutdown_once() noexcept {
+        if (shutdown_called_) {
+            return;
+        }
+        shutdown_called_ = true;
+        if (shutdown_) {
+            try {
+                shutdown_();
+            } catch (...) {
+            }
         }
     }
 
-    return 0;
+    void fatal_shutdown(std::string reason) noexcept {
+        if (fatal_.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        failed_.store(true, std::memory_order_relaxed);
+        if (!reason.empty()) {
+            try {
+                std::cerr << "mcp transport failure: " << reason << '\n';
+            } catch (...) {
+            }
+        }
+
+        // Cancel queued engine work and stop both input and output. Crucially
+        // do NOT call ioc_.stop(): coroutine frames owned by the separate
+        // Engine-owner thread may still post their completion handlers here.
+        // Their own work guards keep the io_context alive until those frames
+        // have unwound; work_ is released after the writer thread has exited.
+        shutdown_once();
+        request_reader_stop();
+        request_writer_abort();
+        resume_output_waiters();
+    }
+
+#if defined(_WIN32)
+    void close_os_handles() noexcept {
+        HANDLE reader = reader_handle_.exchange(nullptr, std::memory_order_acq_rel);
+        if (reader != nullptr) {
+            ::CloseHandle(reader);
+        }
+        HANDLE writer = writer_handle_.exchange(nullptr, std::memory_order_acq_rel);
+        if (writer != nullptr) {
+            ::CloseHandle(writer);
+        }
+    }
+#endif
+
+    // ---------------------------------------------------------------------
+    // State
+    // ---------------------------------------------------------------------
+
+    asio::io_context& ioc_;
+    std::function<Json()> list_tools_;
+    AsyncToolCall call_tool_;
+    std::function<void()> shutdown_;
+    asio::executor_work_guard<asio::io_context::executor_type> work_;
+
+    ServerState state_ = ServerState::Uninitialized;
+    std::vector<CallStatePtr> inflight_;
+
+    // Reader admission queue. Only the reader thread waits on queue_cv_; the
+    // io/session thread merely locks briefly to pop or enqueue.
+    std::mutex queue_mutex_;
+    std::condition_variable queue_cv_;
+    std::deque<ReaderEvent> queue_;
+    std::size_t queued_bytes_ = 0;
+    bool drain_scheduled_ = false;
+    std::atomic<bool> stop_reader_{false};
+
+    // Output admission and writer exchange. The byte budget covers reserved,
+    // queued and currently-writing messages.
+    std::mutex out_mutex_;
+    std::condition_variable out_cv_;
+    std::deque<std::string> out_messages_;
+    std::size_t out_budget_used_ = 0;
+    std::size_t out_message_slots_ = 0;
+    bool out_abort_ = false;
+    bool out_graceful_stop_ = false;
+    bool writer_stop_requested_ = false;
+    std::atomic<bool> writer_abort_{false};
+    std::atomic<bool> output_progress_pending_{false};
+    std::deque<std::unique_ptr<OutputWaiter>> output_waiters_; // session thread only
+
+    std::atomic<bool> fatal_{false};
+    std::atomic<bool> failed_{false};
+    bool eof_ = false;
+    bool shutdown_called_ = false;
+
+    std::jthread reader_thread_;
+    std::jthread writer_thread_;
+    std::atomic<void*> reader_handle_{nullptr};
+    std::atomic<void*> writer_handle_{nullptr};
+#if !defined(_WIN32)
+    int original_stdout_flags_ = -1;
+#endif
+};
+
+} // namespace
+
+int serve_stdio_async(const std::function<Json()>& list_tools,
+                      const AsyncToolCall& call_tool,
+                      const std::function<void()>& shutdown) {
+#if !defined(_WIN32)
+    std::signal(SIGPIPE, SIG_IGN);
+#endif
+
+    try {
+        asio::io_context ioc;
+        std::shared_ptr<Session> session;
+        try {
+            session = std::make_shared<Session>(
+                ioc, list_tools, call_tool, shutdown);
+            session->start_threads();
+        } catch (...) {
+            if (session) {
+                session->fatal_from_owner("cannot start MCP transport threads");
+                // Join any thread that did start and release the work guard
+                // before the io_context (and the handler storage it owns)
+                // goes out of scope.
+                session->stop_threads();
+                session->finalize();
+            }
+            return 1;
+        }
+
+        for (;;) {
+            try {
+                ioc.run();
+                break;
+            } catch (const std::exception& error) {
+                // A handler exception must not abandon completion handlers
+                // posted later by the Engine-owner thread. Fail the
+                // connection and keep running the context until it drains.
+                session->fatal_from_owner(error.what());
+            } catch (...) {
+                session->fatal_from_owner("unknown io_context handler failure");
+            }
+        }
+
+        session->stop_threads();
+        session->finalize();
+        return session->exit_code();
+    } catch (...) {
+        return 1;
+    }
+}
+
+int serve_stdio(const std::function<Json()>& list_tools,
+                const std::function<Json(const std::string&, const Json&)>& call_tool) {
+    AsyncToolCall async_call =
+        [call_tool](std::string name, Json arguments) -> asio::awaitable<Json> {
+            co_return call_tool(name, arguments);
+        };
+    return serve_stdio_async(list_tools, async_call, [] {});
 }
 
 } // namespace music
-

@@ -1,3 +1,16 @@
+diff --git a/src/importexport/guitarpro/internal/guitarprodrumset.h b/src/importexport/guitarpro/internal/guitarprodrumset.h
+index 9e8adb74..e75eafa9 100644
+--- a/src/importexport/guitarpro/internal/guitarprodrumset.h
++++ b/src/importexport/guitarpro/internal/guitarprodrumset.h
+@@ -23,6 +23,8 @@
+ #ifndef MU_IMPORTEXPORT_GUITARPRODRUMSET_H
+ #define MU_IMPORTEXPORT_GUITARPRODRUMSET_H
+ 
++#include <cstdint>
++
+ #include <unordered_map>
+ #include <string_view>
+ 
 diff --git a/src/importexport/guitarpro/internal/importgtp-gp4.cpp b/src/importexport/guitarpro/internal/importgtp-gp4.cpp
 index 2feac58c..4bdcb417 100644
 --- a/src/importexport/guitarpro/internal/importgtp-gp4.cpp
@@ -279,7 +292,8 @@ index 02303578..00db704a 100644
 -        bcfsBuffer.reserve(length);
 -        int positionCounter    = 0;
 +        bcfsBuffer.reserve(std::min<size_t>(static_cast<size_t>(length), 1024 * 1024));
-         while ((position / BITS_IN_BYTE) < length) {
+-        while ((position / BITS_IN_BYTE) < length) {
++        while (bcfsBuffer.size() < static_cast<size_t>(length)) {
              // read the bit indicating compression information
              int flag = readBits(buffer, 1);
 @@ -417,49 +493,72 @@ void GuitarPro6::readGPX(ByteArray* buffer)
@@ -983,7 +997,7 @@ index fd100379..54abd509 100644
  }
  } // namespace mu::iex::guitarpro
 diff --git a/src/importexport/midi/internal/midiimport/importmidi.cpp b/src/importexport/midi/internal/midiimport/importmidi.cpp
-index d9e2c420..2a927280 100644
+index d9e2c420..dfe99791 100644
 --- a/src/importexport/midi/internal/midiimport/importmidi.cpp
 +++ b/src/importexport/midi/internal/midiimport/importmidi.cpp
 @@ -20,17 +20,26 @@
@@ -1366,7 +1380,7 @@ index d9e2c420..2a927280 100644
      bool needsReload = (opers.data()->processingsOfOpenedFile == 0)
                         || (opers.data()->fileModificationTime != currentModTime);
  
-@@ -1281,13 +1312,59 @@ Err importMidi(MasterScore* score, const QString& name)
+@@ -1281,13 +1312,65 @@ Err importMidi(MasterScore* score, const QString& name)
          fp.close();
  
          loadMidiData(mf);
@@ -1402,6 +1416,12 @@ index d9e2c420..2a927280 100644
 +        }
 +    } catch (const std::exception& error) {
 +        LOGD("importMidi: bad file format: %s", error.what());
++        return Err::FileBadFormat;
++    }
++
++    // Timing conversion divides by this value; malformed zero-division files
++    // must fail before entering the quantization pipeline.
++    if (mf.division() <= 0) {
 +        return Err::FileBadFormat;
 +    }
 +
@@ -3204,7 +3224,7 @@ index ffd3e1d9..e62a7317 100644
                 const std::vector<MidiTuplet::TupletData>& tupletsInBar, DurationType durationType, bool useDots,
                 bool printRestRemains = true);
 diff --git a/src/importexport/midi/internal/midiimport/importmidi_operations.cpp b/src/importexport/midi/internal/midiimport/importmidi_operations.cpp
-index e9932211..1c8c9a03 100644
+index e9932211..adc1ba85 100644
 --- a/src/importexport/midi/internal/midiimport/importmidi_operations.cpp
 +++ b/src/importexport/midi/internal/midiimport/importmidi_operations.cpp
 @@ -21,8 +21,8 @@
@@ -3289,7 +3309,7 @@ index e9932211..1c8c9a03 100644
 +            if (xml.tokenType() == muse::XmlStreamReader::Characters) {
                  bool ok = false;
 -                const int index = xml.text().toString().toInt(&ok);
-+                const int index = xml.text().toInt(&ok);
++                const int index = xml.text().trimmed().toInt(&ok);
                  if (ok) {
                      switch (index) {
                      case 0:
@@ -3304,7 +3324,7 @@ index e9932211..1c8c9a03 100644
 +            if (xml.tokenType() == muse::XmlStreamReader::Characters) {
                  bool ok = false;
 -                const int index = xml.text().toString().toInt(&ok);
-+                const int index = xml.text().toInt(&ok);
++                const int index = xml.text().trimmed().toInt(&ok);
                  if (ok) {
                      switch (index) {
                      case 0:
@@ -3403,7 +3423,7 @@ index e9932211..1c8c9a03 100644
 +            if (xml.tokenType() == muse::XmlStreamReader::Characters) {
                  bool ok = false;
 -                const int index = xml.text().toString().toInt(&ok);
-+                const int index = xml.text().toInt(&ok);
++                const int index = xml.text().trimmed().toInt(&ok);
                  if (ok) {
                      switch (index) {
                      case 0:

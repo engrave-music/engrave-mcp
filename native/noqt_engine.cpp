@@ -1,80 +1,428 @@
 #include "engine.h"
-#include "composition.h"
-#include "noqt_runtime.h"
-#include "score_metadata.h"
+#include "music_core.h"
 #include "atomic_file.h"
-#include "engraving/engravingproject.h"
-#include "engraving/dom/masterscore.h"
+
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <map>
+#include <initializer_list>
+#include <limits>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
+#include <vector>
+
+#include <nlohmann/json.hpp>
 
 namespace music {
 using Json = nlohmann::json;
+
 namespace {
+
+constexpr std::size_t max_input = 8 * 1024 * 1024;
+constexpr std::size_t max_operation_id = 128;
+constexpr std::size_t max_pitch_changes = 256;
+
 std::string text_arg(const Json& j, const char* key) {
     if (!j.contains(key) || !j.at(key).is_string()) throw std::invalid_argument(std::string(key) + " must be a string");
     auto value = j.at(key).get<std::string>();
     if (value.empty() || value.find('\0') != std::string::npos) throw std::invalid_argument(std::string(key) + " is empty or contains NUL");
     return value;
 }
-size_t index_arg(const Json& j, const char* key, size_t maximum) {
+
+std::size_t index_arg(const Json& j, const char* key, std::size_t maximum) {
     if (!j.contains(key) || !j.at(key).is_number_integer() || j.at(key) < 0 || j.at(key) > maximum)
         throw std::invalid_argument(std::string(key) + " is out of range");
-    return j.at(key).get<size_t>();
+    return j.at(key).get<std::size_t>();
 }
-void only_keys(const Json& j, std::initializer_list<std::string> allowed) {
+
+// Strictly non-negative size without an arbitrary upper bound.
+std::size_t size_arg(const Json& j, const char* key) {
+    if (!j.contains(key)) throw std::invalid_argument(std::string(key) + " is required");
+    const auto& value = j.at(key);
+    if (!value.is_number_integer() || value.is_boolean())
+        throw std::invalid_argument(std::string(key) + " must be a non-negative integer");
+    if (value.is_number_unsigned()) {
+        const auto raw = value.get<std::uint64_t>();
+        if (raw > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max()))
+            throw std::invalid_argument(std::string(key) + " is out of range");
+        return static_cast<std::size_t>(raw);
+    }
+    const auto raw = value.get<std::int64_t>();
+    if (raw < 0) throw std::invalid_argument(std::string(key) + " must be a non-negative integer");
+    return static_cast<std::size_t>(raw);
+}
+
+std::uint64_t positive_u64_arg(const Json& j, const char* key) {
+    if (!j.contains(key)) throw std::invalid_argument(std::string(key) + " is required");
+    const auto& value = j.at(key);
+    if (!value.is_number_integer() || value.is_boolean())
+        throw std::invalid_argument(std::string(key) + " must be a positive integer");
+    if (value.is_number_unsigned()) {
+        const auto raw = value.get<std::uint64_t>();
+        if (raw == 0) throw std::invalid_argument(std::string(key) + " must be a positive integer");
+        return raw;
+    }
+    const auto raw = value.get<std::int64_t>();
+    if (raw <= 0) throw std::invalid_argument(std::string(key) + " must be a positive integer");
+    return static_cast<std::uint64_t>(raw);
+}
+
+std::string operation_id_arg(const Json& j) {
+    auto value = text_arg(j, "operationId");
+    if (value.size() > max_operation_id)
+        throw std::invalid_argument("operationId must be at most 128 bytes");
+    return value;
+}
+
+void only_keys(const Json& j, std::initializer_list<const char*> allowed,
+               std::string_view prefix = "Unknown argument: ") {
     if (!j.is_object()) throw std::invalid_argument("Arguments must be an object");
-    for (auto it = j.begin(); it != j.end(); ++it)
-        if (std::find(allowed.begin(), allowed.end(), it.key()) == allowed.end())
-            throw std::invalid_argument("Unknown argument: " + it.key());
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        bool found = false;
+        for (const char* key : allowed) {
+            if (it.key() == key) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) throw std::invalid_argument(std::string(prefix) + it.key());
+    }
 }
+
 std::string path_utf8(const std::filesystem::path& path) {
     const auto text = path.u8string();
-    return {text.begin(), text.end()};
+    return std::string(reinterpret_cast<const char*>(text.data()), text.size());
 }
+
 std::string read_input(const std::filesystem::path& path) {
-    constexpr size_t limit = 8 * 1024 * 1024;
     std::ifstream file(path, std::ios::binary);
     if (!file) throw std::runtime_error("Cannot open score input");
-    std::string data(limit + 1, '\0');
+    std::string data(max_input + 1, '\0');
     file.read(data.data(), data.size());
     if (file.bad()) throw std::runtime_error("Cannot read score input");
-    data.resize(static_cast<size_t>(file.gcount()));
-    if (data.size() > limit) throw std::invalid_argument("Score input exceeds 8 MiB");
+    data.resize(static_cast<std::size_t>(file.gcount()));
+    if (data.size() > max_input) throw std::invalid_argument("Score input exceeds 8 MiB");
     return data;
 }
+
+DocumentId document_id(const Json& args) {
+    return document_id_from_string(text_arg(args, "documentId"));
 }
 
+std::int64_t checked_integer(const Json& value, const char* type_message, const char* range_message) {
+    if (!value.is_number_integer() || value.is_boolean())
+        throw std::invalid_argument(type_message);
+    if (value.is_number_unsigned()) {
+        const auto raw = value.get<std::uint64_t>();
+        if (raw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+            throw std::invalid_argument(range_message);
+        return static_cast<std::int64_t>(raw);
+    }
+    return value.get<std::int64_t>();
+}
+
+int excerpt_arg(const Json& args) {
+    if (!args.contains("excerptId")) return -1;
+    const auto value = checked_integer(args.at("excerptId"), "excerptId must be an integer",
+        "excerptId is out of range");
+    if (value < -1 || value > std::numeric_limits<int>::max())
+        throw std::invalid_argument("excerptId is out of range");
+    return static_cast<int>(value);
+}
+
+double audio_number_arg(const Json& object, const char* key, const std::string& path,
+                        double minimum, double maximum) {
+    if (!object.contains(key))
+        throw std::invalid_argument(path + "." + key + " is required");
+    const auto& value = object.at(key);
+    if (!value.is_number() || value.is_boolean())
+        throw std::invalid_argument(path + "." + key + " must be a number");
+    const double result = value.get<double>();
+    if (!std::isfinite(result) || result < minimum || result > maximum)
+        throw std::invalid_argument(path + "." + key + " is out of range");
+    return result;
+}
+
+bool audio_bool_arg(const Json& object, const char* key, const std::string& path) {
+    if (!object.contains(key))
+        throw std::invalid_argument(path + "." + key + " is required");
+    const auto& value = object.at(key);
+    if (!value.is_boolean())
+        throw std::invalid_argument(path + "." + key + " must be a boolean");
+    return value.get<bool>();
+}
+
+AudioOutputParams decode_audio_output(const Json& json, const std::string& path) {
+    if (!json.is_object()) throw std::invalid_argument(path + " must be an object");
+    only_keys(json, {"volumeDb", "balance", "solo", "muted", "forceMute"},
+              "Unknown key in " + path + ": ");
+    AudioOutputParams output;
+    output.volume_db = audio_number_arg(json, "volumeDb", path, -120.0, 24.0);
+    output.balance = audio_number_arg(json, "balance", path, -1.0, 1.0);
+    output.solo = audio_bool_arg(json, "solo", path);
+    output.muted = audio_bool_arg(json, "muted", path);
+    output.force_mute = audio_bool_arg(json, "forceMute", path);
+    return output;
+}
+
+AudioMix decode_audio_mix(const Json& json) {
+    if (!json.is_object()) throw std::invalid_argument("mix must be an object");
+    only_keys(json, {"master", "tracks"}, "Unknown key in mix: ");
+    if (!json.contains("master")) throw std::invalid_argument("mix.master is required");
+    if (!json.contains("tracks")) throw std::invalid_argument("mix.tracks is required");
+
+    AudioMix mix;
+    mix.master = decode_audio_output(json.at("master"), "mix.master");
+
+    const auto& tracks = json.at("tracks");
+    if (!tracks.is_array()) throw std::invalid_argument("mix.tracks must be an array");
+    if (tracks.size() > audio_max_tracks)
+        throw std::invalid_argument("mix.tracks must contain at most 15 entries");
+    mix.tracks.reserve(tracks.size());
+    for (std::size_t index = 0; index < tracks.size(); ++index) {
+        const auto& entry = tracks.at(index);
+        const std::string path = "mix.tracks[" + std::to_string(index) + "]";
+        if (!entry.is_object()) throw std::invalid_argument(path + " must be an object");
+        only_keys(entry, {"trackId", "output"}, "Unknown key in " + path + ": ");
+        if (!entry.contains("trackId"))
+            throw std::invalid_argument(path + ".trackId is required");
+        const std::string track_type_error = path + ".trackId must be an integer";
+        const std::string track_range_error = path + ".trackId is out of range";
+        const auto track_id = checked_integer(entry.at("trackId"),
+            track_type_error.c_str(), track_range_error.c_str());
+        if (track_id < 0)
+            throw std::invalid_argument(path + ".trackId must be non-negative");
+        if (!entry.contains("output"))
+            throw std::invalid_argument(path + ".output is required");
+
+        AudioTrackParams params;
+        params.track_id = track_id;
+        params.output = decode_audio_output(entry.at("output"), path + ".output");
+        mix.tracks.push_back(std::move(params));
+    }
+    return mix;
+}
+
+Json audio_output_json(const AudioOutputParams& output) {
+    Json json = Json::object();
+    json["volumeDb"] = output.volume_db;
+    json["balance"] = output.balance;
+    json["solo"] = output.solo;
+    json["muted"] = output.muted;
+    json["forceMute"] = output.force_mute;
+    return json;
+}
+
+Json audio_mix_json(const AudioMix& mix) {
+    Json tracks = Json::array();
+    for (const AudioTrackParams& track : mix.tracks) {
+        Json entry = Json::object();
+        entry["trackId"] = track.track_id;
+        entry["output"] = audio_output_json(track.output);
+        tracks.push_back(std::move(entry));
+    }
+    Json json = Json::object();
+    json["master"] = audio_output_json(mix.master);
+    json["tracks"] = std::move(tracks);
+    return json;
+}
+
+Note decode_note(const Json& json) {
+    if (!json.is_object()) throw std::invalid_argument("Note must be a JSON object");
+    only_keys(json, {"pitches", "ticks"}, "Unknown key in note: ");
+
+    if (!json.contains("ticks")) throw std::invalid_argument("Note must contain 'ticks'");
+    const auto ticks = checked_integer(json.at("ticks"), "Note ticks must be an integer",
+                                       "Note ticks must be one of 120, 240, 480, 960, 1920");
+    if (ticks != 120 && ticks != 240 && ticks != 480 && ticks != 960 && ticks != 1920)
+        throw std::invalid_argument("Note ticks must be one of 120, 240, 480, 960, 1920");
+
+    if (!json.contains("pitches") || !json.at("pitches").is_array())
+        throw std::invalid_argument("Note must contain a 'pitches' array");
+
+    Note note;
+    note.ticks = static_cast<int>(ticks);
+    for (const auto& pitch : json.at("pitches")) {
+        const auto value = checked_integer(pitch, "Pitch must be an integer",
+                                           "Pitch must be between 12 and 127 (MusicXML octave 0..9)");
+        if (value < 12 || value > 127)
+            throw std::invalid_argument("Pitch must be between 12 and 127 (MusicXML octave 0..9)");
+        note.pitches.push_back(static_cast<int>(value));
+    }
+    return note;
+}
+
+Measure decode_measure(const Json& json) {
+    if (!json.is_object()) throw std::invalid_argument("Measure must be a JSON object");
+    only_keys(json, {"notes"}, "Unknown key in measure: ");
+    if (!json.contains("notes") || !json.at("notes").is_array())
+        throw std::invalid_argument("Measure must contain a 'notes' array");
+
+    Measure measure;
+    measure.notes.reserve(json.at("notes").size());
+    for (const auto& note : json.at("notes"))
+        measure.notes.push_back(decode_note(note));
+    return measure;
+}
+
+Composition decode_composition(const Json& score) {
+    if (!score.is_object()) throw std::invalid_argument("Score must be a JSON object");
+    only_keys(score, {"title", "tempo", "parts"}, "Unknown key at root level: ");
+
+    Composition composition;
+    if (score.contains("title")) {
+        if (!score.at("title").is_string()) throw std::invalid_argument("Title must be a string");
+        composition.title = score.at("title").get<std::string>();
+    }
+
+    if (score.contains("tempo")) {
+        const auto tempo = checked_integer(score.at("tempo"), "Tempo must be an integer",
+                                           "Tempo must be between 20 and 300");
+        if (tempo < 20 || tempo > 300) throw std::invalid_argument("Tempo must be between 20 and 300");
+        composition.tempo = static_cast<int>(tempo);
+    }
+
+    if (!score.contains("parts") || !score.at("parts").is_array())
+        throw std::invalid_argument("Score must contain a 'parts' array");
+
+    for (const auto& part_json : score.at("parts")) {
+        if (!part_json.is_object()) throw std::invalid_argument("Part must be a JSON object");
+        only_keys(part_json, {"name", "midiProgram", "measures"}, "Unknown key in part: ");
+
+        if (!part_json.contains("name") || !part_json.at("name").is_string())
+            throw std::invalid_argument("Part must contain a string 'name'");
+        Part part;
+        part.name = part_json.at("name").get<std::string>();
+
+        if (!part_json.contains("midiProgram")) throw std::invalid_argument("Part must contain 'midiProgram'");
+        const auto program = checked_integer(part_json.at("midiProgram"), "Part midiProgram must be an integer",
+                                             "Part midiProgram must be between 1 and 128");
+        if (program < 1 || program > 128)
+            throw std::invalid_argument("Part midiProgram must be between 1 and 128");
+        part.midi_program = static_cast<int>(program);
+
+        if (!part_json.contains("measures") || !part_json.at("measures").is_array())
+            throw std::invalid_argument("Part must contain a 'measures' array");
+        part.measures.reserve(part_json.at("measures").size());
+        for (const auto& measure : part_json.at("measures"))
+            part.measures.push_back(decode_measure(measure));
+        composition.parts.push_back(std::move(part));
+    }
+
+    return composition;
+}
+
+Json info_json(const ScoreInfo& info) {
+    return {
+        {"documentId", document_id_to_string(info.id)},
+        {"revision", info.revision.value},
+        {"title", info.title},
+        {"titleFilenameSafe", info.title_filename_safe},
+        {"pages", info.pages},
+        {"parts", info.parts},
+        {"editable", info.editable},
+        {"capabilities", {{"replaceMeasures", info.editable}, {"queryRegion", true},
+                          {"setPitches", "bounded-native-pitch-edits"}}},
+    };
+}
+
+Json edit_result_json(const EditResult& result) {
+    Json json = info_json(result.score);
+    json["baseRevision"] = result.base_revision.value;
+    Json rebased = Json::array();
+    for (const Revision revision : result.rebased_over) rebased.push_back(revision.value);
+    json["rebasedOver"] = std::move(rebased);
+    json["replayed"] = result.replayed;
+    json["changedNotes"] = result.changed_notes;
+    return json;
+}
+
+Json region_json(const RegionData& data) {
+    Json notes = Json::array();
+    for (const NoteView& note : data.region.notes) {
+        Json note_json = Json::object();
+        note_json["id"] = note.id;
+        note_json["measureId"] = note.measure_id;
+        note_json["partIndex"] = note.part_index;
+        note_json["staffIndex"] = note.staff_index;
+        note_json["measureIndex"] = note.measure_index;
+        note_json["voice"] = note.voice;
+        note_json["tick"] = note.tick;
+        note_json["durationTicks"] = note.duration_ticks;
+        note_json["pitch"] = note.pitch;
+        note_json["tied"] = note.tied;
+        note_json["spanned"] = note.spanned;
+        notes.push_back(std::move(note_json));
+    }
+
+    Json measures = Json::array();
+    for (const MeasureView& measure : data.region.measures) {
+        Json measure_json = Json::object();
+        measure_json["id"] = measure.id;
+        measure_json["index"] = measure.index;
+        measure_json["tick"] = measure.tick;
+        measure_json["durationTicks"] = measure.duration_ticks;
+        measures.push_back(std::move(measure_json));
+    }
+
+    Json result = Json::object();
+    result["revision"] = data.revision.value;
+    result["notes"] = std::move(notes);
+    result["measures"] = std::move(measures);
+    result["hasCrossRegionSpanners"] = data.region.has_cross_region_spanners;
+    return result;
+}
+
+Json composition_json(const Composition& composition) {
+    Json parts = Json::array();
+    for (const Part& part : composition.parts) {
+        Json measures = Json::array();
+        for (const Measure& measure : part.measures) {
+            Json notes = Json::array();
+            for (const Note& note : measure.notes) {
+                Json note_json = Json::object();
+                note_json["pitches"] = note.pitches;
+                note_json["ticks"] = note.ticks;
+                notes.push_back(std::move(note_json));
+            }
+            Json measure_json = Json::object();
+            measure_json["notes"] = std::move(notes);
+            measures.push_back(std::move(measure_json));
+        }
+        Json part_json = Json::object();
+        part_json["name"] = part.name;
+        part_json["midiProgram"] = part.midi_program;
+        part_json["measures"] = std::move(measures);
+        parts.push_back(std::move(part_json));
+    }
+
+    Json score = Json::object();
+    score["title"] = composition.title;
+    score["tempo"] = composition.tempo;
+    score["parts"] = std::move(parts);
+    return score;
+}
+
+} // namespace
+
 struct Engine::Impl {
-    struct Document { ScoreProject project; Json composition; };
-    std::map<std::string, Document> documents;
-    uint64_t serial = 0;
-    std::string soundfont;
-    std::filesystem::path assets;
-    Document& select(const Json& args) {
-        const auto it = documents.find(text_arg(args, "documentId"));
-        if (it == documents.end()) throw std::invalid_argument("Unknown or closed documentId");
-        return it->second;
-    }
-    Json describe(const std::string& id, const Document& document) const {
-        const auto* score = document.project->masterScore();
-        return {{"documentId", id}, {"title", score_title(score)}, {"pages", score->npages()},
-                {"parts", score->parts().size()}, {"editable", !document.composition.is_null()}};
-    }
-    Json insert(Document document) {
-        const auto id = "score-" + std::to_string(++serial);
-        auto result = describe(id, document);
-        documents.emplace(id, std::move(document));
-        return result;
-    }
+    std::unique_ptr<MusicCore> core;
 };
 
-Engine::Engine(int&, char** argv, const std::string& soundfont, const std::string& resources) : impl_(std::make_unique<Impl>()) {
+Engine::Engine(int&, char** argv, const std::string& soundfont, const std::string& resources)
+    : impl_(std::make_unique<Impl>()) {
+    // Path discovery stays in the engine; MusicCore only receives concrete
+    // resource/SoundFont paths.
     if (resources.empty() && (!argv || !argv[0])) throw std::invalid_argument("Missing executable path");
+    std::filesystem::path assets;
     if (resources.empty()) {
         auto executable = std::filesystem::u8path(argv[0]);
 #ifdef __linux__
@@ -82,18 +430,20 @@ Engine::Engine(int&, char** argv, const std::string& soundfont, const std::strin
         const auto resolved = std::filesystem::canonical("/proc/self/exe", error);
         if (!error) executable = resolved;
 #endif
-        impl_->assets = std::filesystem::absolute(executable.parent_path() / "assets");
+        assets = std::filesystem::absolute(executable.parent_path() / "assets");
     } else {
-        impl_->assets = std::filesystem::absolute(std::filesystem::u8path(resources));
+        assets = std::filesystem::absolute(std::filesystem::u8path(resources));
     }
-    if (!soundfont.empty()) {
-        const auto path = std::filesystem::absolute(std::filesystem::u8path(soundfont));
-        if (!std::filesystem::is_regular_file(path)) throw std::invalid_argument("SoundFont does not exist");
-        impl_->soundfont = path_utf8(path);
-    }
-    initialize_native_runtime(path_utf8(impl_->assets));
+
+    impl_->core = std::make_unique<MusicCore>(RuntimeOptions{path_utf8(assets), soundfont});
 }
+
 Engine::~Engine() = default;
+
+MusicCore& Engine::core() {
+    return *impl_->core;
+}
+
 std::string Engine::tools_json() {
     return
 #include "tool_schema.inc"
@@ -103,66 +453,170 @@ std::string Engine::tools_json() {
 std::string Engine::call(const std::string& tool, const std::string& arguments_json) {
     const auto args = Json::parse(arguments_json);
     Json result;
-    if (tool == "score_create" || tool == "score_open") {
-        if (impl_->documents.size() >= 16) throw std::runtime_error("Close a document before opening another (limit 16)");
-        if (tool == "score_create") {
-            only_keys(args, {"score"});
-            const auto& model = args.at("score");
-            result = impl_->insert({load_native_score(composition_xml(model), "musicxml"), model});
+    if (tool == "score_create") {
+        only_keys(args, {"score"});
+        result = info_json(impl_->core->create(decode_composition(args.at("score"))));
+    } else if (tool == "score_open") {
+        only_keys(args, {"path", "musicxml"});
+        if (args.contains("path") == args.contains("musicxml"))
+            throw std::invalid_argument("Specify exactly one of path or musicxml");
+
+        std::string data;
+        auto format = InputFormat::MusicXml;
+        if (args.contains("path")) {
+            const auto path = std::filesystem::u8path(text_arg(args, "path"));
+            auto extension = path_utf8(path.extension());
+            if (!extension.empty()) extension.erase(0, 1);
+            std::transform(extension.begin(), extension.end(), extension.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            const auto parsed = input_format_from_name(extension);
+            if (!parsed) throw std::invalid_argument("Unsupported input format");
+            format = *parsed;
+            data = read_input(path);
         } else {
-            only_keys(args, {"path", "musicxml"});
-            if (args.contains("path") == args.contains("musicxml")) throw std::invalid_argument("Specify exactly one of path or musicxml");
-            std::string data, format = "musicxml";
-            if (args.contains("path")) {
-                const auto path = std::filesystem::u8path(text_arg(args, "path"));
-                format = path_utf8(path.extension());
-                if (!format.empty()) format.erase(0, 1);
-                std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                if (format != "musicxml" && format != "xml" && format != "mxl" && format != "mscz" && format != "mscx")
-                    throw std::invalid_argument("Supported inputs: musicxml, xml, mxl, mscz, mscx");
-                data = read_input(path);
-            } else data = text_arg(args, "musicxml");
-            result = impl_->insert({load_native_score(data, format), nullptr});
+            data = text_arg(args, "musicxml");
         }
+        result = info_json(impl_->core->open(data, format));
     } else if (tool == "score_get") {
+        only_keys(args, {"documentId", "excerptId"});
+        const auto view = impl_->core->get(document_id(args), excerpt_arg(args));
+        result = info_json(view.info);
+        if (view.composition) result["composition"] = composition_json(*view.composition);
+        else result["composition"] = nullptr;
+        result["musicxml"] = view.musicxml;
+        result["metadata"] = Json::parse(view.metadata_json);
+    } else if (tool == "score_generate_excerpts" || tool == "score_list_excerpts") {
         only_keys(args, {"documentId"});
-        const auto& doc = impl_->select(args);
-        result = impl_->describe(text_arg(args, "documentId"), doc);
-        result["composition"] = doc.composition;
-        result["musicxml"] = export_native_score(doc.project, "musicxml", 0, "");
-        result["metadata"] = score_metadata(doc.project->masterScore());
+        const auto data = tool == "score_generate_excerpts"
+            ? impl_->core->generate_excerpts(document_id(args)) : impl_->core->excerpts(document_id(args));
+        Json excerpts = Json::array();
+        for (const auto& excerpt : data.excerpts)
+            excerpts.push_back({{"id", excerpt.id}, {"title", excerpt.title},
+                {"partIds", excerpt.part_ids}, {"pages", excerpt.pages}});
+        result = {{"revision", data.revision.value}, {"excerpts", std::move(excerpts)}};
+    } else if (tool == "score_audio_tracks") {
+        only_keys(args, {"documentId", "excerptId"});
+        const auto data = impl_->core->audio_tracks(document_id(args), excerpt_arg(args));
+        Json tracks = Json::array();
+        for (const AudioTrackInfo& track : data.tracks) {
+            tracks.push_back({{"trackId", track.track_id}, {"partId", track.part_id},
+                {"instrumentId", track.instrument_id}, {"name", track.name}});
+        }
+        result = {{"revision", data.revision.value}, {"tracks", std::move(tracks)}};
+    } else if (tool == "score_audio_get_mix") {
+        only_keys(args, {"documentId", "excerptId"});
+        const auto data = impl_->core->audio_mix(document_id(args), excerpt_arg(args));
+        result = {{"revision", data.revision.value}, {"mix", audio_mix_json(data.mix)}};
+    } else if (tool == "score_audio_set_mix") {
+        only_keys(args, {"documentId", "excerptId", "mix"});
+        if (!args.contains("mix")) throw std::invalid_argument("mix is required");
+        const auto data = impl_->core->set_audio_mix(
+            document_id(args), decode_audio_mix(args.at("mix")), excerpt_arg(args));
+        result = {{"revision", data.revision.value}, {"mix", audio_mix_json(data.mix)}};
+    } else if (tool == "runtime_set_soundfont") {
+        only_keys(args, {"path"});
+        const auto asset = impl_->core->set_soundfont(text_arg(args, "path"));
+        result = {{"path", asset.path}, {"contentHash", asset.content_hash}};
+    } else if (tool == "runtime_add_font") {
+        only_keys(args, {"path"});
+        const auto asset = impl_->core->add_font(text_arg(args, "path"));
+        result = {{"id", asset.id}, {"family", asset.family}, {"bold", asset.bold},
+            {"italic", asset.italic}, {"path", asset.path}, {"contentHash", asset.content_hash}};
+    } else if (tool == "score_query_region") {
+        only_keys(args, {"documentId", "partIndex", "firstMeasure", "measureCount", "voice"});
+        ScoreRegion region;
+        region.part_index = size_arg(args, "partIndex");
+        region.first_measure = size_arg(args, "firstMeasure");
+        region.measure_count = size_arg(args, "measureCount");
+        if (region.measure_count < 1 || region.measure_count > 128)
+            throw std::invalid_argument("measureCount must be between 1 and 128");
+        if (args.contains("voice")) {
+            const auto voice = checked_integer(args.at("voice"), "voice must be an integer",
+                                               "voice must be between 0 and 3");
+            if (voice < 0 || voice > 3) throw std::invalid_argument("voice must be between 0 and 3");
+            region.voice = static_cast<unsigned>(voice);
+        }
+        result = region_json(impl_->core->query_region(document_id(args), region));
     } else if (tool == "score_replace_measures") {
-        only_keys(args, {"documentId", "partIndex", "startMeasure", "measures"});
-        auto& doc = impl_->select(args);
-        if (doc.composition.is_null()) throw std::invalid_argument("Structured measure replacement requires a score_create document");
-        auto updated = doc.composition;
-        auto& parts = updated.at("parts");
-        auto& bars = parts.at(index_arg(args, "partIndex", parts.size() - 1)).at("measures");
-        const auto start = index_arg(args, "startMeasure", bars.size() - 1);
-        const auto& replacement = args.at("measures");
-        if (!replacement.is_array() || replacement.empty() || replacement.size() > bars.size() - start)
+        only_keys(args, {"documentId", "partIndex", "startMeasure", "measures",
+                         "baseRevision", "operationId"});
+        const auto id = document_id(args);
+        if (args.contains("baseRevision") != args.contains("operationId"))
+            throw std::invalid_argument("baseRevision and operationId must be provided together");
+        const auto part_index = index_arg(args, "partIndex", 14);
+        const auto start_measure = index_arg(args, "startMeasure", 127);
+        const auto& replacement_json = args.at("measures");
+        if (!replacement_json.is_array() || replacement_json.empty())
             throw std::invalid_argument("Replacement must fit within the existing measure range");
-        for (size_t i = 0; i < replacement.size(); ++i) bars.at(start + i) = replacement.at(i);
-        Impl::Document candidate{load_native_score(composition_xml(updated), "musicxml"), std::move(updated)};
-        result = impl_->describe(text_arg(args, "documentId"), candidate);
-        doc = std::move(candidate);
+
+        std::vector<Measure> replacement;
+        replacement.reserve(replacement_json.size());
+        for (const auto& measure : replacement_json)
+            replacement.push_back(decode_measure(measure));
+
+        if (args.contains("baseRevision")) {
+            const auto base = positive_u64_arg(args, "baseRevision");
+            const auto operation_id = operation_id_arg(args);
+            result = edit_result_json(impl_->core->replace_measures(
+                id, part_index, start_measure, replacement,
+                EditContext{Revision{base}, operation_id}));
+        } else {
+            result = info_json(impl_->core->replace_measures(id, part_index, start_measure, replacement));
+        }
+    } else if (tool == "score_set_pitches") {
+        only_keys(args, {"documentId", "baseRevision", "operationId", "changes"});
+        const auto id = document_id(args);
+        const auto base = positive_u64_arg(args, "baseRevision");
+        const auto operation_id = operation_id_arg(args);
+
+        const auto& changes_json = args.at("changes");
+        if (!changes_json.is_array() || changes_json.empty()
+            || changes_json.size() > max_pitch_changes)
+            throw std::invalid_argument("changes must contain between 1 and 256 entries");
+
+        NativePitchEdit edit;
+        edit.changes.reserve(changes_json.size());
+        for (const auto& change_json : changes_json) {
+            if (!change_json.is_object())
+                throw std::invalid_argument("Each pitch change must be an object");
+            only_keys(change_json, {"noteId", "pitch"}, "Unknown key in pitch change: ");
+            PitchChange change;
+            change.note_id = text_arg(change_json, "noteId");
+            const auto pitch = checked_integer(change_json.at("pitch"),
+                                               "pitch must be an integer",
+                                               "pitch must be between 0 and 127");
+            if (pitch < 0 || pitch > 127)
+                throw std::invalid_argument("pitch must be between 0 and 127");
+            change.pitch = static_cast<int>(pitch);
+            edit.changes.push_back(std::move(change));
+        }
+
+        result = edit_result_json(impl_->core->set_pitches(
+            id, edit, EditContext{Revision{base}, operation_id}));
     } else if (tool == "score_close") {
         only_keys(args, {"documentId"});
-        if (!impl_->documents.erase(text_arg(args, "documentId"))) throw std::invalid_argument("Unknown or closed documentId");
+        impl_->core->close(document_id(args));
         result = {{"closed", true}};
     } else if (tool == "score_export") {
         only_keys(args, {"documentId", "format", "path", "page", "pngDpi", "drawPageBackground",
-                         "transparent", "expandRepeats", "exportRPNs"});
-        const auto& doc = impl_->select(args);
-        const auto format = text_arg(args, "format");
+                         "transparent", "expandRepeats", "exportRPNs", "excerptId"});
+        const auto id = document_id(args);
+        const auto format_text = text_arg(args, "format");
+        const auto parsed_format = export_format_from_name(format_text);
+        if (!parsed_format) throw std::invalid_argument("Unsupported export format");
+        const auto format = *parsed_format;
         const auto path = std::filesystem::absolute(std::filesystem::u8path(text_arg(args, "path")));
-        const auto pages = doc.project->masterScore()->npages();
-        if ((format == "svg" || format == "png" || format == "pdf") && !pages) throw std::runtime_error("Score has no pages");
-        if (args.contains("page") && format != "svg" && format != "png") throw std::invalid_argument("page only applies to svg/png");
+
+        if (args.contains("page") && format != ExportFormat::Svg && format != ExportFormat::Png)
+            throw std::invalid_argument("page only applies to svg/png");
+
         ExportOptions options;
-        options.page = args.contains("page") ? static_cast<int>(index_arg(args, "page", pages ? pages - 1 : 0)) : 0;
+        options.excerpt_id = excerpt_arg(args);
+        options.page = args.contains("page")
+            ? static_cast<int>(index_arg(args, "page", std::numeric_limits<int>::max()))
+            : 0;
         if (args.contains("pngDpi")) {
-            if (format != "png") throw std::invalid_argument("pngDpi only applies to png");
+            if (format != ExportFormat::Png) throw std::invalid_argument("pngDpi only applies to png");
             options.png_dpi = static_cast<int>(index_arg(args, "pngDpi", 1200));
             if (options.png_dpi < 36) throw std::invalid_argument("pngDpi must be between 36 and 1200");
         }
@@ -172,15 +626,25 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
             if (!args.at(key).is_boolean()) throw std::invalid_argument(std::string(key) + " must be a boolean");
             value = args.at(key).get<bool>();
         };
-        boolean_option("drawPageBackground", options.draw_page_background, format == "svg" || format == "png");
-        boolean_option("transparent", options.transparent, format == "png");
-        boolean_option("expandRepeats", options.midi_expand_repeats, format == "midi" || format == "wav");
-        boolean_option("exportRPNs", options.midi_export_rpns, format == "midi" || format == "wav");
-        const auto data = export_native_score(doc.project, format, options, impl_->soundfont);
-        if (data.empty()) throw std::runtime_error("Exporter returned no data");
-        write_atomic(path, data);
-        result = {{"path", path_utf8(path)}, {"format", format}, {"bytes", data.size()}};
-    } else throw std::invalid_argument("Unknown tool");
+        boolean_option("drawPageBackground", options.draw_page_background,
+                       format == ExportFormat::Svg || format == ExportFormat::Png);
+        boolean_option("transparent", options.transparent, format == ExportFormat::Png);
+        boolean_option("expandRepeats", options.midi_expand_repeats,
+                       format == ExportFormat::Midi || format == ExportFormat::Wav
+                       || format == ExportFormat::Flac || format == ExportFormat::Ogg || format == ExportFormat::Mp3);
+        boolean_option("exportRPNs", options.midi_export_rpns,
+                       format == ExportFormat::Midi || format == ExportFormat::Wav
+                       || format == ExportFormat::Flac || format == ExportFormat::Ogg || format == ExportFormat::Mp3);
+
+        const auto data = impl_->core->export_bytes(id, format, options);
+        if (data.bytes.empty()) throw std::runtime_error("Exporter returned no data");
+        write_atomic(path, data.bytes);
+        result = {{"path", path_utf8(path)}, {"format", format_text}, {"bytes", data.bytes.size()},
+            {"revision", data.revision.value}};
+    } else {
+        throw std::invalid_argument("Unknown tool");
+    }
     return result.dump();
 }
-}
+
+} // namespace music
