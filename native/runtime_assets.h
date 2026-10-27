@@ -39,6 +39,8 @@ void shutdown_runtime_assets();
 std::shared_ptr<const void> retain_runtime_assets();
 
 // Adds a font file and selects it for its exact family/bold/italic key.
+// A family whose only faces are not regular (e.g. a Medium face that FreeType
+// flags bold) also satisfies regular lookups when upstream has no such family.
 // The parent/score layer owns relayout; background jobs must receive immutable
 // RuntimeFontInfo copies rather than using this adapter directly.
 RuntimeFontInfo add_runtime_font(const std::string& source_path);

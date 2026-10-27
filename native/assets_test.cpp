@@ -25,22 +25,38 @@ std::string read(const std::filesystem::path& p) {
 std::string utf8(const std::filesystem::path& p) {
     auto v=p.u8string(); return {v.begin(),v.end()};
 }
+struct FontFixture {
+    std::string bytes;
+    std::string family;
+    bool bold=false;
+    bool italic=false;
+};
+FontFixture inspectFont(FT_Library lib,const std::filesystem::path& p) {
+    FontFixture result;
+    result.bytes=read(p);
+    FT_Face face=nullptr;
+    expect(FT_New_Memory_Face(lib,reinterpret_cast<const FT_Byte*>(result.bytes.data()),
+                              static_cast<FT_Long>(result.bytes.size()),0,&face)==0,
+           "Invalid font fixture");
+    struct FaceGuard { FT_Face p; ~FaceGuard(){ if(p) FT_Done_Face(p); } } guard{face};
+    expect(face->num_faces==1 && face->family_name,"Use a single-face font fixture");
+    result.family=face->family_name;
+    result.bold=(face->style_flags&FT_STYLE_FLAG_BOLD)!=0;
+    result.italic=(face->style_flags&FT_STYLE_FLAG_ITALIC)!=0;
+    return result;
+}
 }
 int main(int argc, char** argv) {
     try {
         if (argc != 4 && argc != 5) throw std::invalid_argument("Usage: assets_test ASSETS UNREGISTERED_FONT OUTPUT_DIRECTORY [SOUNDFONT]");
         const auto out=std::filesystem::absolute(std::filesystem::u8path(argv[3]));
         std::filesystem::create_directories(out);
-        const auto bytes=read(std::filesystem::u8path(argv[2]));
         FT_Library lib=nullptr;
         expect(FT_Init_FreeType(&lib)==0,"Cannot initialize FreeType for test");
         struct LibGuard { FT_Library p; ~LibGuard(){ FT_Done_FreeType(p); } } lg{lib};
-        FT_Face face=nullptr;
-        expect(FT_New_Memory_Face(lib,reinterpret_cast<const FT_Byte*>(bytes.data()),bytes.size(),0,&face)==0,
-               "Invalid font fixture");
-        struct FaceGuard { FT_Face p; ~FaceGuard(){ FT_Done_Face(p); } } fg{face};
-        expect(face->num_faces==1 && face->family_name, "Use a single-face font fixture");
-        const std::string family=face->family_name;
+        const auto fixture=inspectFont(lib,std::filesystem::u8path(argv[2]));
+        const auto& bytes=fixture.bytes;
+        const std::string family=fixture.family;
         const auto input=out/"mutable-input.ttf";
         { std::ofstream f(input,std::ios::binary); f.write(bytes.data(),bytes.size()); expect(bool(f),"Cannot write test font"); }
         music::initialize_native_runtime(argv[1]);
@@ -58,6 +74,16 @@ int main(int argc, char** argv) {
         expect(music::runtime_fonts().size()==initial_count+1,"Font registry count mismatch");
         const auto after=engine->horizontalAdvance(font,sample);
         expect(before>0 && after>0 && std::abs(after-before)>0.01,"Cached fallback was not invalidated; choose an unregistered font");
+        // A family that only ships a Medium/Bold face (FreeType flags it bold)
+        // must still satisfy the regular lookup with that registered face.
+        const bool boldOnlyFamily=info.bold && !info.italic;
+        double boldAdvance=0;
+        if (boldOnlyFamily) {
+            muse::draw::Font boldFont(font);
+            boldFont.setBold(true);
+            boldAdvance=engine->horizontalAdvance(boldFont,sample);
+            expect(std::abs(after-boldAdvance)<0.0001,"Regular lookup of a bold-only family did not use the registered face");
+        }
         const auto again=music::add_runtime_font(utf8(input));
         expect(again.id==info.id && again.path==info.path,"Identical font was not deduplicated");
         expect(music::runtime_fonts().size()==initial_count+1,"Deduplication added a font");
@@ -81,6 +107,7 @@ int main(int argc, char** argv) {
         expect(active.back().content_hash==info.content_hash,"Font fingerprint changed");
         nlohmann::json result={{"status","passed"},{"family",family},{"id",info.id},
             {"contentHash",info.content_hash},{"cachedPath",info.path},{"before",before},{"after",after},
+            {"bold",info.bold},{"boldOnlyFamily",boldOnlyFamily},{"boldAdvance",boldAdvance},
             {"sourceBytes",bytes.size()},{"immutableCopy",true},{"caseInsensitive",true},{"wrongThreadRejected",true}};
         if (argc == 5) {
             const auto sound_bytes=read(std::filesystem::u8path(argv[4]));

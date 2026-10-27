@@ -322,6 +322,31 @@ const FontRecord* findRecord(const ActiveTable& table, const draw::FontDataKey& 
     return nullptr;
 }
 
+const FontRecord* findRegularFamilyFallback(const ActiveTable& table, const draw::FontDataKey& key)
+{
+    // Families such as Ubuntu ship a Medium face that FreeType flags as bold,
+    // so a regular query has no exact record. Upstream/desktop resolves by
+    // family and the closest available style; choose an upright face of the
+    // requested family when the exact regular style is absent. Bold/italic
+    // queries keep exact-key semantics (no synthetic styling is invented).
+    if (key.bold() || key.italic()) {
+        return nullptr;
+    }
+    const FontRecord* italic = nullptr;
+    for (const FontRecord& record : table) {
+        if (record.key.family() != key.family()) {
+            continue;
+        }
+        if (!record.key.italic()) {
+            return &record;
+        }
+        if (!italic) {
+            italic = &record;
+        }
+    }
+    return italic;
+}
+
 class RuntimeFontsDatabase;
 class FontsEngineProxy;
 
@@ -405,8 +430,16 @@ public:
             return overridden->key;
         }
 
-        // Only the upstream database's own default fallback is accepted here;
-        // no family-only or style-only substitution is invented.
+        // Built-in families keep priority; only a family the upstream database
+        // cannot provide at all falls back to its registered runtime face.
+        if (baseKey.family() != requireKey.family()) {
+            if (const FontRecord* fallback = findRegularFamilyFallback(*m_active, requireKey)) {
+                return fallback->key;
+            }
+        }
+
+        // Only the upstream database's own default fallback is accepted here
+        // when no registered face can represent the requested family.
         return baseKey;
     }
 

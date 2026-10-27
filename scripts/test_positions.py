@@ -38,6 +38,22 @@ def timed_fixture():
     return ET.tostring(root, encoding='unicode')
 
 
+def mmrest_fixture():
+    """Four empty measures collapsed into one multi-measure rest, then a note."""
+    return """<score-partwise version="4.0">
+<part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+<part id="P1">
+<measure number="1"><attributes><divisions>1</divisions>
+<time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef>
+<measure-style><multiple-rest>4</multiple-rest></measure-style>
+</attributes><note><rest/><duration>4</duration><voice>1</voice></note></measure>
+<measure number="2"><note><rest/><duration>4</duration><voice>1</voice></note></measure>
+<measure number="3"><note><rest/><duration>4</duration><voice>1</voice></note></measure>
+<measure number="4"><note><rest/><duration>4</duration><voice>1</voice></note></measure>
+<measure number="5"><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note></measure>
+</part></score-partwise>"""
+
+
 def check_geometry(data, pages):
     assert set(data) == {'pageSize', 'elements', 'events'}
     size = data['pageSize']
@@ -133,8 +149,21 @@ async def run(args):
                     assert set(x['page'] for x in data['elements']) == set(range(opened['pages']))
                     assert [e['position'] for e in data['events']] == [i*interval for i in range(count)]
                 await call('score_close', {'documentId': opened['documentId']})
+                # Upstream PositionJsonWriter iterates firstMeasureMM/nextMeasureMM:
+                # the four-measure rest is one element whose playback position spans
+                # the whole rest (4 * 2000 ms at the default 120 BPM), then measure 5.
+                mmrest = (await call('score_open', {'musicxml': mmrest_fixture()}))['documentId']
+                for fmt in ('measurePositions', 'segmentPositions'):
+                    path = await export(mmrest, fmt, 'mmrest-'+fmt+'.json')
+                    data = json.loads(path.read_text('utf-8'))
+                    check_geometry(data, 1)
+                    assert len(data['elements']) == 2, (fmt, data['elements'])
+                    assert [e['position'] for e in data['events']] == [0, 8000], (fmt, data['events'])
+                await call('score_close', {'documentId': mmrest})
                 evidence.update(status='passed', tempo_repeat_events=mappings,
                                 multipage={'pages':opened['pages'],'measures':60,'segments':240},
+                                multi_measure_rest={'underlyingMeasures':5,'elements':2,
+                                                    'events':[0,8000]},
                                 midi_unchanged=True, png_dimensions=[w,h], invalid_options=6)
                 # Sequences from pinned upstream engraving/tests/repeat_tests.cpp.
                 # Test data remains in the pinned checkout rather than being copied into this repo.
