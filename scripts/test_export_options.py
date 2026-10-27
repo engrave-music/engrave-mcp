@@ -737,6 +737,27 @@ async def main() -> None:
                         "session_survived": True,
                     }
 
+                # =========================================================================
+                # 9. Metadata export with tracks populated from score and consistent with mix
+                # =========================================================================
+                meta_path = out_dir / "score_metadata.json"
+                meta_res = await call("score_export", {**doc_identity, "format": "metadata", "path": str(meta_path)})
+                assert meta_path.is_file() and meta_path.stat().st_size > 0
+                assert meta_res["bytes"] == meta_path.stat().st_size
+                meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
+                assert "tracks" in meta_data, "Metadata JSON must contain 'tracks'"
+                assert isinstance(meta_data["tracks"], list) and len(meta_data["tracks"]) > 0, (
+                    "Metadata 'tracks' must not be empty"
+                )
+                first_meta_track = meta_data["tracks"][0]
+                for required_key in ("trackId", "name", "partId", "instrumentId", "volumeDb", "volume", "balance", "solo", "muted", "forceMute"):
+                    assert required_key in first_meta_track, f"Metadata track missing required field {required_key}"
+                report["evidence"]["metadata_export"] = {
+                    "executed": True,
+                    "tracks_count": len(meta_data["tracks"]),
+                    "first_track": first_meta_track,
+                }
+
                 # Clean up main document
                 await call("score_close", doc_identity)
 

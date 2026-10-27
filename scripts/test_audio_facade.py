@@ -128,6 +128,24 @@ async def test_audio_facade(args):
         assert set(mix_track_ids) == set(track_ids), "Mix track IDs must match score tracks"
         checks.append("default_mix_verified")
 
+        doc_get_init = await c.tool("score_get", {"documentId": doc_id})
+        meta_init = doc_get_init["metadata"]
+        assert "tracks" in meta_init and len(meta_init["tracks"]) == len(tracks), (
+            f"Expected {len(tracks)} metadata tracks, got {len(meta_init.get('tracks', []))}"
+        )
+        for meta_tr in meta_init["tracks"]:
+            matching_audio = next(t for t in tracks if t["trackId"] == meta_tr["trackId"])
+            matching_mix = next(t for t in default_mix["tracks"] if t["trackId"] == meta_tr["trackId"])
+            assert meta_tr["partId"] == matching_audio["partId"]
+            assert meta_tr["instrumentId"] == matching_audio["instrumentId"]
+            assert meta_tr["name"] == matching_audio["name"]
+            assert meta_tr["volumeDb"] == matching_mix["output"]["volumeDb"]
+            assert meta_tr["balance"] == matching_mix["output"]["balance"]
+            assert meta_tr["solo"] == matching_mix["output"]["solo"]
+            assert meta_tr["muted"] == matching_mix["output"]["muted"]
+            assert meta_tr["forceMute"] == matching_mix["output"]["forceMute"]
+        checks.append("metadata_tracks_consistent")
+
         noop_res = await c.tool(
             "score_audio_set_mix",
             {"documentId": doc_id, "mix": copy.deepcopy(default_mix)},
@@ -154,11 +172,53 @@ async def test_audio_facade(args):
         rev = mod_res["revision"]
         checks.append("valid_mod_verified")
 
+        mod_track_mix = copy.deepcopy(mod_res["mix"])
+        mod_track_mix["tracks"][0]["output"]["volumeDb"] = -12.0
+        mod_track_mix["tracks"][0]["output"]["muted"] = True
+        mod_track_res = await c.tool(
+            "score_audio_set_mix",
+            {"documentId": doc_id, "mix": mod_track_mix},
+        )
+        assert mod_track_res["revision"] == rev + 1
+        rev = mod_track_res["revision"]
+
+        doc_get_track_mod = await c.tool("score_get", {"documentId": doc_id})
+        meta_track_mod = doc_get_track_mod["metadata"]["tracks"]
+        tr0 = next(t for t in meta_track_mod if t["trackId"] == mod_track_mix["tracks"][0]["trackId"])
+        assert tr0["volumeDb"] == -12.0
+        assert tr0["muted"] is True
+        checks.append("metadata_tracks_updated_after_mix_change")
+
+        # Partial patches (webmscore setAudioOutputParams): only named fields change.
+        before_patch = copy.deepcopy(mod_track_res["mix"])
+        second_id = before_patch["tracks"][1]["trackId"]
+        patched = await c.tool(
+            "score_audio_set_mix",
+            {"documentId": doc_id, "mix": {"tracks": [{"trackId": second_id, "output": {"balance": 0.5}}]}},
+        )
+        assert patched["revision"] == rev + 1, "Partial patch must advance revision once"
+        expected = copy.deepcopy(before_patch)
+        expected["tracks"][1]["output"]["balance"] = 0.5
+        assert patched["mix"] == expected, f"Partial patch changed unnamed fields: {patched['mix']}"
+        rev = patched["revision"]
+        noop_patch = await c.tool(
+            "score_audio_set_mix", {"documentId": doc_id, "mix": {"master": {"volumeDb": -6.0}}}
+        )
+        assert noop_patch["revision"] == rev, "Partial patch with current values must be a no-op"
+        reverted = await c.tool(
+            "score_audio_set_mix",
+            {"documentId": doc_id, "mix": {"tracks": [{"trackId": second_id, "output": {"balance": 0.0}}]}},
+        )
+        assert reverted["mix"] == before_patch
+        rev = reverted["revision"]
+        mod_track_res = reverted
+        checks.append("partial_patch_verified")
+
         invalid_cases = []
 
-        m = copy.deepcopy(default_mix)
-        m["tracks"] = m["tracks"][:1]
-        invalid_cases.append(("missing_track", {"documentId": doc_id, "mix": m}))
+        m = {"master": {"volumeDb": 3.0}, "tracks": [{"trackId": second_id, "output": {"muted": True}},
+                                                     {"trackId": 999999, "output": {"muted": True}}]}
+        invalid_cases.append(("partial_with_unknown_id", {"documentId": doc_id, "mix": m}))
 
         m = copy.deepcopy(default_mix)
         m["tracks"][1]["trackId"] = m["tracks"][0]["trackId"]
@@ -168,9 +228,8 @@ async def test_audio_facade(args):
         m["tracks"][0]["trackId"] = 999999
         invalid_cases.append(("unknown_id", {"documentId": doc_id, "mix": m}))
 
-        m = copy.deepcopy(default_mix)
-        del m["tracks"][0]["output"]["volumeDb"]
-        invalid_cases.append(("missing_output_field", {"documentId": doc_id, "mix": m}))
+        m = {"tracks": [{"trackId": second_id}]}
+        invalid_cases.append(("track_without_output", {"documentId": doc_id, "mix": m}))
 
         m = copy.deepcopy(default_mix)
         m["master"]["unexpectedField"] = True
@@ -199,7 +258,7 @@ async def test_audio_facade(args):
             await c.tool("score_audio_set_mix", bad_args, error=True)
             verify = await c.tool("score_audio_get_mix", {"documentId": doc_id})
             assert verify["revision"] == rev, f"Revision changed on invalid case {case_name}"
-            assert verify["mix"] == mod_res["mix"], f"Mix changed on invalid case {case_name}"
+            assert verify["mix"] == mod_track_res["mix"], f"Mix changed on invalid case {case_name}"
         checks.append("invalid_mixes_verified")
 
         exc_res = await c.tool("score_generate_excerpts", {"documentId": doc_id})

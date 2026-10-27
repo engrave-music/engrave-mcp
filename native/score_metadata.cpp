@@ -32,6 +32,7 @@
 // base Score* overload reports no tracks rather than inventing resource state.
 
 #include "score_metadata.h"
+#include "score_audio.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -508,21 +509,28 @@ Json excerptsJsonArray(const Score* score)
 
     return jsonExcerptsArray;
 }
-} // namespace
-
-nlohmann::json score_metadata(mu::engraving::Score* score, const std::vector<MetadataTrack>& tracks)
+Json metadataTracksJsonArray(const std::vector<ScoreMetadataTrack>& tracks)
 {
-    if (!score) {
-        if (!tracks.empty()) {
-            throw std::invalid_argument("score_metadata: cannot validate tracks without a score");
-        }
-        return nlohmann::json::object();
+    Json jsonTracksArray = Json::array();
+    for (const ScoreMetadataTrack& track : tracks) {
+        Json jsonTrack = Json::object();
+        jsonTrack["trackId"] = track.track_id;
+        jsonTrack["partId"] = track.part_id;
+        jsonTrack["instrumentId"] = track.instrument_id;
+        jsonTrack["name"] = track.name;
+        jsonTrack["volumeDb"] = track.volume_db;
+        jsonTrack["volume"] = track.volume_db;
+        jsonTrack["balance"] = track.balance;
+        jsonTrack["solo"] = track.solo;
+        jsonTrack["muted"] = track.muted;
+        jsonTrack["forceMute"] = track.force_mute;
+        jsonTracksArray.push_back(std::move(jsonTrack));
     }
+    return jsonTracksArray;
+}
 
-    // Validate and build the tracks before doing any other work, so an invalid
-    // descriptor cannot produce a partially populated result.
-    Json jsonTracks = tracksJsonArray(score, tracks);
-
+Json make_score_metadata_json(Score* score, Json jsonTracks)
+{
     Json json = Json::object();
 
     json["title"] = title(score);
@@ -553,12 +561,52 @@ nlohmann::json score_metadata(mu::engraving::Score* score, const std::vector<Met
 
     return json;
 }
+} // namespace
+
+nlohmann::json score_metadata(mu::engraving::Score* score, const std::vector<ScoreMetadataTrack>& tracks)
+{
+    if (!score) {
+        return nlohmann::json::object();
+    }
+    return make_score_metadata_json(score, metadataTracksJsonArray(tracks));
+}
+
+nlohmann::json score_metadata(mu::engraving::Score* score, const std::vector<MetadataTrack>& tracks)
+{
+    if (!score) {
+        if (!tracks.empty()) {
+            throw std::invalid_argument("score_metadata: cannot validate tracks without a score");
+        }
+        return nlohmann::json::object();
+    }
+
+    // Validate and build the tracks before doing any other work, so an invalid
+    // descriptor cannot produce a partially populated result.
+    Json jsonTracks = tracksJsonArray(score, tracks);
+    return make_score_metadata_json(score, std::move(jsonTracks));
+}
 
 nlohmann::json score_metadata(mu::engraving::Score* score)
 {
-    // The base overload has no audio-resource state, so it must not invent
-    // track descriptors: "tracks" stays an empty array.
-    return score_metadata(score, std::vector<MetadataTrack>());
+    if (!score) {
+        return nlohmann::json::object();
+    }
+    std::vector<ScoreMetadataTrack> tracks;
+    try {
+        const auto infos = score_audio_track_info(score);
+        tracks.reserve(infos.size());
+        for (const auto& info : infos) {
+            ScoreMetadataTrack t;
+            t.track_id = info.track_id;
+            t.part_id = info.part_id;
+            t.instrument_id = info.instrument_id;
+            t.name = info.name;
+            tracks.push_back(std::move(t));
+        }
+    } catch (...) {
+        // Multi-instrument part or inconsistent score: leave tracks empty
+    }
+    return score_metadata(score, tracks);
 }
 
 std::string score_title_filename_safe(const mu::engraving::Score* score)

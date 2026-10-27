@@ -137,11 +137,9 @@ std::vector<PartPlan> build_plans(Score* score)
         plan.track_id = static_cast<std::int64_t>(part_index);
         plan.part = part;
         plan.part_id = part->id().toStdString();
+        // Tracks are keyed by part index; the instrument id is descriptive only
+        // and some importers (Guitar Pro) leave it empty.
         plan.instrument_id = instrument_tracks.front().instrumentId.toStdString();
-        if (plan.instrument_id.empty()) {
-            throw std::runtime_error("score_audio: " + part_label(part_index, *part)
-                                     + " has an empty instrument id");
-        }
         plan.name = part->partName().toStdString();
 
         std::vector<std::size_t> indexes;

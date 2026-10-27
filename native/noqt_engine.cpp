@@ -161,33 +161,35 @@ bool audio_bool_arg(const Json& object, const char* key, const std::string& path
     return value.get<bool>();
 }
 
-AudioOutputParams decode_audio_output(const Json& json, const std::string& path) {
+// A complete snapshot is a patch that names every field, so both forms share
+// one decoder; unspecified fields and unlisted tracks keep their current state.
+AudioOutputPatch decode_audio_output_patch(const Json& json, const std::string& path) {
     if (!json.is_object()) throw std::invalid_argument(path + " must be an object");
     only_keys(json, {"volumeDb", "balance", "solo", "muted", "forceMute"},
               "Unknown key in " + path + ": ");
-    AudioOutputParams output;
-    output.volume_db = audio_number_arg(json, "volumeDb", path, -120.0, 24.0);
-    output.balance = audio_number_arg(json, "balance", path, -1.0, 1.0);
-    output.solo = audio_bool_arg(json, "solo", path);
-    output.muted = audio_bool_arg(json, "muted", path);
-    output.force_mute = audio_bool_arg(json, "forceMute", path);
-    return output;
+    AudioOutputPatch patch;
+    if (json.contains("volumeDb")) patch.volume_db = audio_number_arg(json, "volumeDb", path, -120.0, 24.0);
+    if (json.contains("balance")) patch.balance = audio_number_arg(json, "balance", path, -1.0, 1.0);
+    if (json.contains("solo")) patch.solo = audio_bool_arg(json, "solo", path);
+    if (json.contains("muted")) patch.muted = audio_bool_arg(json, "muted", path);
+    if (json.contains("forceMute")) patch.force_mute = audio_bool_arg(json, "forceMute", path);
+    return patch;
 }
 
-AudioMix decode_audio_mix(const Json& json) {
+AudioMixPatch decode_audio_mix_patch(const Json& json) {
     if (!json.is_object()) throw std::invalid_argument("mix must be an object");
     only_keys(json, {"master", "tracks"}, "Unknown key in mix: ");
-    if (!json.contains("master")) throw std::invalid_argument("mix.master is required");
-    if (!json.contains("tracks")) throw std::invalid_argument("mix.tracks is required");
 
-    AudioMix mix;
-    mix.master = decode_audio_output(json.at("master"), "mix.master");
+    AudioMixPatch patch;
+    if (json.contains("master")) patch.master = decode_audio_output_patch(json.at("master"), "mix.master");
+    if (!json.contains("tracks")) return patch;
 
     const auto& tracks = json.at("tracks");
     if (!tracks.is_array()) throw std::invalid_argument("mix.tracks must be an array");
     if (tracks.size() > audio_max_tracks)
         throw std::invalid_argument("mix.tracks must contain at most 15 entries");
-    mix.tracks.reserve(tracks.size());
+    std::vector<AudioTrackPatch> entries;
+    entries.reserve(tracks.size());
     for (std::size_t index = 0; index < tracks.size(); ++index) {
         const auto& entry = tracks.at(index);
         const std::string path = "mix.tracks[" + std::to_string(index) + "]";
@@ -204,12 +206,13 @@ AudioMix decode_audio_mix(const Json& json) {
         if (!entry.contains("output"))
             throw std::invalid_argument(path + ".output is required");
 
-        AudioTrackParams params;
-        params.track_id = track_id;
-        params.output = decode_audio_output(entry.at("output"), path + ".output");
-        mix.tracks.push_back(std::move(params));
+        AudioTrackPatch track;
+        track.track_id = track_id;
+        track.output = decode_audio_output_patch(entry.at("output"), path + ".output");
+        entries.push_back(std::move(track));
     }
-    return mix;
+    patch.tracks = std::move(entries);
+    return patch;
 }
 
 Json audio_output_json(const AudioOutputParams& output) {
@@ -512,7 +515,7 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         only_keys(args, {"documentId", "excerptId", "mix"});
         if (!args.contains("mix")) throw std::invalid_argument("mix is required");
         const auto data = impl_->core->set_audio_mix(
-            document_id(args), decode_audio_mix(args.at("mix")), excerpt_arg(args));
+            document_id(args), decode_audio_mix_patch(args.at("mix")), excerpt_arg(args));
         result = {{"revision", data.revision.value}, {"mix", audio_mix_json(data.mix)}};
     } else if (tool == "runtime_set_soundfont") {
         only_keys(args, {"path"});

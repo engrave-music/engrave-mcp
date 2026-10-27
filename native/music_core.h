@@ -182,6 +182,31 @@ struct AudioMixData {
     AudioMix mix;
 };
 
+// Partial audio output parameters patch. Unspecified fields keep current state.
+struct AudioOutputPatch {
+    std::optional<double> volume_db;
+    std::optional<double> balance;
+    std::optional<bool> solo;
+    std::optional<bool> muted;
+    std::optional<bool> force_mute;
+    bool operator==(const AudioOutputPatch&) const = default;
+};
+
+// Partial track mix patch specifying a trackId and a subset of output parameters.
+struct AudioTrackPatch {
+    std::int64_t track_id = 0;
+    AudioOutputPatch output;
+    bool operator==(const AudioTrackPatch&) const = default;
+};
+
+// Partial audio mix patch. Both master and tracks are optional.
+// tracks may specify a subset of tracks. Unspecified fields retain current state.
+struct AudioMixPatch {
+    std::optional<AudioOutputPatch> master;
+    std::optional<std::vector<AudioTrackPatch>> tracks;
+    bool operator==(const AudioMixPatch&) const = default;
+};
+
 struct ExportData {
     Revision revision;
     std::string bytes;
@@ -245,6 +270,7 @@ public:
     AudioTracksData audio_tracks(DocumentId id, int excerpt_id = -1);
     AudioMixData audio_mix(DocumentId id, int excerpt_id = -1);
     AudioMixData set_audio_mix(DocumentId id, const AudioMix& mix, int excerpt_id = -1);
+    AudioMixData set_audio_mix(DocumentId id, const AudioMixPatch& patch, int excerpt_id = -1);
     // Owns freshly rendered stems, the selected SoundFont, and the applied mix.
     // The returned session must be destroyed on this MusicCore's owner thread.
     // Its asset lease keeps the frozen SoundFont alive if it outlives this core.

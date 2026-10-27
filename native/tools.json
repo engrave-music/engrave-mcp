@@ -939,7 +939,7 @@
   },
   {
     "name": "score_audio_set_mix",
-    "description": "Atomically replace the complete master and per-track audio mix. Supply each current trackId exactly once, using IDs from score_audio_tracks. Volume is dB and balance is -1..1. Changing the mix advances document revision; unchanged values are a no-op.",
+    "description": "Atomically patch the master and per-track audio mix. master, tracks and every output field are optional: unspecified fields and unlisted tracks keep their current values, and supplying every field replaces the whole mix. Use trackIds from score_audio_tracks; unknown or duplicate trackIds or out-of-range values reject the whole patch. Volume is dB and balance is -1..1. Changing the mix advances document revision; a patch that changes nothing is a no-op.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -981,13 +981,6 @@
                   "type": "boolean"
                 }
               },
-              "required": [
-                "volumeDb",
-                "balance",
-                "solo",
-                "muted",
-                "forceMute"
-              ],
               "additionalProperties": false
             },
             "tracks": {
@@ -1023,13 +1016,6 @@
                         "type": "boolean"
                       }
                     },
-                    "required": [
-                      "volumeDb",
-                      "balance",
-                      "solo",
-                      "muted",
-                      "forceMute"
-                    ],
                     "additionalProperties": false
                   }
                 },
@@ -1042,10 +1028,6 @@
               "maxItems": 15
             }
           },
-          "required": [
-            "master",
-            "tracks"
-          ],
           "additionalProperties": false
         }
       },

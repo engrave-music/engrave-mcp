@@ -578,15 +578,18 @@ def build_cases() -> list[Case]:
         add(f"{name} excerpt", name, {**doc, "excerptId": 0}, True)
         add(f"{name} unknown", name, {**doc, "extra": True}, False)
     add("complete audio mix", "score_audio_set_mix", {**doc, "mix": mix}, True)
-    add("missing master", "score_audio_set_mix", {**doc, "mix": {"tracks": []}}, False)
+    # Partial patches: master, tracks and each output field are optional.
+    add("patch without master", "score_audio_set_mix", {**doc, "mix": {"tracks": []}}, True)
+    add("empty patch", "score_audio_set_mix", {**doc, "mix": {}}, True)
+    add("track without output", "score_audio_set_mix", {**doc, "mix": {"tracks": [{"trackId": 0}]}}, False)
     for key, value in (("volumeDb", -121), ("volumeDb", 25), ("balance", -1.1),
                        ("balance", 1.1), ("solo", 1), ("volumeDb", True), ("unexpected", 0)):
         invalid = {"master": {**params, key: value}, "tracks": mix["tracks"]}
         add(f"invalid master {key}={value}", "score_audio_set_mix", {**doc, "mix": invalid}, False)
     for key in params:
         partial = {name: value for name, value in params.items() if name != key}
-        add(f"missing output {key}", "score_audio_set_mix",
-            {**doc, "mix": {"master": params, "tracks": [{"trackId": 0, "output": partial}]}}, False)
+        add(f"partial output without {key}", "score_audio_set_mix",
+            {**doc, "mix": {"master": params, "tracks": [{"trackId": 0, "output": partial}]}}, True)
     for track_id in (-1, 0.5, True, 9223372036854775808):
         add(f"invalid track id {track_id}", "score_audio_set_mix",
             {**doc, "mix": {"master": params, "tracks": [{"trackId": track_id, "output": params}]}}, False)

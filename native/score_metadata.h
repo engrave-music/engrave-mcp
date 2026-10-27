@@ -51,13 +51,30 @@ struct MetadataTrack {
     std::optional<std::string> vendor;
 };
 
-// Same fields and values as upstream NotationMeta::metaJson(Score*). The base
-// overload always emits an empty "tracks" array: it has no audio-resource
-// state to report and does not invent any. Returns an empty object when score
-// is null. Excerpt entries whose excerpt or excerptScore pointer is null are
-// skipped rather than dereferenced; skipped entries are not represented and
-// surviving excerpts keep their MasterScore::excerpts() index as "id".
+// Audio stem descriptor and mix state for metadata track export.
+// Fields match upstream TrackAudioOutputParams as closely as possible,
+// documenting unit differences (volumeDb in decibels [-120..24] vs upstream linear gain).
+struct ScoreMetadataTrack {
+    std::int64_t track_id = 0;
+    std::string part_id;
+    std::string instrument_id;
+    std::string name;
+    double volume_db = 0.0;
+    double balance = 0.0;
+    bool solo = false;
+    bool muted = false;
+    bool force_mute = false;
+};
+
+// Emits score metadata with "tracks" populated from the score's actual tracks
+// (via score_audio_track_info) and default mix output parameters. Returns an empty
+// object when score is null. If the score structure cannot be partitioned into audio
+// stems, "tracks" remains an empty array.
 nlohmann::json score_metadata(mu::engraving::Score* score);
+
+// Emits score metadata with "tracks" populated from explicit track descriptors and
+// mix parameters. Returns an empty object when score is null.
+nlohmann::json score_metadata(mu::engraving::Score* score, const std::vector<ScoreMetadataTrack>& tracks);
 
 // Same JSON as score_metadata(score), with "tracks" built from the supplied
 // descriptors. Every descriptor must reference an existing part in score and
