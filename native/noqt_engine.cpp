@@ -28,6 +28,9 @@ using Json = nlohmann::json;
 namespace {
 
 constexpr std::size_t max_input = 8 * 1024 * 1024;
+// Padded standard base64 expands every three bytes to four characters, so this
+// is the longest text that can still decode within max_input.
+constexpr std::size_t max_base64 = ((max_input + 2) / 3) * 4;
 constexpr std::size_t max_operation_id = 128;
 constexpr std::size_t max_pitch_changes = 256;
 
@@ -112,6 +115,47 @@ std::string read_input(const std::filesystem::path& path) {
     data.resize(static_cast<std::size_t>(file.gcount()));
     if (data.size() > max_input) throw std::invalid_argument("Score input exceeds 8 MiB");
     return data;
+}
+
+int base64_value(unsigned char value) noexcept {
+    if (value >= 'A' && value <= 'Z') return value - 'A';
+    if (value >= 'a' && value <= 'z') return value - 'a' + 26;
+    if (value >= '0' && value <= '9') return value - '0' + 52;
+    if (value == '+') return 62;
+    if (value == '/') return 63;
+    return -1;
+}
+
+// Standard padded base64 (RFC 4648 section 4). Whitespace and the URL-safe
+// alphabet are rejected; unused trailing bits are ignored.
+std::string decode_base64_input(std::string_view text) {
+    if (text.size() % 4 != 0) throw std::invalid_argument("data must be padded standard base64");
+    if (text.size() > max_base64) throw std::invalid_argument("Score input exceeds 8 MiB");
+
+    std::size_t padding = 0;
+    while (padding < text.size() && text[text.size() - padding - 1] == '=') ++padding;
+    if (padding > 2) throw std::invalid_argument("data has invalid base64 padding");
+    const std::size_t payload = text.size() - padding;
+    if ((padding == 0 && payload % 4 != 0) || (padding == 1 && payload % 4 != 3)
+        || (padding == 2 && payload % 4 != 2))
+        throw std::invalid_argument("data has invalid base64 padding");
+
+    std::string decoded;
+    decoded.reserve(payload * 3 / 4);
+    std::uint32_t accumulator = 0;
+    int bits = 0;
+    for (std::size_t index = 0; index < payload; ++index) {
+        const int value = base64_value(static_cast<unsigned char>(text[index]));
+        if (value < 0) throw std::invalid_argument("data contains invalid base64 characters");
+        accumulator = (accumulator << 6) | static_cast<std::uint32_t>(value);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            decoded.push_back(static_cast<char>((accumulator >> bits) & 0xFFu));
+        }
+    }
+    if (decoded.size() > max_input) throw std::invalid_argument("Score input exceeds 8 MiB");
+    return decoded;
 }
 
 DocumentId document_id(const Json& args) {
@@ -461,13 +505,18 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         only_keys(args, {"score"});
         result = info_json(impl_->core->create(decode_composition(args.at("score"))));
     } else if (tool == "score_open") {
-        only_keys(args, {"path", "musicxml"});
-        if (args.contains("path") == args.contains("musicxml"))
-            throw std::invalid_argument("Specify exactly one of path or musicxml");
+        only_keys(args, {"path", "musicxml", "data", "format"});
+        const bool has_path = args.contains("path");
+        const bool has_musicxml = args.contains("musicxml");
+        const bool has_data = args.contains("data");
+        if (static_cast<int>(has_path) + static_cast<int>(has_musicxml) + static_cast<int>(has_data) != 1)
+            throw std::invalid_argument("Specify exactly one of path, musicxml or data");
+        if (has_data != args.contains("format"))
+            throw std::invalid_argument("format is required with data and rejected otherwise");
 
         std::string data;
         auto format = InputFormat::MusicXml;
-        if (args.contains("path")) {
+        if (has_path) {
             const auto path = std::filesystem::u8path(text_arg(args, "path"));
             auto extension = path_utf8(path.extension());
             if (!extension.empty()) extension.erase(0, 1);
@@ -477,8 +526,13 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
             if (!parsed) throw std::invalid_argument("Unsupported input format");
             format = *parsed;
             data = read_input(path);
-        } else {
+        } else if (has_musicxml) {
             data = text_arg(args, "musicxml");
+        } else {
+            const auto parsed = input_format_from_name(text_arg(args, "format"));
+            if (!parsed) throw std::invalid_argument("Unsupported input format");
+            format = *parsed;
+            data = decode_base64_input(text_arg(args, "data"));
         }
         result = info_json(impl_->core->open(data, format));
     } else if (tool == "score_get") {

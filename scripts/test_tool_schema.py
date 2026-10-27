@@ -66,6 +66,26 @@ EXPORT_FORMATS = [
     "mp3",
 ]
 
+OPEN_FORMATS = [
+    "mscz",
+    "mscx",
+    "mxl",
+    "musicxml",
+    "xml",
+    "midi",
+    "mid",
+    "kar",
+    "gp",
+    "gp3",
+    "gp4",
+    "gp5",
+    "gp6",
+    "gp7",
+    "gpx",
+    "gtp",
+    "ptb",
+]
+
 
 def bar(*pitches: int | None) -> dict[str, Any]:
     return {
@@ -134,6 +154,14 @@ def check_schema_contracts(tools: list[dict[str, Any]]) -> None:
             raise AssertionError(f"{name}.operationId must not imply a unicode-character limit")
         if "bytes" not in description:
             raise AssertionError(f"{name}.operationId must describe its 128-byte limit")
+
+    open_format = _tool_schema(tools, "score_open")["properties"]["format"]
+    if open_format.get("enum") != OPEN_FORMATS:
+        raise AssertionError(
+            f"score_open.format must enumerate the path-route input formats: {OPEN_FORMATS}"
+        )
+    if "pattern" not in _tool_schema(tools, "score_open")["properties"]["data"]:
+        raise AssertionError("score_open.data must constrain its base64 alphabet")
 
 
 def _tool_schema(tools: list[dict[str, Any]], name: str) -> dict[str, Any]:
@@ -224,11 +252,38 @@ def build_cases() -> list[Case]:
     add("create part name NUL", "score_create",
         {"score": {"parts": [{**create_score["score"]["parts"][0], "name": "a" + NUL}]}}, False)
 
-    # score_open: exactly one input.
+    # score_open: exactly one of path, musicxml or data; format only with data.
+    base64_doc = "U2NvcmU="
     add("open path only", "score_open", {"path": "scores/a.musicxml"}, True)
     add("open musicxml only", "score_open", {"musicxml": "<score-partwise/>"}, True)
+    add("open data only", "score_open", {"data": base64_doc, "format": "mscz"}, True)
+    for fmt in OPEN_FORMATS:
+        add(f"open data format {fmt}", "score_open",
+            {"data": base64_doc, "format": fmt}, True)
     add("open both inputs", "score_open",
         {"path": "scores/a.musicxml", "musicxml": "<score-partwise/>"}, False)
+    add("open data and path", "score_open",
+        {"path": "scores/a.musicxml", "data": base64_doc, "format": "mscz"}, False)
+    add("open data and musicxml", "score_open",
+        {"musicxml": "<score-partwise/>", "data": base64_doc, "format": "musicxml"}, False)
+    add("open data missing format", "score_open", {"data": base64_doc}, False)
+    add("open format without data", "score_open",
+        {"path": "scores/a.musicxml", "format": "musicxml"}, False)
+    add("open musicxml with format", "score_open",
+        {"musicxml": "<score-partwise/>", "format": "musicxml"}, False)
+    add("open data unknown format", "score_open",
+        {"data": base64_doc, "format": "aac"}, False)
+    add("open data bad character", "score_open",
+        {"data": "U2NvcmU!", "format": "mscz"}, False)
+    add("open data unpadded", "score_open",
+        {"data": "U2NvcmU", "format": "mscz"}, False)
+    add("open data excess padding", "score_open",
+        {"data": "U2NvcmU===", "format": "mscz"}, False)
+    add("open data misplaced padding", "score_open",
+        {"data": "U2Nvcm=A=", "format": "mscz"}, False)
+    add("open data empty", "score_open", {"data": "", "format": "mscz"}, False)
+    add("open data NUL", "score_open",
+        {"data": "U2NvcmU" + NUL, "format": "mscz"}, False)
     add("open neither input", "score_open", {}, False)
     add("open empty path", "score_open", {"path": ""}, False)
     add("open NUL path", "score_open", {"path": "a" + NUL + ".musicxml"}, False)

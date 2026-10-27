@@ -268,6 +268,7 @@ std::optional<InputFormat> input_format_from_name(std::string_view name) noexcep
     if (name == "mid") return InputFormat::Midi;
     if (name == "kar") return InputFormat::Kar;
     if (name == "gp") return InputFormat::Gp;
+    if (name == "gtp") return InputFormat::Gp;
     if (name == "gp3") return InputFormat::Gp3;
     if (name == "gp4") return InputFormat::Gp4;
     if (name == "gp5") return InputFormat::Gp5;
