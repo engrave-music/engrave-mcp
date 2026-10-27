@@ -189,6 +189,18 @@ async def test_audio_facade(args):
         assert tr0["muted"] is True
         checks.append("metadata_tracks_updated_after_mix_change")
 
+        meta_job_file = output_dir / "meta_job.json"
+        meta_job = await c.tool(
+            "score_export_start",
+            {"documentId": doc_id, "format": "metadata", "path": str(meta_job_file.resolve())},
+        )
+        done_meta_job = await c.terminal(meta_job)
+        assert done_meta_job["state"] == "completed", done_meta_job
+        assert meta_job_file.exists()
+        async_meta = json.loads(meta_job_file.read_text(encoding="utf-8"))
+        assert async_meta["tracks"] == meta_track_mod, f"Async metadata tracks mismatch: {async_meta['tracks']} != {meta_track_mod}"
+        checks.append("background_metadata_mix_verified")
+
         # Partial patches (webmscore setAudioOutputParams): only named fields change.
         before_patch = copy.deepcopy(mod_track_res["mix"])
         second_id = before_patch["tracks"][1]["trackId"]

@@ -281,8 +281,8 @@ the final packages passed the full position suite and direct flag-invariant prob
 
 ### 2. 实测已知局限与上游对齐特征 (Known Limitations & Parity Findings)
 
-1. **动态字体注册缓存机制 (Dynamic Font Fallback)**：
-   动态注册中等字重字体（`Ubuntu-M.ttf`，family "Ubuntu"）时，当前不会自动替换之前 regular 字重查询已缓存的 fallback 字体对象；常规字重（regular-weight）字体动态注册与排版生效正常。
+1. **动态字体注册回退 (Dynamic Font Fallback)**：
+   仅含 Medium/Bold 字重的字族（如 `Ubuntu-M.ttf`）在引擎无该字族时，regular 查询回退到已注册的直立 face；常规字重（regular-weight）字体动态注册与排版生效正常。
 2. **KAR 歌词分词保留上游行为 (KAR Lyrics Parity)**：
    KAR 导入器完全保留上游 `importmidi_lyrics.cpp:findBestTrack` 的音节切分逻辑，测试中出现的音节重复现象与上游 behavior-identical，保留以确保与 webmscore 行为严格对齐。
 3. **MusicXML 乐器回放通道同步 (Playback Channel Sync)**：
@@ -291,6 +291,6 @@ the final packages passed the full position suite and direct flag-invariant prob
 ### 3. M6–M9 里程碑完成度状态
 
 - **M6（结构化核心）**：类型化 `MusicCore` 接口、区域读取快照（`score_query_region`）、原子音高编辑（`score_set_pitches`，支持 OCC 自动变基与重试去重）、明确的资源生命周期与错误码系统均已实现并执行验证。
-- **M7（webmscore 功能覆盖）**：已实现全格式输入（MSCZ/MSCX/MXL/MusicXML/MIDI/KAR/GP3–GP7/GPX/PTB）、14 种导出格式（含 OGG/FLAC/MP3）、分谱系统（`score_generate_excerpts`/`score_list_excerpts` 及 `excerptId` 导出）、小节与片段几何映射、动态字体与音色库装载、`titleFilenameSafe` 等价字段。剩余缺口：`metadata["tracks"]` 仍为空数组（需由 `score_audio_tracks` 获取）、多小节休止位置测试未单独覆盖、中等字重 fallback 替换限制、全量混音参数与局部 patch 差异。
+- **M7（webmscore 功能覆盖）**：已实现全格式输入（MSCZ/MSCX/MXL/MusicXML/MIDI/KAR/GP3–GP7/GPX/PTB，支持 base64 内存数据导入）、14 种导出格式（含 OGG/FLAC/MP3）、分谱系统（`score_generate_excerpts`/`score_list_excerpts` 及 `excerptId` 导出）、小节与片段几何映射（涵盖多小节休止 MMRest）、动态字体与音色库装载、`titleFilenameSafe` 等价字段、`metadata.tracks` 导出生效混音、局部混音 patch。剩余差异见 `webmscore-parity.md` 第 5 节（有意排除 doLayout=false、stdio base64 约 6 MiB 传输上限、音频保真度约束）。
 - **M8（音频能力）**：已实现分块流式合成（`score_audio_start`/`read`/`seek`，512 帧/块，精准秒级 seek 与取消）、多音轨混音（`score_audio_tracks`, `score_audio_get_mix`, `score_audio_set_mix`）、真实压缩音频编码（WAV/FLAC/OGG/MP3）。真实可听波形在两端执行验证。
-- **M9（并发与后台任务）**：三层执行边界架构（Engine owner 线程、I/O 调度上下文、隔离工作子进程）、乐观并发编辑与冲突检测、不可变版本快照投影、后台文件导出任务（`score_export_start`/`get`/`cancel`）与流式音频进程已完整实现并通过 review 修正（commit `1992ec1`：临时目录隔离防泄漏、所有者线程安全 join、单文档毒化隔离、`ok:false` 会话保活、输出路径互斥）。保留开放项：音频流与导出共享 2 个运行 worker 槽位、stdin EOF 退出清理、缺少 voice-filter spanner 显式测试、所有者线程耗时未基准测试。
+- **M9（并发与后台任务）**：三层执行边界架构（Engine owner 线程、I/O 调度上下文、隔离工作子进程）、乐观并发编辑与冲突检测、不可变版本快照投影、后台文件导出任务（`score_export_start`/`get`/`cancel`）与流式音频进程已完整实现并通过 review 修正（commit `1992ec1`：临时目录隔离防泄漏、所有者线程安全 join、单文档毒化隔离、`ok:false` 会话保活、输出路径互斥）。保留开放项：stdin EOF 退出清理、所有者线程耗时未基准测试（流式音频与导出已分离各 2 个独立 worker 槽位预算，voice-filter spanner 回归已覆盖）。

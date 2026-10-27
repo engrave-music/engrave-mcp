@@ -105,12 +105,13 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         std::uint64_t sequence = 0;
         std::chrono::steady_clock::time_point last_activity = std::chrono::steady_clock::now();
         std::unique_ptr<WorkerProcess> process;
+        bool reserved = false;
         bool terminal() const { return state == "completed" || state == "failed" || state == "cancelled"; }
         void cleanup() noexcept {
             process.reset();
-            if (!destination.empty()) {
+            if (reserved) {
                 release_output_path(destination);
-                destination.clear();
+                reserved = false;
             }
             std::error_code ignored;
             // Both directories were created exclusively by this Job; never client-provided paths.
@@ -122,6 +123,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         ~Job() { cleanup(); }
     };
     struct OwnerResult {
+        OwnerResult() = default;
+        // Reported to the caller after the cache updates below are published,
+        // e.g. a font relayout that poisoned some documents.
+        std::exception_ptr deferred_error;
         Json payload;
         std::string closed_document;
         bool invalidate_snapshots = false;
@@ -144,6 +149,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     std::thread::id owner = std::this_thread::get_id();
     std::map<std::string, std::shared_ptr<Job>> jobs;
     std::deque<std::string> order;
+    std::deque<std::shared_ptr<Impl>> owner_keep_alive;
     std::uint64_t serial = 0;
     std::size_t running_streams = 0, running_exports = 0;
     bool closing = false;
@@ -197,6 +203,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     }
                 });
                 ++self->owner_pending;
+                self->owner_keep_alive.push_back(self);
                 try {
                 asio::post(self->owner_io, [self, function = std::move(function), handler = std::move(handler),
                                            executor, work = std::move(work), state, slot,
@@ -210,51 +217,74 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         if (self->owner_closing.load(std::memory_order_acquire))
                             throw asio::system_error(asio::error::operation_aborted);
                         result = function(*self->owner_engine);
+                        if (result.deferred_error) error = result.deferred_error;
                     } catch (const CoreError& failure) {
                         if (failure.code() == CoreError::Code::poisoned_document) {
                             if (!target_document.empty()) {
                                 result.poisoned_documents.push_back(target_document);
-                            } else {
+                            } else if (result.poisoned_documents.empty() && result.snapshots.empty()) {
                                 result.invalidate_snapshots = true;
                             }
                         }
                         error = std::current_exception();
                     } catch (...) { error = std::current_exception(); }
                     function = nullptr;
-                    asio::post(executor, [self = std::move(self), handler = std::move(handler), result = std::move(result), error,
-                                           work = std::move(work), slot]() mutable {
-                        if (slot.is_connected()) slot.clear();
-                        --self->owner_pending;
-                        try {
-                            if (result.invalidate_snapshots) self->read_snapshots.clear();
-                            for (const auto& doc : result.invalidated_documents) {
-                                self->read_snapshots.erase(doc);
-                            }
-                            for (const auto& doc : result.poisoned_documents) {
-                                self->read_snapshots.erase(doc);
-                                self->poisoned_documents.insert(doc);
-                            }
-                            if (!result.closed_document.empty()) {
-                                self->read_snapshots.erase(result.closed_document);
-                                self->poisoned_documents.erase(result.closed_document);
-                            }
-                            for (auto& snapshot : result.snapshots) {
-                                const auto doc_id = document_id_to_string(snapshot->info.id);
-                                try {
-                                    self->poisoned_documents.erase(doc_id);
-                                    self->read_snapshots[doc_id] = std::move(snapshot);
-                                } catch (...) {
-                                    self->read_snapshots.erase(doc_id);
+                    std::shared_ptr<Impl> owner_self = std::move(self);
+                    try {
+                        asio::post(executor, [self = owner_self, handler = std::move(handler), result = std::move(result), error,
+                                               work = std::move(work), slot]() mutable {
+                            if (slot.is_connected()) slot.clear();
+                            --self->owner_pending;
+                            if (!self->owner_keep_alive.empty()) self->owner_keep_alive.pop_front();
+                            try {
+                                if (result.invalidate_snapshots) self->read_snapshots.clear();
+                                for (const auto& doc : result.invalidated_documents) {
+                                    self->read_snapshots.erase(doc);
                                 }
+                                for (const auto& doc : result.poisoned_documents) {
+                                    self->read_snapshots.erase(doc);
+                                    self->poisoned_documents.insert(doc);
+                                }
+                                if (!result.closed_document.empty()) {
+                                    self->read_snapshots.erase(result.closed_document);
+                                    self->poisoned_documents.erase(result.closed_document);
+                                }
+                                for (auto& snapshot : result.snapshots) {
+                                    const auto doc_id = document_id_to_string(snapshot->info.id);
+                                    try {
+                                        self->poisoned_documents.erase(doc_id);
+                                        self->read_snapshots[doc_id] = std::move(snapshot);
+                                    } catch (...) {
+                                        self->read_snapshots.erase(doc_id);
+                                    }
+                                }
+                            } catch (...) {
+                                // Cache publication cannot invalidate an already committed operation.
                             }
+                            handler(error, std::move(result));
+                        });
+                        owner_self.reset();
+                    } catch (...) {
+                        auto post_error = std::current_exception();
+                        try {
+                            asio::post(executor, [self = std::move(owner_self), handler = std::move(handler),
+                                                   post_error, work = std::move(work), slot]() mutable noexcept {
+                                if (slot.is_connected()) slot.clear();
+                                --self->owner_pending;
+                                if (!self->owner_keep_alive.empty()) self->owner_keep_alive.pop_front();
+                                try {
+                                    OwnerResult empty_result;
+                                    handler(post_error, std::move(empty_result));
+                                } catch (...) {}
+                            });
                         } catch (...) {
-                            // Cache publication cannot invalidate an already committed operation.
+                            // If minimal post throws, self is still kept alive by owner_keep_alive on session thread.
                         }
-                        handler(error, std::move(result));
-                    });
+                    }
                 });
                 } catch (...) {
                     --self->owner_pending;
+                    if (!self->owner_keep_alive.empty()) self->owner_keep_alive.pop_back();
                     if (slot.is_connected()) slot.clear();
                     throw;
                 }
@@ -337,7 +367,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         job->stream = stream;
         job->destination = destination;
         // Reserved only once the job owns the path, so Job::cleanup always releases it.
-        if (!destination.empty()) reserve_output_path(destination);
+        if (!destination.empty()) {
+            reserve_output_path(destination);
+            job->reserved = true;
+        }
         prune();
         jobs.emplace(job->id, job);
         order.push_back(job->id);
@@ -375,7 +408,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     request.runtime.soundfont.clear();
                 }
                 if (stream) request.output_path = directory / "unused-output";
-                if (is_audio_format(format)) {
+                if (is_audio_format(format) || format == ExportFormat::Metadata) {
                     request.mix = engine.core().audio_mix(document, options.excerpt_id).mix;
                     request.has_mix = true;
                 }
@@ -526,6 +559,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     if (!reply.value("ok", false)) {
                         worker_error = true;
                         worker_error_message = reply.value("error", "Audio command failed");
+                        if (!reply.value("recoverable", false)) {
+                            cancel(job);
+                        }
                         break;
                     }
                     reply.erase("version"); reply.erase("ok"); reply.erase("sequence");
@@ -593,6 +629,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         if (owner_thread.joinable() && std::this_thread::get_id() != owner_thread.get_id()) {
             owner_thread.join();
         }
+        owner_keep_alive.clear();
     }
 };
 
@@ -701,14 +738,23 @@ asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json argume
                        {"hasCrossRegionSpanners", value.has_cross_region_spanners}};
     }
     std::vector<DocumentId> refresh;
-    if (name == "runtime_add_font")
+    if (name == "runtime_add_font" || name == "runtime_set_soundfont")
         for (const auto& [_, snapshot] : self->read_snapshots) refresh.push_back(snapshot->info.id);
     auto result = co_await self->on_owner([name = std::move(name), arguments = std::move(arguments),
                                           refresh = std::move(refresh)](Engine& engine) mutable {
         Impl::OwnerResult result;
-        result.payload = Json::parse(engine.call(name, arguments.dump()));
+        std::exception_ptr call_error;
+        try {
+            result.payload = Json::parse(engine.call(name, arguments.dump()));
+        } catch (const CoreError& failure) {
+            if (failure.code() == CoreError::Code::poisoned_document) {
+                call_error = std::current_exception();
+            } else {
+                throw;
+            }
+        }
         if (name == "score_close") result.closed_document = text_arg(arguments, "documentId");
-        else if (result.payload.contains("documentId"))
+        else if (result.payload.is_object() && result.payload.contains("documentId"))
             refresh.push_back(document_id_from_string(result.payload.at("documentId").get<std::string>()));
         else if (name == "score_generate_excerpts" || name == "score_audio_set_mix")
             refresh.push_back(document_id_from_string(text_arg(arguments, "documentId")));
@@ -726,6 +772,7 @@ asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json argume
                 result.invalidated_documents.push_back(document_id_to_string(id));
             }
         }
+        result.deferred_error = call_error;
         return result;
     }, context_document);
     co_return std::move(result.payload);

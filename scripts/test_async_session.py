@@ -113,6 +113,7 @@ async def run(args):
                                                     'operationId':'after-snapshot','measures':[bar(72,72,72,72)]})
         done=await client.terminal(snapshot)
         assert done['state']=='completed' and done['revision']==latest['revision'],done
+        assert done['path']==snapshot['path'] and done['path']!='', done
         assert canonical_notes(out/'snapshot.musicxml')==canonical_notes(latest['musicxml'])
         # An invalid page fails in the isolated worker and does not replace the destination.
         sentinel=out/'bad-page.png';sentinel.write_bytes(b'preserved')

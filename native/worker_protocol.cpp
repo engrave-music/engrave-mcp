@@ -97,11 +97,24 @@ void serve_audio_commands(AudioSession& session, const std::filesystem::path& di
                 reply["seconds"] = seconds;
             } else throw std::invalid_argument("Unknown audio operation");
             reply["ok"] = true;
+        } catch (const std::invalid_argument& error) {
+            std::error_code ignored;
+            std::filesystem::remove(command_path, ignored);
+            reply["ok"] = false;
+            reply["recoverable"] = true;
+            reply["error"] = std::string(error.what()).substr(0, 2048);
         } catch (const std::exception& error) {
             std::error_code ignored;
             std::filesystem::remove(command_path, ignored);
             reply["ok"] = false;
+            reply["recoverable"] = false;
             reply["error"] = std::string(error.what()).substr(0, 2048);
+        } catch (...) {
+            std::error_code ignored;
+            std::filesystem::remove(command_path, ignored);
+            reply["ok"] = false;
+            reply["recoverable"] = false;
+            reply["error"] = "Unknown audio command failure";
         }
         ++expected_sequence;
         const auto encoded = reply.dump();
@@ -217,9 +230,15 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
         runtime.font_paths = request.at("fonts").get<std::vector<std::string>>();
         if (request.contains("cacheDirectory")) {
             const auto cache_dir = absolute_field(request, "cacheDirectory");
-            if (cache_dir.parent_path() != request_path.parent_path() && cache_dir != request_path.parent_path())
+            for (const auto& element : cache_dir) {
+                if (element == "..")
+                    throw std::invalid_argument("Worker cache directory must not contain '..'");
+            }
+            const auto norm_cache = cache_dir.lexically_normal();
+            const auto norm_req = request_path.parent_path().lexically_normal();
+            if (norm_cache.parent_path() != norm_req && norm_cache != norm_req)
                 throw std::invalid_argument("Worker cache directory must be in its request directory");
-            runtime.cache_directory = path_utf8(cache_dir);
+            runtime.cache_directory = path_utf8(norm_cache);
         }
         MusicCore core(runtime);
         const auto score = core.open(read_bounded_file(snapshot, snapshot_limit), InputFormat::Mscz);
