@@ -44,3 +44,9 @@ commits are not built on their own, and no Qt build of the fork is run.
 stays on the pinned line.
 
 Evidence for this pin is in validation.md ("Roadmap step 1").
+
+### `mcp/v4.7.6` (base `v4.7.6`), tag `mcp-4.7.6-1` = `30387998`
+
+The ten `mcp/v4.7.5` topics cherry-picked without conflicts;
+`git range-diff v4.7.5..mcp-4.7.5-1 v4.7.6..mcp/v4.7.6` reports every patch
+identical (`=`). v4.7.6 adds no source file to the compiled modules.

@@ -2,4 +2,4 @@
 	path = vendor/musescore
 	url = https://github.com/Locietta/MuseScore.git
 	shallow = true
-	branch = mcp/v4.7.5
+	branch = mcp/v4.7.6

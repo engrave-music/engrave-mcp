@@ -377,3 +377,22 @@ font metadata kept in-repo), `67bced6` (qrc-generated resources), `e14e09d`
   the fixtures use no ligatures, optional glyphs or stylistic sets.
 - Review fix (executed in noqt_support_test): `://` resource paths (fret.cpp's
   harmony_to_diagram.xml) now resolve like `:/`; before, they were rejected.
+
+## Roadmap step 2: rebase to v4.7.6 (2026-10-28)
+
+Pin `mcp-4.7.6-1` (`30387998`); range-diff identical (fork.md). Executed on Windows
+and Linux: build, 22/22 lanes, round trip 16/16 with the same loss digests.
+Golden differences, 23 per platform, all reviewed and pinned by hash in
+`tests/golden/allow.json` (step "2 (v4.7.6)"):
+- `pedal.mscx`: MSCX now writes the Pedal's user `placement`/`offset` (twrite fix).
+  Rendering was already correct; only the written file changes.
+- `repeat70.mscx`: playback now continues into the open volta after the
+  exhausted repeats (MIDI notes at ticks 5760/7680/9600, duration 2 s -> 4 s,
+  positions and audio follow) (repeatlist fix).
+- `drums_import.musicxml`: one chord's stem `down` -> `up`, the same line upstream
+  changed in testImportDrums_ref.mscx (MusicXML percussion import).
+- `perc_stem_dir.musicxml`: 8 stems flip; all 16 stem directions equal upstream's
+  testInferredPercStemDir_ref.mscx.
+Expected but not observed: the corrupted-measure flag (check.cpp) and the
+part-visibility fix are not exercised by any fixture or output (the latter is an
+edit-time toggle in the notation module, which is not compiled).

@@ -1,3 +1,257 @@
 {
-  "entries": []
+ "entries": [
+  {
+   "fixture": "drums_import.musicxml",
+   "output": "mscz.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6 importmusicxmlpass2; matches upstream testImportDrums_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "6b9c276ee68242db85da89af17408459faba3c5d47d020942ae5be59ff07966a",
+    "linux": "6b9c276ee68242db85da89af17408459faba3c5d47d020942ae5be59ff07966a"
+   }
+  },
+  {
+   "fixture": "drums_import.musicxml",
+   "output": "mxl.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6 importmusicxmlpass2; matches upstream testImportDrums_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "a9f42086077a66038bf6eb4238301605a2d9a4d08c944cb83aa412c4fe690a08",
+    "linux": "a9f42086077a66038bf6eb4238301605a2d9a4d08c944cb83aa412c4fe690a08"
+   }
+  },
+  {
+   "fixture": "drums_import.musicxml",
+   "output": "page-0.png.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6 importmusicxmlpass2; matches upstream testImportDrums_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "9b38b58d2b2f4748533d5b93b848fed488a0fab73d4a3e8089ffdbb754e326d1",
+    "linux": "9b38b58d2b2f4748533d5b93b848fed488a0fab73d4a3e8089ffdbb754e326d1"
+   }
+  },
+  {
+   "fixture": "drums_import.musicxml",
+   "output": "page-0.svg",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6 importmusicxmlpass2; matches upstream testImportDrums_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "3a88bf789300d2acab8e6bc2d9352dc9c8417c380f7a57f73c1f707dce1143ab",
+    "linux": "51e9508de3fd4f466f2224cdc2db4bced3d21650e7db21067bc3d8309d9c0d1f"
+   }
+  },
+  {
+   "fixture": "drums_import.musicxml",
+   "output": "score.mscx",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6 importmusicxmlpass2; matches upstream testImportDrums_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "fb3478d8cedbda46e854ae6b469bbc7f207e647a11be9c8be7f38007a782643f",
+    "linux": "fb3478d8cedbda46e854ae6b469bbc7f207e647a11be9c8be7f38007a782643f"
+   }
+  },
+  {
+   "fixture": "drums_import.musicxml",
+   "output": "score.musicxml",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6 importmusicxmlpass2; matches upstream testImportDrums_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "f5184678278165fd34bbed1c15317a0b1400b1ee7259c4e425ca793a9e5f76f7",
+    "linux": "f5184678278165fd34bbed1c15317a0b1400b1ee7259c4e425ca793a9e5f76f7"
+   }
+  },
+  {
+   "fixture": "drums_import.musicxml",
+   "output": "score.pdf.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6 importmusicxmlpass2; matches upstream testImportDrums_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "496d0b41f934f529d390f4de8f448ec930ba8ccdd19f18076a7e113b8c4b2787",
+    "linux": "98534b651bbaeb2e6ff5c7cd53fad0e504294f0b39441362c6f22a17a0819b48"
+   }
+  },
+  {
+   "fixture": "drums_import.musicxml",
+   "output": "segmentPositions.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6 importmusicxmlpass2; matches upstream testImportDrums_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "d81d4b3b8f7970f9972aad772da7cf2cc3ff9e7969c21a340df6919816759158",
+    "linux": "d81d4b3b8f7970f9972aad772da7cf2cc3ff9e7969c21a340df6919816759158"
+   }
+  },
+  {
+   "fixture": "pedal.mscx",
+   "output": "mscz.json",
+   "step": "2 (v4.7.6)",
+   "reason": "Pedal writes user-overridden placement/offset (v4.7.6 twrite, PR #34917)",
+   "kind": "different",
+   "sha256": {
+    "windows": "287a66f04ac2a5410f5f03f4fcb623d7301b82a0c248618815e47427710e20d6",
+    "linux": "287a66f04ac2a5410f5f03f4fcb623d7301b82a0c248618815e47427710e20d6"
+   }
+  },
+  {
+   "fixture": "pedal.mscx",
+   "output": "score.mscx",
+   "step": "2 (v4.7.6)",
+   "reason": "Pedal writes user-overridden placement/offset (v4.7.6 twrite, PR #34917)",
+   "kind": "different",
+   "sha256": {
+    "windows": "a77b314b24a9f9aafc25d577a3413e7a380277cb0b4a8f488872ee9ee2ac37c7",
+    "linux": "a77b314b24a9f9aafc25d577a3413e7a380277cb0b4a8f488872ee9ee2ac37c7"
+   }
+  },
+  {
+   "fixture": "perc_stem_dir.musicxml",
+   "output": "mscz.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6; stem directions equal upstream testInferredPercStemDir_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "27fc674f665acbe638eef0c5861033cb569d9b3517075588a1a0f64103a18ffd",
+    "linux": "27fc674f665acbe638eef0c5861033cb569d9b3517075588a1a0f64103a18ffd"
+   }
+  },
+  {
+   "fixture": "perc_stem_dir.musicxml",
+   "output": "mxl.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6; stem directions equal upstream testInferredPercStemDir_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "aee22089113167bf1caad7f9796847687f5174d2b854be7a391e44788bf8ed41",
+    "linux": "aee22089113167bf1caad7f9796847687f5174d2b854be7a391e44788bf8ed41"
+   }
+  },
+  {
+   "fixture": "perc_stem_dir.musicxml",
+   "output": "page-0.png.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6; stem directions equal upstream testInferredPercStemDir_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "c41b94b5a637c776189f2e9a85b15f427427d3a3cbb8e9267bb8fbde1ec0517d",
+    "linux": "8033ea23859530ef479e8f7496a90dbe874a595336e8d95fccd6120dd6ddc9a3"
+   }
+  },
+  {
+   "fixture": "perc_stem_dir.musicxml",
+   "output": "page-0.svg",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6; stem directions equal upstream testInferredPercStemDir_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "36675fb51375917adc3674627ef29b08f4672027f1f48696d1a3a4f0420160c6",
+    "linux": "a00fa63f29a74a51a8025dae5704ef5d5815de45cc424d8b2b653d135fc3ff41"
+   }
+  },
+  {
+   "fixture": "perc_stem_dir.musicxml",
+   "output": "score.mscx",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6; stem directions equal upstream testInferredPercStemDir_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "96c089b21332f2e33bd2e4501761b6b89c02105b9ef2030dccdec0d1294d2155",
+    "linux": "96c089b21332f2e33bd2e4501761b6b89c02105b9ef2030dccdec0d1294d2155"
+   }
+  },
+  {
+   "fixture": "perc_stem_dir.musicxml",
+   "output": "score.musicxml",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6; stem directions equal upstream testInferredPercStemDir_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "a932c585a6588a015b7201117b9c45c45ac894eb01cacbbef953913a48ec869c",
+    "linux": "a932c585a6588a015b7201117b9c45c45ac894eb01cacbbef953913a48ec869c"
+   }
+  },
+  {
+   "fixture": "perc_stem_dir.musicxml",
+   "output": "score.pdf.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6; stem directions equal upstream testInferredPercStemDir_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "dba7542321f3e45ef00455d612743034f1553018f26b19a48fd50a710aa8f56c",
+    "linux": "7754524ef53b8e24be2538a3b219d47787274202a7aa7c21ccce4f53344fc0bb"
+   }
+  },
+  {
+   "fixture": "perc_stem_dir.musicxml",
+   "output": "segmentPositions.json",
+   "step": "2 (v4.7.6)",
+   "reason": "MusicXML percussion import infers stem direction from the voice (v4.7.6; stem directions equal upstream testInferredPercStemDir_ref.mscx)",
+   "kind": "different",
+   "sha256": {
+    "windows": "4b6dfb61a11437326701affda4f89bad4eadbd8ddb7dfb8504caf2f819151084",
+    "linux": "4b6dfb61a11437326701affda4f89bad4eadbd8ddb7dfb8504caf2f819151084"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "audio.json",
+   "step": "2 (v4.7.6)",
+   "reason": "open volta beyond exhausted repeats is played (v4.7.6 repeatlist): measures 3-5 added to playback",
+   "kind": "different",
+   "sha256": {
+    "windows": "5893bdbe71e704cc97d64785040ee207fc2d575ac4abdcf6a4e332ae29109723",
+    "linux": "1eb59e47691dc35c3ae46b88899e3e6f8f4c12807404aacf1fe3aeb72ed08506"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "measurePositions.json",
+   "step": "2 (v4.7.6)",
+   "reason": "open volta beyond exhausted repeats is played (v4.7.6 repeatlist): measures 3-5 added to playback",
+   "kind": "different",
+   "sha256": {
+    "windows": "b6c6c781c6f59a27d2dd8d471c57e224810de0119a76a8b5beabc328563b9898",
+    "linux": "b6c6c781c6f59a27d2dd8d471c57e224810de0119a76a8b5beabc328563b9898"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "metadata.json",
+   "step": "2 (v4.7.6)",
+   "reason": "open volta beyond exhausted repeats is played (v4.7.6 repeatlist): measures 3-5 added to playback",
+   "kind": "different",
+   "sha256": {
+    "windows": "65b703f60307c0f6c602c8954444c0c7547d2886683b09b6ed493a9f92ee77a9",
+    "linux": "65b703f60307c0f6c602c8954444c0c7547d2886683b09b6ed493a9f92ee77a9"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "midi.json",
+   "step": "2 (v4.7.6)",
+   "reason": "open volta beyond exhausted repeats is played (v4.7.6 repeatlist): measures 3-5 added to playback",
+   "kind": "different",
+   "sha256": {
+    "windows": "401832fbb2f617d77f2275ba8ffe8605425d08a1c4f54abe6fb14e8a31d803e8",
+    "linux": "401832fbb2f617d77f2275ba8ffe8605425d08a1c4f54abe6fb14e8a31d803e8"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "segmentPositions.json",
+   "step": "2 (v4.7.6)",
+   "reason": "open volta beyond exhausted repeats is played (v4.7.6 repeatlist): measures 3-5 added to playback",
+   "kind": "different",
+   "sha256": {
+    "windows": "23990186a2654ba7b812e08e691ddc37ac0ea940e5c07d47e31ecb9d573d7fd4",
+    "linux": "23990186a2654ba7b812e08e691ddc37ac0ea940e5c07d47e31ecb9d573d7fd4"
+   }
+  }
+ ]
 }
