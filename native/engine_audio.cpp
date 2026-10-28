@@ -385,17 +385,23 @@ engine::TrackChainPtr make_master_chain(const std::shared_ptr<engine::IAudioCont
     chain->setSignal(std::make_shared<engine::SignalNode>());
     chain->rebuild();
 
-    // Mirrors AudioContext::onControlParamsChanged() (audiocontext.cpp:310-331).
-    // There is no automation in an offline render, so the playhead marker is
-    // dropped first: the first update then initializes the gains directly at
-    // the requested value (nodes/automationcontrolnode.cpp:74-96,
-    // dsp/smoothlinearvalue.h:108-114) instead of ramping there from unity for
-    // 1024 samples. Only a non-zero master balance still smooths (the pan step
-    // re-targets the gains).
-    control->setPlayheadPosition(nullptr);
-    control->setVolume(volume_db_t(static_cast<float>(request.master_volume_db)));
+    // Mirrors AudioContext::onControlParamsChanged() (audiocontext.cpp:310-331)
+    // but latches the result instead of smoothing to it. 4.7.6 applied the
+    // master params to every chunk without any smoothing (4.7.6
+    // mixer.cpp:583-607); 5.0's AutomationControlNode re-targets its channel
+    // gains over SmoothLinearValue's 1024 steps (dsp/smoothlinearvalue.h:37-46,
+    // ~23 ms at 44.1 kHz), which would fade the master pan in from centre and
+    // so leak the panned signal into the silenced channel.
+    // updateChannelGains() initializes the gains directly when the automation
+    // marker is unset (nodes/automationcontrolnode.cpp:74-96, initWithValue at
+    // dsp/smoothlinearvalue.h:108-114) and only the first set* call after a
+    // marker reset does so, so the pan is stored first and the volume written
+    // once more to re-initialize both channel gains from (volume, pan).
+    const volume_db_t masterVolume(static_cast<float>(request.master_volume_db));
     control->setPan(balance_t(static_cast<float>(request.master_balance)));
     control->setMuted(false);
+    control->setPlayheadPosition(nullptr);
+    control->setVolume(masterVolume);
 
     return chain;
 }
@@ -745,10 +751,22 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
                                || (excerptSelected && mutedParts.count(trackId.partId) > 0);
         if (!isMetronome) {
             // Desktop adds the two Fluid default sends only for non-metronome
-            // tracks (playbackcontroller.cpp:1220-1227). Mixer index 0 feeds the
-            // first aux track (muse/framework/audio/engine/internal/mixer.cpp:
-            // 283-309), which is the reverb added below.
-            params.auxSends = { AuxSendParams { kDefaultAuxSend, true }, AuxSendParams { kDefaultAuxSend, true } };
+            // tracks (playbackcontroller.cpp:1220-1227; defaultAuxSendValue is
+            // 0.30 for both, playbackconfiguration.cpp:272-289). Mixer index 0
+            // feeds the first aux track (muse/framework/audio/engine/internal/
+            // mixer.cpp:283-309), which is the reverb added below.
+            //
+            // The second send must stay at zero: 5.0 always gives an aux track
+            // an FxChain (AudioContext::onFxChainParamsChanged builds one even
+            // for an empty AudioFxChain, audiocontext.cpp:355-369) and the
+            // mixer only skips an aux whose chain *pointer* is null
+            // (mixer.cpp:275-277, 291-293), so the empty "Aux 2" track is a
+            // pass-through that would add 0.30 x the track signal - i.e. 1.3x
+            // dry, +2.28 dB - to the master. 4.7.6 skipped an aux whose fx
+            // chain *params* were empty (4.7.6 mixer.cpp:507-509, 527-529), so
+            // that send was discarded there; keeping it zero reproduces the
+            // 4.7.6 mix bit-exactly.
+            params.auxSends = { AuxSendParams { kDefaultAuxSend, true }, AuxSendParams { 0.0f, true } };
         }
 
         const std::string name = track_name(masterScore, model, trackId);
