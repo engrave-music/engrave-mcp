@@ -247,7 +247,7 @@ void setup_test_environment(const TestEnvironmentConfig& config)
     auto configurator = std::shared_ptr<ECMock>(new ECMock(), [](ECMock*) {});
     // Lives for the whole process like upstream's test environment; never deleted on purpose.
     ::testing::Mock::AllowLeak(configurator.get());
-    ON_CALL(*configurator, isAccessibleEnabled()).WillByDefault(::testing::Return(false));
+    ON_CALL(*configurator, displayedDefaultColor(::testing::_)).WillByDefault(::testing::Return(muse::draw::Color::BLACK));
     ON_CALL(*configurator, defaultColor()).WillByDefault(::testing::Return(muse::draw::Color::BLACK));
     ON_CALL(*configurator, debuggingOptions()).WillByDefault(::testing::ReturnRef(s_debugOpt));
     ON_CALL(*configurator, allowReadingImagesFromOutsideMscz()).WillByDefault(::testing::Return(true));
