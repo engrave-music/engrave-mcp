@@ -102,30 +102,36 @@ void NoQtApplication::restart()
 {
 }
 
-modularity::ContextPtr NoQtApplication::setupNewContext()
+modularity::ContextPtr NoQtApplication::setupNewContext(const StringList& args)
 {
-    return nullptr;
+    // The headless host runs one engine per process and registers every service
+    // in the process-wide IoC (see initialize_native_runtime), so its only
+    // context is the global one. Upstream's BaseApplication::setupNewContext()
+    // creates a numbered per-window context instead; on such a context
+    // modularity::ioc(ctx) is a fresh, empty ModulesContextIoC, and lookups that
+    // go through it directly (RWRegister::writer(score->iocContext()), the score
+    // renderer) would no longer see the exports we register globally. ioc() maps
+    // the global context back to globalIoc(), which is exactly what this host
+    // needs for its single engine instance.
+    (void)args;
+    return modularity::globalCtx();
 }
 
-int NoQtApplication::contextCount() const
+void NoQtApplication::destroyContext(const modularity::ContextPtr& ctx)
 {
-    return 0;
+    // Nothing to tear down: the global context and its IoC live for the whole
+    // process, and the host refuses a second engine instance.
+    (void)ctx;
+}
+
+size_t NoQtApplication::contextCount() const
+{
+    return 1;
 }
 
 std::vector<modularity::ContextPtr> NoQtApplication::contexts() const
 {
-    return {};
-}
-
-const modularity::ContextPtr NoQtApplication::iocContext() const
-{
-    // The runtime creates projects with globalCtx(); keep a single context.
-    return modularity::globalCtx();
-}
-
-modularity::ModulesIoC* NoQtApplication::ioc() const
-{
-    return modularity::ioc(iocContext());
+    return { modularity::globalCtx() };
 }
 
 void NoQtApplication::processEvents()

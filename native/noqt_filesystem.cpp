@@ -142,6 +142,73 @@ io::path_t appendName(const io::path_t& directory, const std::string& name)
     return io::path_t(std::move(path));
 }
 
+// QDir::cleanPath equivalent: '/'-separated, redundant separators and '.' dropped,
+// ".." resolved lexically (never above the root, drive or UNC share), symlinks
+// untouched, no trailing separator. Resource paths keep their ":/" form.
+std::string cleanPathString(std::string path)
+{
+#ifdef _WIN32
+    for (char& c : path) {
+        if (c == '\\') {
+            c = '/';
+        }
+    }
+#endif
+    // Resource marker (":/x") or drive ("C:/x") prefix, kept verbatim.
+    std::string drive;
+    if (!path.empty() && path[0] == ':') {
+        drive = ":";
+        path.erase(0, 1);
+    } else if (path.size() >= 2 && path[1] == ':') {
+        drive = path.substr(0, 2);
+        path.erase(0, 2);
+    }
+
+    std::size_t index = 0;
+    std::size_t leadingSlashes = 0;
+    while (index < path.size() && path[index] == '/') {
+        ++index;
+        ++leadingSlashes;
+    }
+    const bool absolute = leadingSlashes > 0;
+    // A UNC root ("//host/share") keeps two slashes and cannot be cancelled by "..".
+    const bool unc = absolute && leadingSlashes > 1 && drive.empty();
+
+    std::vector<std::string> components;
+    for (std::size_t split = index; split <= path.size();) {
+        const std::size_t slash = path.find('/', split);
+        const std::string component = path.substr(split, slash == std::string::npos ? std::string::npos : slash - split);
+        if (component.empty() || component == ".") {
+            // Redundant separator or current directory.
+        } else if (component == "..") {
+            const std::size_t protectedCount = unc ? 2 : 0;
+            if (components.size() > protectedCount && components.back() != "..") {
+                components.pop_back();
+            } else if (!absolute) {
+                // A relative path cannot be collapsed further; keep the "..".
+                components.push_back(component);
+            }
+            // Above an absolute root there is nothing left to drop.
+        } else {
+            components.push_back(component);
+        }
+        if (slash == std::string::npos) {
+            break;
+        }
+        split = slash + 1;
+    }
+
+    std::string result = drive;
+    result += unc ? "//" : (absolute ? "/" : "");
+    for (std::size_t i = 0; i < components.size(); ++i) {
+        if (!result.empty() && result.back() != '/' && (absolute || i > 0)) {
+            result.push_back('/');
+        }
+        result += components[i];
+    }
+    return result;
+}
+
 bool unsafeVirtualComponent(const fs::path& component)
 {
     std::string name = pathToUtf8(component);
@@ -887,6 +954,28 @@ RetVal<uint64_t> NativeFileSystem::fileSize(const io::path_t& path) const
     return result;
 }
 
+RetVal<uint64_t> NativeFileSystem::availableSpace(const io::path_t& path) const
+{
+    RetVal<uint64_t> result;
+    const Target target = resolve(path);
+    if (!target.valid) {
+        result.ret = failure(io::Err::FSNotExist, "Invalid path: " + path.toStdString());
+        return result;
+    }
+
+    // QStorageInfo treats a missing path as an invalid storage, so an error here
+    // means "not there" as much as "cannot query".
+    std::error_code ec;
+    const fs::space_info space = fs::space(target.path, ec);
+    if (ec) {
+        result.ret = fsFailure(io::Err::FSNotExist, "Failed to query available space", target.path, ec);
+        return result;
+    }
+    result.ret = make_ok();
+    result.val = static_cast<uint64_t>(space.available);
+    return result;
+}
+
 RetVal<io::paths_t> NativeFileSystem::scanFiles(const io::path_t& rootDir,
                                                 const std::vector<std::string>& filters,
                                                 ScanMode mode) const
@@ -1201,6 +1290,55 @@ io::path_t NativeFileSystem::absoluteFilePath(const io::path_t& filePath) const
         return {};
     }
     return io::path_t(pathToUtf8(absolute.lexically_normal()));
+}
+
+io::path_t NativeFileSystem::cleanPath(const io::path_t& filePath) const
+{
+    // Lexical only: QDir::cleanPath never touches the disk, so an invalid or
+    // missing path is still cleaned instead of rejected.
+    return io::path_t(cleanPathString(filePath.toStdString()));
+}
+
+bool NativeFileSystem::isSymLink(const io::path_t& filePath) const
+{
+    const Target target = resolve(filePath);
+    if (!target.valid) {
+        return false;
+    }
+
+    std::error_code ec;
+    const fs::file_status status = fs::symlink_status(target.path, ec);
+    return !ec && fs::is_symlink(status);
+}
+
+io::path_t NativeFileSystem::symLinkTarget(const io::path_t& filePath) const
+{
+    const Target target = resolve(filePath);
+    if (!target.valid) {
+        return {};
+    }
+
+    std::error_code ec;
+    fs::path link = fs::read_symlink(target.path, ec);
+    if (ec) {
+        return {};
+    }
+    // QFileInfo::symLinkTarget reports an absolute path; read_symlink returns the
+    // stored target, which is relative to the link's own directory.
+    if (link.is_relative()) {
+        link = target.path.parent_path() / link;
+    }
+    return io::path_t(pathToUtf8(link.lexically_normal()));
+}
+
+io::path_t NativeFileSystem::temporaryDirectoryPath() const
+{
+    std::error_code ec;
+    const fs::path directory = fs::temp_directory_path(ec);
+    if (ec) {
+        return {};
+    }
+    return io::path_t(pathToUtf8(directory));
 }
 
 DateTime NativeFileSystem::birthTime(const io::path_t& filePath) const
