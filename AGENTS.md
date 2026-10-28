@@ -9,7 +9,7 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
   Native compilation is the target; do not introduce Node.js or WASM as runtime dependencies.
 - No computer use, screenshots, simulated input, or dependence on a desktop MuseScore install.
 - The build is Qt-free xmake (`xmake.lua`, `xmake/manifest.lua`); validate Windows and Linux.
-  The plan of record is `docs/dev/roadmap-4.7.6.md`.
+  The plan of record is `docs/dev/roadmap-engrave.md` (`roadmap-4.7.6.md` is done/superseded).
 - Avoid rewriting music algorithms; preserve an executable baseline for each later refactor.
   Compare every engine change against `tests/golden` (`scripts/golden.py`) with an explicit,
   hash-pinned allow-list.
