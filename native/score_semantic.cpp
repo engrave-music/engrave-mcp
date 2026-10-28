@@ -98,9 +98,13 @@ json text_item(const EngravingItem* item)
     out["type"] = str(TConv::toXml(item->type()));
     out["tick"] = item->tick().ticks();
     out["track"] = static_cast<int>(item->track());
-    const std::string sub = subtype(item);
-    if (!sub.empty()) {
-        out["subtype"] = sub;
+    // Dynamics omit the UI tooltip subtype label ("f (Forte)" vs "f (forte)");
+    // the dynamic field below is the stable identity.
+    if (!item->isDynamic()) {
+        const std::string sub = subtype(item);
+        if (!sub.empty()) {
+            out["subtype"] = sub;
+        }
     }
     // Dynamics render as SMuFL glyphs; their kind is recorded below instead.
     if (item->isTextBase() && !item->isDynamic()) {
@@ -113,6 +117,38 @@ json text_item(const EngravingItem* item)
         out["dynamic"] = str(TConv::toXml(toDynamic(item)->dynamicType()));
     } else if (item->isHarmony()) {
         out["harmony"] = str(toHarmony(item)->harmonyName());
+    }
+    return out;
+}
+
+// Measure-level elements (measure->el()): system-level items omit track when not
+// meaningful (e.g. LayoutBreak track is unassigned -1 in 4.7.6 vs 0 in 5.0);
+// staff-level items retain track to identify the staff.
+json measure_element_json(const EngravingItem* item)
+{
+    json out = text_item(item);
+    switch (item->type()) {
+    case ElementType::LAYOUT_BREAK:
+        // LayoutBreak is a system-level break (line/page/section); track is not
+        // meaningful (-1 in 4.7.6 vs 0 in 5.0).
+        out.erase("track");
+        break;
+    case ElementType::STAFFTYPE_CHANGE:
+        // StaffTypeChange is staff-level; track identifies the affected staff.
+        break;
+    case ElementType::SPACER:
+        // Spacer is staff-level; track identifies the affected staff.
+        break;
+    case ElementType::JUMP:
+    case ElementType::MARKER:
+        // Repeat jumps and markers are anchored to a staff (typically track 0).
+        break;
+    default:
+        // Other system-level elements without a meaningful staff omit track.
+        if (item->systemFlag() && !item->flag(ElementFlag::ON_STAFF)) {
+            out.erase("track");
+        }
+        break;
     }
     return out;
 }
@@ -257,7 +293,7 @@ json part_json(const Part* part)
 {
     json out;
     out["id"] = part->id().toStdString();
-    out["partName"] = str(part->partName());
+    out["partName"] = plain(part->partName());
     out["longName"] = plain(part->longName());
     out["shortName"] = plain(part->shortName());
     out["instrumentId"] = str(part->instrumentId());
@@ -322,7 +358,7 @@ json score_body(Score* score)
         json elements = json::array();
         for (const EngravingItem* e : const_cast<Measure*>(m)->el()) {
             if (!e->generated()) {
-                elements.push_back(text_item(e));
+                elements.push_back(measure_element_json(e));
             }
         }
         if (!elements.empty()) {
