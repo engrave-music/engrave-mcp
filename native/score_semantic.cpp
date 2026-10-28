@@ -23,8 +23,8 @@
 #include "engraving/dom/spanner.h"
 #include "engraving/dom/staff.h"
 #include "engraving/dom/stafftype.h"
-#include "engraving/dom/tempo.h"
 #include "engraving/dom/tempotext.h"
+#include "engraving/dom/tempotimeline.h"
 #include "engraving/dom/textbase.h"
 #include "engraving/dom/textlinebase.h"
 #include "engraving/dom/tie.h"
@@ -315,7 +315,8 @@ json score_body(Score* score)
         measure["timesig"] = fraction(m->timesig());
         measure["startRepeat"] = m->repeatStart();
         measure["endRepeat"] = m->repeatEnd() ? m->repeatCount() : 0;
-        if (m->irregular()) {
+        if (m->flag(ElementFlag::EXCLUDE_FROM_NUMBERING)) {
+            // 5.0 renamed the "irregular" measure flag (Pid::IRREGULAR) to this.
             measure["irregular"] = true;
         }
         json elements = json::array();
@@ -407,9 +408,12 @@ json semantic_dump(MasterScore* score)
     }
     out["metadata"] = meta;
 
+    // 5.0 derives tempo from an automation curve; the flattened timeline is the
+    // replacement for the 4.x TempoMap it replaced: one point per tempo marking,
+    // per resampled gradual-change step and per pause, keyed by score tick.
     json tempo = json::array();
-    for (const auto& [tick, event] : *score->tempomap()) {
-        tempo.push_back({ tick, std::round(event.tempo.val * 60.0 * 1e4) / 1e4 });
+    for (const TempoTimePoint& point : score->tempoTimeline(false).points()) {
+        tempo.push_back({ point.utick, std::round(point.bps * 60.0 * 1e4) / 1e4 });
     }
     out["tempoMap"] = tempo;
 

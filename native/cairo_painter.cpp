@@ -578,8 +578,7 @@ struct CairoPainter::Impl {
     void drawPath(const PainterPath& path);
     void drawPolygon(const PointF* points, size_t pointCount, PolygonMode mode);
     void drawText(const PointF& point, const String& text);
-    void drawText(const RectF& rect, int flags, const String& text);
-    void drawTextWorkaround(const Font& font, const PointF& pos, const String& text);
+    void drawText(const RectF& rect, Alignment alignment, TextFlags textFlags, const String& text);
     void drawSymbol(const PointF& point, char32_t ucs4Code);
     void drawPixmap(const PointF& point, const Pixmap& pm);
     void drawTiledPixmap(const RectF& rect, const Pixmap& pm, const PointF& offset);
@@ -613,14 +612,14 @@ private:
     std::vector<std::u16string> wrapParagraph(const FtFaceEntry& entry, const Font& font,
                                               const std::u16string& paragraph, double maxWidth, bool anywhere);
     std::vector<ShapedLine> layoutLines(const FtFaceEntry& entry, const Font& font,
-                                        const std::u16string& text, const RectF& rect, int flags);
+                                        const std::u16string& text, const RectF& rect, TextFlags textFlags);
     void applyFontState(const FtFaceEntry& entry, const Font& font, double pixelSize);
     void drawTextDecorations(const FtFaceEntry& entry, const Font& font, double pixelSize,
                              double x, double baseline, double width);
     void drawShapedLine(const FtFaceEntry& entry, const Font& font, const ShapedLine& line,
                         double x, double baseline, bool justify, double targetWidth);
     void drawTextAtPoint(const Font& font, const PointF& point, const String& text);
-    void drawTextInRect(const Font& font, const RectF& rect, int flags, const String& text);
+    void drawTextInRect(const Font& font, const RectF& rect, Alignment alignment, TextFlags textFlags, const String& text);
 
     cairo_surface_t* pixmapSurface(const Pixmap& pm);
 };
@@ -1682,14 +1681,14 @@ std::vector<std::u16string> CairoPainter::Impl::wrapParagraph(const FtFaceEntry&
 }
 
 std::vector<ShapedLine> CairoPainter::Impl::layoutLines(const FtFaceEntry& entry, const Font& font,
-                                                        const std::u16string& text, const RectF& rect, int flags)
+                                                        const std::u16string& text, const RectF& rect, TextFlags textFlags)
 {
-    bool wrap = (flags & (TextWordWrap | TextWrapAnywhere)) != 0;
-    const bool anywhere = (flags & TextWrapAnywhere) != 0;
+    bool wrap = textFlags.testFlag(TextWordWrap) || textFlags.testFlag(TextWrapAnywhere);
+    const bool anywhere = textFlags.testFlag(TextWrapAnywhere);
     const double maxWidth = rect.width();
 
     std::vector<std::u16string> paragraphs = splitParagraphs(text);
-    if (flags & TextSingleLine) {
+    if (textFlags.testFlag(TextSingleLine)) {
         paragraphs = { joinWithSpaces(paragraphs) };
         wrap = false;
     }
@@ -1831,12 +1830,12 @@ void CairoPainter::Impl::drawTextAtPoint(const Font& font, const PointF& point, 
     }
 }
 
-void CairoPainter::Impl::drawTextInRect(const Font& font, const RectF& rect, int flags, const String& text)
+void CairoPainter::Impl::drawTextInRect(const Font& font, const RectF& rect, Alignment alignment, TextFlags textFlags, const String& text)
 {
     const std::shared_ptr<FtFaceEntry> entry = faceFor(font);
     const double pixelSize = fontSizePixels(font);
     const std::u16string prepared = normalizeText(text.toStdU16String(), true);
-    std::vector<ShapedLine> lines = layoutLines(*entry, font, prepared, rect, flags);
+    std::vector<ShapedLine> lines = layoutLines(*entry, font, prepared, rect, textFlags);
     if (lines.empty()) {
         return;
     }
@@ -1847,9 +1846,9 @@ void CairoPainter::Impl::drawTextInRect(const Font& font, const RectF& rect, int
     const int lineCount = static_cast<int>(lines.size());
 
     double firstBaseline;
-    if (flags & AlignTop) {
+    if (alignment.testFlag(AlignTop)) {
         firstBaseline = rect.y() + ascent;
-    } else if (flags & AlignBottom) {
+    } else if (alignment.testFlag(AlignBottom)) {
         firstBaseline = rect.bottom() - descent - double(lineCount - 1) * lineHeight;
     } else {
         const double blockHeight = double(lineCount - 1) * lineHeight + ascent + descent;
@@ -1857,7 +1856,7 @@ void CairoPainter::Impl::drawTextInRect(const Font& font, const RectF& rect, int
     }
 
     std::unique_ptr<CairoStateGuard> clipGuard;
-    if (!(flags & TextDontClip) && rect.isValid()) {
+    if (!textFlags.testFlag(TextDontClip) && rect.isValid()) {
         clipGuard = std::make_unique<CairoStateGuard>(cr);
         cairo_new_path(cr);
         cairo_rectangle(cr, rect.x(), rect.y(), rect.width(), rect.height());
@@ -1868,15 +1867,15 @@ void CairoPainter::Impl::drawTextInRect(const Font& font, const RectF& rect, int
         const ShapedLine& line = lines[static_cast<size_t>(i)];
 
         double x = rect.x();
-        if (flags & AlignRight) {
+        if (alignment.testFlag(AlignRight)) {
             x = rect.right() - line.width;
-        } else if (flags & AlignHCenter) {
+        } else if (alignment.testFlag(AlignHCenter)) {
             x = rect.x() + (rect.width() - line.width) / 2.0;
         }
 
-        const bool justify = (flags & AlignJustify) != 0
+        const bool justify = alignment.testFlag(AlignJustify)
                              && (i + 1) < lineCount
-                             && (flags & (TextWordWrap | TextWrapAnywhere)) != 0;
+                             && (textFlags.testFlag(TextWordWrap) || textFlags.testFlag(TextWrapAnywhere));
 
         drawShapedLine(*entry, font, line, x, firstBaseline + double(i) * lineHeight, justify, rect.width());
     }
@@ -1899,7 +1898,7 @@ void CairoPainter::Impl::drawText(const PointF& point, const String& text)
     ensureOk("drawText");
 }
 
-void CairoPainter::Impl::drawText(const RectF& rect, int flags, const String& text)
+void CairoPainter::Impl::drawText(const RectF& rect, Alignment alignment, TextFlags textFlags, const String& text)
 {
     if (!active) {
         return;
@@ -1917,27 +1916,8 @@ void CairoPainter::Impl::drawText(const RectF& rect, int flags, const String& te
         return;
     }
 
-    drawTextInRect(state.font, r, flags, text);
+    drawTextInRect(state.font, r, alignment, textFlags, text);
     ensureOk("drawText");
-}
-
-void CairoPainter::Impl::drawTextWorkaround(const Font& font, const PointF& pos, const String& text)
-{
-    if (!active) {
-        return;
-    }
-    ensureOk("drawTextWorkaround");
-    if (text.empty()) {
-        return;
-    }
-    if (!finitePoint(pos)) {
-        throw std::invalid_argument("CairoPainter: drawTextWorkaround position is not finite");
-    }
-
-    // Cairo/HarfBuzz do not have Qt's scaled-world-transform glyph placement
-    // bug, so the workaround is simply a normal draw with the supplied font.
-    drawTextAtPoint(font, pos, text);
-    ensureOk("drawTextWorkaround");
 }
 
 void CairoPainter::Impl::drawSymbol(const PointF& point, char32_t ucs4Code)
@@ -2247,14 +2227,9 @@ void CairoPainter::drawText(const PointF& point, const String& text)
     m_impl->drawText(point, text);
 }
 
-void CairoPainter::drawText(const RectF& rect, int flags, const String& text)
+void CairoPainter::drawText(const RectF& rect, Alignment alignment, TextFlags textFlags, const String& text)
 {
-    m_impl->drawText(rect, flags, text);
-}
-
-void CairoPainter::drawTextWorkaround(const Font& font, const PointF& pos, const String& text)
-{
-    m_impl->drawTextWorkaround(font, pos, text);
+    m_impl->drawText(rect, alignment, textFlags, text);
 }
 
 void CairoPainter::drawSymbol(const PointF& point, char32_t ucs4Code)
