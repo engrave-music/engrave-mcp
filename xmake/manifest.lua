@@ -379,6 +379,11 @@ MUSESCORE_XMAKE_MANIFEST = {
                 "${SOURCE_ROOT}/src/engraving/infrastructure/shape.cpp",
                 "${SOURCE_ROOT}/src/engraving/infrastructure/skyline.cpp",
                 "${SOURCE_ROOT}/src/engraving/infrastructure/smufl.cpp",
+                "${SOURCE_ROOT}/src/engraving/internal/engravingconfiguration.cpp",
+                "${SOURCE_ROOT}/src/engraving/internal/engravingcontextconfiguration.cpp",
+                "${SOURCE_ROOT}/src/engraving/internal/engravingfont.cpp",
+                "${SOURCE_ROOT}/src/engraving/internal/engravingfontsprovider.cpp",
+                "${SOURCE_ROOT}/src/engraving/internal/palettescoreprovider.cpp",
                 "${SOURCE_ROOT}/src/engraving/playback/filters/chordfilter.cpp",
                 "${SOURCE_ROOT}/src/engraving/playback/filters/internal/tremolofilter.cpp",
                 "${SOURCE_ROOT}/src/engraving/playback/filters/spannerfilter.cpp",
@@ -516,9 +521,6 @@ MUSESCORE_XMAKE_MANIFEST = {
             },
             defines = {
                 "ENGRAVING_NO_ACCESSIBILITY",
-                "ENGRAVING_NO_API",
-                "ENGRAVING_NO_INTERACTIVE",
-                "ENGRAVING_NO_INTERNAL",
                 "KORS_PROFILER_ENABLED",
             },
             includes = {
@@ -551,9 +553,6 @@ MUSESCORE_XMAKE_MANIFEST = {
             },
             defines = {
                 "ENGRAVING_NO_ACCESSIBILITY",
-                "ENGRAVING_NO_API",
-                "ENGRAVING_NO_INTERACTIVE",
-                "ENGRAVING_NO_INTERNAL",
                 "KORS_PROFILER_ENABLED",
                 "MUSICXML_NO_INTERACTIVE",
                 "MUSICXML_NO_INTERNAL",
@@ -608,9 +607,6 @@ MUSESCORE_XMAKE_MANIFEST = {
             },
             defines = {
                 "ENGRAVING_NO_ACCESSIBILITY",
-                "ENGRAVING_NO_API",
-                "ENGRAVING_NO_INTERACTIVE",
-                "ENGRAVING_NO_INTERNAL",
                 "KORS_PROFILER_ENABLED",
             },
             includes = {
@@ -658,9 +654,6 @@ MUSESCORE_XMAKE_MANIFEST = {
             },
             defines = {
                 "ENGRAVING_NO_ACCESSIBILITY",
-                "ENGRAVING_NO_API",
-                "ENGRAVING_NO_INTERACTIVE",
-                "ENGRAVING_NO_INTERNAL",
                 "KORS_PROFILER_ENABLED",
             },
             includes = {
@@ -829,9 +822,6 @@ MUSESCORE_XMAKE_MANIFEST = {
             defines = {
                 "DRAW_NO_QSVGRENDER",
                 "ENGRAVING_NO_ACCESSIBILITY",
-                "ENGRAVING_NO_API",
-                "ENGRAVING_NO_INTERACTIVE",
-                "ENGRAVING_NO_INTERNAL",
                 "KORS_PROFILER_ENABLED",
                 "MUSE_MODULE_DRAW_USE_FONTFACE_FT",
                 "MUSE_MODULE_DRAW_USE_QTTEXTDRAW",
@@ -871,6 +861,27 @@ MUSESCORE_XMAKE_MANIFEST = {
             defines = {
                 "KORS_PROFILER_ENABLED",
             },
+            includes = {
+                "${PROJECT_ROOT}/.",
+                "${SOURCE_ROOT}/src/engraving/thirdparty/dtl",
+                "${SOURCE_ROOT}/.",
+                "${SOURCE_ROOT}/src",
+                "${SOURCE_ROOT}/muse/framework",
+                "${SOURCE_ROOT}/muse/framework/global",
+                "${SOURCE_ROOT}/src/engraving",
+                "${SOURCE_ROOT}/muse/framework/draw",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/include",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/bindings",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/drivers",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/external",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/midi",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/rvoice",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/sfloader",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/synth",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/utils",
+                "${SOURCE_ROOT}/muse/framework/audio",
+            },
         },
         ["engine_audio"] = {
             sources = {
@@ -879,6 +890,27 @@ MUSESCORE_XMAKE_MANIFEST = {
             defines = {
                 "KORS_PROFILER_ENABLED",
             },
+            includes = {
+                "${PROJECT_ROOT}/.",
+                "${SOURCE_ROOT}/src/engraving/thirdparty/dtl",
+                "${SOURCE_ROOT}/.",
+                "${SOURCE_ROOT}/src",
+                "${SOURCE_ROOT}/muse/framework",
+                "${SOURCE_ROOT}/muse/framework/global",
+                "${SOURCE_ROOT}/src/engraving",
+                "${SOURCE_ROOT}/muse/framework/draw",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/include",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/bindings",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/drivers",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/external",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/midi",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/rvoice",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/sfloader",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/synth",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/utils",
+                "${SOURCE_ROOT}/muse/framework/audio",
+            },
         },
         ["music_core"] = {
             sources = {
@@ -886,6 +918,27 @@ MUSESCORE_XMAKE_MANIFEST = {
             },
             defines = {
                 "KORS_PROFILER_ENABLED",
+            },
+            includes = {
+                "${PROJECT_ROOT}/.",
+                "${SOURCE_ROOT}/src/engraving/thirdparty/dtl",
+                "${SOURCE_ROOT}/.",
+                "${SOURCE_ROOT}/src",
+                "${SOURCE_ROOT}/muse/framework",
+                "${SOURCE_ROOT}/muse/framework/global",
+                "${SOURCE_ROOT}/src/engraving",
+                "${SOURCE_ROOT}/muse/framework/draw",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/include",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/bindings",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/drivers",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/external",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/midi",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/rvoice",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/sfloader",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/synth",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/utils",
+                "${SOURCE_ROOT}/muse/framework/audio",
             },
         },
         ["musescore_mcp"] = {
@@ -900,6 +953,27 @@ MUSESCORE_XMAKE_MANIFEST = {
             defines = {
                 "KORS_PROFILER_ENABLED",
             },
+            includes = {
+                "${PROJECT_ROOT}/.",
+                "${SOURCE_ROOT}/src/engraving/thirdparty/dtl",
+                "${SOURCE_ROOT}/.",
+                "${SOURCE_ROOT}/src",
+                "${SOURCE_ROOT}/muse/framework",
+                "${SOURCE_ROOT}/muse/framework/global",
+                "${SOURCE_ROOT}/src/engraving",
+                "${SOURCE_ROOT}/muse/framework/draw",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/include",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/bindings",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/drivers",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/external",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/midi",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/rvoice",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/sfloader",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/synth",
+                "${SOURCE_ROOT}/muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/src/utils",
+                "${SOURCE_ROOT}/muse/framework/audio",
+            },
         },
         ["noqt_probe"] = {
             sources = {
@@ -909,6 +983,16 @@ MUSESCORE_XMAKE_MANIFEST = {
             defines = {
                 "KORS_PROFILER_ENABLED",
             },
+            includes = {
+                "${PROJECT_ROOT}/.",
+                "${SOURCE_ROOT}/src/engraving/thirdparty/dtl",
+                "${SOURCE_ROOT}/.",
+                "${SOURCE_ROOT}/src",
+                "${SOURCE_ROOT}/muse/framework",
+                "${SOURCE_ROOT}/muse/framework/global",
+                "${SOURCE_ROOT}/src/engraving",
+                "${SOURCE_ROOT}/muse/framework/draw",
+            },
         },
         ["noqt_support_test"] = {
             sources = {
@@ -917,6 +1001,16 @@ MUSESCORE_XMAKE_MANIFEST = {
             defines = {
                 "KORS_PROFILER_ENABLED",
             },
+            includes = {
+                "${PROJECT_ROOT}/.",
+                "${SOURCE_ROOT}/src/engraving/thirdparty/dtl",
+                "${SOURCE_ROOT}/.",
+                "${SOURCE_ROOT}/src",
+                "${SOURCE_ROOT}/muse/framework",
+                "${SOURCE_ROOT}/muse/framework/global",
+                "${SOURCE_ROOT}/src/engraving",
+                "${SOURCE_ROOT}/muse/framework/draw",
+            },
         },
     },
     -- Applied to every target (engine and host): the project's Qt-free
@@ -924,7 +1018,6 @@ MUSESCORE_XMAKE_MANIFEST = {
     defines = {
         "NO_QT_SUPPORT",
         "ENGRAVING_NO_ACCESSIBILITY",
-        "ENGRAVING_NO_INTERNAL",
         "ENGRAVING_NO_INTERACTIVE",
         "ENGRAVING_NO_API",
         "MUSICXML_NO_INTERNAL",
