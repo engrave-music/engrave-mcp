@@ -470,7 +470,7 @@ def main() -> int:
                 print(f"      {detail}")
 
     print(f"\n{checked} fixture(s) checked, {mismatched} field(s) mismatched, {skipped} skipped")
-    return 0 if mismatched == 0 else 1
+    return 0 if (checked > 0 and mismatched == 0) else 1
 
 
 if __name__ == "__main__":
