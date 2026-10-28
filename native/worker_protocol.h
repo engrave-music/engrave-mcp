@@ -13,6 +13,9 @@ struct ExportWorkerRequest {
     RuntimeOptions runtime;
     ExportFormat format;
     ExportOptions options;
+    // Source document stamps; the snapshot reload would otherwise report the
+    // writing program instead of the file's own version.
+    ScoreVersions versions;
     std::filesystem::path cache_directory;
     AudioMix mix;
     bool has_mix = false;

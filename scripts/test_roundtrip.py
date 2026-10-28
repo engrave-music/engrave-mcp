@@ -54,6 +54,13 @@ KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
     "slurs.mscz": {
         "musicxml": ("02ce304f5126a1fd", "grace16after slurs: grace-after notes converted to grace-before in MusicXML"),
     },
+    "ghost_note.mscx": {
+        "mscz_text": ("eca5346553661549", "4.10 ghost notes: the first save after the legacy read writes one NoteParenGroup twice; the reloaded score writes it once"),
+        "musicxml": ("7872bae4c4cf03e9", "linked tab staff gains an explicit 4/4 time signature after MusicXML import"),
+    },
+    "tab_grace_prebend.mscx": {
+        "musicxml": ("7872bae4c4cf03e9", "linked tab staff gains an explicit 4/4 time signature after MusicXML import"),
+    },
 }
 
 DUR_TYPES: dict[str, Fraction | int] = {

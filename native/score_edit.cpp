@@ -4,6 +4,7 @@
 
 #include "engraving/dom/chord.h"
 #include "engraving/dom/engravingobject.h"
+#include "engraving/dom/excerpt.h"
 #include "engraving/dom/interval.h"
 #include "engraving/dom/key.h"
 #include "engraving/dom/masterscore.h"
@@ -170,10 +171,36 @@ struct ValidatedChange
     size_t measureIndex = 0;
 };
 
+// Only $v depends on dirty(); upstream $r prints an empty revision while dirty,
+// so a relayout cannot stale it.
+bool uses_dirty_version_macro(const Score* score)
+{
+    static constexpr Sid versionStyles[] = {
+        Sid::evenHeaderL, Sid::evenHeaderC, Sid::evenHeaderR,
+        Sid::oddHeaderL, Sid::oddHeaderC, Sid::oddHeaderR,
+        Sid::evenFooterL, Sid::evenFooterC, Sid::evenFooterR,
+        Sid::oddFooterL, Sid::oddFooterC, Sid::oddFooterR,
+    };
+    for (const Sid sid : versionStyles) {
+        if (score->style().styleSt(sid).contains(u"$v")) return true;
+    }
+    return false;
+}
+
+bool has_dirty_version_chrome(const MasterScore* score)
+{
+    if (uses_dirty_version_macro(score)) return true;
+    for (const Excerpt* excerpt : score->excerpts()) {
+        const Score* part = excerpt->excerptScore();
+        if (part && uses_dirty_version_macro(part)) return true;
+    }
+    return false;
+}
+
 class ScoreCommandGuard
 {
 public:
-    explicit ScoreCommandGuard(Score* score) : m_score(score) {}
+    explicit ScoreCommandGuard(MasterScore* score) : m_score(score) {}
     ~ScoreCommandGuard() {
         if (m_active) {
             try { m_score->endCmd(true, true); } catch (...) {}
@@ -190,12 +217,20 @@ public:
         m_score->endCmd(rollback, true); // Headless excerpts are not marked open.
         m_active = false;
         // endCmd lays out the edited range before the undo macro marks the score
-        // dirty, so page chrome that depends on dirty() ($v/$r headers) would stay
-        // stale until the next layout. Relayout once, on the clean -> dirty edge.
-        if (!rollback && !wasDirty && m_score->dirty()) m_score->doLayout();
+        // dirty, so $v page chrome would stay stale until the next layout.
+        // Relayout once, on the clean -> dirty edge, and only when a header or
+        // footer actually prints $v. Excerpts already on screen keep their pages
+        // current too; a never-laid-out excerpt has no stale chrome to fix.
+        if (!rollback && !wasDirty && m_score->dirty() && has_dirty_version_chrome(m_score)) {
+            m_score->doLayout();
+            for (Excerpt* excerpt : m_score->excerpts()) {
+                Score* part = excerpt->excerptScore();
+                if (part && part->npages() > 0) part->doLayout();
+            }
+        }
     }
 private:
-    Score* m_score;
+    MasterScore* m_score;
     bool m_active = false;
 };
 

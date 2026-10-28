@@ -128,6 +128,21 @@ std::filesystem::path absolute_field(const Json& json, const char* name) {
     if (!path.is_absolute()) throw std::invalid_argument(std::string(name) + " must be absolute");
     return path;
 }
+std::string version_string(const Json& json, const char* name) {
+    if (!json.contains(name) || !json.at(name).is_string())
+        throw std::invalid_argument(std::string(name) + " must be a string");
+    auto value = json.at(name).get<std::string>();
+    // An empty version is valid: the source file may predate version tags.
+    if (value.size() > 64 || value.find('\0') != std::string::npos)
+        throw std::invalid_argument(std::string(name) + " is invalid");
+    return value;
+}
+int version_integer(const Json& json, const char* name, int minimum, int maximum) {
+    if (!json.contains(name) || !json.at(name).is_number_integer()
+        || json.at(name) < minimum || json.at(name) > maximum)
+        throw std::invalid_argument(std::string(name) + " is out of range");
+    return json.at(name).get<int>();
+}
 }
 
 bool is_audio_format(ExportFormat format) noexcept {
@@ -199,7 +214,9 @@ Json worker_request_json(const ExportWorkerRequest& request) {
     Json result = {{"version", 1}, {"parentPid", current_process_id()}, {"snapshot", path_utf8(request.snapshot_path)},
             {"output", path_utf8(request.output_path)}, {"result", path_utf8(request.result_path)},
             {"resources", request.runtime.resources_path}, {"soundfont", request.runtime.soundfont},
-            {"format", format_name(request.format)}, {"options", std::move(options)}, {"fonts", request.runtime.font_paths}, {"stream", request.stream}, {"startTime", request.start_seconds}};
+            {"format", format_name(request.format)}, {"options", std::move(options)}, {"fonts", request.runtime.font_paths}, {"stream", request.stream}, {"startTime", request.start_seconds},
+            {"mscoreVersion", request.versions.mscore_version}, {"mscoreRevision", request.versions.mscore_revision},
+            {"mscVersion", request.versions.msc_version}};
     if (!request.cache_directory.empty()) result["cacheDirectory"] = path_utf8(request.cache_directory);
     if (request.has_mix) result["mix"] = mix_json(request.mix);
     return result;
@@ -224,6 +241,9 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
         const auto format = export_format_from_name(string_field(request, "format"));
         if (!format) throw std::invalid_argument("Unsupported worker export format");
         const auto options = parse_export_options(request.at("options"), *format);
+        const ScoreVersions versions{version_string(request, "mscoreVersion"),
+            version_integer(request, "mscoreRevision", 0, std::numeric_limits<int>::max()),
+            version_integer(request, "mscVersion", 0, 100000)};
         const bool stream = request.value("stream", false);
         RuntimeOptions runtime{path_utf8(absolute_field(request, "resources")),
                                (is_audio_format(*format) || stream) ? request.at("soundfont").get<std::string>() : std::string{}};
@@ -242,6 +262,9 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
         }
         MusicCore core(runtime);
         const auto score = core.open(read_bounded_file(snapshot, snapshot_limit), InputFormat::Mscz);
+        // The snapshot was serialized by our own writer, which stamped the
+        // running program; restore the source file's version before exporting.
+        core.restore_versions(score.id, versions);
         if (request.contains("mix")) core.set_audio_mix(score.id, parse_mix(request.at("mix")), options.excerpt_id);
         if (request.value("stream", false)) {
             if (!is_audio_format(*format)) throw std::invalid_argument("Streaming requires audio format");

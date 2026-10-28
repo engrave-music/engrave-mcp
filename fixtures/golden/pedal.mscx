@@ -181,6 +181,7 @@
             <Pedal>
               <placement>above</placement>
               <offset x="1.5" y="-2.5"/>
+              <textSizeIsSpatiumDependent>0</textSizeIsSpatiumDependent>
               <lineVisible>0</lineVisible>
               <continueTextPlace>auto</continueTextPlace>
               <endTextPlace>auto</endTextPlace>

@@ -1194,6 +1194,8 @@ ExcerptsData MusicCore::generate_excerpts(DocumentId id) {
         // allocation cannot leave a partially generated live score behind.
         const auto bytes = export_native_score(document.project, "mscz", 0, impl_->soundfont);
         auto candidate = load_native_score(bytes, "mscz");
+        // The reload reads the version our writer stamped; keep the source file's.
+        copy_score_versions(document.project->masterScore(), candidate->masterScore());
         if (!generate_score_excerpts(candidate->masterScore()))
             return {document.revision, {}};
         const Revision next{document.revision.value + 1};
@@ -1317,10 +1319,30 @@ ExportData MusicCore::export_bytes(DocumentId id, ExportFormat format, const Exp
     }
 }
 
-ExportData MusicCore::snapshot(DocumentId id) {
+SnapshotData MusicCore::snapshot(DocumentId id) {
     try {
         impl_->check_owner();
-        return impl_->export_document(id, ExportFormat::Mscz, {});
+        const auto& document = impl_->find(id);
+        const auto* master = document.project->masterScore();
+        SnapshotData result;
+        result.revision = document.revision;
+        result.versions = {master->mscoreVersion().toStdString(), master->mscoreRevision(),
+                           master->mscVersion()};
+        // Read the stamps first: the export restores them, and the worker must
+        // apply the source file's values to its own reload.
+        result.bytes = impl_->export_document(id, ExportFormat::Mscz, {}).bytes;
+        return result;
+    } catch (...) {
+        translate_current_exception(CoreError::Code::engine_failure);
+    }
+}
+
+void MusicCore::restore_versions(DocumentId id, const ScoreVersions& versions) {
+    try {
+        impl_->check_owner();
+        auto& document = impl_->find(id);
+        apply_score_versions(document.project->masterScore(), versions.mscore_version,
+                             versions.mscore_revision, versions.msc_version);
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
     }

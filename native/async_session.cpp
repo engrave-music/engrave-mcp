@@ -133,7 +133,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         std::vector<std::string> invalidated_documents;
         std::vector<std::string> poisoned_documents;
         std::vector<std::shared_ptr<const ScoreReadSnapshot>> snapshots;
-        ExportData snapshot;
+        SnapshotData snapshot;
         RuntimeOptions runtime;
         std::size_t snapshot_size = 0;
     };
@@ -409,6 +409,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 write_atomic(directory / "snapshot.mscz", result.snapshot.bytes);
                 ExportWorkerRequest request{directory / "snapshot.mscz", staging_directory / "output",
                                             directory / "result.json", result.runtime, format, options};
+                // The snapshot reload stamps the writer's version; carry the
+                // source values so the worker exports what the session reports.
+                request.versions = result.snapshot.versions;
                 request.cache_directory = directory / "runtime-cache";
                 request.stream = stream;
                 request.start_seconds = start;

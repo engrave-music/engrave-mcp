@@ -98,7 +98,7 @@ pixi run -e native python scripts/package_windows.py --no-qt --binary build/xmak
 打包产物已完成严格的洁净环境验证：
 - 运行时环境变量 `PATH` 仅保留 `C:\Windows\System32`。
 - 完全脱离桌面版 MuseScore 安装、Node.js、WASM、Python 及 Pixi 运行环境。
-- 当前 xmake 产物通过全部 22 条测试道回归，涵盖官方 SDK 冒烟、传输测试、`scripts/golden.py compare`（针对 `tests/golden/<platform>` 与 `tests/golden/allow.json` 白名单）排版渲染验证，以及 `scripts/test_roundtrip.py` 往返一致性测试。
+- 当前 xmake 产物通过全部 24 条测试道回归，涵盖官方 SDK 冒烟、传输测试、版本信息（`scripts/test_version_info.py`）、上游 72 例反复播放顺序（`scripts/test_repeats.py`）、`scripts/golden.py compare`（针对 `tests/golden/<platform>` 与 `tests/golden/allow.json` 白名单）排版渲染验证，以及 `scripts/test_roundtrip.py` 往返一致性测试。
 
 ---
 
@@ -126,7 +126,7 @@ pixi run --locked -e native python scripts/package_linux.py --binary build/xmake
 
 - **构建产物**：`build/xmake-linux/musescore-mcp`。
 - **打包规格**：`package_linux.py` 提取 ELF 依赖并设置相对 RUNPATH，排除了所有 Qt 依赖。生成的打包目录包含 181 个文件，体积约为 94 MB。
-- **洁净运行验证**：在完全脱离开发环境 PATH 的纯净隔离环境下，运行打包二进制完整通过官方 SDK `mcp_smoke`（20 次创建/修改/导出循环及真实可听音频输出）。全部 22 条测试道在 Linux 宿主上 100% 通过（exit=0）。
+- **洁净运行验证**：在完全脱离开发环境 PATH 的纯净隔离环境下，运行打包二进制完整通过官方 SDK `mcp_smoke`（20 次创建/修改/导出循环及真实可听音频输出）。全部 24 条测试道在 Linux 宿主上 100% 通过（exit=0）。
 
 Linux 使用显式 `gcc@` / `g++@` 工具类型识别 Pixi 的编译器，确保 xmake 正确继承 `-std=c++23`、`-O3` 与 `-fPIC` 参数。FluidSynth C 目标使用 GNU17 以保留上游 `alloca` 扩展；Windows 的该 C 目标仍为 C11。
 

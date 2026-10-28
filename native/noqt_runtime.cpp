@@ -23,6 +23,7 @@
 #include "engraving/engravingmodule.h"
 #include "engraving/engravingproject.h"
 #include "engraving/dom/masterscore.h"
+#include "engraving/dom/excerpt.h"
 #include "engraving/dom/instrtemplate.h"
 #include "engraving/dom/instrument.h"
 #include "engraving/dom/part.h"
@@ -109,6 +110,21 @@ void initialize_native_runtime(const std::string& assets) {
     modularity::globalIoc()->registerExport<iex::musicxml::IMusicXmlConfiguration>("native", xml);
     xml->init();
     engraving::loadInstrumentTemplates(":/engraving/instruments/instruments.xml");
+}
+
+void apply_score_versions(engraving::MasterScore* score, const std::string& version,
+                          int revision, int msc_version) {
+    if (!score) throw std::invalid_argument("Score version restore requires a master score");
+    score->setMscoreVersion(String::fromStdString(version));
+    score->setMscoreRevision(revision);
+    score->setMscVersion(msc_version);
+}
+
+void copy_score_versions(engraving::MasterScore* source, engraving::MasterScore* target) {
+    if (!source || !target)
+        throw std::invalid_argument("Score version copy requires two master scores");
+    apply_score_versions(target, source->mscoreVersion().toStdString(),
+                         source->mscoreRevision(), source->mscVersion());
 }
 
 ScoreProject load_native_score(const std::string& input, const std::string& format) {
@@ -216,6 +232,31 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
     if (format == "musicxml") success = iex::musicxml::saveXml(score, &buffer);
     else if (format == "mxl") success = iex::musicxml::saveMxl(score, &buffer);
     else if (format == "mscz" || format == "mscx") {
+        // Writer::writeScore stamps the writing program's version into every score it
+        // writes; an export is read-only for the document, so restore the file's values
+        // (metadata mscoreVersion, $v on unedited scores, legacy layout by mscVersion).
+        struct VersionFields {
+            engraving::Score* score;
+            String version;
+            int revision;
+            int msc;
+        };
+        struct RestoreVersions {
+            std::vector<VersionFields> fields;
+            ~RestoreVersions() {
+                for (const auto& f : fields) {
+                    f.score->setMscoreVersion(f.version);
+                    f.score->setMscoreRevision(f.revision);
+                    f.score->setMscVersion(f.msc);
+                }
+            }
+        } restore_versions;
+        auto* master = project->masterScore();
+        restore_versions.fields.push_back({master, master->mscoreVersion(), master->mscoreRevision(), master->mscVersion()});
+        for (engraving::Excerpt* excerpt : master->excerpts()) {
+            if (auto* part = excerpt->excerptScore())
+                restore_versions.fields.push_back({part, part->mscoreVersion(), part->mscoreRevision(), part->mscVersion()});
+        }
         engraving::MscWriter::Params params;
         params.device = &buffer;
         params.mainFileName = u"score.mscx";

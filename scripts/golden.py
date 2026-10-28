@@ -57,6 +57,9 @@ from mcp.client.stdio import stdio_client
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_DIR = ROOT / "fixtures" / "golden"
 EXTRA_FIXTURES = (ROOT / "fixtures" / "evening.musicxml",)
+# Fixtures without stored excerpts whose part excerpts are generated (after the master
+# outputs are captured) to cover excerpt creation, e.g. ChordLine path copying.
+GENERATE_EXCERPTS = {"chordline_path.mscx"}
 AUDIO_TOLERANCES = {"peak": 1e-4, "rms": 1e-4, "rmsEnvelope": 1e-4,
                     "spectralCentroidHz": 1.0, "centroidEnvelope": 2.0}
 AUDIO_EXACT = {"sampleRate", "channels", "frames"}
@@ -84,6 +87,8 @@ def write_json(path: Path, value, indent: int = 1) -> None:
 
 def normalize_mscx(text: str) -> str:
     text = re.sub(r"<eid>[^<]*</eid>", "<eid/>", text)
+    # linkedTo carries the linked element's eid; random when the source file had none.
+    text = re.sub(r"<linkedTo>[^<]*</linkedTo>", "<linkedTo/>", text)
     for tag in ("programVersion", "programRevision"):
         text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", rf"\1\2", text)
     for name in ("creationDate", "platform"):
@@ -435,6 +440,10 @@ async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots)
     identity = {"documentId": payload["documentId"]}
     try:
         await capture_master(session, identity, raw, out_dir, roots)
+        if fixture_id in GENERATE_EXCERPTS:
+            _, error = await call_tool(session, "score_generate_excerpts", identity)
+            if error:
+                write_text(out_dir / "generate.error.txt", sanitize(error, roots) + "\n")
         await capture_excerpts(session, identity, raw, out_dir, roots)
     finally:
         await call_tool(session, "score_close", identity)

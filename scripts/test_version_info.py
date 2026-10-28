@@ -5,7 +5,9 @@ import asyncio
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -31,8 +33,16 @@ def expected_platform():
     raise AssertionError(f"unsupported test platform: {sys.platform}")
 
 
+def engine_revision():
+    """The 7-character engine commit the build reads at configure time."""
+    result = subprocess.run(
+        ["git", "-C", str(ROOT / "vendor" / "musescore"), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True)
+    return result.stdout.strip()[:7]
+
+
 def glyph_runs(path: Path):
-    """Return (y, glyph paths) runs. Cairo's SVG surface has no <text>; each
+    """Return (y, x, glyph paths) runs. Cairo's SVG surface has no <text>; each
     character is a <use> reference to a glyph path, so identity is compared by
     the referenced path data. Runs are split where the horizontal gap between
     characters is too large to be a word (separate header/footer fields)."""
@@ -56,26 +66,28 @@ def glyph_runs(path: Path):
         current = [items[0]]
         for previous, item in zip(items, items[1:]):
             if item[0] - previous[0] > 24:
-                runs.append((y, tuple(glyph for _, glyph in current)))
+                runs.append((y, current[0][0], tuple(glyph for _, glyph in current)))
                 current = []
             current.append(item)
-        runs.append((y, tuple(glyph for _, glyph in current)))
+        runs.append((y, current[0][0], tuple(glyph for _, glyph in current)))
     return runs
 
 
 def version_runs(path: Path):
     """Return header and footer 5-glyph runs of a version page ("4.5.0")."""
-    runs = [run for run in glyph_runs(path) if len(run[1]) == 5]
+    runs = [run for run in glyph_runs(path) if len(run[2]) == 5]
     assert runs, "SVG has no five-glyph header/footer runs"
-    header_y = min(y for y, _ in runs)
-    footer_y = max(y for y, _ in runs)
+    header_y = min(run[0] for run in runs)
+    footer_y = max(run[0] for run in runs)
     assert footer_y > header_y + 100, (header_y, footer_y)
-    header = [run for y, run in runs if abs(y - header_y) < 0.01]
-    footer = sorted((run for y, run in runs if abs(y - footer_y) < 0.01),
-                    key=lambda run: run[0][0] if run else 0)
+    header = [run for run in runs if abs(run[0] - header_y) < 0.01]
+    # Sort the footer fields by their actual x position; glyph paths are not
+    # ordered like the page and repeat across fields.
+    footer = sorted((run for run in runs if abs(run[0] - footer_y) < 0.01),
+                    key=lambda run: run[1])
     assert len(header) == 1, header
     assert len(footer) == 2, footer
-    return header[0], footer[0], footer[1]
+    return header[0][2], footer[0][2], footer[1][2]
 
 
 async def run(args):
@@ -106,18 +118,22 @@ async def run(args):
             mscx = ET.parse(mscx_path).getroot()
             version = mscx.findtext("programVersion")
             revision = mscx.findtext("programRevision") or ""
+            engine_rev = engine_revision()
             assert version == "4.7.6", version
             assert re.fullmatch(r"[0-9a-fA-F]{7}", revision), revision
+            assert revision == engine_rev, (revision, engine_rev)
             platform = next((tag.text for tag in mscx.iter("metaTag")
                              if tag.get("name") == "platform"), None)
             assert platform == expected_platform(), platform
             report["mscx"] = {"programVersion": version, "programRevision": revision,
-                              "platform": platform}
+                              "engineRevision": engine_rev, "platform": platform}
 
             metadata_path = out / "metadata.json"
             await call("score_export", {**document, "format": "metadata", "path": str(metadata_path)})
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            assert metadata["mscoreVersion"] == "4.7.6", metadata.get("mscoreVersion")
+            # Like MuseScore Studio, only writing a file stamps the version; a created
+            # score has none and the MSCX export above must not change the document.
+            assert metadata["mscoreVersion"] == "", metadata.get("mscoreVersion")
             report["metadata"] = {"mscoreVersion": metadata["mscoreVersion"]}
 
             musicxml_path = out / "created.musicxml"
@@ -133,6 +149,42 @@ async def run(args):
             # header must switch to the running application version.
             fixture = await call("score_open", {"path": str(ROOT / "fixtures/version/header.mscx")})
             fixture_document = {"documentId": fixture["documentId"]}
+
+            # Exporting MSCZ stamps the running program's version into the open
+            # score in Writer::writeScore; the export must stay read-only.
+            fixture_metadata_before = out / "header-metadata-before.json"
+            await call("score_export", {**fixture_document, "format": "metadata",
+                                        "path": str(fixture_metadata_before)})
+            metadata_before = json.loads(fixture_metadata_before.read_text(encoding="utf-8"))
+            assert metadata_before["mscoreVersion"] == "4.5.0", metadata_before.get("mscoreVersion")
+
+            fixture_mscz = out / "header.mscz"
+            await call("score_export", {**fixture_document, "format": "mscz", "path": str(fixture_mscz)})
+
+            fixture_metadata_after = out / "header-metadata-after.json"
+            await call("score_export", {**fixture_document, "format": "metadata",
+                                        "path": str(fixture_metadata_after)})
+            metadata_after = json.loads(fixture_metadata_after.read_text(encoding="utf-8"))
+            assert metadata_after["mscoreVersion"] == "4.5.0", metadata_after.get("mscoreVersion")
+
+            # The background worker reloads a snapshot serialized by that same
+            # writer; it must apply the source document's version too.
+            fixture_metadata_background = out / "header-metadata-background.json"
+            job = await call("score_export_start", {**fixture_document, "format": "metadata",
+                                                    "path": str(fixture_metadata_background)})
+            deadline = time.monotonic() + 60
+            while job["state"] not in ("completed", "failed", "cancelled"):
+                assert time.monotonic() < deadline, f"background metadata export stalled: {job}"
+                await asyncio.sleep(0.02)
+                job = await call("score_job_get", {"jobId": job["jobId"]})
+            assert job["state"] == "completed", job
+            metadata_background = json.loads(fixture_metadata_background.read_text(encoding="utf-8"))
+            assert metadata_background["mscoreVersion"] == "4.5.0", \
+                metadata_background.get("mscoreVersion")
+            report["fixture_metadata"] = {"before_mscz": metadata_before["mscoreVersion"],
+                                          "after_mscz": metadata_after["mscoreVersion"],
+                                          "background": metadata_background["mscoreVersion"]}
+
             before_svg = out / "header-before.svg"
             await call("score_export", {**fixture_document, "format": "svg", "path": str(before_svg),
                                         "page": 0})
@@ -158,6 +210,17 @@ async def run(args):
             report["svg_header"] = {"encoding": "cairo-glyph-paths",
                                     "unedited_matches": "file programVersion (4.5.0)",
                                     "edited_matches": "MUSE_APP_VERSION (4.7.6)"}
+
+            # Excerpt generation serializes and reloads the document as well; the
+            # reload must keep the source file's stamps, not the writer's.
+            await call("score_generate_excerpts", fixture_document)
+            fixture_metadata_excerpts = out / "header-metadata-excerpts.json"
+            await call("score_export", {**fixture_document, "format": "metadata",
+                                        "path": str(fixture_metadata_excerpts)})
+            metadata_excerpts = json.loads(fixture_metadata_excerpts.read_text(encoding="utf-8"))
+            assert metadata_excerpts["mscoreVersion"] == "4.5.0", \
+                metadata_excerpts.get("mscoreVersion")
+            report["fixture_metadata"]["after_excerpts"] = metadata_excerpts["mscoreVersion"]
             await call("score_close", fixture_document)
 
     assert "ERROR:" not in (out / "stderr.log").read_text(encoding="utf-8"), "Engine errors in stderr.log"

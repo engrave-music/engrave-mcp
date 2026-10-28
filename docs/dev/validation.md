@@ -409,8 +409,10 @@ Linux evidence: suite logs on linux-host (notes/claude-tests/step2-linux, not in
 
 Pin `mcp-4.7.6-2` (`e099f16b`, the TEMPORARY version suppression reverted).
 Decision: `programRevision` is the 7-character SHA of the engine commit actually
-built (the fork submodule), read by xmake at configure time; release builds are not
-unstable (upstream SetupConfigure.cmake for build mode release).
+built (the fork submodule), read by xmake from the submodule's own checkout (empty, with
+a warning, when the source root is not a git checkout). xmake's release compile mode
+leaves MUSE_APP_UNSTABLE undefined; this approximates upstream's release build
+channel, and nothing compiled reads it today.
 - Executed on Windows and Linux (`version_info` lane, new): MSCX
   `programVersion` 4.7.6 and `programRevision` e099f16; MusicXML `<software>MuseScore
   Studio 4.7.6</software>`; metadata `mscoreVersion` 4.7.6 after an MSCX export;
@@ -425,3 +427,30 @@ unstable (upstream SetupConfigure.cmake for build mode release).
   `<programRevision>` elements (values normalized), metadata `mscoreVersion`, and the
   MSCZ inner MSCX hash; pinned, then rebaselined. No SVG/PNG/PDF/MIDI/audio change.
 - Executed: 23/23 lanes on both hosts.
+
+Review fixes (Opus 5.5 review of step 3, verified):
+- Exports are read-only for the document. Writer::writeScore stamps the writing
+  program into every score it writes; MSCX/MSCZ exports now restore
+  mscoreVersion/mscoreRevision/mscVersion of the master and excerpts, excerpt
+  generation keeps the source values across its reload, and background workers
+  receive them with the snapshot. Executed (version_info): a 4.5.0 fixture reports
+  4.5.0 before and after an MSCZ export, from a background job and after excerpt
+  generation; a created score keeps an empty version, as in MuseScore Studio until
+  the file is saved. Golden metadata now shows the source file's mscoreVersion and
+  fileVersion (before, the earlier MSCX export in the capture order had replaced them
+  with 4.7.6/470 since the webmscore baseline).
+- The clean -> dirty relayout runs only when a header/footer style prints `$v`, and
+  also lays out excerpts that have pages. `$r` prints an empty revision while dirty
+  upstream, so only `$v` was affected.
+- The revision is taken only if the source root is itself the git top level.
+
+Follow-up fixtures from the step 2 review (executed, goldens on both hosts):
+repeat71/72, named percussion noteheads, a 4.50 linked tab staff with grace notes
+and parentheses, 4.10 ghost notes, Pedal `textSizeIsSpatiumDependent` (now written,
+v4.7.6), and chordline_path.mscx with generated parts. Observed: the generated part
+excerpts do not carry the edited ChordLine path (no `<Path>` in their MSCX) even
+though v4.7.6's ChordLine copy constructor copies it; the cause is not yet known.
+New round-trip baseline losses: ghost_note (first save after the 4.10 read writes
+one NoteParenGroup twice) and a 4/4 time signature added to linked tab staves after
+MusicXML import. New lane `repeats`: all 72 upstream repeat_tests.cpp orders
+match through measurePositions (executed, Windows).

@@ -212,6 +212,21 @@ struct ExportData {
     std::string bytes;
 };
 
+// Version stamps of a document as it was loaded or created. Writer::writeScore
+// rewrites them with the running program's values, so every reload of our own
+// writer output restores these fields.
+struct ScoreVersions {
+    std::string mscore_version;
+    int mscore_revision = 0;
+    int msc_version = 0;
+};
+
+struct SnapshotData {
+    Revision revision;
+    std::string bytes;
+    ScoreVersions versions;
+};
+
 class CoreError : public std::runtime_error {
 public:
     enum Code {
@@ -284,7 +299,10 @@ public:
                                 const std::vector<Measure>& measures, const EditContext& context);
     EditResult set_pitches(DocumentId id, const NativePitchEdit& edit, const EditContext& context);
     ExportData export_bytes(DocumentId id, ExportFormat format, const ExportOptions& options = {});
-    ExportData snapshot(DocumentId id);
+    SnapshotData snapshot(DocumentId id);
+    // Restore the source file's version stamps after reloading our own writer
+    // output; an export must not re-author the document.
+    void restore_versions(DocumentId id, const ScoreVersions& versions);
     void close(DocumentId id);
     RuntimeOptions runtime_options() const;
     RuntimeSoundFontInfo set_soundfont(const std::string& path);

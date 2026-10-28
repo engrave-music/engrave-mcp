@@ -122,22 +122,47 @@ local function read_version(os, io)
     local minor = value("MUSE_APP_VERSION_MINOR") or "0"
     local patch = value("MUSE_APP_VERSION_PATCH") or "0"
     local revision = ""
-    local git_args = {"-C", source_root, "rev-parse", "--short=7", "HEAD"}
+    local function normalized_path(value)
+        local result = path.normalize(tostring(value or "")):gsub("\\", "/")
+        if os.host() == "windows" then
+            result = result:lower()
+        end
+        return result
+    end
+    local root_args = {"-C", source_root, "rev-parse", "--show-toplevel"}
     -- Probe first: iorunv raises in the xmake script sandbox when git is absent
     -- or the source tree is not a checkout, and the revision must fall back.
-    local code = os.execv("git", git_args,
+    local root_probe = os.execv("git", root_args,
         {try = true, stdout = os.nuldev(), stderr = os.nuldev()})
-    if code == 0 then
-        local output = os.iorunv("git", git_args)
-        revision = tostring(output or ""):gsub("%s+", "")
-        if not revision:match("^%x%x%x%x%x%x%x$") then
-            print("warning: unexpected engine git revision '" .. revision
-                .. "'; MUSE_APP_REVISION will be empty")
-            revision = ""
-        end
-    else
+    if root_probe ~= 0 then
         print("warning: cannot read the engine git revision from " .. source_root
             .. "; MUSE_APP_REVISION will be empty")
+    else
+        local top_level = tostring(os.iorunv("git", root_args) or ""):gsub("%s+", "")
+        if normalized_path(top_level) ~= normalized_path(source_root) then
+            -- A plain directory inside another checkout must not inherit the
+            -- outer repository's SHA as the engine revision.
+            print("warning: " .. source_root .. " is not a git checkout root (repository root '"
+                .. top_level .. "'); MUSE_APP_REVISION will be empty")
+        else
+            -- Full SHA + first 7 characters: --short can grow when the prefix
+            -- is ambiguous, which would make the reported revision unstable.
+            local head_args = {"-C", source_root, "rev-parse", "HEAD"}
+            local code = os.execv("git", head_args,
+                {try = true, stdout = os.nuldev(), stderr = os.nuldev()})
+            if code == 0 then
+                local sha = tostring(os.iorunv("git", head_args) or ""):gsub("%s+", "")
+                revision = sha:sub(1, 7)
+                if not revision:match("^%x%x%x%x%x%x%x$") then
+                    print("warning: unexpected engine git revision '" .. sha
+                        .. "'; MUSE_APP_REVISION will be empty")
+                    revision = ""
+                end
+            else
+                print("warning: cannot read the engine git revision from " .. source_root
+                    .. "; MUSE_APP_REVISION will be empty")
+            end
+        end
     end
     local version_label = value("MUSE_APP_VERSION_LABEL")
     local result = {
