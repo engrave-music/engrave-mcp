@@ -557,3 +557,9 @@ parameters and input resources are ignored; excerpt muting is forced (desktop on
 the engine is single-threaded with one SoundFont and has no per-preset sounds,
 MuseSampler/VST instruments or FX chains beyond the Muse Reverb aux; track labels are English and
 no progress events are emitted; one audio job per worker.
+
+Step 5 review fixes (`9a74eb1`), executed on Windows and Linux: 25/25 lanes each (dev and
+test targets are no longer default-built: `xmake build -a`); packages with the codec license
+texts (Windows 142 files / 61 MB, Linux 175 files / 103 MB) pass mcp_smoke in isolated
+environments. Open: the MSVC build renders the dense score about 3.5x slower than GCC
+(7.6 vs 2.1 s per audio minute); within budget, not yet investigated.
