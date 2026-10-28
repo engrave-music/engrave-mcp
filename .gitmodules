@@ -1,5 +1,5 @@
 [submodule "vendor/musescore"]
 	path = vendor/musescore
-	url = https://github.com/Locietta/MuseScore.git
+	url = https://github.com/Locietta/engrave.git
 	shallow = true
 	branch = mcp/v4.7.6

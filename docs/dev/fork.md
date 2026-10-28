@@ -1,6 +1,6 @@
 # MuseScore fork
 
-The engine is consumed from the fork https://github.com/Locietta/MuseScore as the
+The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/musescore` (shallow, fetched by SHA). webmscore and the
 `patches/*.patch` queue are retired; the last executable pre-fork state is the local
 tag `pre-fork-baseline` (`f8e7d26`).

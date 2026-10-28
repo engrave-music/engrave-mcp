@@ -3,7 +3,7 @@
 Native C++ MCP host backed by a pinned, trimmed MuseScore engine. This is a
 separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 
-- The engine is the fork github.com/Locietta/MuseScore, consumed as the shallow submodule
+- The engine is the fork github.com/Locietta/engrave (renamed from Locietta/MuseScore on 2026-10-28), consumed as the shallow submodule
   `vendor/musescore` (ledger and rules in `docs/dev/fork.md`; never force-push fork branches,
   tag every pinned SHA). webmscore and `patches/` are retired.
   Native compilation is the target; do not introduce Node.js or WASM as runtime dependencies.
