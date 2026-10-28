@@ -1,5 +1,6 @@
 #include "worker_protocol.h"
 #include "atomic_file.h"
+#include "audio_output.h"
 #include "background_job.h"
 #include "engine_audio.h"
 #include <cstdint>
@@ -14,7 +15,6 @@ namespace {
 using Json = nlohmann::json;
 constexpr std::size_t request_limit = 64 * 1024;
 constexpr std::size_t snapshot_limit = 8 * 1024 * 1024;
-constexpr std::size_t output_limit = 256 * 1024 * 1024;
 constexpr std::size_t max_mix_tracks = 256;
 
 std::string string_field(const Json& json, const char* name) {
@@ -172,17 +172,6 @@ Json options_json(const ExportOptions& options, ExportFormat format) {
     }
     return result;
 }
-
-Json job_json(const ExportWorkerJob& job) {
-    Json result = {{"snapshot", path_utf8(job.snapshot_path)}, {"output", path_utf8(job.output_path)},
-                   {"result", path_utf8(job.result_path)}, {"format", format_name(job.format)},
-                   {"options", options_json(job.options, job.format)},
-                   {"mscoreVersion", job.versions.mscore_version},
-                   {"mscoreRevision", job.versions.mscore_revision},
-                   {"mscVersion", job.versions.msc_version}};
-    if (job.has_mix) result["mix"] = mix_json(job.mix);
-    return result;
-}
 }
 
 bool is_audio_format(ExportFormat format) noexcept {
@@ -279,13 +268,6 @@ Json worker_request_json(const ExportWorkerRequest& request) {
                    {"soundfont", request.runtime.soundfont},
                    {"fonts", request.runtime.font_paths}};
     if (!request.cache_directory.empty()) result["cacheDirectory"] = path_utf8(request.cache_directory);
-    if (!request.jobs.empty()) {
-        Json jobs = Json::array();
-        for (const auto& job : request.jobs) jobs.push_back(job_json(job));
-        result["jobs"] = std::move(jobs);
-        return result;
-    }
-
     result["snapshot"] = path_utf8(request.snapshot_path);
     result["output"] = path_utf8(request.output_path);
     result["result"] = path_utf8(request.result_path);
@@ -323,91 +305,79 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
             runtime.cache_directory = path_utf8(norm_cache);
         }
 
-        std::vector<ExportWorkerJob> jobs;
-        if (request.contains("jobs")) {
-            if (!request.at("jobs").is_array() || request.at("jobs").empty()
-                || request.at("jobs").size() > 32)
-                throw std::invalid_argument("jobs must be a non-empty array of at most 32 entries");
-            for (const auto& job : request.at("jobs"))
-                jobs.push_back(parse_job(job, request_parent));
-        } else {
-            jobs.push_back(parse_job(request, request_parent));
-        }
-        result_paths.reserve(jobs.size());
-        for (const auto& job : jobs) result_paths.push_back(job.result_path);
+        // Exactly one job per worker process. The audio engine inherits Muse
+        // Reverb state from a previous render, so a second audio render in the
+        // same process is not byte-identical to a fresh one.
+        const ExportWorkerJob job = parse_job(request, request_parent);
+        result_paths.push_back(job.result_path);
+        if (request.contains("jobs"))
+            throw std::invalid_argument("Worker requests carry exactly one job");
 
         MusicCore core(runtime);
-        bool engine_ready = false;
-        std::string engine_error;
-        bool all_ok = true;
-        for (const ExportWorkerJob& job : jobs) {
+        try {
+            const auto score = core.open(read_bounded_file(job.snapshot_path, snapshot_limit),
+                                         InputFormat::Mscz);
+            const auto close_score = [&core, &score]() {
+                try { core.close(score.id); } catch (...) {}
+            };
             try {
-                const auto score = core.open(read_bounded_file(job.snapshot_path, snapshot_limit),
-                                             InputFormat::Mscz);
-                const auto close_score = [&core, &score]() {
-                    try { core.close(score.id); } catch (...) {}
-                };
-                try {
-                    core.restore_versions(score.id, job.versions);
-                    ExportOptions effective = job.options;
-                    if (job.has_mix) effective.explicit_mix = job.mix;
+                core.restore_versions(score.id, job.versions);
+                ExportOptions effective = job.options;
+                if (job.has_mix) effective.explicit_mix = job.mix;
 
-                    std::uintmax_t bytes = 0;
-                    if (is_audio_format(job.format)) {
-                        if (!engine_ready) {
-                            if (!initialize_engine_audio(soundfont, &engine_error)) {
-                                throw std::runtime_error(engine_error.empty()
-                                                             ? "Audio engine initialisation failed"
-                                                             : engine_error);
-                            }
-                            engine_ready = true;
-                        }
-                        const auto rendered = core.export_audio(score.id, job.format,
-                                                                path_utf8(job.output_path), effective);
-                        if (!rendered.ok) {
-                            throw std::runtime_error(rendered.error.empty()
-                                                         ? "Audio export failed"
-                                                         : rendered.error);
-                        }
-                        bytes = rendered.bytes;
-                    } else {
-                        const auto data = core.export_bytes(score.id, job.format, effective);
-                        if (data.bytes.empty() || data.bytes.size() > output_limit)
-                            throw std::runtime_error("Worker export exceeds output size limit");
-                        write_atomic(job.output_path, data.bytes);
-                        bytes = data.bytes.size();
+                std::uintmax_t bytes = 0;
+                if (is_audio_format(job.format)) {
+                    std::string engine_error;
+                    if (!initialize_engine_audio(soundfont, &engine_error)) {
+                        throw std::runtime_error(engine_error.empty()
+                                                     ? "Audio engine initialisation failed"
+                                                     : engine_error);
                     }
-                    if (bytes == 0 || bytes > output_limit)
-                        throw std::runtime_error("Worker export is empty or exceeds output size limit");
-                    close_score();
-                    write_atomic(job.result_path,
-                                 Json{{"version", 1}, {"ok", true}, {"bytes", bytes}}.dump());
-                } catch (...) {
-                    close_score();
-                    throw;
+                    const auto rendered = core.export_audio(score.id, job.format,
+                                                            path_utf8(job.output_path), effective);
+                    if (!rendered.ok) {
+                        throw std::runtime_error(rendered.error.empty()
+                                                     ? "Audio export failed"
+                                                     : rendered.error);
+                    }
+                    bytes = rendered.bytes;
+                    if (bytes == 0 || bytes > kAudioOutputLimit)
+                        throw std::runtime_error("Worker audio export is empty or exceeds the 1 GiB limit");
+                } else {
+                    const auto data = core.export_bytes(score.id, job.format, effective);
+                    if (data.bytes.empty() || data.bytes.size() > kNonAudioOutputLimit)
+                        throw std::runtime_error("Worker export exceeds the 256 MiB limit");
+                    write_atomic(job.output_path, data.bytes);
+                    bytes = data.bytes.size();
                 }
-            } catch (const std::exception& error) {
-                all_ok = false;
-                std::cerr << "Export worker: " << error.what() << '\n';
-                try {
-                    write_atomic(job.result_path,
-                                 Json{{"version", 1}, {"ok", false},
-                                      {"error", std::string(error.what()).substr(0, 2048)}}.dump());
-                } catch (...) {}
+                close_score();
+                write_atomic(job.result_path,
+                             Json{{"version", 1}, {"ok", true}, {"bytes", bytes}}.dump());
             } catch (...) {
-                all_ok = false;
-                std::cerr << "Export worker: unknown failure\n";
-                try {
-                    write_atomic(job.result_path,
-                                 Json{{"version", 1}, {"ok", false}, {"error", "unknown failure"}}.dump());
-                } catch (...) {}
+                close_score();
+                throw;
             }
+        } catch (const std::exception& error) {
+            std::cerr << "Export worker: " << error.what() << '\n';
+            try {
+                write_atomic(job.result_path,
+                             Json{{"version", 1}, {"ok", false},
+                                  {"error", std::string(error.what()).substr(0, 2048)}}.dump());
+            } catch (...) {}
+            return 1;
+        } catch (...) {
+            std::cerr << "Export worker: unknown failure\n";
+            try {
+                write_atomic(job.result_path,
+                             Json{{"version", 1}, {"ok", false}, {"error", "unknown failure"}}.dump());
+            } catch (...) {}
+            return 1;
         }
-        return all_ok ? 0 : 1;
+        return 0;
     } catch (const std::exception& error) {
         std::cerr << "Export worker: " << error.what() << '\n';
         // A request-level failure before job validation cannot name a result
-        // file; a failure after validation reports every pending job.
+        // file; a failure after validation reports the pending job.
         for (const auto& result_path : result_paths) {
             try {
                 write_atomic(result_path,

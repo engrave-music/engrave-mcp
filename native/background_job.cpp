@@ -1,9 +1,11 @@
 #include "background_job.h"
 #include <array>
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cerrno>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <random>
 #include <stdexcept>
@@ -75,6 +77,34 @@ void spawn_check(int error, const char* message) {
     if (error) throw std::system_error(error, std::generic_category(), message);
 }
 #endif
+
+// Live worker children, used to interrupt a synchronous export at host
+// shutdown (the engine-owner thread is blocked waiting for the child).
+struct ActiveWorkers {
+    std::mutex mutex;
+    std::atomic<bool> shutdown{false};
+    std::uint64_t next_token = 1;
+    std::vector<std::pair<std::uint64_t, std::function<void()>>> callbacks;
+};
+
+ActiveWorkers& active_workers() {
+    static ActiveWorkers state;
+    return state;
+}
+
+std::uint64_t add_active_worker(std::function<void()> terminate) {
+    ActiveWorkers& state = active_workers();
+    std::lock_guard lock(state.mutex);
+    const std::uint64_t token = state.next_token++;
+    state.callbacks.emplace_back(token, std::move(terminate));
+    return token;
+}
+
+void remove_active_worker(std::uint64_t token) noexcept {
+    ActiveWorkers& state = active_workers();
+    std::lock_guard lock(state.mutex);
+    std::erase_if(state.callbacks, [token](const auto& entry) { return entry.first == token; });
+}
 }
 
 std::uint64_t current_process_id() noexcept {
@@ -126,6 +156,7 @@ struct WorkerProcess::Impl {
 #endif
     std::optional<int> exit_code;
     std::jthread log_reader;
+    std::uint64_t registry_token = 0;
 
     void start_log(const std::filesystem::path& path) {
         log_reader = std::jthread([this, path] {
@@ -227,8 +258,11 @@ struct WorkerProcess::Impl {
             throw;
         }
 #endif
+        registry_token = add_active_worker([this] { terminate(); });
     }
     ~Impl() noexcept {
+        remove_active_worker(registry_token);
+        registry_token = 0;
         terminate();
 #ifdef _WIN32
         if (process.value) WaitForSingleObject(process.value, INFINITE);
@@ -281,6 +315,22 @@ WorkerProcess::WorkerProcess(WorkerProcess&&) noexcept = default;
 WorkerProcess& WorkerProcess::operator=(WorkerProcess&&) noexcept = default;
 std::optional<int> WorkerProcess::poll() { return impl_ ? impl_->poll() : std::optional<int>{}; }
 void WorkerProcess::terminate() { if (impl_) impl_->terminate(); }
+
+void request_worker_shutdown() noexcept {
+    ActiveWorkers& state = active_workers();
+    std::lock_guard lock(state.mutex);
+    state.shutdown.store(true, std::memory_order_release);
+    // Callbacks only terminate the OS process; the owning threads observe the
+    // exit and report it as a cancelled export.
+    for (auto& entry : state.callbacks) {
+        try { entry.second(); } catch (...) {}
+    }
+}
+
+bool worker_shutdown_requested() noexcept {
+    return active_workers().shutdown.load(std::memory_order_acquire);
+}
+
 bool same_output_path(const std::filesystem::path& first, const std::filesystem::path& second) {
 #ifdef _WIN32
     const auto a = first.lexically_normal().wstring(), b = second.lexically_normal().wstring();

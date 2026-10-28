@@ -1,6 +1,7 @@
 #include "engine.h"
 #include "music_core.h"
 #include "atomic_file.h"
+#include "audio_output.h"
 #include "background_job.h"
 #include "mcp_transport.h"
 #include "worker_protocol.h"
@@ -367,10 +368,30 @@ Json composition_json(const Composition& composition) {
 // Sync audio exports still run in a child: the host process never initialises
 // the audio engine. This mirrors the background-job capture and publication,
 // but waits for the worker before returning the tool result.
+//
+// The parent's deadline is the real limit. engine_audio's 10-minute promise
+// timeout cannot interrupt a render: the writer runs synchronously inside the
+// pump and only checks that timeout between render calls. Budget 60 s of
+// startup plus twice the projected audio length, capped at one hour.
+constexpr double kAudioExportStartupSecs = 60.0;
+constexpr double kAudioExportDeadlineCapSecs = 60.0 * 60.0;
+
+double audio_export_deadline_secs(double duration_secs) {
+    return std::min(kAudioExportDeadlineCapSecs,
+                    kAudioExportStartupSecs + 2.0 * std::max(0.0, duration_secs));
+}
+
 Json export_audio_via_worker(MusicCore& core, DocumentId id, ExportFormat format,
                              const std::filesystem::path& destination,
                              const ExportOptions& options) {
     const auto snapshot = core.snapshot(id);
+    const double duration_secs = core.audio_export_duration(id, options.midi_expand_repeats);
+    const auto codec = audio_output_codec(format);
+    if (codec && projected_audio_bytes(*codec, duration_secs) > kAudioOutputLimit) {
+        throw std::runtime_error("Projected " + std::string(format_name(format))
+                                 + " export of " + std::to_string(static_cast<int>(duration_secs / 60.0))
+                                 + " min exceeds the 1 GiB audio output limit (~50 min of Float32 WAV)");
+    }
     const auto directory = create_private_directory(
         std::filesystem::absolute(std::filesystem::temp_directory_path()));
     const auto staging_directory = create_private_directory(destination.parent_path());
@@ -406,8 +427,23 @@ Json export_audio_via_worker(MusicCore& core, DocumentId id, ExportFormat format
 
     WorkerProcess process(current_executable_path(), directory / "request.json",
                           directory / "worker.log");
+    const double budget_secs = audio_export_deadline_secs(duration_secs);
+    const auto deadline = std::chrono::steady_clock::now()
+                          + std::chrono::milliseconds(static_cast<std::int64_t>(budget_secs * 1000.0));
     std::optional<int> status;
-    while (!(status = process.poll())) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    while (!(status = process.poll())) {
+        if (worker_shutdown_requested()) {
+            process.terminate();
+            throw std::runtime_error("Audio export cancelled: the host is shutting down");
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            process.terminate();
+            throw std::runtime_error("Audio export worker exceeded its "
+                                     + std::to_string(static_cast<int>(budget_secs))
+                                     + " s deadline and was terminated");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
 
     const auto worker_result = Json::parse(read_bounded_file(directory / "result.json", 64 * 1024));
     if (*status != 0 || !worker_result.value("ok", false))
@@ -415,7 +451,7 @@ Json export_audio_via_worker(MusicCore& core, DocumentId id, ExportFormat format
 
     const auto staged = staging_directory / "output";
     const auto bytes = std::filesystem::file_size(staged);
-    if (!bytes || bytes > 256 * 1024 * 1024
+    if (!bytes || bytes > kAudioOutputLimit
         || bytes != worker_result.at("bytes").get<std::uintmax_t>()) {
         throw std::runtime_error("Worker output size does not match result");
     }

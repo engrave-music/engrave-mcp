@@ -19,6 +19,22 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE_ENV = ROOT / ".pixi/envs/native"
 SOUNDFONT = ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
+AUDIO_THIRDPARTY = ROOT / "vendor/musescore/src/framework/audio/thirdparty"
+# License texts of the codecs and synthesizer bundled into the binary. Paths are
+# relative to AUDIO_THIRDPARTY and are copied with a thirdparty-<name>- prefix so
+# same-named COPYING files cannot overwrite each other.
+THIRDPARTY_LICENSES = (
+    ("fdk-aac", "fdk-aac-2.0.3/NOTICE"),
+    ("flac", "flac-1.4.3/COPYING.FDL"),
+    ("flac", "flac-1.4.3/COPYING.GPL"),
+    ("flac", "flac-1.4.3/COPYING.LGPL"),
+    ("flac", "flac-1.4.3/COPYING.Xiph"),
+    ("fluidsynth", "fluidsynth-2.3.3/LICENSE"),
+    ("lame", "COPYING"),
+    ("lame", "LICENSE"),
+    ("opus", "opus-1.5.2/COPYING"),
+    ("opusenc", "libopusenc-0.2.1/COPYING"),
+)
 
 HOST_RUNTIME = (
     re.compile(r"^(?:libc|libm|libmvec|libpthread|libdl|librt|libresolv|libutil|libanl|libBrokenLocale|libthread_db|libc_malloc_debug)\.so(?:\.|$)"),
@@ -253,6 +269,12 @@ def main():
     licenses = sorted(source for source in upstream.glob("LICENSE*") if source.is_file())
     if not licenses:
         raise RuntimeError(f"No upstream LICENSE file found under {upstream}")
+    thirdparty_licenses = []
+    for name, relative in THIRDPARTY_LICENSES:
+        source = AUDIO_THIRDPARTY / name / relative
+        if not source.is_file():
+            raise RuntimeError(f"Missing bundled license text: {source}")
+        thirdparty_licenses.append((source, f"thirdparty-{name}-{source.name}"))
     conda_meta = NATIVE_ENV / "conda-meta"
     if not conda_meta.is_dir():
         raise RuntimeError(f"Missing active native environment metadata: {conda_meta}")
@@ -297,6 +319,8 @@ def main():
     license_directory.mkdir()
     for source in licenses:
         copy_checked(source, license_directory / source.name)
+    for source, name in thirdparty_licenses:
+        copy_checked(source, license_directory / name)
     for source in provenance:
         copy_checked(source, license_directory / source.name)
 

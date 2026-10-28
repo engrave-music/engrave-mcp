@@ -6,7 +6,11 @@ Executes Qt-free upstream test suites:
   - mpe_tests: tests MPE single-note and multi-note articulation events and patterns.
 
 Parses GoogleTest console output, summarizes pass/fail statistics, and exits
-with non-zero if any test suite fails.
+with non-zero if any test suite fails. The pinned inventory is asserted exactly
+(87 engraving playback tests in 4 suites, 11 MPE tests in 2 suites); zero tests,
+a changed count, an unexpected skip or a disabled test also fail the lane. With
+an explicit ``--filter`` the subset size is unknown but zero tests, skips and
+disabled tests still fail.
 """
 from __future__ import annotations
 
@@ -20,6 +24,19 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Exact upstream test inventory built against the pinned fork. The runner fails
+# if a suite silently loses tests (e.g. a file stops compiling into the target)
+# or gains a skip/disable, so the numbers in docs/dev/validation.md cannot drift
+# from what is executed. Update this table together with the pinned engine.
+EXPECTED_SUITES = {
+    "engraving_playback_tests": {"total": 87, "test_suites": 4},
+    "mpe_tests": {"total": 11, "test_suites": 2},
+}
+# Tests that may legitimately be skipped/disabled without failing the lane. The
+# pinned engine currently has none; list a test name here only with a reason.
+ALLOWED_SKIPS: set[str] = set()
+ALLOWED_DISABLED = 0
 
 
 def default_bin_dir() -> Path:
@@ -71,8 +88,10 @@ def parse_gtest_output(text: str) -> dict:
         "total": 0,
         "passed": 0,
         "failed": 0,
+        "skipped": 0,
         "disabled": 0,
         "failed_tests": [],
+        "skipped_tests": [],
         "suites": 0,
     }
 
@@ -98,12 +117,58 @@ def parse_gtest_output(text: str) -> dict:
         if name not in stats["failed_tests"]:
             stats["failed_tests"].append(name)
 
+    # Matches: [  SKIPPED ] X tests, listed below:
+    m_skip = re.search(r"\[\s*SKIPPED\s*\]\s+(\d+)\s+tests?, listed below:", text)
+    if m_skip:
+        stats["skipped"] = int(m_skip.group(1))
+
+    # Matches individual skip lines: [  SKIPPED ] Suite.Test
+    for m in re.finditer(r"\[\s*SKIPPED\s*\]\s+([A-Za-z0-9_]+\.[A-Za-z0-9_]+)", text):
+        name = m.group(1)
+        if name not in stats["skipped_tests"]:
+            stats["skipped_tests"].append(name)
+
     # Matches disabled tests note if present
     m_dis = re.search(r"YOU HAVE\s+(\d+)\s+DISABLED TESTS?", text)
     if m_dis:
         stats["disabled"] = int(m_dis.group(1))
 
     return stats
+
+
+def check_expected_counts(suite_name: str, stats: dict, filtered: bool) -> list[str]:
+    """Return human-readable violations of the pinned test inventory."""
+    problems: list[str] = []
+    expected = EXPECTED_SUITES.get(suite_name)
+    total = stats.get("total", 0)
+
+    if total <= 0:
+        problems.append(f"{suite_name}: ran 0 tests")
+    if stats.get("failed", 0):
+        problems.append(f"{suite_name}: {stats['failed']} failed test(s)")
+    unexpected_skips = sorted(set(stats.get("skipped_tests", [])) - ALLOWED_SKIPS)
+    if unexpected_skips:
+        problems.append(f"{suite_name}: unexpected skipped tests {unexpected_skips}")
+    if stats.get("disabled", 0) > ALLOWED_DISABLED:
+        problems.append(f"{suite_name}: {stats['disabled']} disabled test(s)")
+
+    if expected and not filtered:
+        if total != expected["total"]:
+            problems.append(
+                f"{suite_name}: ran {total} tests, expected exactly {expected['total']}")
+        if stats.get("suites", 0) != expected["test_suites"]:
+            problems.append(
+                f"{suite_name}: ran {stats.get('suites', 0)} test suites, "
+                f"expected exactly {expected['test_suites']}")
+        if stats.get("passed", 0) != expected["total"]:
+            problems.append(
+                f"{suite_name}: passed {stats.get('passed', 0)} tests, "
+                f"expected {expected['total']}")
+        if stats.get("skipped", 0):
+            problems.append(
+                f"{suite_name}: {stats['skipped']} skipped test(s); "
+                "the pinned inventory expects none")
+    return problems
 
 
 def run_suite(
@@ -162,13 +227,16 @@ def run_suite(
         (output_dir / f"{suite_name}.stdout.log").write_text(stdout, encoding="utf-8")
         (output_dir / f"{suite_name}.stderr.log").write_text(stderr, encoding="utf-8")
 
-    status = "passed" if rc == 0 and stats.get("failed", 0) == 0 else "failed"
+    problems = check_expected_counts(suite_name, stats, filtered=bool(gtest_filter))
+    status = "passed" if rc == 0 and not problems else "failed"
 
     if verbose or status == "failed":
         if stdout:
             print(stdout)
         if stderr:
             print(stderr, file=sys.stderr)
+        for problem in problems:
+            print(f"  count check: {problem}", file=sys.stderr)
 
     return {
         "name": suite_name,
@@ -177,6 +245,8 @@ def run_suite(
         "returncode": rc,
         "elapsed_seconds": round(elapsed, 2),
         "stats": stats,
+        "expected": EXPECTED_SUITES.get(suite_name),
+        "count_problems": problems,
     }
 
 
@@ -280,7 +350,9 @@ def main():
         if st == "passed":
             passed = stats.get("passed", 0)
             total = stats.get("total", passed)
-            print(f"  -> PASSED: {passed}/{total} tests in {sec}s")
+            expected = res.get("expected")
+            suffix = f" (exact inventory {expected['total']})" if expected else ""
+            print(f"  -> PASSED: {passed}/{total} tests in {sec}s{suffix}")
         elif st == "missing_binary":
             print(f"  -> MISSING: {res['error']}")
             all_passed = False
@@ -290,6 +362,8 @@ def main():
             print(f"  -> FAILED: exit code {res['returncode']}, {failed} failed (out of {total}) in {sec}s")
             for fn in stats.get("failed_tests", []):
                 print(f"       * {fn}")
+            for problem in res.get("count_problems", []):
+                print(f"       ! {problem}")
             all_passed = False
 
     print("=" * 70)

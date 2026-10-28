@@ -7,8 +7,9 @@
 #include <nlohmann/json.hpp>
 
 namespace music {
-// One export job inside a worker request. A worker process may run several
-// jobs sequentially with the one audio engine it initialises.
+// One export job inside a worker request. A worker process runs exactly one
+// job: the audio engine keeps Muse Reverb state between renders, so a second
+// audio export in the same process would not match a fresh render.
 struct ExportWorkerJob {
     std::filesystem::path snapshot_path;
     std::filesystem::path output_path;
@@ -23,7 +24,6 @@ struct ExportWorkerJob {
 };
 
 struct ExportWorkerRequest {
-    // Single-job form (the fields below are serialized at the top level).
     std::filesystem::path snapshot_path;
     std::filesystem::path output_path;
     std::filesystem::path result_path;
@@ -34,10 +34,6 @@ struct ExportWorkerRequest {
     std::filesystem::path cache_directory;
     AudioMix mix;
     bool has_mix = false;
-    // Multi-job form. When non-empty, these jobs share runtime, cache_directory
-    // and the one engine; snapshot_path/output_path/result_path etc. above are
-    // ignored by the serializer.
-    std::vector<ExportWorkerJob> jobs;
 };
 bool is_audio_format(ExportFormat format) noexcept;
 std::string path_utf8(const std::filesystem::path& path);

@@ -4,6 +4,7 @@
 // lifetime/threading contract and for the upstream call sequence.
 
 #include "engine_audio.h"
+#include "audio_output.h"
 
 #include <algorithm>
 #include <chrono>
@@ -70,7 +71,11 @@ constexpr const char* kChordsTrackNamePrefix = "Chords.";
 // Capturing midi::IMidiOutPort. FluidSynth sends every event it handles (after
 // the staff -> channel remap), which is the event stream later golden tests
 // compare. A global hook keeps the sink reusable by the probe and by tests.
+// s_rendered_frames is the number of output frames already encoded: the writer
+// calls rpcChannel()->process() after each chunk, so this is the start of the
+// chunk currently being rendered.
 EngineAudioMidiEventHook s_midi_event_hook;
+std::uint64_t s_rendered_frames = 0;
 
 class CapturingMidiOutPort final : public midi::IMidiOutPort
 {
@@ -89,7 +94,7 @@ public:
     Ret sendEvent(const midi::Event& event) override
     {
         if (s_midi_event_hook) {
-            s_midi_event_hook(event);
+            s_midi_event_hook(event, s_rendered_frames);
         }
 
         return make_ok();
@@ -187,6 +192,30 @@ SoundTrackFormat make_soundtrack_format(EngineAudioFormat format)
     }
 
     return result;
+}
+
+const char* audio_format_name(EngineAudioFormat format)
+{
+    switch (format) {
+    case EngineAudioFormat::Wav: return "WAV";
+    case EngineAudioFormat::Flac: return "FLAC";
+    case EngineAudioFormat::Ogg: return "Ogg";
+    case EngineAudioFormat::Mp3: return "MP3";
+    case EngineAudioFormat::Aac: return "AAC";
+    }
+    return "audio";
+}
+
+AudioOutputCodec audio_output_codec_of(EngineAudioFormat format)
+{
+    switch (format) {
+    case EngineAudioFormat::Wav: return AudioOutputCodec::Wav;
+    case EngineAudioFormat::Flac: return AudioOutputCodec::Flac;
+    case EngineAudioFormat::Ogg: return AudioOutputCodec::Ogg;
+    case EngineAudioFormat::Mp3: return AudioOutputCodec::Mp3;
+    case EngineAudioFormat::Aac: return AudioOutputCodec::Aac;
+    }
+    return AudioOutputCodec::Wav;
 }
 
 // Mirrors the desktop mixer title rules in playbackcontroller.cpp:1072-1103
@@ -319,6 +348,7 @@ bool initialize_engine_audio(const std::string& soundfont_path, std::string* err
     // 2. Null rpc channel + capturing MIDI out. Replace pre-registered stubs
     // (e.g. a MIDI module) so the engine and FluidSynth resolve our exports.
     state.rpcChannel = std::make_shared<NullRpcChannel>();
+    state.rpcChannel->onProcess = [] { s_rendered_frames += kSamplesPerChannel; };
     globalIoc()->unregister<rpc::IRpcChannel>("engine_audio");
     globalIoc()->registerExport<rpc::IRpcChannel>("engine_audio", state.rpcChannel);
 
@@ -482,6 +512,18 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
     const std::uint64_t totalFrames = static_cast<std::uint64_t>(totalDurationMs) * 1000ULL
                                       * kSampleRate / 1000000ULL;
 
+    // Refuse an oversized render before the encoder creates the file. The
+    // parent applies the same projection before spawning a worker; this guard
+    // also covers direct callers (engine_audio_probe, tests).
+    const double durationSecs = static_cast<double>(totalDurationMs) / 1000.0;
+    const std::uint64_t projectedBytes = projected_audio_bytes(audio_output_codec_of(request.format), durationSecs);
+    if (projectedBytes > kAudioOutputLimit) {
+        return fail(std::string("projected ") + audio_format_name(request.format) + " output of "
+                    + std::to_string(static_cast<int>(durationSecs / 60.0)) + " min (~"
+                    + std::to_string(projectedBytes / (1024 * 1024))
+                    + " MiB) exceeds the 1 GiB audio export limit");
+    }
+
     std::string error;
     audio::engine::IEnginePlayback* enginePlayback = ensure_playback(error);
     if (!enginePlayback) {
@@ -587,10 +629,14 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
     enginePlayback->setDuration(sequenceId, totalDurationMs);
 
     // libopusenc picks the Ogg stream serial and the Opus encoder dithers with
-    // rand(). Seed after all engine setup (synth/sequence creation) and before
-    // the writer starts, so repeated exports in one worker process - and the
-    // same request in sync and async workers - are byte-identical.
+    // rand(). Seed here, after all engine setup (synth/sequence creation), so a
+    // given request renders identically across processes. Repeated renders in
+    // one process are not supported: Muse Reverb keeps state across exports.
     std::srand(0);
+
+    // The writer increments this once per encoded chunk (NullRpcChannel
+    // onProcess), giving captured MIDI events their render-frame offset.
+    s_rendered_frames = 0;
 
     ExportWaiter waiter;
     enginePlayback->saveSoundTrack(sequenceId, io::path_t(request.output_path), make_soundtrack_format(request.format))
@@ -622,7 +668,16 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
         return fail("timed out waiting for the audio export");
     }
     if (!waiter.ok) {
-        return fail(waiter.message.empty() ? "audio export failed" : waiter.message);
+        // SoundTrackWriter::write() returns a bare false when its encoder could
+        // not be created, e.g. the destination is not writable, without an
+        // error text. Name the format and path instead of reporting "false".
+        std::string detail = waiter.message;
+        if (detail.empty()) {
+            detail = std::string(audio_format_name(request.format))
+                     + " encoder initialisation failed or the output file is not writable: '"
+                     + request.output_path + "'";
+        }
+        return fail(detail);
     }
 
     result.ok = true;

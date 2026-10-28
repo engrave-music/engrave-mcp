@@ -9,9 +9,10 @@
 // the target audio file. --mute-part N mutes every track of the zero-based
 // part index N (repeatable; mix check); --excerpt N selects the zero-based
 // excerpt to render (one excerpt per visible part is generated first when the
-// score has none). --midi-events records the events FluidSynth handles (first
-// 500 are printed). The probe prints one JSON object on stdout; engine and
-// engraving logs go to stderr.
+// score has none). --midi-events records the events FluidSynth handles together
+// with their render-frame (sample) offset; at most the first 1,000,000 are
+// printed and midiEventsTruncated marks a longer stream. The probe prints one
+// JSON object on stdout; engine and engraving logs go to stderr.
 
 #include "engine_audio.h"
 
@@ -19,6 +20,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -161,6 +163,14 @@ std::uint64_t peak_working_set_bytes()
     }
     return static_cast<std::uint64_t>(counters.PeakWorkingSetSize);
 #else
+    // VmHWM is the peak resident set size in KiB on Linux.
+    std::ifstream status("/proc/self/status");
+    std::string line;
+    while (std::getline(status, line)) {
+        if (line.rfind("VmHWM:", 0) == 0) {
+            return std::strtoull(line.c_str() + 6, nullptr, 10) * 1024ULL;
+        }
+    }
     return 0;
 #endif
 }
@@ -330,12 +340,17 @@ int main(int argc, char** argv)
         std::size_t midiEventCount = 0;
         std::vector<Json> midiEvents;
         if (captureMidi) {
-            music::set_engine_audio_midi_event_hook([&midiEventCount, &midiEvents](const muse::midi::Event& event) {
-                ++midiEventCount;
-                if (midiEvents.size() < 500) {
-                    midiEvents.push_back(midi_event_json(event));
-                }
-            });
+            constexpr std::size_t kMaxMidiEvents = 1000000;
+            midiEvents.reserve(4096);
+            music::set_engine_audio_midi_event_hook(
+                [&midiEventCount, &midiEvents](const muse::midi::Event& event, std::uint64_t frame) {
+                    ++midiEventCount;
+                    if (midiEvents.size() < kMaxMidiEvents) {
+                        Json json = midi_event_json(event);
+                        json["frame"] = frame;
+                        midiEvents.push_back(std::move(json));
+                    }
+                });
         }
         const music::AudioRenderResult result = music::export_score_audio(master, request);
         if (captureMidi) {
@@ -353,9 +368,10 @@ int main(int argc, char** argv)
         for (const music::EngineAudioTrackInfo& track : tracks) {
             out["tracks"].push_back(track_json(track));
         }
+        out["midiEventTotal"] = midiEventCount;
+        out["midiEventsTruncated"] = midiEventCount > midiEvents.size();
         if (captureMidi) {
-            out["midiEventTotal"] = midiEventCount;
-            out["midiEvents"] = midiEvents;
+            out["midiEvents"] = std::move(midiEvents);
         }
         out["peakWorkingSetBytes"] = peak_working_set_bytes();
         out["peakWorkingSetMiB"] = peak_working_set_bytes() / (1024.0 * 1024.0);

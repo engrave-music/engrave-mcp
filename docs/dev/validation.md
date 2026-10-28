@@ -494,30 +494,66 @@ message pump around saveSoundTrack, explicit Fluid resource for the SoundFont, P
 the master score (repeats as requested, chord symbols and metronome off), one track per
 InstrumentTrackId with 0.30 sends to a Muse Reverb aux, solo folded into muted as desktop does,
 duration = repeat-expanded play time + 3 s, mixer single-threaded (MUSE_THREADS_SUPPORT stays
-undefined). Excerpts render the master with absent/invisible parts muted. The FluidSynth MIDI
-renderer, stems, libsndfile and the old codecs are removed; `.mid` export is unchanged
-(all midi.json goldens identical). Tracks are InstrumentTrackIds: multi-instrument parts and
-instrument changes get their own tracks, the chord-symbol track is listed and muted; the old
-15-part and multi-instrument restrictions are gone. One audio job per worker process: a second
-render in the same process inherits Muse Reverb state.
+undefined). One audio job runs per worker process, because Muse Reverb keeps state that would
+make a second render differ. Audio output is capped at 1 GiB with a projected-size pre-check and
+a final-size check; a synchronous audio export is terminated after
+`min(1 h, 60 s + 2 x projected duration)` and holds its destination reservation for the render.
+The FluidSynth MIDI renderer, stems, libsndfile and the old codecs are removed; `.mid` export is
+unchanged (all midi.json goldens identical). Tracks are InstrumentTrackIds: multi-instrument
+parts and instrument changes get their own tracks; the chord-symbol track is listed and always
+muted; the old 15-part and multi-instrument restrictions are gone.
 
 Executed on Windows and Linux (lane engine_audio and the full suite, 25/25 lanes each):
-- 98 upstream gtests (engraving playback 87, mpe 11) built against the fork with a project-owned
-  Qt-free gtest main.
-- Sine SoundFont (tests/engine_audio/sine.sf2): onsets within 1.95 ms, pitch within 0.80 cent.
+- 98 upstream gtests (engraving playback 87 in 4 suites, mpe 11 in 2 suites) built against the
+  fork with a project-owned Qt-free gtest main. `scripts/test_upstream_gtest.py` asserts these
+  exact counts and fails on zero tests, an unexpected skip or any disabled test (the pinned
+  inventory has none).
+- Sine SoundFont (tests/engine_audio/sine.sf2): onsets within 1.95 ms, pitch within 0.80 cent,
+  and an explicit mf note (velocity 80) at RMS 0.17514 on both hosts, checked within 2%.
 - MIDI events handled by FluidSynth (NoteOn/Off, CC, pitch bend) match goldens exactly for
-  evening, hairpins_and_repeats, pedal, bend.gp, repeat70.
+  evening (313 events), hairpins_and_repeats (35), pedal (55), bend.gp (373) and repeat70 (15),
+  including each event's render-frame offset and the exact total; `midiEventsTruncated` must be
+  false. The offset is the start of the 4096-frame render chunk in which FluidSynth handled the
+  event (not the exact sample within the chunk). The Linux probe reproduced the same events and
+  offsets, so one shared golden per fixture is stored under `tests/engine_audio/midi/` and the
+  same files are checked on both hosts.
 - Mix: solo/mute silence about -215 dB, -6 dB track gain measured -6.00 dB, balance by L/R
-  energy, master volume; excerpt export identical (max difference 0.0) to the master render with
-  the other parts muted; sync and async exports byte-identical for all five formats.
-- Determinism: repeated exports byte-identical per format (after the two Ogg fork fixes; before
-  them Linux Ogg differed in the stream serial and an uninitialized OpusTags vendor string).
-  Duration = play time + 3 s for every golden fixture.
-- Performance: 25-instrument orchestral template, about 1.0 s per audio minute, 240 MiB peak
-  working set (budget 4 s/min, 1 GiB).
+  energy, master volume. Track hard-pan leakage through the Muse Reverb return measured 0.213
+  (hard left) and 0.272 (hard right) on both hosts with three identical runs per side; the test
+  limit is 0.30 (~10% headroom), replacing the unexplained 0.35. Sync and async exports are
+  byte-identical for all five formats.
+- Excerpt export is sample-identical (max difference 0.0) to the master render with the other
+  parts muted. This is identity by construction: the host renders excerpts by forcing the
+  non-excerpt parts' mute state (desktop only seeds it), so the check proves that forced-muting
+  path and not an independent excerpt renderer.
+- Determinism: repeated exports are byte-identical per format and per host (after the two Ogg
+  fork fixes; before them Linux Ogg differed in the stream serial and an uninitialized OpusTags
+  vendor string). Windows and Linux are not compared byte-for-byte; their golden audio features
+  are compared with explicit tolerances: frames/sampleRate/channels exact, peak <= 0.025,
+  rms <= 0.002, spectral centroid <= 50 Hz, rms envelope <= 0.03, centroid envelope <= 1100 Hz
+  (measured maxima across 21 fixtures: 0.019408, 0.001524, 44.5 Hz, 0.02438, 982.5 Hz).
+- Duration is asserted on the decoded file, not on the probe's own `duration` field: WAV/FLAC
+  match play time + 3 s exactly, Ogg within 0.05 s, MP3/AAC within 0.15 s (codec delay/padding).
+- Non-ASCII paths: all five formats export to `输出 音频.<ext>` under a non-ASCII directory,
+  and a non-ASCII SoundFont copy (`正弦 音色.sf2`) reports `uriRoundTrip: true` in the probe.
+- Performance: `scripts/make_dense_score.py` generates a deterministic 24-part score, 150 4/4
+  measures at 120 BPM (300 s) and 33,600 notes with eighth-note chords on the strong beats and
+  dynamics every 32 measures. Measured 2026-10-28: Windows WAV 7.6-7.8 s/audio-min, Ogg
+  8.7-8.9 s/audio-min, 462 MiB peak working set; Linux WAV 2.1-2.2, Ogg 2.5-2.6 s/audio-min,
+  468 MiB peak VmHWM. Budgets are 12 s/audio-min (about 35% headroom over the slowest Windows
+  measurement) and 1 GiB (about 2.2x the measured peak). The earlier "about 1.0 s per audio
+  minute, 240 MiB" numbers measured the 28 s `02-Symphony_Orchestra.mscx` template, which
+  contains no chords and therefore rendered near-silence; they are not a throughput result.
 - Goldens: every audio.json changed (new renderer) and metadata.json changed only inside `tracks`
   (new fields, InstrumentTrackId names), checked by script; rebaselined on both platforms.
+- Packaging: Windows 139 files / 61 MB and Linux 172 files / 103 MB standalone packages pass
+  `mcp_smoke` in isolated environments (clean `PATH` / `env -i`), executed.
+
 Not done (roadmap optional, needs user approval): desktop 4.7.6 + MS Basic reference renders.
-Known deviations from desktop: listed in notes/claude-workers/engine-driver-dsh.md and summarized
-in concurrency.md (single-threaded in-process engine, one SoundFont, no per-preset sounds or
-MuseSampler/VST, no FX chains beyond the reverb aux, English track labels, no progress events).
+
+Known deviations from desktop, beyond the concurrency.md summary: chord symbols are always muted
+(desktop plays them by default; this is a roadmap choice); saved desktop aux sends, reverb
+parameters and input resources are ignored; excerpt muting is forced (desktop only seeds it);
+the engine is single-threaded with one SoundFont and has no per-preset sounds,
+MuseSampler/VST instruments or FX chains beyond the Muse Reverb aux; track labels are English and
+no progress events are emitted; one audio job per worker.

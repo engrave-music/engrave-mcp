@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio_mix.h"
+#include "audio_output.h"
 #include "export_options.h"
 #include "score_edit.h"
 #include "score_query.h"
@@ -83,6 +84,19 @@ enum class ExportFormat {
     Mp3,
     Aac,
 };
+
+// Encoder family of an audio export format; nullopt for non-audio formats.
+inline std::optional<AudioOutputCodec> audio_output_codec(ExportFormat format) noexcept
+{
+    switch (format) {
+    case ExportFormat::Wav: return AudioOutputCodec::Wav;
+    case ExportFormat::Flac: return AudioOutputCodec::Flac;
+    case ExportFormat::Ogg: return AudioOutputCodec::Ogg;
+    case ExportFormat::Mp3: return AudioOutputCodec::Mp3;
+    case ExportFormat::Aac: return AudioOutputCodec::Aac;
+    default: return std::nullopt;
+    }
+}
 
 struct RuntimeOptions {
     // Mandatory root containing the trimmed native runtime resources.
@@ -272,6 +286,11 @@ public:
     // to hand an effective mix to a background worker. Read-only: exports and
     // mix resolution never change document state or revision.
     AudioMix audio_export_mix(DocumentId id, const ExportOptions& options = {});
+    // Repeat-expanded play time plus the 3 s playback tail, in seconds: the
+    // span export_audio() renders. Uses only the score's tempo map, so the host
+    // can size a worker deadline and reject an oversized render before starting
+    // the audio engine or a worker process.
+    double audio_export_duration(DocumentId id, bool use_repeats = true);
     RegionData query_region(DocumentId id, const ScoreRegion& region);
     ScoreInfo replace_measures(DocumentId id, std::size_t part_index, std::size_t start_measure,
                                const std::vector<Measure>& measures);

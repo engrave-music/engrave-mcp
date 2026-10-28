@@ -22,9 +22,11 @@
 //   - every engine call (bootstrap, export, track listing) must happen on the
 //     same OS thread. It is not safe to export from two threads or to run two
 //     exports at the same time;
-//   - the host process never initialises the engine: audio exports run in a
-//     --worker child (worker_protocol.cpp), which may export several jobs
-//     sequentially with the one engine it initialises.
+//   - a process may render at most one audio job. Muse Reverb keeps state
+//     between renders, so a second export in the same process would not be
+//     byte-identical to a fresh one. The host never initialises the engine:
+//     each audio export runs in its own --worker child (worker_protocol.cpp),
+//     which handles exactly one job and then exits.
 //
 // initialize_engine_audio() needs the native runtime already set up
 // (music::initialize_native_runtime): Uri::fromLocalFile resolves through
@@ -52,14 +54,20 @@ namespace music {
 
 // No-op rpc::IRpcChannel for the in-process engine. The engine itself only
 // sends notifications and queue-rendering calls SoundTrackWriter::rpcChannel()
-// -> process() (soundtrackwriter.cpp:178,196,213); both are no-ops here.
+// -> process() (soundtrackwriter.cpp:178,196,213); sending stays a no-op and
+// process() only drives the render-frame counter below.
 class NullRpcChannel final : public muse::audio::rpc::IRpcChannel
 {
 public:
+    // SoundTrackWriter calls process() once after every rendered chunk
+    // (soundtrackwriter.cpp:178,196,213). The export driver uses that to count
+    // rendered output frames for the MIDI event hook.
+    std::function<void()> onProcess;
+
     void setupOnMain() override {}
     void setupOnEngine() override {}
 
-    void process() override {}
+    void process() override { if (onProcess) onProcess(); }
 
     void send(const muse::audio::rpc::Msg&, const muse::audio::rpc::Handler& = nullptr) override {}
     void onMethod(muse::audio::rpc::Method, muse::audio::rpc::Handler) override {}
@@ -74,12 +82,31 @@ public:
 // Hook for MIDI event goldens. The engine registers a capturing IMidiOutPort;
 // every event FluidSynth actually handles (after the staff % 16 channel remap,
 // fluidsynth.cpp:251-262) is forwarded to the hook synchronously from the
-// render call. Events applied by FluidSynth outside handleEvent are not
-// captured: setup-time program/bank/CC7/CC11 from setupSound(), and the
-// expression/pitch-bend changes from flushSound()/setPlaybackPosition()
-// (fluidsynth.cpp:328-347,483-516). An empty function disables capture. Events
-// are sent on the engine thread; the hook must not re-enter the engine.
-using EngineAudioMidiEventHook = std::function<void(const muse::midi::Event&)>;
+// render call, together with `frame`: the 44100 Hz output-frame offset of the
+// render chunk in which the event was handled.
+//
+// The engine does not expose an event's offset inside a chunk to an
+// IMidiOutPort, so frame is the start of the 4096-frame render chunk
+// (SoundTrackWriter's render step), not the exact sample. Consecutive events
+// handled in one chunk therefore share a frame value.
+//
+// The engine_audio_probe --midi-events JSON schema per event is
+//   { "frame": <uint64>,
+//     "opcode": <string>,
+//     "channel": <0..15>,                 // channel-voice events only
+//     "note": <0..127>, "velocity": <0..127>,   // NoteOn/NoteOff
+//     "index": <0..127>, "data": <0..127>,      // ControlChange
+//     "pitchBend": <int>,                       // PitchBend
+//     "program": <0..127> }                     // ProgramChange
+// and the probe additionally reports midiEventTotal (all captured events),
+// midiEventsTruncated and at most the first 1,000,000 entries in midiEvents.
+//
+// Events applied by FluidSynth outside handleEvent are not captured: setup-time
+// program/bank/CC7/CC11 from setupSound(), and the expression/pitch-bend
+// changes from flushSound()/setPlaybackPosition() (fluidsynth.cpp:328-347,
+// 483-516). An empty function disables capture. Events are sent on the engine
+// thread; the hook must not re-enter the engine.
+using EngineAudioMidiEventHook = std::function<void(const muse::midi::Event&, std::uint64_t frame)>;
 void set_engine_audio_midi_event_hook(EngineAudioMidiEventHook hook);
 
 // Initialises the process-wide engine and loads one SoundFont:
@@ -141,9 +168,12 @@ struct AudioRenderRequest {
     // Indexed by engine_audio_tracks(master, excerpt_id) order.
     std::vector<EngineAudioTrackParams> tracks;
     // Wait budget for the saveSoundTrack promise, in milliseconds; <= 0 uses
-    // 10 minutes. The writer itself renders synchronously while the promise
-    // body is pumped, so the timeout only catches a promise that never runs;
-    // on expiry the export is aborted at the next pump boundary.
+    // 10 minutes. The writer renders synchronously while the promise body is
+    // pumped, so this timeout cannot interrupt a render: it only catches a
+    // promise that never runs, and is checked between pumps. A caller waiting
+    // on this render (the host's worker child) must enforce its own deadline;
+    // for the synchronous export the parent's duration-derived deadline is the
+    // real limit (noqt_engine.cpp).
     std::int64_t timeout_ms = 0;
 };
 

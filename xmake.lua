@@ -584,7 +584,6 @@ target("opus")
         add_defines("USE_ALLOCA")
     else
         add_defines("VAR_ARRAYS", "CPU_INFO_BY_ASM", "HAVE_LRINT", "HAVE_LRINTF")
-        add_cflags("-msse", "-msse2")
     end
     if is_arch("x64", "x86_64", "x86") then
         -- OPUS_HAVE_RTCD + x86 kernels from thirdparty/opus/opus-1.5.2/CMakeLists.txt
@@ -593,12 +592,29 @@ target("opus")
             "OPUS_X86_MAY_HAVE_SSE", "OPUS_X86_PRESUME_SSE",
             "OPUS_X86_MAY_HAVE_SSE2", "OPUS_X86_PRESUME_SSE2",
             "OPUS_X86_MAY_HAVE_SSE4_1", "OPUS_X86_MAY_HAVE_AVX2")
-        local function opus_sources(list)
+        if is_arch("x86") and not is_arch("x64", "x86_64") then
+            -- 32-bit x86: the PRESUME_* macros above assume SSE/SSE2 for every
+            -- translation unit, as upstream does when the option is enabled.
+            if is_plat("windows") then
+                add_cflags("/arch:SSE2")
+            else
+                add_cflags("-msse", "-msse2")
+            end
+        end
+        -- xmake's add_cflags(..., {files = ...}) condition only selects whether
+        -- the flag is added to the target; it does not scope the flag to those
+        -- files. Pass the per-file flags to add_files() instead (upstream uses
+        -- set_source_files_properties in thirdparty/opus/opus-1.5.2/CMakeLists.txt).
+        local function opus_sources(list, flags)
             local result = {}
             for _, item in ipairs(list) do
                 table.insert(result, path.join(audio_thirdparty, "opus", "opus-1.5.2", item))
             end
-            add_files(result)
+            if flags then
+                add_files(result, { cflags = flags })
+            else
+                add_files(result)
+            end
             return result
         end
         opus_sources({
@@ -606,30 +622,39 @@ target("opus")
             "celt/x86/x86_celt_map.c",
             "silk/x86/x86_silk_map.c",
         })
-        local sse = opus_sources({ "celt/x86/pitch_sse.c" })
-        local sse2 = opus_sources({ "celt/x86/pitch_sse2.c", "celt/x86/vq_sse2.c" })
-        local sse41 = opus_sources({
-            "celt/x86/celt_lpc_sse4_1.c",
-            "celt/x86/pitch_sse4_1.c",
-            "silk/x86/NSQ_sse4_1.c",
-            "silk/x86/NSQ_del_dec_sse4_1.c",
-            "silk/x86/VAD_sse4_1.c",
-            "silk/x86/VQ_WMat_EC_sse4_1.c",
-        })
-        local avx2 = opus_sources({
-            "celt/x86/pitch_avx.c",
-            "silk/x86/NSQ_del_dec_avx2.c",
-            "silk/float/x86/inner_product_FLP_avx2.c",
-        })
         if is_plat("windows") then
-            add_cflags("/arch:AVX2", {files = avx2})
+            -- MSVC has no -msse/-msse2 switches; x64 already implies SSE2.
+            opus_sources({ "celt/x86/pitch_sse.c" })
+            opus_sources({ "celt/x86/pitch_sse2.c", "celt/x86/vq_sse2.c" })
+            opus_sources({
+                "celt/x86/celt_lpc_sse4_1.c",
+                "celt/x86/pitch_sse4_1.c",
+                "silk/x86/NSQ_sse4_1.c",
+                "silk/x86/NSQ_del_dec_sse4_1.c",
+                "silk/x86/VAD_sse4_1.c",
+                "silk/x86/VQ_WMat_EC_sse4_1.c",
+            })
+            opus_sources({
+                "celt/x86/pitch_avx.c",
+                "silk/x86/NSQ_del_dec_avx2.c",
+                "silk/float/x86/inner_product_FLP_avx2.c",
+            }, "/arch:AVX2")
         else
-            add_cflags("-msse", {files = sse})
-            add_cflags("-msse2", {files = sse2})
-            add_cflags("-msse4.1", {files = sse41})
-            add_cflags("-mavx2", {files = avx2})
-            add_cflags("-mfma", {files = avx2})
-            add_cflags("-mavx", {files = avx2})
+            opus_sources({ "celt/x86/pitch_sse.c" }, "-msse")
+            opus_sources({ "celt/x86/pitch_sse2.c", "celt/x86/vq_sse2.c" }, "-msse2")
+            opus_sources({
+                "celt/x86/celt_lpc_sse4_1.c",
+                "celt/x86/pitch_sse4_1.c",
+                "silk/x86/NSQ_sse4_1.c",
+                "silk/x86/NSQ_del_dec_sse4_1.c",
+                "silk/x86/VAD_sse4_1.c",
+                "silk/x86/VQ_WMat_EC_sse4_1.c",
+            }, "-msse4.1")
+            opus_sources({
+                "celt/x86/pitch_avx.c",
+                "silk/x86/NSQ_del_dec_avx2.c",
+                "silk/float/x86/inner_product_FLP_avx2.c",
+            }, { "-mavx2", "-mfma", "-mavx" })
         end
     end
     set_warnings("none")
@@ -659,6 +684,8 @@ target("muse_audio_engine")
 
 target("audio_engine_link_check")
     set_kind("binary")
+    -- Dev-only closure check; run_all builds it explicitly.
+    set_default(false)
     add_deps("muse_generated", "muse_audio_engine")
     add_files(path.join(project_root, "native", "audio_engine_link_check.cpp"))
     add_defines(manifest.targets.muse_audio_engine.defines)
@@ -703,6 +730,8 @@ target("music_core")
 
 target("engine_audio_probe")
     set_kind("binary")
+    -- Dev-only probe used by the engine_audio lane; built explicitly.
+    set_default(false)
     add_deps("muse_generated", "engine_audio", "score_engine")
     add_files(path.join(project_root, "native", "engine_audio_probe.cpp"))
     add_defines(manifest.targets.engine_audio.defines)
@@ -835,6 +864,8 @@ target_end()
 
 target("gtest")
     set_kind("static")
+    -- Dev-only upstream test library; built explicitly by the run_all lanes.
+    set_default(false)
     local gtest_root = path.join(source_root, "src/framework/testing/thirdparty/googletest")
     add_includedirs(path.join(gtest_root, "googletest/include"), {public = true})
     add_includedirs(path.join(gtest_root, "googlemock/include"), {public = true})
@@ -857,6 +888,8 @@ target_end()
 
 target("engraving_playback_tests")
     set_kind("binary")
+    -- Dev-only upstream tests; built explicitly by the upstream_gtest lane.
+    set_default(false)
     set_basename("engraving_playback_tests")
     add_deps("muse_generated", "score_engine", "gtest")
     add_defines(manifest.targets.score_engine.defines)
@@ -890,6 +923,8 @@ target_end()
 
 target("mpe_tests")
     set_kind("binary")
+    -- Dev-only upstream tests; built explicitly by the upstream_gtest lane.
+    set_default(false)
     set_basename("mpe_tests")
     add_deps("muse_generated", "muse_mpe", "gtest")
     add_defines(manifest.targets.muse_mpe.defines)

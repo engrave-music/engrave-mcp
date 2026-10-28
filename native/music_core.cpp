@@ -8,6 +8,7 @@
 
 #include "engraving/dom/excerpt.h"
 #include "engraving/dom/masterscore.h"
+#include "engraving/dom/repeatlist.h"
 #include "engraving/engravingproject.h"
 
 #include <charconv>
@@ -1233,6 +1234,22 @@ ExportData MusicCore::export_bytes(DocumentId id, ExportFormat format, const Exp
     try {
         impl_->check_owner();
         return impl_->export_document(id, format, options);
+    } catch (...) {
+        translate_current_exception(CoreError::Code::engine_failure);
+    }
+}
+
+double MusicCore::audio_export_duration(DocumentId id, bool use_repeats) {
+    try {
+        impl_->check_owner();
+        const auto& document = impl_->find(id);
+        const auto* master = document.project->masterScore();
+        if (!master)
+            throw CoreError(CoreError::Code::engine_failure, "Score has no master score");
+        // Same duration handoff as export_score_audio() and
+        // notationplayback.cpp:235-252: repeat-expanded play time plus 3 s.
+        const int last_utick = master->repeatList(use_repeats).ticks();
+        return master->utick2utime(last_utick) + 3.0;
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
     }

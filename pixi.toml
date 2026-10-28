@@ -11,7 +11,6 @@ ninja = "*"
 zlib = "*"
 cairo = "*"
 nlohmann_json = "3.12.*"
-libsndfile = "==1.2.2"
 
 [target.linux-64.dependencies]
 c-compiler = "*"

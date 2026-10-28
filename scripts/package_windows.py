@@ -9,6 +9,22 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+AUDIO_THIRDPARTY = ROOT / "vendor/musescore/src/framework/audio/thirdparty"
+# License texts of the codecs and synthesizer bundled into the binary. Paths are
+# relative to AUDIO_THIRDPARTY and are copied with a thirdparty-<name>- prefix so
+# same-named COPYING files cannot overwrite each other.
+THIRDPARTY_LICENSES = (
+    ("fdk-aac", "fdk-aac-2.0.3/NOTICE"),
+    ("flac", "flac-1.4.3/COPYING.FDL"),
+    ("flac", "flac-1.4.3/COPYING.GPL"),
+    ("flac", "flac-1.4.3/COPYING.LGPL"),
+    ("flac", "flac-1.4.3/COPYING.Xiph"),
+    ("fluidsynth", "fluidsynth-2.3.3/LICENSE"),
+    ("lame", "COPYING"),
+    ("lame", "LICENSE"),
+    ("opus", "opus-1.5.2/COPYING"),
+    ("opusenc", "libopusenc-0.2.1/COPYING"),
+)
 
 
 def main():
@@ -66,6 +82,11 @@ def main():
     licenses.mkdir()
     for source in (ROOT / "vendor/musescore").glob("LICENSE*"):
         if source.is_file(): shutil.copy2(source, licenses / source.name)
+    for name, relative in THIRDPARTY_LICENSES:
+        source = AUDIO_THIRDPARTY / name / relative
+        if not source.is_file():
+            raise RuntimeError(f"Missing bundled license text: {source}")
+        shutil.copy2(source, licenses / f"thirdparty-{name}-{source.name}")
     for directory in (environment / "conda-meta",):
         # Package metadata contains license/provenance, not user environment credentials.
         for source in directory.glob("*.json"):

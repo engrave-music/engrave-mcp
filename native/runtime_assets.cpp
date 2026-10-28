@@ -270,7 +270,8 @@ ParsedFont validateFont(const std::vector<std::uint8_t>& bytes, const std::strin
 
 std::vector<std::uint8_t> readResourceFile(const std::string& sourcePath,
                                          std::uintmax_t limit, const std::string& kind)
-{    if (sourcePath.empty() || sourcePath.find('\0') != std::string::npos) {
+{
+    if (sourcePath.empty() || sourcePath.find('\0') != std::string::npos) {
         throw std::runtime_error(kind + " path is empty or contains NUL");
     }
 

@@ -7,7 +7,7 @@
 ## 1. 架构设计与约束
 
 - **构建系统**：以 `xmake.lua` 与显式源码清单 `xmake/manifest.lua` 为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux / Arch WSL2 x86_64 均已验证）。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块）。
-- **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件，以及 MuseScore 4 音频引擎（`muse_audio_engine`：FluidSynth 合成、混音、混响与 SoundTrackWriter）及其编码器 LAME（MP3）、libFLAC、Opus/libopusenc（Ogg）、fdk-aac（AAC），全部来自子模块并以 Qt-free 方式编译；音频仅在 `--worker` 子进程中渲染。libsndfile 已移除。捆绑依赖项仅包含 FreeType 与 HarfBuzz（Brotli 依赖已移除）。
+- **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件，以及 MuseScore 4 音频引擎（`muse_audio_engine`：FluidSynth 合成、混音、混响与 SoundTrackWriter）及其编码器 LAME（MP3）、libFLAC、Opus/libopusenc（Ogg）、fdk-aac（AAC），全部来自子模块并以 Qt-free 方式编译；音频仅在 `--worker` 子进程中渲染。libsndfile 已从构建依赖和 pixi 环境中移除；测试分析用的 Python `soundfile` wheel 自带其运行时副本，因此解码检查不依赖系统 libsndfile。捆绑的原生依赖包括 FreeType、HarfBuzz、FluidSynth、FLAC、Opus/libopusenc、LAME 与 fdk-aac（Brotli 依赖已移除）。
 - **底层适配**：采用原生文件系统、进程内设置、FreeType/HarfBuzz 字体引擎和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
 
 ---
@@ -30,7 +30,7 @@
 ## 3. 上游代码与资产准备
 
 ### 3.1 检出引擎子模块与下载音色库
-引擎源码采用 Git 子模块 `vendor/musescore` 形式引入（锁定至 Fork 仓库 https://github.com/Locietta/MuseScore ，分支 `mcp/v4.7.5`，Tag `mcp-4.7.5-1`，Commit `e70fdef0`，提交台账参见 `docs/dev/fork.md`）。旧版 webmscore、`.upstream/webmscore`、`patches/*.patch` 以及 Brotli 依赖均已废弃移除。
+引擎源码采用 Git 子模块 `vendor/musescore` 形式引入（锁定至 Fork 仓库 https://github.com/Locietta/MuseScore ，分支 `mcp/v4.7.6`，Tag `mcp-4.7.6-4`，Commit `6cd717f2`，提交台账参见 `docs/dev/fork.md`）。旧版 webmscore、`.upstream/webmscore`、`patches/*.patch` 以及 Brotli 依赖均已废弃移除。
 
 全新克隆的项目可执行 `git submodule update --init --depth 1` 初始化子模块，或直接运行 `bootstrap.py`。`scripts/bootstrap.py` 会自动执行浅子模块更新（`git submodule update --init --depth 1 -- vendor/musescore`），并按需下载经哈希验证的 HarfBuzz 源码（解压至 `.upstream/harfbuzz`）与基础 SF3 音色库：
 
@@ -91,14 +91,14 @@ pixi run -e native python scripts/package_windows.py --no-qt --binary build/xmak
 ```
 
 - **动作规范**：自动解析并提取运行时完整的 DLL 闭包、静态资源及 SoundFont；**严格拒绝混入任何 Qt 相关动态链接库**。
-- **打包规格**：Windows 打包目录包含 147 个文件，体积约为 61 MB。
+- **打包规格**：Windows 打包目录包含 139 个文件，体积约为 61 MB。
 - **路径自解析**：打包后的可执行文件已具备就近查找同级资产的能力，运行时无需额外传递 `--resources` 绝对路径。
 
 ### 5.2 独立运行验证标准
 打包产物已完成严格的洁净环境验证：
 - 运行时环境变量 `PATH` 仅保留 `C:\Windows\System32`。
 - 完全脱离桌面版 MuseScore 安装、Node.js、WASM、Python 及 Pixi 运行环境。
-- 当前 xmake 产物通过全部 24 条测试道回归，涵盖官方 SDK 冒烟、传输测试、版本信息（`scripts/test_version_info.py`）、上游 72 例反复播放顺序（`scripts/test_repeats.py`）、`scripts/golden.py compare`（针对 `tests/golden/<platform>` 与 `tests/golden/allow.json` 白名单）排版渲染验证，以及 `scripts/test_roundtrip.py` 往返一致性测试。
+- 当前 xmake 产物通过全部 25 条测试道回归，涵盖官方 SDK 冒烟、传输测试、版本信息（`scripts/test_version_info.py`）、上游 72 例反复播放顺序（`scripts/test_repeats.py`）、`scripts/golden.py compare`（针对 `tests/golden/<platform>` 与 `tests/golden/allow.json` 白名单）排版渲染验证，以及 `scripts/test_roundtrip.py` 往返一致性测试。
 
 ---
 
@@ -125,8 +125,8 @@ pixi run --locked -e native python scripts/package_linux.py --binary build/xmake
 ```
 
 - **构建产物**：`build/xmake-linux/musescore-mcp`。
-- **打包规格**：`package_linux.py` 提取 ELF 依赖并设置相对 RUNPATH，排除了所有 Qt 依赖。生成的打包目录包含 181 个文件，体积约为 94 MB。
-- **洁净运行验证**：在完全脱离开发环境 PATH 的纯净隔离环境下，运行打包二进制完整通过官方 SDK `mcp_smoke`（20 次创建/修改/导出循环及真实可听音频输出）。全部 24 条测试道在 Linux 宿主上 100% 通过（exit=0）。
+- **打包规格**：`package_linux.py` 提取 ELF 依赖并设置相对 RUNPATH，排除了所有 Qt 依赖。生成的打包目录包含 172 个文件，体积约为 103 MB。
+- **洁净运行验证**：在完全脱离开发环境 PATH 的纯净隔离环境下，运行打包二进制完整通过官方 SDK `mcp_smoke`（20 次创建/修改/导出循环及真实可听音频输出）。全部 25 条测试道在 Linux 宿主上 100% 通过（exit=0）。
 
 Linux 使用显式 `gcc@` / `g++@` 工具类型识别 Pixi 的编译器，确保 xmake 正确继承 `-std=c++23`、`-O3` 与 `-fPIC` 参数。FluidSynth C 目标使用 GNU17 以保留上游 `alloca` 扩展；Windows 的该 C 目标仍为 C11。
 

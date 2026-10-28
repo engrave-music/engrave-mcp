@@ -1,5 +1,6 @@
 #include "async_session.h"
 #include "atomic_file.h"
+#include "audio_output.h"
 #include "background_job.h"
 #include "engine.h"
 #include "mcp_transport.h"
@@ -364,6 +365,18 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 request.cache_directory = directory / "runtime-cache";
                 if (!is_audio_format(format)) request.runtime.soundfont.clear();
                 if (is_audio_format(format)) {
+                    // Reject a render that cannot fit the audio output cap before
+                    // a worker starts: the encoded size is bounded by duration.
+                    const double duration_secs =
+                        engine.core().audio_export_duration(document, options.midi_expand_repeats);
+                    const auto codec = audio_output_codec(format);
+                    if (codec && projected_audio_bytes(*codec, duration_secs) > kAudioOutputLimit) {
+                        throw CoreError(CoreError::Code::resource_limit,
+                                        "Projected " + std::string(format_name(format))
+                                            + " export of "
+                                            + std::to_string(static_cast<int>(duration_secs / 60.0))
+                                            + " min exceeds the 1 GiB audio output limit (~50 min of Float32 WAV)");
+                    }
                     // The snapshot does not embed audiosettings.json; send the
                     // effective default-plus-override mix to the worker.
                     const auto mix = engine.core().audio_export_mix(document, options);
@@ -442,7 +455,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     throw std::runtime_error(result.value("error", "Export worker failed"));
                 const auto staged = job->staging_directory / "output";
                 const auto bytes = std::filesystem::file_size(staged);
-                if (!bytes || bytes > 256 * 1024 * 1024 || bytes != result.at("bytes").get<std::uintmax_t>())
+                const std::uint64_t limit =
+                    is_audio_format(job->format) ? kAudioOutputLimit : kNonAudioOutputLimit;
+                if (!bytes || bytes > limit || bytes != result.at("bytes").get<std::uintmax_t>())
                     throw std::runtime_error("Worker output size does not match result");
                 // No co_await between final cancellation check, atomic publication and terminal state.
                 publish_job_output(staged, job->destination);

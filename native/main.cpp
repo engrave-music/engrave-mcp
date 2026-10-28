@@ -41,7 +41,12 @@ int main(int argc, char** argv) {
             return tools;
         },
             [&](std::string name, music::Json args) { return session.call(std::move(name), std::move(args)); },
-            [&] { session.shutdown(); });
+            [&] {
+                // A synchronous audio export may be waiting on its worker on the
+                // owner thread; terminate it before shutdown joins that thread.
+                music::request_worker_shutdown();
+                session.shutdown();
+            });
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';
         return 1;

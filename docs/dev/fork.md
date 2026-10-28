@@ -40,7 +40,7 @@ native build does not compile (CMake, web/, audio module, notation, playback, pr
 
 Only the tip is built natively (the native build needs every topic); intermediate
 commits are not built on their own, and no Qt build of the fork is run.
-`.gitmodules` records `branch = mcp/v4.7.5` so `git submodule update --remote`
+`.gitmodules` records `branch = mcp/v4.7.6` so `git submodule update --remote`
 stays on the pinned line.
 
 Evidence for this pin is in validation.md ("Roadmap step 1").
@@ -58,6 +58,8 @@ Later pins on `mcp/v4.7.6` (no rebase; each adds commits on top):
   only Qt type on the audio engine side); `811634a1` engraving/tests: UTF-16 literals in the
   playback tests so they build without Qt.
 - `mcp-4.7.6-4` = `6cd717f2`: `d653005f` audio: fixed Ogg stream serial (libopusenc drew it
-  from the process-global `rand()`, so identical exports differed); `6cd717f2` opusenc:
+  from `rand()`; MSVC's `rand()` state is per-thread, while glibc's is process-global, so
+  repeated Linux exports differed in the serial while Windows happened to repeat);
+  `6cd717f2` opusenc:
   initialize the OpusTags vendor string (the vendored copy passed an uninitialized stack
   buffer; released libopusenc 0.2.1 formats it).

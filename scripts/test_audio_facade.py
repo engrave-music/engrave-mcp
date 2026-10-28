@@ -18,6 +18,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_async_session import Client
 from test_export_options import bar
 
+# A hard-panned track still leaks through the Muse Reverb aux return (the
+# engine adds a 0.30 send per track, native/engine_audio.cpp). Measured with
+# the reverb enabled on Windows and Linux 2026-10-28, three identical runs per
+# side: hard left -> right/left RMS 0.213, hard right -> left/right RMS 0.272.
+# The older 0.35 limit was loosened without this measurement. 0.30 is just
+# above the measured maximum (~10% headroom) and still rejects a pan that does
+# not attenuate the opposite channel.
+TRACK_BALANCE_LEAKAGE_LIMIT = 0.30
+
 
 def analyze_wav(path: Path):
     import soundfile as sf
@@ -64,6 +73,7 @@ async def test_audio_facade(args):
     output_dir = args.output.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     checks = []
+    balance_leakage = {}
 
     score_payload = {
         "score": {
@@ -403,8 +413,20 @@ async def test_audio_facade(args):
             )
             _, _, _, _, _, _, tr_l_left, tr_r_left = analyze_wav(tr_left_wav)
             _, _, _, _, _, _, tr_l_right, tr_r_right = analyze_wav(tr_right_wav)
-            assert tr_l_left > 0 and tr_r_left <= 0.35 * tr_l_left, f"Track hard left leaked into R: L={tr_l_left}, R={tr_r_left}"
-            assert tr_r_right > 0 and tr_l_right <= 0.35 * tr_r_right, f"Track hard right leaked into L: L={tr_l_right}, R={tr_r_right}"
+            left_leak = tr_r_left / tr_l_left
+            right_leak = tr_l_right / tr_r_right
+            assert tr_l_left > 0 and tr_r_left <= TRACK_BALANCE_LEAKAGE_LIMIT * tr_l_left, (
+                f"Track hard left leaked into R: L={tr_l_left}, R={tr_r_left} "
+                f"(ratio {left_leak:.4f} > {TRACK_BALANCE_LEAKAGE_LIMIT})")
+            assert tr_r_right > 0 and tr_l_right <= TRACK_BALANCE_LEAKAGE_LIMIT * tr_r_right, (
+                f"Track hard right leaked into L: L={tr_l_right}, R={tr_r_right} "
+                f"(ratio {right_leak:.4f} > {TRACK_BALANCE_LEAKAGE_LIMIT})")
+            balance_leakage = {
+                "measured_hard_left_into_right": round(left_leak, 4),
+                "measured_hard_right_into_left": round(right_leak, 4),
+                "limit": TRACK_BALANCE_LEAKAGE_LIMIT,
+                "reverb_aux_send": 0.30,
+            }
             checks.append("track_balance_lr_energy_verified")
 
             # 7. Master volumeDb
@@ -761,6 +783,8 @@ async def test_audio_facade(args):
         "checks": checks,
         "revision": rev,
     }
+    if balance_leakage:
+        evidence["track_balance_leakage"] = balance_leakage
     evidence_file = output_dir / "evidence.json"
     evidence_file.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     print(json.dumps(evidence))

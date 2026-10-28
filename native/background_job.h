@@ -45,4 +45,10 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+// Host shutdown hook. A synchronous audio export waits on its worker on the
+// engine-owner thread, so stdin EOF must terminate that child before joining
+// the thread. The flag also makes the waiting loop give up with a clear error.
+void request_worker_shutdown() noexcept;
+bool worker_shutdown_requested() noexcept;
+
 } // namespace music
