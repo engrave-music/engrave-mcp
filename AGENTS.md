@@ -22,7 +22,8 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
   (`opencode-go/deepseek-v4.1-flash`, thinking max) for hard implementation; GPT-6.1 Terra
   via Codex at reasoning effort max for tests and verification (on par with DeepSeek max for
   implementation; never use Terra below max, xhigh is far weaker); Gemini 3.8 Flash for
-  documentation and simple worker tasks. Honor those model choices.
+  general coding and documentation (fast, and its code reads closest to human style; a good
+  default for well-scoped implementation). Honor those model choices.
 - Reviews: each roadmap step (A1, A2, ...) gets an independent GPT-6.1 Terra review
   (effort max); each phase (A, I, B) gets a final GPT-6 Astra review via Codex before it is
   accepted, looking for remaining defects and poor implementation approaches across the phase.
