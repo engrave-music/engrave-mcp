@@ -698,6 +698,29 @@ target("music_core")
     add_deps("muse_generated", "score_engine")
     add_manifest_target("music_core")
 
+-- Headless MuseScore 4 audio-engine driver (roadmap step 5). It needs both the
+-- engraving playback model (score_engine) and the Qt-free engine/encoders
+-- (muse_audio_engine); the process-wide engine state lives in engine_audio.cpp.
+target("engine_audio")
+    set_kind("static")
+    add_deps("muse_generated", "score_engine", "muse_audio_engine")
+    add_manifest_target("engine_audio")
+
+target("engine_audio_probe")
+    set_kind("binary")
+    add_deps("muse_generated", "engine_audio", "score_engine")
+    add_files(path.join(project_root, "native", "engine_audio_probe.cpp"))
+    add_defines(manifest.targets.engine_audio.defines)
+    add_includedirs(expand_list(manifest.targets.engine_audio.includes))
+    add_links("cairo", "z")
+    if is_plat("windows") then
+        -- PeakWorkingSetSize for the probe's memory report.
+        add_syslinks("psapi")
+        add_files(path.join(project_root, "native", "utf8.manifest"))
+    else
+        add_links("m")
+    end
+
 -------------------------------------------------------------------------------
 -- Host and existing probes
 -------------------------------------------------------------------------------
