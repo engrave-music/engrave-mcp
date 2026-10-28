@@ -563,3 +563,65 @@ test targets are no longer default-built: `xmake build -a`); packages with the c
 texts (Windows 142 files / 61 MB, Linux 175 files / 103 MB) pass mcp_smoke in isolated
 environments. Open: the MSVC build renders the dense score about 3.5x slower than GCC
 (7.6 vs 2.1 s per audio minute); within budget, not yet investigated.
+## Roadmap-engrave A0: rebase-proof baseline (2026-10-28)
+
+Pin `mcp-4.7.6-4` (`6cd717f2`). Purpose: an oracle for the 5.0 port (A2) that does not depend
+on the MSCX format version or on layout.
+
+Added outputs per golden fixture (`scripts/golden.py`):
+- `semantic-source.json`: the fixture as the engine reads it, dumped by the dev tool
+  `semantic_dump` (`native/score_semantic.cpp`) from the in-memory DOM. It covers:
+  - measures, clefs, key and time signatures;
+  - chords and rests per staff and voice, with notes (pitch, tpc, head, tab fret/string, ghost,
+    play), ties with their end note, laissez vibrer, grace notes, tuplets, lyrics,
+    articulations and chord/note-attached elements;
+  - annotations, measure and segment elements, spanners (type, ticks, tracks, subtype, voltas,
+    begin text);
+  - parts and staves, metadata, tempo map, repeat-expanded playback order, excerpts with their
+    own bodies.
+
+  It contains no positions, styles or EIDs, and generated elements are skipped.
+- `semantic.json`: the same dump of the MSCZ the engine saved, so it covers the writer and the
+  reader.
+- `musicxml-semantic.json` next to every golden MusicXML: `scripts/musicxml_semantic.py`
+  (stdlib only, independent of the engine). It drops layout and appearance, normalizes
+  durations to 480 ticks per quarter, and lists unknown measure- and note-level tags under
+  `unhandled`; none occur in the goldens. Limitation: unknown tags inside `<notations>` are not
+  listed.
+- Three edit scenarios:
+  - `edit-replace-measures`: `score_replace_measures` on the created score.
+  - `edit-set-pitches-coverage`: `score_set_pitches` on an imported MusicXML.
+  - `edit-set-pitches-linked`: `score_set_pitches` on a score with generated parts; the change
+    reaches the linked excerpt.
+
+  Each captures MSCX, MusicXML (plus semantic), MIDI and `semantic.json`.
+
+Executed on Windows and Linux:
+- The 268 previously stored outputs are byte-identical before and after the change.
+- Every semantic file is byte-identical between Windows and Linux.
+- Two consecutive captures are identical.
+- Reading and saving lose nothing: `semantic-source.json` equals `semantic.json` for all 20
+  file fixtures. The exception is `chordline_path.mscx`, whose parts are generated after the
+  save.
+- Independent check of the dumper: `scripts/check_semantic_dump.py` (lane `semantic_check`)
+  re-parses each golden MSCX with `test_roundtrip.parse_mscx` and compares the shared fields
+  (parts, measures, events, ties, spanners, clefs, lyrics, dynamics, tempos, metadata,
+  excerpts). Result: 24 fixtures, 0 mismatches on both hosts.
+  - One known difference comes from the parser, not the dumper: `parse_mscx` reads a rich-text
+    `<longName>` as empty.
+  - The first run found two gaps in the dumper, now fixed: laissez vibrer read as a partial
+    tie, and a measure repeat read as a plain rest. Instrument names are now plain text.
+
+Tolerances for A2, fixed before the port starts:
+- `semantic-source.json`, `semantic.json`, `musicxml-semantic.json` and `midi.json` must match
+  exactly. Every difference needs an entry in the hash-pinned allow-list
+  (`tests/golden/allow.json`) that also names the upstream commit causing it.
+- `audio.json`: the existing per-platform tolerances of `scripts/golden.py` (peak and rms
+  1e-4, spectral centroid 1 Hz, centroid envelope 2 Hz; frames, sample rate and channels
+  exact). The engine_audio lane keeps the step-5 criteria (onset 1.95 ms, pitch 0.80 cent,
+  level within 2%, MIDI events exact).
+- MSCX, raw MusicXML, SVG, PNG, PDF, positions and metadata are re-baselined in A2 with a diff
+  report sorted by cause, plus a spot check of rendered pages. They are not an oracle across
+  the port.
+
+Full suite (executed 2026-10-28, tag `a0`): Windows 26/26 lanes and Linux 26/26 lanes pass, including the new `semantic_check` lane and `golden` against the recaptured trees (348 outputs per platform).
