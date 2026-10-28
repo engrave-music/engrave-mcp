@@ -23,6 +23,9 @@ from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Pinned repeat test count from repeat_tests.cpp (72 tests: repeat01..repeat72)
+EXPECTED_TOTAL = 72
+
 
 def extract_measure_numbers(mscx_path: Path) -> list[int]:
     """Parse MSCX XML and compute 1-based measure numbers for each Measure."""
@@ -185,6 +188,9 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
     passed = sum(1 for r in results if r["status"] == "PASS")
     failed = sum(1 for r in results if r["status"] == "FAIL")
     skipped = sum(1 for r in results if r["status"] == "SKIP")
+    if total != EXPECTED_TOTAL:
+        print(f"ERROR: ran {total} tests, expected exactly {EXPECTED_TOTAL}", file=sys.stderr)
+        return 1
 
     report: dict[str, Any] = {
         "summary": {"total": total, "passed": passed, "failed": failed,

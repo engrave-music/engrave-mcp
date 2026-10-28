@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # or gains a skip/disable, so the numbers in docs/dev/validation.md cannot drift
 # from what is executed. Update this table together with the pinned engine.
 EXPECTED_SUITES = {
-    "engraving_playback_tests": {"total": 87, "test_suites": 4},
+    "engraving_playback_tests": {"total": 159, "test_suites": 5},
     "mpe_tests": {"total": 11, "test_suites": 2},
 }
 # Tests that may legitimately be skipped/disabled without failing the lane. The
