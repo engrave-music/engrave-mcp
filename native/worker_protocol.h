@@ -3,22 +3,41 @@
 #include "music_core.h"
 #include <filesystem>
 #include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace music {
+// One export job inside a worker request. A worker process may run several
+// jobs sequentially with the one audio engine it initialises.
+struct ExportWorkerJob {
+    std::filesystem::path snapshot_path;
+    std::filesystem::path output_path;
+    std::filesystem::path result_path;
+    ExportFormat format;
+    ExportOptions options;
+    // Source document stamps; the snapshot reload would otherwise report the
+    // writing program instead of the file's own version.
+    ScoreVersions versions;
+    AudioMix mix;
+    bool has_mix = false;
+};
+
 struct ExportWorkerRequest {
+    // Single-job form (the fields below are serialized at the top level).
     std::filesystem::path snapshot_path;
     std::filesystem::path output_path;
     std::filesystem::path result_path;
     RuntimeOptions runtime;
     ExportFormat format;
     ExportOptions options;
-    // Source document stamps; the snapshot reload would otherwise report the
-    // writing program instead of the file's own version.
     ScoreVersions versions;
     std::filesystem::path cache_directory;
     AudioMix mix;
     bool has_mix = false;
+    // Multi-job form. When non-empty, these jobs share runtime, cache_directory
+    // and the one engine; snapshot_path/output_path/result_path etc. above are
+    // ignored by the serializer.
+    std::vector<ExportWorkerJob> jobs;
 };
 bool is_audio_format(ExportFormat format) noexcept;
 std::string path_utf8(const std::filesystem::path& path);

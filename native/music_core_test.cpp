@@ -190,12 +190,19 @@ int main(int argc, char** argv) {
         const auto mixed = core.open(mix_bytes, InputFormat::Mscz);
         auto mixed_tracks = core.audio_tracks(mixed.id);
         expect(mixed_tracks.tracks.size() == 3, "MSCZ default mix did not expose three tracks");
-        expect(mixed_tracks.tracks.at(2).output.muted, "MSCZ default track mute was not reported");
-        expect(!mixed_tracks.tracks.at(2).output.force_mute, "No solo means no force-mute");
+        std::size_t muted_index = 3;
+        for (std::size_t index = 0; index < mixed_tracks.tracks.size(); ++index) {
+            if (mixed_tracks.tracks[index].output.muted) muted_index = index;
+            expect(!mixed_tracks.tracks[index].output.force_mute,
+                   "No solo means no force-mute");
+        }
+        expect(muted_index < 3, "MSCZ default track mute was not reported");
+        expect(!mixed_tracks.tracks.at(muted_index).output.force_mute, "No solo means no force-mute");
         const auto mixed_excerpts = core.generate_excerpts(mixed.id);
         expect(!mixed_excerpts.excerpts.empty(), "MSCZ excerpt generation produced no excerpts");
         auto reloaded_tracks = core.audio_tracks(mixed.id);
-        expect(reloaded_tracks.tracks.size() == 3 && reloaded_tracks.tracks.at(2).output.muted,
+        expect(reloaded_tracks.tracks.size() == 3
+               && reloaded_tracks.tracks.at(muted_index).output.muted,
                "Default mix was lost across excerpt generation");
         expect(core.describe(mixed.id).revision == mixed_excerpts.revision,
                "Default mix lookup changed the document revision");
@@ -332,9 +339,8 @@ int main(int argc, char** argv) {
             "Selected excerpt could not export MusicXML");
         core.close(with_excerpts.id);
 
-        // Instrument change / multi-instrument score:
-        // Metadata reports tracks: [], neutral mix WAV succeeds via legacy renderer,
-        // non-neutral mix throws CoreError::Code::invalid_argument.
+        // Instrument change / multi-instrument score: every instrument is a
+        // separate track, and audio bytes are only ever produced by a worker.
         {
             std::ifstream stream("vendor/musescore/src/engraving/tests/instrumentchange_data/change-ref.mscx", std::ios::binary);
             if (stream) {
@@ -342,25 +348,21 @@ int main(int argc, char** argv) {
                 const auto inst_doc = core.open(bytes, InputFormat::Mscx);
                 const auto meta_data = core.export_bytes(inst_doc.id, ExportFormat::Metadata);
                 const auto meta_json = nlohmann::json::parse(meta_data.bytes);
-                expect(meta_json.contains("tracks") && meta_json["tracks"].is_array() && meta_json["tracks"].empty(),
-                       "Multi-instrument score metadata must report empty tracks");
+                expect(meta_json.contains("tracks") && meta_json["tracks"].is_array()
+                       && !meta_json["tracks"].empty(),
+                       "Multi-instrument score metadata must list its instrument tracks");
 
-                if (!core.runtime_options().soundfont.empty()) {
-                    const auto wav_data = core.export_bytes(inst_doc.id, ExportFormat::Wav);
-                    expect(!wav_data.bytes.empty(), "Legacy WAV export failed for unplannable score with neutral mix");
-                }
+                const auto inst_tracks = core.audio_tracks(inst_doc.id);
+                expect(inst_tracks.tracks.size() >= 2,
+                       "Multi-instrument part must expose one track per instrument");
 
                 bool rejected = false;
                 try {
-                    ExportOptions options;
-                    AudioMixOverride mix_override;
-                    mix_override.master.volume_db = -6.0;
-                    options.mix = mix_override;
-                    (void)core.export_bytes(inst_doc.id, ExportFormat::Wav, options);
+                    (void)core.export_bytes(inst_doc.id, ExportFormat::Wav);
                 } catch (const CoreError& error) {
                     rejected = error.code() == CoreError::Code::invalid_argument;
                 }
-                expect(rejected, "Non-neutral mix on unplannable score must be rejected with invalid_argument");
+                expect(rejected, "Host audio export must be rejected; audio runs in a worker only");
                 core.close(inst_doc.id);
             }
         }

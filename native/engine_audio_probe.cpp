@@ -299,27 +299,29 @@ int main(int argc, char** argv)
             out["soundfont"]["uriRoundTrip"] = !ec && fs::u8path(roundTripped).lexically_normal() == expected;
         }
 
-        const std::vector<music::EngineAudioTrackInfo> tracks = music::engine_audio_tracks(master);
-        out["trackCount"] = tracks.size();
         if (excerptId >= 0) {
             // One excerpt per visible part when the file has none; existing
             // excerpts are left untouched.
             music::generate_score_excerpts(master);
         }
         out["excerptCount"] = master->excerpts().size();
+        const std::vector<music::EngineAudioTrackInfo> tracks =
+            music::engine_audio_tracks(master, excerptId);
+        out["trackCount"] = tracks.size();
 
         music::AudioRenderRequest request;
         request.format = parse_audio_format(out["format"].get<std::string>());
         request.output_path = to_utf8(outputPath);
         request.excerpt_id = excerptId;
         request.use_repeats = useRepeats;
+        request.tracks.assign(tracks.size(), music::EngineAudioTrackParams{});
         for (const int mutePart : muteParts) {
             if (mutePart < 0 || static_cast<std::size_t>(mutePart) >= master->parts().size()) {
                 throw std::invalid_argument("--mute-part index is out of range");
             }
-            for (const music::EngineAudioTrackInfo& track : tracks) {
-                if (track.part_index == static_cast<std::size_t>(mutePart)) {
-                    request.tracks[track.id].muted = true;
+            for (std::size_t index = 0; index < tracks.size(); ++index) {
+                if (tracks[index].part_index == static_cast<std::size_t>(mutePart)) {
+                    request.tracks[index].muted = true;
                 }
             }
         }

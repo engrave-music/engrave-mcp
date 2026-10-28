@@ -1,6 +1,6 @@
 #pragma once
 
-#include "audio_session.h"
+#include "audio_mix.h"
 
 #include <cstdint>
 #include <optional>

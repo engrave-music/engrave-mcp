@@ -59,6 +59,7 @@ EXPORT_FORMATS = [
     "flac",
     "ogg",
     "mp3",
+    "aac",
 ]
 
 OPEN_FORMATS = [
@@ -441,11 +442,11 @@ def build_cases() -> list[Case]:
          "expandRepeats": False, "exportRPNs": False}, True)
     add("export wav playback options", "score_export",
         {"documentId": "score-1", "format": "wav", "path": "out.wav",
-         "expandRepeats": False, "exportRPNs": False}, True)
-    for fmt in ("flac", "ogg", "mp3"):
+         "expandRepeats": False}, True)
+    for fmt in ("flac", "ogg", "mp3", "aac"):
         add(f"export {fmt} sync playback options", "score_export",
             {"documentId": "score-1", "format": fmt, "path": f"out.{fmt}",
-             "expandRepeats": False, "exportRPNs": False}, True)
+             "expandRepeats": False}, True)
     add("export excerpt default", "score_export",
         {**export, "excerptId": -1}, True)
     add("export excerpt zero", "score_export", {**export, "excerptId": 0}, True)
@@ -483,7 +484,7 @@ def build_cases() -> list[Case]:
     add("export RPN option on musicxml", "score_export",
         {**export, "exportRPNs": False}, False)
     add("export unknown format", "score_export",
-        {"documentId": "score-1", "format": "aac", "path": "out.aac"}, False)
+        {"documentId": "score-1", "format": "wma", "path": "out.wma"}, False)
     add("export empty path", "score_export", {**export, "path": ""}, False)
     add("export NUL path", "score_export", {**export, "path": "out" + NUL}, False)
     add("export missing document", "score_export",
@@ -510,10 +511,12 @@ def build_cases() -> list[Case]:
     add("async svg background", "score_export_start",
         {"documentId": "score-1", "format": "svg", "path": "out.svg",
          "drawPageBackground": True}, True)
-    for fmt in ("midi", "wav"):
-        add(f"async {fmt} playback options", "score_export_start",
-            {"documentId": "score-1", "format": fmt, "path": f"out.{fmt}",
-             "expandRepeats": False, "exportRPNs": False}, True)
+    add("async midi playback options", "score_export_start",
+        {"documentId": "score-1", "format": "midi", "path": "out.mid",
+         "expandRepeats": False, "exportRPNs": False}, True)
+    add("async wav playback options", "score_export_start",
+        {"documentId": "score-1", "format": "wav", "path": "out.wav",
+         "expandRepeats": False}, True)
     add("async expected revision", "score_export_start",
         {**async_export, "expectedRevision": 1}, True)
     add("async expected revision uint64 max", "score_export_start",
@@ -549,13 +552,13 @@ def build_cases() -> list[Case]:
     add("async background on midi", "score_export_start",
         {"documentId": "score-1", "format": "midi", "path": "out.mid",
          "drawPageBackground": True}, False)
-    for fmt in ("flac", "ogg", "mp3"):
+    for fmt in ("flac", "ogg", "mp3", "aac"):
         add(f"async {fmt} playback options", "score_export_start",
             {"documentId": "score-1", "format": fmt, "path": f"out.{fmt}",
              "expandRepeats": False}, True)
         add(f"async {fmt} RPN options", "score_export_start",
             {"documentId": "score-1", "format": fmt, "path": f"out.{fmt}",
-             "exportRPNs": False}, True)
+             "exportRPNs": False}, False)
     add("async playback option on png", "score_export_start",
         {"documentId": "score-1", "format": "png", "path": "out.png",
          "expandRepeats": False}, False)
@@ -568,7 +571,7 @@ def build_cases() -> list[Case]:
     add("async expectedRevision bool", "score_export_start",
         {**async_export, "expectedRevision": True}, False)
     add("async unknown format", "score_export_start",
-        {"documentId": "score-1", "format": "aac", "path": "out.aac"}, False)
+        {"documentId": "score-1", "format": "wma", "path": "out.wma"}, False)
     add("async empty path", "score_export_start", {**async_export, "path": ""}, False)
     add("async NUL path", "score_export_start",
         {**async_export, "path": "out" + NUL}, False)
@@ -627,7 +630,7 @@ def build_cases() -> list[Case]:
     add("score_audio_tracks unknown", "score_audio_tracks", {**doc, "extra": True}, False)
 
     # mix export option on score_export and score_export_start
-    audio_formats = ("wav", "flac", "ogg", "mp3")
+    audio_formats = ("wav", "flac", "ogg", "mp3", "aac")
     non_audio_formats = ("svg", "png", "midi", "musicxml", "mxl", "mscz", "mscx", "pdf", "metadata", "measurePositions", "segmentPositions")
     valid_mixes = [
         ("empty mix", {}),

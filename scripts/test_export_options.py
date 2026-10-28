@@ -787,7 +787,7 @@ async def main() -> None:
                 }
 
                 # =========================================================================
-                # 10. Metadata stays available for a 16-part score (too many audio stems)
+                # 10. Metadata tracks available for a 16-part score (>15 parts supported)
                 # =========================================================================
                 # score_create caps the composition contract at 15 parts, so the
                 # 16-part case is imported exactly as a client would encounter it.
@@ -818,9 +818,9 @@ async def main() -> None:
                 large_doc = await call("score_open", {"musicxml": sixteen_part_xml})
                 large_identity = {"documentId": large_doc["documentId"]}
                 large_get = await call("score_get", large_identity)
-                assert large_get["metadata"]["tracks"] == [], (
-                    "16-part metadata tracks must be empty, got "
-                    f"{large_get['metadata'].get('tracks')}"
+                large_tracks = large_get["metadata"].get("tracks", [])
+                assert len(large_tracks) == 16, (
+                    f"16-part metadata tracks must contain 16 tracks, got {len(large_tracks)}"
                 )
                 large_meta_path = out_dir / "sixteen_parts_metadata.json"
                 large_meta_job = await call(
@@ -835,12 +835,13 @@ async def main() -> None:
                         break
                     await asyncio.sleep(0.02)
                 assert large_meta_state is not None and large_meta_state["state"] == "completed", large_meta_state
-                assert json.loads(large_meta_path.read_text(encoding="utf-8"))["tracks"] == []
+                bg_meta_tracks = json.loads(large_meta_path.read_text(encoding="utf-8"))["tracks"]
+                assert len(bg_meta_tracks) == 16, f"Background 16-part tracks count {len(bg_meta_tracks)} != 16"
                 await call("score_close", large_identity)
                 report["evidence"]["sixteen_part_metadata"] = {
                     "executed": True,
                     "score_get_succeeded": True,
-                    "tracks": [],
+                    "tracks_count": 16,
                     "background_metadata": "completed",
                 }
 

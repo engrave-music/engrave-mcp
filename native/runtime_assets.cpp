@@ -3,7 +3,6 @@
 //   src/framework/draw/internal/ifontsdatabase.h
 //   src/framework/draw/internal/ifontsengine.h
 #include "runtime_assets.h"
-#include "audio_session.h"
 
 #include <algorithm>
 #include <atomic>
@@ -271,8 +270,7 @@ ParsedFont validateFont(const std::vector<std::uint8_t>& bytes, const std::strin
 
 std::vector<std::uint8_t> readResourceFile(const std::string& sourcePath,
                                          std::uintmax_t limit, const std::string& kind)
-{
-    if (sourcePath.empty() || sourcePath.find('\0') != std::string::npos) {
+{    if (sourcePath.empty() || sourcePath.find('\0') != std::string::npos) {
         throw std::runtime_error(kind + " path is empty or contains NUL");
     }
 
@@ -301,6 +299,17 @@ std::vector<std::uint8_t> readResourceFile(const std::string& sourcePath,
         throw std::runtime_error("Failed to read the complete " + kind + " file: " + sourcePath);
     }
     return bytes;
+}
+
+// SoundFont 2/3 files are RIFF containers with form type "sfbk". The host must
+// not initialise the audio engine just to validate runtime_set_soundfont, so
+// this is a structural check only; the worker's engine parses the font fully.
+void validateSoundFontHeader(const std::vector<std::uint8_t>& bytes, const std::string& sourcePath)
+{
+    if (bytes.size() < 12 || std::memcmp(bytes.data(), "RIFF", 4) != 0
+        || std::memcmp(bytes.data() + 8, "sfbk", 4) != 0) {
+        throw std::runtime_error("Invalid SoundFont file: " + sourcePath);
+    }
 }
 
 struct FontRecord {
@@ -807,6 +816,7 @@ RuntimeSoundFontInfo freeze_runtime_soundfont(const std::string& source_path)
 {
     checkOwnerThread();
     const auto bytes = readResourceFile(source_path, kMaxSoundFontFileBytes, "SoundFont");
+    validateSoundFontHeader(bytes, source_path);
     const auto fingerprint = contentFingerprint(bytes);
     for (const auto& retained : s_retainedSoundFonts) {
         if (retained.size == bytes.size() && retained.info.content_hash == fingerprint
@@ -830,7 +840,6 @@ RuntimeSoundFontInfo freeze_runtime_soundfont(const std::string& source_path)
         if (!output) throw std::runtime_error("Failed to write retained SoundFont");
     }
     RuntimeSoundFontInfo result{pathToUtf8(destination), fingerprint};
-    validate_soundfont(result.path);
     auto next = s_retainedSoundFonts;
     next.push_back({result, bytes.size()});
     s_retainedSoundFonts.swap(next);

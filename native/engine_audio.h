@@ -22,8 +22,9 @@
 //   - every engine call (bootstrap, export, track listing) must happen on the
 //     same OS thread. It is not safe to export from two threads or to run two
 //     exports at the same time;
-//   - the process must not use the retired MIDI->FluidSynth renderer
-//     (audio_session) for the same score while the engine is initialised.
+//   - the host process never initialises the engine: audio exports run in a
+//     --worker child (worker_protocol.cpp), which may export several jobs
+//     sequentially with the one engine it initialises.
 //
 // initialize_engine_audio() needs the native runtime already set up
 // (music::initialize_native_runtime): Uri::fromLocalFile resolves through
@@ -113,10 +114,12 @@ enum class EngineAudioFormat {
     Aac,
 };
 
-// Per-track mix override, keyed by mu::engraving::InstrumentTrackId. Tracks
-// without an entry use neutral values. `muted` is folded with the derived
-// forceMute (any solo and this track is not solo) and with the engine's
-// chord-symbol/metronome mute rules; see export_score_audio().
+// Per-track mix override. Entries are indexed by the public trackId returned
+// by engine_audio_tracks() (and score_audio_tracks / metadata.tracks), i.e. by
+// position in the selected score's track list. Tracks without an entry use
+// neutral values. `muted` is folded with the derived forceMute (any solo and
+// this track is not solo) and with the engine's chord-symbol/metronome mute
+// rules; see export_score_audio().
 struct EngineAudioTrackParams {
     double volume_db = 0.0;
     double balance = 0.0;
@@ -135,7 +138,8 @@ struct AudioRenderRequest {
     bool use_repeats = true;
     double master_volume_db = 0.0;
     double master_balance = 0.0;
-    std::map<mu::engraving::InstrumentTrackId, EngineAudioTrackParams> tracks;
+    // Indexed by engine_audio_tracks(master, excerpt_id) order.
+    std::vector<EngineAudioTrackParams> tracks;
     // Wait budget for the saveSoundTrack promise, in milliseconds; <= 0 uses
     // 10 minutes. The writer itself renders synchronously while the promise
     // body is pumped, so the timeout only catches a promise that never runs;
@@ -182,16 +186,19 @@ struct AudioRenderResult {
 //
 // The metronome and chord-symbol tracks are added when the PlaybackModel
 // reports them, but are always muted (the metronome/chord playback switches
-// are off, like PlaybackController::trackOutputParams).
+// are off, like PlaybackController::trackOutputParams). request.tracks is
+// indexed by the track list for the same excerpt (engine_audio_tracks);
+// tracks outside the excerpt keep neutral values but are muted as described
+// above.
 //
 // Never throws for a bad score/format/engine state; inspect AudioRenderResult.
 AudioRenderResult export_score_audio(mu::engraving::MasterScore* master, const AudioRenderRequest& request);
 
-// One playable track for score_audio_tracks. Part and instrument ids are the
-// raw ids from the score (muse::ID hex string / muse::String). The
-// chord-symbol pseudo-track has chord_symbols == true and an empty
-// instrument_name. The metronome pseudo-track is not listed because it is not
-// addressable through a part/instrument identity.
+// One playable track for score_audio_tracks. `id` is the raw score identity
+// (muse::ID hex string / muse::String); the public trackId is this entry's
+// zero-based index in the list. The chord-symbol pseudo track has
+// chord_symbols == true. The metronome pseudo track is not listed because it
+// is not addressable through a part/instrument identity.
 struct EngineAudioTrackInfo {
     mu::engraving::InstrumentTrackId id;
     std::string part_id;
@@ -203,8 +210,13 @@ struct EngineAudioTrackInfo {
     std::size_t part_index = 0;
 };
 
-// Lists parts, their instrument tracks and chord-symbol pseudo-tracks in score
-// order (no rendering). Throws std::invalid_argument when master is null.
-std::vector<EngineAudioTrackInfo> engine_audio_tracks(mu::engraving::MasterScore* master);
+// Lists the selected score's parts, their instrument tracks (one per
+// InstrumentTrackId, including instrument changes) and chord-symbol
+// pseudo-tracks in deterministic score order; the list index is the public
+// trackId. excerpt_id == -1 lists the master score; a non-negative value lists
+// only the excerpt's parts, matching what export_score_audio() renders.
+// Throws std::invalid_argument for a null master or an invalid excerpt id.
+std::vector<EngineAudioTrackInfo> engine_audio_tracks(mu::engraving::MasterScore* master,
+                                                      int excerpt_id = -1);
 
 } // namespace music

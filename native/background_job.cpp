@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <fstream>
 #include <mutex>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -287,6 +288,28 @@ bool same_output_path(const std::filesystem::path& first, const std::filesystem:
 #else
     return first.lexically_normal() == second.lexically_normal();
 #endif
+}
+
+std::filesystem::path create_private_directory(const std::filesystem::path& parent) {
+    std::random_device random;
+    for (int i = 0; i != 16; ++i) {
+        auto path = parent / (".musescore-job-" + std::to_string(random()) + "-" + std::to_string(random()));
+        std::error_code error;
+        if (std::filesystem::create_directory(path, error)) {
+#ifndef _WIN32
+            std::filesystem::permissions(path, std::filesystem::perms::owner_all,
+                                         std::filesystem::perm_options::replace, error);
+            if (error) {
+                std::filesystem::remove(path);
+                throw std::system_error(error, "Cannot restrict job directory permissions");
+            }
+#endif
+            return path;
+        }
+        if (error && error != std::errc::file_exists)
+            throw std::system_error(error, "Cannot create job directory");
+    }
+    throw std::runtime_error("Cannot allocate unique job directory");
 }
 
 std::filesystem::path normalize_output_path(const std::filesystem::path& path) {

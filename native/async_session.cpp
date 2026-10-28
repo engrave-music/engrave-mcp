@@ -22,7 +22,6 @@
 #include <map>
 #include <set>
 #include <limits>
-#include <random>
 #include <stdexcept>
 #include <thread>
 #include <future>
@@ -59,27 +58,6 @@ void only_keys(const Json& args, std::initializer_list<std::string_view> keys) {
     for (const auto& [key, _] : args.items())
         if (std::find(keys.begin(), keys.end(), key) == keys.end())
             throw std::invalid_argument("Unknown argument: " + key);
-}
-std::filesystem::path private_directory(const std::filesystem::path& parent) {
-    std::random_device random;
-    for (int i = 0; i != 16; ++i) {
-        auto path = parent / (".musescore-job-" + std::to_string(random()) + "-" + std::to_string(random()));
-        std::error_code error;
-        if (std::filesystem::create_directory(path, error)) {
-#ifndef _WIN32
-            std::filesystem::permissions(path, std::filesystem::perms::owner_all,
-                                         std::filesystem::perm_options::replace, error);
-            if (error) {
-                std::filesystem::remove(path);
-                throw std::system_error(error, "Cannot restrict job directory permissions");
-            }
-#endif
-            return path;
-        }
-        if (error && error != std::errc::file_exists)
-            throw std::system_error(error, "Cannot create job directory");
-    }
-    throw std::runtime_error("Cannot allocate unique job directory");
 }
 }
 
@@ -356,8 +334,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             ordered = true;
             job->captured_bytes = maximum_snapshot;
             snapshot_bytes += maximum_snapshot;
-            job->directory = private_directory(std::filesystem::absolute(std::filesystem::temp_directory_path()));
-            job->staging_directory = private_directory(destination.parent_path());
+            job->directory = create_private_directory(std::filesystem::absolute(std::filesystem::temp_directory_path()));
+            job->staging_directory = create_private_directory(destination.parent_path());
             const auto directory = job->directory;
             const auto staging_directory = job->staging_directory;
             const auto target_doc = document_id_to_string(document);

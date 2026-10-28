@@ -53,3 +53,11 @@ identical (`=`). v4.7.6 adds no source file to the compiled modules.
 Tag `mcp-4.7.6-2` = `e099f16b` adds `Revert "TEMPORARY: ..."` on `mcp/v4.7.6`: the host
 registers an `IApplication` (native/noqt_application.cpp), so the writers report the
 real version again. `mcp/v4.7.6` now carries the nine permanent topics only (net).
+Later pins on `mcp/v4.7.6` (no rebase; each adds commits on top):
+- `mcp-4.7.6-3` = `811634a1`: `bca4331a` audio: `RESOURCE_TYPE_MAP` holds `muse::String` (the
+  only Qt type on the audio engine side); `811634a1` engraving/tests: UTF-16 literals in the
+  playback tests so they build without Qt.
+- `mcp-4.7.6-4` = `6cd717f2`: `d653005f` audio: fixed Ogg stream serial (libopusenc drew it
+  from the process-global `rand()`, so identical exports differed); `6cd717f2` opusenc:
+  initialize the OpusTags vendor string (the vendored copy passed an uninitialized stack
+  buffer; released libopusenc 0.2.1 formats it).

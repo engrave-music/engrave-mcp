@@ -483,3 +483,41 @@ resolved mix and share one error policy for scores that cannot be planned per
 track; background WAV is byte-identical to synchronous WAV for the same mix
 (asserted); dead streaming code removed; docs corrected (step 4 evidence is
 ec43ba5 on Windows and Linux, MSCZ export does not write audiosettings.json).
+## Roadmap step 5: audio on MuseScore 4's engine (2026-10-28)
+
+Pin `mcp-4.7.6-4` (`6cd717f2`). Audio exports (wav, flac, ogg = Opus in Ogg, mp3, and aac, a
+user decision) render through MuseScore's audio engine (engine, fx, synthesizers, sound track
+writer and encoders built Qt-free by xmake: muse_audio_engine, lame, flac, opus, opusenc,
+fdk_aac) in a `--worker` child process, for synchronous and background exports alike; the host
+never starts the engine. native/engine_audio drives it in one thread: no-op RPC channel,
+message pump around saveSoundTrack, explicit Fluid resource for the SoundFont, PlaybackModel on
+the master score (repeats as requested, chord symbols and metronome off), one track per
+InstrumentTrackId with 0.30 sends to a Muse Reverb aux, solo folded into muted as desktop does,
+duration = repeat-expanded play time + 3 s, mixer single-threaded (MUSE_THREADS_SUPPORT stays
+undefined). Excerpts render the master with absent/invisible parts muted. The FluidSynth MIDI
+renderer, stems, libsndfile and the old codecs are removed; `.mid` export is unchanged
+(all midi.json goldens identical). Tracks are InstrumentTrackIds: multi-instrument parts and
+instrument changes get their own tracks, the chord-symbol track is listed and muted; the old
+15-part and multi-instrument restrictions are gone. One audio job per worker process: a second
+render in the same process inherits Muse Reverb state.
+
+Executed on Windows and Linux (lane engine_audio and the full suite, 25/25 lanes each):
+- 98 upstream gtests (engraving playback 87, mpe 11) built against the fork with a project-owned
+  Qt-free gtest main.
+- Sine SoundFont (tests/engine_audio/sine.sf2): onsets within 1.95 ms, pitch within 0.80 cent.
+- MIDI events handled by FluidSynth (NoteOn/Off, CC, pitch bend) match goldens exactly for
+  evening, hairpins_and_repeats, pedal, bend.gp, repeat70.
+- Mix: solo/mute silence about -215 dB, -6 dB track gain measured -6.00 dB, balance by L/R
+  energy, master volume; excerpt export identical (max difference 0.0) to the master render with
+  the other parts muted; sync and async exports byte-identical for all five formats.
+- Determinism: repeated exports byte-identical per format (after the two Ogg fork fixes; before
+  them Linux Ogg differed in the stream serial and an uninitialized OpusTags vendor string).
+  Duration = play time + 3 s for every golden fixture.
+- Performance: 25-instrument orchestral template, about 1.0 s per audio minute, 240 MiB peak
+  working set (budget 4 s/min, 1 GiB).
+- Goldens: every audio.json changed (new renderer) and metadata.json changed only inside `tracks`
+  (new fields, InstrumentTrackId names), checked by script; rebaselined on both platforms.
+Not done (roadmap optional, needs user approval): desktop 4.7.6 + MS Basic reference renders.
+Known deviations from desktop: listed in notes/claude-workers/engine-driver-dsh.md and summarized
+in concurrency.md (single-threaded in-process engine, one SoundFont, no per-preset sounds or
+MuseSampler/VST, no FX chains beyond the reverb aux, English track labels, no progress events).

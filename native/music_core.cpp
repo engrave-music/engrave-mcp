@@ -1,7 +1,7 @@
 #include "music_core.h"
 
-#include "audio_codecs.h"
 #include "composition.h"
+#include "engine_audio.h"
 #include "noqt_runtime.h"
 #include "score_audio.h"
 #include "score_metadata.h"
@@ -112,8 +112,24 @@ const char* export_backend_name(ExportFormat format) noexcept {
     case ExportFormat::Flac: return "flac";
     case ExportFormat::Ogg: return "ogg";
     case ExportFormat::Mp3: return "mp3";
+    case ExportFormat::Aac: return "aac";
     }
     return "";
+}
+
+// Audio formats are always rendered by the worker's MuseScore engine, never by
+// the host's exporter path.
+bool is_audio_export_format(ExportFormat format) noexcept {
+    switch (format) {
+    case ExportFormat::Wav:
+    case ExportFormat::Flac:
+    case ExportFormat::Ogg:
+    case ExportFormat::Mp3:
+    case ExportFormat::Aac:
+        return true;
+    default:
+        return false;
+    }
 }
 
 // Typed -> existing JSON validator/generator. This is the only public-core
@@ -297,6 +313,7 @@ std::optional<ExportFormat> export_format_from_name(std::string_view name) noexc
     if (name == "flac") return ExportFormat::Flac;
     if (name == "ogg") return ExportFormat::Ogg;
     if (name == "mp3") return ExportFormat::Mp3;
+    if (name == "aac") return ExportFormat::Aac;
     return std::nullopt;
 }
 
@@ -503,9 +520,16 @@ struct MusicCore::Impl {
             const auto descriptions = score_audio_track_info(score);
             std::vector<AudioTrackInfo> result;
             result.reserve(descriptions.size());
-            for (const ScoreAudioTrackInfo& description : descriptions) {
-                result.push_back(AudioTrackInfo{description.track_id, description.part_id,
-                                                description.instrument_id, description.name});
+            for (std::size_t index = 0; index < descriptions.size(); ++index) {
+                const ScoreAudioTrackInfo& description = descriptions[index];
+                AudioTrackInfo info;
+                info.track_id = static_cast<std::int64_t>(index);
+                info.part_id = description.part_id;
+                info.instrument_id = description.instrument_id;
+                info.part_name = description.part_name;
+                info.instrument_name = description.instrument_name;
+                info.chord_symbols = description.chord_symbols;
+                result.push_back(std::move(info));
             }
             return result;
         } catch (const std::invalid_argument& error) {
@@ -529,7 +553,9 @@ struct MusicCore::Impl {
             track.track_id = info.track_id;
             track.part_id = info.part_id;
             track.instrument_id = info.instrument_id;
-            track.name = info.name;
+            track.part_name = info.part_name;
+            track.name = info.instrument_name;
+            track.chord_symbols = info.chord_symbols;
             for (const auto& track_param : mix.tracks) {
                 if (track_param.track_id == info.track_id) {
                     track.volume_db = track_param.output.volume_db;
@@ -545,22 +571,13 @@ struct MusicCore::Impl {
         return meta_tracks;
     }
 
-    // Metadata must stay available for scores whose parts cannot be planned as
-    // audio stems (e.g. multi-instrument parts or more than 15 parts); their
-    // tracks are then empty.
+    // Metadata shares the audio track list; every instrument track (including
+    // instrument changes and chord-symbol pseudo tracks) is described.
     static std::vector<ScoreMetadataTrack> metadata_tracks_or_empty(const Document& document,
                                                                    mu::engraving::Score* score,
                                                                    int excerpt_id,
                                                                    const std::optional<AudioMix>& resolved = std::nullopt) {
-        std::vector<AudioTrackInfo> tracks;
-        try {
-            tracks = describe_audio_tracks(score);
-        } catch (const std::bad_alloc&) {
-            throw;
-        } catch (const CoreError& error) {
-            if (error.code() == CoreError::Code::invalid_argument) return {};
-            throw;
-        }
+        const std::vector<AudioTrackInfo> tracks = describe_audio_tracks(score);
         const AudioMix mix = resolved ? canonical_audio_mix(*resolved, tracks)
                                       : default_audio_mix(document, tracks, excerpt_id);
         return describe_metadata_tracks(tracks, mix);
@@ -590,6 +607,18 @@ struct MusicCore::Impl {
                 || *output.balance > 1.0)) {
             throw CoreError(CoreError::Code::invalid_argument,
                             std::string(label) + " balance must be finite and in [-1, 1]");
+        }
+    }
+
+    // Derives forceMute and enforces the chord-playback-off rule for the
+    // pseudo tracks that score_audio_tracks lists.
+    static void finalize_audio_mix(AudioMix& mix, const std::vector<AudioTrackInfo>& tracks) {
+        derive_force_mute(mix);
+        for (std::size_t index = 0; index < tracks.size() && index < mix.tracks.size(); ++index) {
+            if (tracks[index].chord_symbols) {
+                mix.tracks[index].output.muted = true;
+                mix.tracks[index].output.force_mute = true;
+            }
         }
     }
 
@@ -641,7 +670,7 @@ struct MusicCore::Impl {
             validate_audio_output(output, "Document track mix");
             mix.tracks.push_back(AudioTrackParams{track.track_id, output});
         }
-        derive_force_mute(mix);
+        finalize_audio_mix(mix, tracks);
         return mix;
     }
 
@@ -684,7 +713,7 @@ struct MusicCore::Impl {
             throw CoreError(CoreError::Code::invalid_argument,
                             "Audio mix contains an unknown trackId");
         }
-        derive_force_mute(canonical);
+        finalize_audio_mix(canonical, tracks);
         return canonical;
     }
 
@@ -730,7 +759,7 @@ struct MusicCore::Impl {
             throw CoreError(CoreError::Code::invalid_argument,
                             "Audio mix track set does not match the selected score");
         }
-        derive_force_mute(mix);
+        finalize_audio_mix(mix, tracks);
         return mix;
     }
 
@@ -743,74 +772,9 @@ struct MusicCore::Impl {
         return mix;
     }
 
-    static bool is_neutral_override(const AudioMixOverride& override) noexcept {
-        if (override.master.volume_db && *override.master.volume_db != 0.0) return false;
-        if (override.master.balance && *override.master.balance != 0.0) return false;
-        for (const auto& track : override.tracks) {
-            if (track.output.volume_db && *track.output.volume_db != 0.0) return false;
-            if (track.output.balance && *track.output.balance != 0.0) return false;
-            if (track.output.solo && *track.output.solo) return false;
-            if (track.output.muted && *track.output.muted) return false;
-        }
-        return true;
-    }
-
-    static bool has_non_neutral_mix_request(const Document& document,
-                                            const ExportOptions& options) noexcept {
-        if (options.explicit_mix && !is_neutral_mix(*options.explicit_mix)) return true;
-        if (options.mix && (!is_neutral_override(*options.mix) || !options.mix->tracks.empty())) return true;
-        const std::string excerpt_name = excerpt_name_for_id(document, options.excerpt_id);
-        if (!document.audio_mix_defaults.is_neutral(options.excerpt_id, excerpt_name)) return true;
-        return false;
-    }
-
-    std::unique_ptr<AudioSession> make_audio_session(const Document& document,
-                                                     const ExportOptions& options) const {
-        if (soundfont.empty())
-            throw CoreError(CoreError::Code::engine_failure,
-                            "Set a SoundFont to enable audio sessions");
-        auto* score = select_score(document.project->masterScore(), options.excerpt_id);
-        const auto tracks = describe_audio_tracks(score);
-        const AudioMix mix = resolved_audio_mix(document, tracks, options);
-        auto stems = score_audio_stems(score, options.midi_expand_repeats,
-                                       options.midi_export_rpns);
-        auto session = std::make_unique<AudioSession>(std::move(stems), soundfont,
-                                                      retain_runtime_assets());
-        session->set_mix(mix);
-        return session;
-    }
-
     AudioMix export_mix(const Document& document, const ExportOptions& options) const {
-        try {
-            const auto tracks = describe_audio_tracks(document.project, options.excerpt_id);
-            return resolved_audio_mix(document, tracks, options);
-        } catch (const CoreError& error) {
-            if (error.code() != CoreError::Code::invalid_argument) throw;
-            if (has_non_neutral_mix_request(document, options)) {
-                throw CoreError(CoreError::Code::invalid_argument,
-                                "Score cannot be planned per track for custom audio mix");
-            }
-            return AudioMix{};
-        }
-    }
-
-    static std::optional<AudioFormat> audio_format(ExportFormat format) noexcept {
-        switch (format) {
-        case ExportFormat::Wav: return AudioFormat::Wav;
-        case ExportFormat::Flac: return AudioFormat::Flac;
-        case ExportFormat::Ogg: return AudioFormat::Ogg;
-        case ExportFormat::Mp3: return AudioFormat::Mp3;
-        default: return std::nullopt;
-        }
-    }
-
-    std::string encode_audio_export(const Document& document, const ExportOptions& options,
-                                    AudioFormat format) const {
-        auto session = make_audio_session(document, options);
-        auto data = encode_audio(*session, format);
-        if (data.empty())
-            throw CoreError(CoreError::Code::engine_failure, "Audio encoder returned no data");
-        return data;
+        const auto tracks = describe_audio_tracks(document.project, options.excerpt_id);
+        return resolved_audio_mix(document, tracks, options);
     }
 
     ScoreInfo insert(ScoreProject project, std::optional<Composition> composition,
@@ -1015,36 +979,11 @@ struct MusicCore::Impl {
                                                               options.explicit_mix);
             return ExportData{document.revision, score_metadata(selected, meta_tracks).dump()};
         }
-        if (const auto codec = audio_format(format)) {
-            bool use_legacy = false;
-            std::vector<AudioTrackInfo> tracks;
-            bool unplannable = false;
-            try {
-                tracks = describe_audio_tracks(document.project, options.excerpt_id);
-            } catch (const CoreError& error) {
-                if (error.code() != CoreError::Code::invalid_argument) throw;
-                unplannable = true;
-            }
-
-            if (unplannable) {
-                if (has_non_neutral_mix_request(document, options)) {
-                    throw CoreError(CoreError::Code::invalid_argument,
-                                    "Score cannot be planned per track for custom audio mix");
-                }
-                if (format == ExportFormat::Wav) {
-                    use_legacy = true;
-                } else {
-                    throw CoreError(CoreError::Code::invalid_argument,
-                                    "Score cannot be planned as audio stems");
-                }
-            } else {
-                const AudioMix mix = resolved_audio_mix(document, tracks, options);
-                use_legacy = (format == ExportFormat::Wav && is_neutral_mix(mix));
-                if (!use_legacy) {
-                    return ExportData{document.revision,
-                                      encode_audio_export(document, options, *codec)};
-                }
-            }
+        if (is_audio_export_format(format)) {
+            // Audio never renders in the host process; score_export and
+            // score_export_start route it through a worker (export_audio).
+            throw CoreError(CoreError::Code::invalid_argument,
+                            "Audio exports are rendered in a worker process");
         }
         auto data = export_native_score(document.project, export_backend_name(format), options, soundfont);
         if (data.empty()) throw CoreError(CoreError::Code::engine_failure, "Exporter returned no data");
@@ -1294,6 +1233,59 @@ ExportData MusicCore::export_bytes(DocumentId id, ExportFormat format, const Exp
     try {
         impl_->check_owner();
         return impl_->export_document(id, format, options);
+    } catch (...) {
+        translate_current_exception(CoreError::Code::engine_failure);
+    }
+}
+
+AudioExportResult MusicCore::export_audio(DocumentId id, ExportFormat format, const std::string& output_path,
+                                          const ExportOptions& options) {
+    try {
+        impl_->check_owner();
+        EngineAudioFormat engine_format;
+        switch (format) {
+        case ExportFormat::Wav: engine_format = EngineAudioFormat::Wav; break;
+        case ExportFormat::Flac: engine_format = EngineAudioFormat::Flac; break;
+        case ExportFormat::Ogg: engine_format = EngineAudioFormat::Ogg; break;
+        case ExportFormat::Mp3: engine_format = EngineAudioFormat::Mp3; break;
+        case ExportFormat::Aac: engine_format = EngineAudioFormat::Aac; break;
+        default:
+            throw CoreError(CoreError::Code::invalid_argument,
+                            "Audio export requires an audio format");
+        }
+        if (!engine_audio_initialized()) {
+            throw CoreError(CoreError::Code::engine_failure,
+                            "Audio engine is not initialized in this worker process");
+        }
+
+        const auto& document = impl_->find(id);
+        auto* master = document.project->masterScore();
+        auto* selected = select_score(master, options.excerpt_id);
+        const auto tracks = Impl::describe_audio_tracks(selected);
+        const AudioMix mix = Impl::resolved_audio_mix(document, tracks, options);
+
+        AudioRenderRequest request;
+        request.format = engine_format;
+        request.output_path = output_path;
+        request.excerpt_id = options.excerpt_id;
+        request.use_repeats = options.midi_expand_repeats;
+        request.master_volume_db = mix.master.volume_db;
+        request.master_balance = mix.master.balance;
+        request.tracks.reserve(mix.tracks.size());
+        for (const AudioTrackParams& track : mix.tracks) {
+            request.tracks.push_back(EngineAudioTrackParams{
+                track.output.volume_db, track.output.balance, track.output.solo, track.output.muted });
+        }
+
+        const AudioRenderResult rendered = export_score_audio(master, request);
+        AudioExportResult result;
+        result.ok = rendered.ok;
+        result.error = rendered.error;
+        result.frames = rendered.frames;
+        result.bytes = rendered.bytes;
+        result.play_time_secs = rendered.play_time_secs;
+        result.duration_secs = rendered.duration_secs;
+        return result;
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
     }

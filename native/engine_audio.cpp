@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <set>
 #include <stdexcept>
@@ -29,6 +31,9 @@
 #include "engraving/dom/part.h"
 #include "engraving/dom/score.h"
 #include "engraving/playback/playbackmodel.h"
+
+#include "score_audio.h"
+#include "score_excerpts.h"
 
 #include "global/async/asyncable.h"
 #include "global/async/processevents.h"
@@ -131,7 +136,7 @@ audio::engine::IEnginePlayback* ensure_playback(std::string& error)
 }
 
 // Mirrors playbackcontroller.cpp:74-86 (makeReverbOutputParams).
-AudioOutputParams make_reverb_output_params()
+muse::audio::AudioOutputParams make_reverb_output_params()
 {
     AudioFxParams reverbParams;
     reverbParams.resourceMeta = makeReverbMeta();
@@ -139,7 +144,7 @@ AudioOutputParams make_reverb_output_params()
     reverbParams.chainOrder = 0;
     reverbParams.active = true;
 
-    AudioOutputParams result;
+    muse::audio::AudioOutputParams result;
     result.fxChain.emplace(reverbParams.chainOrder, std::move(reverbParams));
     return result;
 }
@@ -214,7 +219,7 @@ std::string track_name(const MasterScore* master, const PlaybackModel& model, co
     return id.instrumentId.toStdString();
 }
 
-void set_track_mix(AudioOutputParams& out, const EngineAudioTrackParams& params)
+void set_track_mix(muse::audio::AudioOutputParams& out, const EngineAudioTrackParams& params)
 {
     out.volume = static_cast<volume_db_t>(params.volume_db);
     out.balance = static_cast<balance_t>(params.balance);
@@ -486,19 +491,31 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
     const TrackSequenceId sequenceId = enginePlayback->addSequence();
     SequenceGuard sequenceGuard{ enginePlayback, sequenceId };
 
-    AudioOutputParams masterOutput;
+    muse::audio::AudioOutputParams masterOutput;
     masterOutput.volume = static_cast<volume_db_t>(request.master_volume_db);
     masterOutput.balance = static_cast<balance_t>(request.master_balance);
     enginePlayback->setMasterOutputParams(masterOutput);
 
+    // The public mix is indexed by the same deterministic track list that
+    // score_audio_tracks reports. Keep the list for the selected excerpt: for
+    // a part export it contains only the excerpt's parts, while master tracks
+    // outside it keep neutral values and are muted below.
+    const std::vector<EngineAudioTrackInfo> mixTracks = engine_audio_tracks(masterScore, request.excerpt_id);
+    std::map<InstrumentTrackId, std::size_t> mixIndex;
+    for (std::size_t index = 0; index < mixTracks.size(); ++index) {
+        mixIndex.emplace(mixTracks[index].id, index);
+    }
+    const auto trackParams = [&request](std::size_t index) {
+        return index < request.tracks.size() ? request.tracks[index] : EngineAudioTrackParams{};
+    };
+
     // updateSoloMuteStates() derives forceMute from any non-metronome solo.
     bool hasSolo = false;
-    for (const InstrumentTrackId& trackId : existingTrackIds) {
-        if (trackId == model.metronomeTrackId()) {
+    for (std::size_t index = 0; index < mixTracks.size(); ++index) {
+        if (mixTracks[index].id == model.metronomeTrackId()) {
             continue;
         }
-        auto override = request.tracks.find(trackId);
-        if (override != request.tracks.end() && override->second.solo) {
+        if (trackParams(index).solo) {
             hasSolo = true;
             break;
         }
@@ -518,10 +535,10 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
         const bool isMetronome = trackId == model.metronomeTrackId();
         const bool isChordSymbols = model.isChordSymbolsTrack(trackId);
 
+        const auto index = mixIndex.find(trackId);
         EngineAudioTrackParams mix;
-        auto override = request.tracks.find(trackId);
-        if (override != request.tracks.end()) {
-            mix = override->second;
+        if (index != mixIndex.end()) {
+            mix = trackParams(index->second);
         }
 
         // Fold forceMute as PlaybackController::updateSoloMuteStates does:
@@ -530,7 +547,7 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
         // force-muted because chord playback and the metronome are off.
         const bool forceMute = !isMetronome && hasSolo && !mix.solo;
 
-        AudioOutputParams out;
+        muse::audio::AudioOutputParams out;
         set_track_mix(out, mix);
         out.muted = mix.muted || forceMute || isChordSymbols || isMetronome
                     || (excerptSelected && mutedParts.count(trackId.partId) > 0);
@@ -556,18 +573,24 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
 
     // Aux 0 is the Muse Reverb converter-parity send target; aux 1 is empty
     // (desktop adds AUX_CHANNEL_NUM tracks, playbackcontroller.cpp:1432-1434).
-    RetVal2<TrackId, AudioOutputParams> reverb = enginePlayback->addAuxTrack(sequenceId, kReverbTrackName,
+    RetVal2<TrackId, muse::audio::AudioOutputParams> reverb = enginePlayback->addAuxTrack(sequenceId, kReverbTrackName,
                                                                             make_reverb_output_params());
     if (!reverb.ret) {
         return fail("addAuxTrack(reverb) failed: " + reverb.ret.toString());
     }
-    RetVal2<TrackId, AudioOutputParams> aux2 = enginePlayback->addAuxTrack(sequenceId, kAuxTrackName,
-                                                                          AudioOutputParams());
+    RetVal2<TrackId, muse::audio::AudioOutputParams> aux2 = enginePlayback->addAuxTrack(sequenceId, kAuxTrackName,
+                                                                          muse::audio::AudioOutputParams());
     if (!aux2.ret) {
         return fail("addAuxTrack(aux 2) failed: " + aux2.ret.toString());
     }
 
     enginePlayback->setDuration(sequenceId, totalDurationMs);
+
+    // libopusenc picks the Ogg stream serial and the Opus encoder dithers with
+    // rand(). Seed after all engine setup (synth/sequence creation) and before
+    // the writer starts, so repeated exports in one worker process - and the
+    // same request in sync and async workers - are byte-identical.
+    std::srand(0);
 
     ExportWaiter waiter;
     enginePlayback->saveSoundTrack(sequenceId, io::path_t(request.output_path), make_soundtrack_format(request.format))
@@ -615,53 +638,30 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
     return result;
 }
 
-std::vector<EngineAudioTrackInfo> engine_audio_tracks(MasterScore* master)
+std::vector<EngineAudioTrackInfo> engine_audio_tracks(MasterScore* master, int excerpt_id)
 {
     if (!master) {
         throw std::invalid_argument("engine_audio_tracks: master score is null");
     }
 
-    // Only the id helpers are used; this model is not loaded, so no playback
-    // data is built.
-    const PlaybackModel model(modularity::globalCtx());
+    mu::engraving::Score* selected = nullptr;
+    try {
+        selected = select_score(master, excerpt_id);
+    } catch (const std::out_of_range& error) {
+        throw std::invalid_argument(error.what());
+    }
 
     std::vector<EngineAudioTrackInfo> result;
-    std::size_t partIndex = 0;
-    for (const Part* part : master->parts()) {
-        if (part) {
-            for (const auto& pair : part->instruments()) {
-                const Instrument* instrument = pair.second;
-                if (!instrument) {
-                    continue;
-                }
-
-                EngineAudioTrackInfo info;
-                info.id = { part->id(), instrument->id() };
-                if (!info.id.isValid()) {
-                    continue;
-                }
-                info.part_id = part->id().toStdString();
-                info.instrument_id = instrument->id().toStdString();
-                info.part_name = part->partName().toStdString();
-                info.instrument_name = instrument->trackName().toStdString();
-                info.chord_symbols = false;
-                info.part_index = partIndex;
-                result.push_back(std::move(info));
-            }
-
-            if (part->hasChordSymbol()) {
-                EngineAudioTrackInfo info;
-                info.id = model.chordSymbolsTrackId(part->id());
-                info.part_id = part->id().toStdString();
-                info.instrument_id = info.id.instrumentId.toStdString();
-                info.part_name = part->partName().toStdString();
-                info.chord_symbols = true;
-                info.part_index = partIndex;
-                result.push_back(std::move(info));
-            }
-        }
-
-        ++partIndex;
+    for (const ScoreAudioTrackInfo& description : score_audio_track_info(selected)) {
+        EngineAudioTrackInfo info;
+        info.id = description.id;
+        info.part_id = description.part_id;
+        info.instrument_id = description.instrument_id;
+        info.part_name = description.part_name;
+        info.instrument_name = description.instrument_name;
+        info.chord_symbols = description.chord_symbols;
+        info.part_index = description.part_index;
+        result.push_back(std::move(info));
     }
 
     return result;

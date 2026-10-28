@@ -6,7 +6,8 @@
 -- Layout:
 --   freetype / harfbuzz              bundled dependency libraries
 --   muse_global / muse_draw / muse_mpe / engraving / iex_musicxml
---   native_fluidsynth / native_audio FluidSynth sessions and audio codecs
+--   native_fluidsynth              FluidSynth sources for the audio engine
+--   muse_audio_engine                MuseScore 4 audio engine and encoders
 --   noqt_support                     native filesystem/settings/font/MIDI adapters
 --   score_engine                     private engraving and format adapters
 --   music_core                       typed owner-thread document facade
@@ -526,12 +527,6 @@ target("native_fluidsynth")
     add_manifest_target("native_fluidsynth")
     set_warnings("none")
 
-target("native_audio")
-    set_kind("static")
-    add_deps("native_fluidsynth")
-    add_manifest_target("native_audio")
-    add_links("sndfile", {public = true})
-
 -- MuseScore 4's audio engine and its bundled encoders (roadmap step 5). The
 -- lists live in the manifest; only the platform-specific configuration that
 -- CMake would generate stays here. MUSE_THREADS_SUPPORT is deliberately left
@@ -684,7 +679,7 @@ target("noqt_support")
 
 target("score_engine")
     set_kind("static")
-    add_deps("muse_generated", "noqt_support", "native_audio", "muse_draw",
+    add_deps("muse_generated", "noqt_support", "muse_draw",
         "engraving", "iex_musicxml")
     add_deps("iex_guitarpro", "iex_midi_import")
     add_manifest_target("score_engine")
@@ -693,11 +688,6 @@ target("score_engine")
         add_links("m", {public = true})
     end
 
-target("music_core")
-    set_kind("static")
-    add_deps("muse_generated", "score_engine")
-    add_manifest_target("music_core")
-
 -- Headless MuseScore 4 audio-engine driver (roadmap step 5). It needs both the
 -- engraving playback model (score_engine) and the Qt-free engine/encoders
 -- (muse_audio_engine); the process-wide engine state lives in engine_audio.cpp.
@@ -705,6 +695,11 @@ target("engine_audio")
     set_kind("static")
     add_deps("muse_generated", "score_engine", "muse_audio_engine")
     add_manifest_target("engine_audio")
+
+target("music_core")
+    set_kind("static")
+    add_deps("muse_generated", "score_engine", "engine_audio")
+    add_manifest_target("music_core")
 
 target("engine_audio_probe")
     set_kind("binary")
@@ -728,7 +723,7 @@ target("engine_audio_probe")
 target("musescore_mcp")
     set_kind("binary")
     set_basename("musescore-mcp")
-    add_deps("muse_generated", "music_core")
+    add_deps("muse_generated", "music_core", "engine_audio")
     add_manifest_target("musescore_mcp")
     add_packages("asio")
     if is_plat("windows") then
@@ -754,7 +749,7 @@ target("noqt_probe")
 target("musescore_mcp_test")
     set_kind("binary")
     set_basename("musescore-mcp-test")
-    add_deps("muse_generated", "music_core")
+    add_deps("muse_generated", "music_core", "engine_audio")
     add_manifest_target("musescore_mcp")
     add_packages("asio")
     add_defines("MUSIC_ASYNC_TEST_HOOKS")

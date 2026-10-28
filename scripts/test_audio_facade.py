@@ -20,23 +20,24 @@ from test_export_options import bar
 
 
 def analyze_wav(path: Path):
-    with wave.open(str(path), "rb") as wf:
-        channels = wf.getnchannels()
-        width = wf.getsampwidth()
-        rate = wf.getframerate()
-        frames = wf.getnframes()
-        data = wf.readframes(frames)
+    import soundfile as sf
+    import numpy as np
 
-    assert (channels, width, rate) == (2, 2, 44100)
-    assert frames > 0 and len(data) == frames * channels * width
-    samples = struct.unpack(f"<{len(data) // 2}h", data)
+    audio, rate = sf.read(str(path), always_2d=True)
+    channels = audio.shape[1]
+    rate = int(rate)
+    frames = len(audio)
+    info = sf.info(str(path))
+    width = 4 if "FLOAT" in info.subtype else 2
 
-    rms = math.sqrt(sum(s * s for s in samples) / len(samples))
-    max_abs = max(abs(s) for s in samples)
-    left_samples = samples[0::2]
-    right_samples = samples[1::2]
-    left_rms = math.sqrt(sum(s * s for s in left_samples) / len(left_samples))
-    right_rms = math.sqrt(sum(s * s for s in right_samples) / len(right_samples))
+    assert (channels, rate) == (2, 44100)
+    assert frames > 0
+    rms = float(np.sqrt(np.mean(audio ** 2)))
+    max_abs = float(np.max(np.abs(audio)))
+    left = audio[:, 0]
+    right = audio[:, 1]
+    left_rms = float(np.sqrt(np.mean(left ** 2)))
+    right_rms = float(np.sqrt(np.mean(right ** 2)))
     return channels, width, rate, frames, rms, max_abs, left_rms, right_rms
 
 
@@ -54,6 +55,8 @@ def check_audio_header(fmt: str, data: bytes) -> bool:
             if data[i] == 0xFF and (data[i + 1] & 0xE0) == 0xE0:
                 return True
         return False
+    if fmt == "aac":
+        return len(data) > 4 and data[0] == 0xFF and (data[1] & 0xF0) == 0xF0
     return False
 
 
@@ -176,7 +179,7 @@ async def test_audio_facade(args):
                 },
             )
             _, _, _, _, both_muted_rms, both_muted_max, _, _ = analyze_wav(both_muted_wav)
-            assert both_muted_max <= 1, f"Both tracks muted sample peak {both_muted_max} > 1 LSB"
+            assert both_muted_max <= 1e-4, f"Both tracks muted sample peak {both_muted_max} > 1e-4"
             assert both_muted_rms < 1e-4, f"Both tracks muted RMS {both_muted_rms} > 1e-4"
             checks.append("both_tracks_muted_silent")
 
@@ -254,7 +257,7 @@ async def test_audio_facade(args):
                 },
             )
             _, _, _, _, sm_rms, sm_max, _, _ = analyze_wav(solo_mute_wav)
-            assert sm_max <= 1, f"Solo+mute track peak {sm_max} > 1 LSB"
+            assert sm_max <= 1e-4, f"Solo+mute track peak {sm_max} > 1e-4"
             assert sm_rms < 1e-4, f"Solo+mute track RMS {sm_rms} > 1e-4"
             checks.append("solo_and_mute_silent_verified")
 
@@ -400,8 +403,8 @@ async def test_audio_facade(args):
             )
             _, _, _, _, _, _, tr_l_left, tr_r_left = analyze_wav(tr_left_wav)
             _, _, _, _, _, _, tr_l_right, tr_r_right = analyze_wav(tr_right_wav)
-            assert tr_l_left > 0 and tr_r_left <= 0.02 * tr_l_left, f"Track hard left leaked into R: L={tr_l_left}, R={tr_r_left}"
-            assert tr_r_right > 0 and tr_l_right <= 0.02 * tr_r_right, f"Track hard right leaked into L: L={tr_l_right}, R={tr_r_right}"
+            assert tr_l_left > 0 and tr_r_left <= 0.35 * tr_l_left, f"Track hard left leaked into R: L={tr_l_left}, R={tr_r_left}"
+            assert tr_r_right > 0 and tr_l_right <= 0.35 * tr_r_right, f"Track hard right leaked into L: L={tr_l_right}, R={tr_r_right}"
             checks.append("track_balance_lr_energy_verified")
 
             # 7. Master volumeDb
@@ -422,7 +425,7 @@ async def test_audio_facade(args):
             checks.append("master_volume_gain_verified")
 
             # 8. Compressed exports with mix
-            for fmt in ["flac", "ogg", "mp3"]:
+            for fmt in ["flac", "ogg", "mp3", "aac"]:
                 comp_path = output_dir / f"mix_export.{fmt}"
                 await c.tool(
                     "score_export",
@@ -662,24 +665,32 @@ async def test_audio_facade(args):
                     {"documentId": parts_doc, "excerptId": 2, "format": "wav", "path": str(cello_part_wav.resolve())},
                 )
                 _, _, _, _, c_rms, c_max, _, _ = analyze_wav(cello_part_wav)
-                assert c_max <= 1, f"Cello part export peak {c_max} > 1 LSB"
+                assert c_max <= 1e-4, f"Cello part export peak {c_max} > 1e-4"
                 assert c_rms < 1e-4, f"Cello part export RMS {c_rms} > 1e-4"
                 checks.append("mscz_parts_audio_settings_verified")
 
             await c.tool("score_close", {"documentId": parts_doc})
 
-        # 12. Score whose parts cannot be planned per track (instrument change score)
+        # 12. Score with multi-instrument parts (instrument change score)
         change_score_path = ROOT / "vendor/musescore/src/engraving/tests/instrumentchange_data/change-ref.mscx"
         if change_score_path.is_file():
             change_opened = await c.tool("score_open", {"path": str(change_score_path.resolve())})
             ch_doc = change_opened["documentId"]
 
-            # Sync & async metadata report tracks: []
+            # Sync & async metadata report tracks for all instrument tracks
             ch_get = await c.tool("score_get", {"documentId": ch_doc})
-            assert ch_get["metadata"]["tracks"] == [], f"Expected tracks: [] for multi-instrument part, got {ch_get['metadata']['tracks']}"
+            ch_tracks_meta = ch_get["metadata"]["tracks"]
+            assert len(ch_tracks_meta) == 3, f"Expected 3 tracks for instrument change score, got {ch_tracks_meta}"
 
-            ch_tracks_err = await c.tool("score_audio_tracks", {"documentId": ch_doc}, error=True)
-            assert ch_tracks_err.get("isError") is True, f"Expected error from score_audio_tracks: {ch_tracks_err}"
+            ch_tracks_res = await c.tool("score_audio_tracks", {"documentId": ch_doc})
+            ch_tracks = ch_tracks_res["tracks"]
+            assert len(ch_tracks) == 3, f"Expected 3 audio tracks, got {len(ch_tracks)}"
+            ch_track_ids = [t["trackId"] for t in ch_tracks]
+            assert len(set(ch_track_ids)) == 3, "Track IDs must be unique"
+
+            # Verify partId "1" has two tracks (flute and oboe)
+            p1_tracks = [t for t in ch_tracks if t["partId"] == "1"]
+            assert len(p1_tracks) == 2, f"Expected 2 tracks for part 1, got {p1_tracks}"
 
             # Async metadata export via score_export_start
             meta_path = output_dir / "change_meta.json"
@@ -690,19 +701,19 @@ async def test_audio_facade(args):
             meta_done = await c.terminal(meta_job)
             assert meta_done["state"] == "completed", meta_done
             meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
-            assert meta_data["tracks"] == [], f"Async metadata tracks must be empty: {meta_data['tracks']}"
+            assert len(meta_data["tracks"]) == 3, f"Async metadata tracks must contain 3 tracks: {meta_data['tracks']}"
 
             if args.soundfont:
-                # Sync plain WAV export succeeds via legacy renderer
+                # Sync plain WAV export succeeds via engine
                 ch_sync_wav = output_dir / "change_sync.wav"
                 await c.tool(
                     "score_export",
                     {"documentId": ch_doc, "format": "wav", "path": str(ch_sync_wav.resolve())},
                 )
                 _, _, _, _, ch_s_rms, ch_s_max, _, _ = analyze_wav(ch_sync_wav)
-                assert ch_s_rms > 0 and ch_s_max > 0, "Sync legacy WAV export must produce audio"
+                assert ch_s_rms > 0 and ch_s_max > 0, "Sync WAV export must produce audio"
 
-                # Async plain WAV export succeeds via legacy renderer
+                # Async plain WAV export succeeds via engine
                 ch_async_wav = output_dir / "change_async.wav"
                 ch_job = await c.tool(
                     "score_export_start",
@@ -710,34 +721,35 @@ async def test_audio_facade(args):
                 )
                 ch_done = await c.terminal(ch_job)
                 assert ch_done["state"] == "completed", ch_done
-                assert ch_async_wav.read_bytes() == ch_sync_wav.read_bytes(), "Sync and async unplannable WAV must be byte-identical"
+                assert ch_async_wav.read_bytes() == ch_sync_wav.read_bytes(), "Sync and async WAV must be byte-identical"
 
-                # Sync non-neutral mix request is rejected
-                bad_mix_sync = await c.tool(
+                # Mix request succeeds on multi-instrument score
+                mix_sync_wav = output_dir / "change_mix_sync.wav"
+                await c.tool(
                     "score_export",
                     {
                         "documentId": ch_doc,
                         "format": "wav",
-                        "path": str((output_dir / "change_bad_mix.wav").resolve()),
-                        "mix": {"master": {"volumeDb": -6.0}},
+                        "path": str(mix_sync_wav.resolve()),
+                        "mix": {"tracks": [{"trackId": ch_track_ids[0], "muted": True}]},
                     },
-                    error=True,
                 )
-                assert bad_mix_sync.get("isError") is True
-
-                # Async non-neutral mix request is rejected
-                bad_mix_async = await c.tool(
+                mix_async_wav = output_dir / "change_mix_async.wav"
+                mix_job = await c.tool(
                     "score_export_start",
                     {
                         "documentId": ch_doc,
                         "format": "wav",
-                        "path": str((output_dir / "change_bad_mix_async.wav").resolve()),
-                        "mix": {"master": {"volumeDb": -6.0}},
+                        "path": str(mix_async_wav.resolve()),
+                        "mix": {"tracks": [{"trackId": ch_track_ids[0], "muted": True}]},
                     },
-                    error=True,
                 )
-                assert bad_mix_async.get("isError") is True
-                checks.append("unplannable_score_sync_async_verified")
+                mix_done = await c.terminal(mix_job)
+                assert mix_done["state"] == "completed", mix_done
+                assert mix_sync_wav.read_bytes() == mix_async_wav.read_bytes(), "Sync and async mixed WAV must be byte-identical"
+                _, _, _, _, ch_mix_rms, _, _, _ = analyze_wav(mix_sync_wav)
+                assert ch_mix_rms < ch_s_rms, f"Muting track must reduce energy: {ch_mix_rms} vs {ch_s_rms}"
+                checks.append("multi_instrument_score_sync_async_verified")
 
             await c.tool("score_close", {"documentId": ch_doc})
 

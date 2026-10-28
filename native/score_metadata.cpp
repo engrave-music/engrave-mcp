@@ -27,9 +27,9 @@
 // The JSON field schema and the title/composer recognition heuristics are kept
 // identical to the upstream implementation. QJsonArray/QJsonObject are replaced
 // by nlohmann::json arrays/objects and QString by muse::String/std::string. The
-// notation/audio-settings dependency is not available in the Qt-free host, so
-// callers supply actual MetadataTrack descriptor values to the overload; the
-// base Score* overload reports no tracks rather than inventing resource state.
+// notation/audio-settings dependency: track descriptions come from
+// score_audio_track_info(), which lists every InstrumentTrackId and the
+// chord-symbol pseudo track.
 
 #include "score_metadata.h"
 #include "score_audio.h"
@@ -517,7 +517,9 @@ Json metadataTracksJsonArray(const std::vector<ScoreMetadataTrack>& tracks)
         jsonTrack["trackId"] = track.track_id;
         jsonTrack["partId"] = track.part_id;
         jsonTrack["instrumentId"] = track.instrument_id;
+        jsonTrack["partName"] = track.part_name;
         jsonTrack["name"] = track.name;
+        jsonTrack["chordSymbols"] = track.chord_symbols;
         jsonTrack["volumeDb"] = track.volume_db;
         jsonTrack["volume"] = track.volume_db;
         jsonTrack["balance"] = track.balance;
@@ -592,19 +594,21 @@ nlohmann::json score_metadata(mu::engraving::Score* score)
         return nlohmann::json::object();
     }
     std::vector<ScoreMetadataTrack> tracks;
-    try {
-        const auto infos = score_audio_track_info(score);
-        tracks.reserve(infos.size());
-        for (const auto& info : infos) {
-            ScoreMetadataTrack t;
-            t.track_id = info.track_id;
-            t.part_id = info.part_id;
-            t.instrument_id = info.instrument_id;
-            t.name = info.name;
-            tracks.push_back(std::move(t));
-        }
-    } catch (...) {
-        // Multi-instrument part or inconsistent score: leave tracks empty
+    const auto infos = score_audio_track_info(score);
+    tracks.reserve(infos.size());
+    for (std::size_t index = 0; index < infos.size(); ++index) {
+        const auto& info = infos[index];
+        ScoreMetadataTrack t;
+        t.track_id = static_cast<std::int64_t>(index);
+        t.part_id = info.part_id;
+        t.instrument_id = info.instrument_id;
+        t.part_name = info.part_name;
+        t.name = info.instrument_name;
+        t.chord_symbols = info.chord_symbols;
+        // No export mix is available here; chord playback is still off.
+        t.muted = info.chord_symbols;
+        t.force_mute = info.chord_symbols;
+        tracks.push_back(std::move(t));
     }
     return score_metadata(score, tracks);
 }

@@ -1,14 +1,11 @@
 #include "noqt_runtime.h"
 #include "noqt_application.h"
 #include "noqt_filesystem.h"
-#include "offline_audio.h"
 #include "score_metadata.h"
 #include "score_excerpts.h"
 #include "score_imports.h"
 #include "midi_import_adapter.h"
 #include "runtime_assets.h"
-#include "audio_session.h"
-#include "audio_codecs.h"
 #include "engraving/rw/rwregister.h"
 #include "score_positions.h"
 #include "score_render.h"
@@ -219,6 +216,9 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
 
 std::string export_native_score(const ScoreProject& project, const std::string& format,
                                 const ExportOptions& options, const std::string& soundfont) {
+    // Audio formats are rendered by the worker's MuseScore engine; the
+    // SoundFont parameter is retained for source compatibility.
+    (void)soundfont;
     auto* score = select_score(project->masterScore(), options.excerpt_id);
     if (format == "metadata") return score_metadata(score).dump();
     if (format == "measurePositions" || format == "segmentPositions")
@@ -300,22 +300,12 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
             reader.close();
             success = !data.empty();
         }
-    } else if (format == "midi" || format == "wav" || format == "flac" || format == "ogg" || format == "mp3") {
+    } else if (format == "midi") {
         iex::midi::ExportMidi writer(score);
         success = writer.write(&buffer, options.midi_expand_repeats, options.midi_export_rpns);
     } else throw std::invalid_argument("Unsupported export format");
     buffer.close();
     if (!success || data.empty()) throw std::runtime_error("Score export failed");
-    if (format == "wav") {
-        if (soundfont.empty()) throw std::runtime_error("Restart with --soundfont FILE to enable WAV export");
-        return render_midi_wav(bytes(data), soundfont);
-    }
-    if (format == "flac" || format == "ogg" || format == "mp3") {
-        if (soundfont.empty()) throw std::runtime_error("Set a SoundFont to enable audio export");
-        AudioSession session({AudioTrack{0, bytes(data)}}, soundfont);
-        const auto codec = format == "flac" ? AudioFormat::Flac : format == "ogg" ? AudioFormat::Ogg : AudioFormat::Mp3;
-        return encode_audio(session, codec);
-    }
     return bytes(data);
 }
 }

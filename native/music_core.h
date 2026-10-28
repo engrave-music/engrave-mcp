@@ -1,6 +1,6 @@
 #pragma once
 
-#include "audio_session.h"
+#include "audio_mix.h"
 #include "export_options.h"
 #include "score_edit.h"
 #include "score_query.h"
@@ -81,6 +81,7 @@ enum class ExportFormat {
     Flac,
     Ogg,
     Mp3,
+    Aac,
 };
 
 struct RuntimeOptions {
@@ -163,20 +164,32 @@ struct ExcerptsData {
     std::vector<ExcerptInfo> excerpts;
 };
 
-// Owned descriptor for one audio stem of a selected score. The fields mirror
-// the private score_audio helper without exposing raw score objects. output
+// Owned descriptor for one audio track of a selected score. Track ids are the
+// zero-based index into the deterministic score_audio_tracks list. output
 // carries the document's default mix values for this track.
 struct AudioTrackInfo {
     std::int64_t track_id = 0;
     std::string part_id;
     std::string instrument_id;
-    std::string name;
+    std::string part_name;
+    std::string instrument_name;
+    bool chord_symbols = false;
     AudioOutputParams output;
 };
 
 struct AudioTracksData {
     Revision revision;
     std::vector<AudioTrackInfo> tracks;
+};
+
+// Result of the worker-only audio render (see MusicCore::export_audio).
+struct AudioExportResult {
+    bool ok = false;
+    std::string error;
+    std::uint64_t frames = 0;
+    std::uint64_t bytes = 0;
+    double play_time_secs = 0.0;
+    double duration_secs = 0.0;
 };
 
 struct ExportData {
@@ -266,6 +279,13 @@ public:
                                 const std::vector<Measure>& measures, const EditContext& context);
     EditResult set_pitches(DocumentId id, const NativePitchEdit& edit, const EditContext& context);
     ExportData export_bytes(DocumentId id, ExportFormat format, const ExportOptions& options = {});
+    // Worker-only: render one audio file through MuseScore 4's engine. The
+    // caller must already have initialised the process-wide engine with the
+    // runtime SoundFont (initialize_engine_audio). The host process never calls
+    // this; run_export_worker() uses it in a child process. Read-only: the
+    // document revision is unchanged. Audio formats only.
+    AudioExportResult export_audio(DocumentId id, ExportFormat format, const std::string& output_path,
+                                   const ExportOptions& options = {});
     SnapshotData snapshot(DocumentId id);
     // Restore the source file's version stamps after reloading our own writer
     // output; an export must not re-author the document.

@@ -7,7 +7,7 @@
 ## 1. 架构设计与约束
 
 - **构建系统**：以 `xmake.lua` 与显式源码清单 `xmake/manifest.lua` 为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux / Arch WSL2 x86_64 均已验证）。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块）。
-- **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件、`FluidSynth` 以及 `dr_mp3`/`libvorbis`/`libogg`/`flac` 音频编码器。捆绑依赖项仅包含 FreeType 与 HarfBuzz（Brotli 依赖已移除）。
+- **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件，以及 MuseScore 4 音频引擎（`muse_audio_engine`：FluidSynth 合成、混音、混响与 SoundTrackWriter）及其编码器 LAME（MP3）、libFLAC、Opus/libopusenc（Ogg）、fdk-aac（AAC），全部来自子模块并以 Qt-free 方式编译；音频仅在 `--worker` 子进程中渲染。libsndfile 已移除。捆绑依赖项仅包含 FreeType 与 HarfBuzz（Brotli 依赖已移除）。
 - **底层适配**：采用原生文件系统、进程内设置、FreeType/HarfBuzz 字体引擎和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
 
 ---

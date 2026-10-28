@@ -20,6 +20,9 @@ bool is_output_path_reserved(const std::filesystem::path& path);
 std::uint64_t current_process_id() noexcept;
 void enforce_worker_parent(std::uint64_t expected_parent);
 void publish_job_output(const std::filesystem::path& staged, const std::filesystem::path& destination);
+// Creates a fresh directory under parent with an unpredictable name (and
+// owner-only permissions on POSIX).
+std::filesystem::path create_private_directory(const std::filesystem::path& parent);
 
 class WorkerProcess {
 public:

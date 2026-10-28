@@ -12,14 +12,13 @@ import time
 import wave
 from test_export_options import canonical_notes, bar
 
-def read_wav_energy(path: Path) -> tuple[tuple[int, ...], float]:
-    with wave.open(str(path), 'rb') as wf:
-        channels, width, rate, frames = wf.getnchannels(), wf.getsampwidth(), wf.getframerate(), wf.getnframes()
-        assert (channels, width, rate) == (2, 2, 44100) and frames > 0
-        data = wf.readframes(frames)
-        samples = struct.unpack(f'<{len(data) // 2}h', data)
-        rms = math.sqrt(sum(s * s for s in samples) / len(samples))
-        return samples, rms
+def read_wav_energy(path: Path) -> tuple[tuple[float, ...], float]:
+    import soundfile as sf
+    import numpy as np
+    audio, rate = sf.read(str(path), always_2d=True)
+    assert rate == 44100 and audio.shape[1] == 2 and len(audio) > 0
+    rms = float(np.sqrt(np.mean(audio ** 2)))
+    return tuple(audio.flatten()), rms
 
 class Client:
     def __init__(self, binary, resources, soundfont, directory):

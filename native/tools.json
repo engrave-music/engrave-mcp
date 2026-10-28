@@ -327,7 +327,7 @@
   },
   {
     "name": "score_export",
-    "description": "Export to a local file atomically, replacing an existing file. Parent directory must exist. page is zero-based for SVG/PNG; PDF exports all pages. Audio export (WAV/FLAC/OGG/MP3) requires a SoundFont from --soundfont or runtime_set_soundfont. mix overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral); it never changes document state or revision. measurePositions/segmentPositions follow the webmscore position schema, with corrected segment widths and always repeat-expanded times (ms). Coordinates use 1200-DPI layout units, independent of PNG DPI; id/elid are local to each result, not stable edit IDs. Format-specific options are rejected on other formats.",
+    "description": "Export to a local file atomically, replacing an existing file. Parent directory must exist. page is zero-based for SVG/PNG; PDF exports all pages. Audio export (WAV/FLAC/OGG/MP3/AAC) requires a SoundFont from --soundfont or runtime_set_soundfont and is rendered in a worker process. mix overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral); it never changes document state or revision. measurePositions/segmentPositions follow the webmscore position schema, with corrected segment widths and always repeat-expanded times (ms). Coordinates use 1200-DPI layout units, independent of PNG DPI; id/elid are local to each result, not stable edit IDs. Format-specific options are rejected on other formats.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -353,7 +353,8 @@
             "wav",
             "flac",
             "ogg",
-            "mp3"
+            "mp3",
+            "aac"
           ]
         },
         "path": {
@@ -395,12 +396,12 @@
         "expandRepeats": {
           "type": "boolean",
           "default": true,
-          "description": "MIDI/WAV/FLAC/OGG/MP3 only. Expand score repeats in playback."
+          "description": "MIDI/WAV/FLAC/OGG/MP3/AAC only. Expand score repeats in playback."
         },
         "exportRPNs": {
           "type": "boolean",
           "default": true,
-          "description": "MIDI/WAV/FLAC/OGG/MP3 only. Include registered parameter messages in playback."
+          "description": "MIDI only. Include registered parameter messages in playback. The MuseScore audio engine path reads playback data directly and ignores RPNs."
         },
         "mix": {
           "type": "object",
@@ -456,7 +457,7 @@
               }
             }
           },
-          "description": "WAV/FLAC/OGG/MP3 only. Overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral). Use trackIds from score_audio_tracks; unknown or duplicate trackIds reject the export."
+          "description": "WAV/FLAC/OGG/MP3/AAC only. Overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral). Use trackIds from score_audio_tracks; unknown or duplicate trackIds reject the export."
         }
       },
       "required": [
@@ -545,7 +546,8 @@
                   "wav",
                   "flac",
                   "ogg",
-                  "mp3"
+                  "mp3",
+                  "aac"
                 ]
               }
             }
@@ -561,11 +563,7 @@
             "properties": {
               "format": {
                 "enum": [
-                  "midi",
-                  "wav",
-                  "flac",
-                  "ogg",
-                  "mp3"
+                  "midi"
                 ]
               }
             }
@@ -584,7 +582,8 @@
                   "wav",
                   "flac",
                   "ogg",
-                  "mp3"
+                  "mp3",
+                  "aac"
                 ]
               }
             }
@@ -768,7 +767,7 @@
   },
   {
     "name": "runtime_set_soundfont",
-    "description": "Freeze and select a local SoundFont for subsequent WAV/FLAC/OGG/MP3 exports. Returns its retained path and content hash.",
+    "description": "Freeze and select a local SoundFont for subsequent WAV/FLAC/OGG/MP3/AAC exports. Returns its retained path and content hash.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -812,7 +811,8 @@
             "wav",
             "flac",
             "ogg",
-            "mp3"
+            "mp3",
+            "aac"
           ]
         },
         "path": {
@@ -854,12 +854,12 @@
         "expandRepeats": {
           "type": "boolean",
           "default": true,
-          "description": "MIDI/WAV/FLAC/OGG/MP3 only. Expand score repeats in playback."
+          "description": "MIDI/WAV/FLAC/OGG/MP3/AAC only. Expand score repeats in playback."
         },
         "exportRPNs": {
           "type": "boolean",
           "default": true,
-          "description": "MIDI/WAV/FLAC/OGG/MP3 only. Include registered parameter messages in playback."
+          "description": "MIDI only. Include registered parameter messages in playback. The MuseScore audio engine path reads playback data directly and ignores RPNs."
         },
         "mix": {
           "type": "object",
@@ -915,7 +915,7 @@
               }
             }
           },
-          "description": "WAV/FLAC/OGG/MP3 only. Overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral). Use trackIds from score_audio_tracks; unknown or duplicate trackIds reject the export."
+          "description": "WAV/FLAC/OGG/MP3/AAC only. Overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral). Use trackIds from score_audio_tracks; unknown or duplicate trackIds reject the export."
         },
         "expectedRevision": {
           "type": "integer",
@@ -1010,7 +1010,8 @@
                   "wav",
                   "flac",
                   "ogg",
-                  "mp3"
+                  "mp3",
+                  "aac"
                 ]
               }
             }
@@ -1026,11 +1027,7 @@
             "properties": {
               "format": {
                 "enum": [
-                  "midi",
-                  "wav",
-                  "flac",
-                  "ogg",
-                  "mp3"
+                  "midi"
                 ]
               }
             }
@@ -1049,7 +1046,8 @@
                   "wav",
                   "flac",
                   "ogg",
-                  "mp3"
+                  "mp3",
+                  "aac"
                 ]
               }
             }
@@ -1099,7 +1097,7 @@
   },
   {
     "name": "score_audio_tracks",
-    "description": "List actual audio track IDs, part/instrument identities and the score's default mix output values for the full score or an explicit excerpt. Defaults come from the source MSCZ audiosettings.json when present, otherwise they are neutral; forceMute is derived from solo. Requires no SoundFont.",
+    "description": "List actual audio track IDs, part/instrument identities and the score's default mix output values for the full score or an explicit excerpt. Every instrument track of every part is listed (multi-instrument parts and instrument changes produce one entry per instrument) plus chord-symbol tracks, which are flagged and always muted because chord playback is off. trackId is the zero-based index in this deterministic list and is the id accepted by the export mix option. An excerpt lists only the tracks of that excerpt's parts. Defaults come from the source MSCZ audiosettings.json when present, otherwise they are neutral; forceMute is derived from solo. Requires no SoundFont.",
     "inputSchema": {
       "type": "object",
       "properties": {

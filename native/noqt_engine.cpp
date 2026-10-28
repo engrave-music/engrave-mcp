@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -15,10 +16,12 @@
 #include <fstream>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -361,6 +364,66 @@ Json composition_json(const Composition& composition) {
     return score;
 }
 
+// Sync audio exports still run in a child: the host process never initialises
+// the audio engine. This mirrors the background-job capture and publication,
+// but waits for the worker before returning the tool result.
+Json export_audio_via_worker(MusicCore& core, DocumentId id, ExportFormat format,
+                             const std::filesystem::path& destination,
+                             const ExportOptions& options) {
+    const auto snapshot = core.snapshot(id);
+    const auto directory = create_private_directory(
+        std::filesystem::absolute(std::filesystem::temp_directory_path()));
+    const auto staging_directory = create_private_directory(destination.parent_path());
+    struct Cleanup {
+        std::filesystem::path directory, staging_directory;
+        ~Cleanup() {
+            std::error_code ignored;
+            if (!directory.empty()) std::filesystem::remove_all(directory, ignored);
+            if (!staging_directory.empty()) std::filesystem::remove_all(staging_directory, ignored);
+        }
+    } cleanup{ directory, staging_directory };
+
+    write_atomic(directory / "snapshot.mscz", snapshot.bytes);
+    ExportWorkerRequest request;
+    request.snapshot_path = directory / "snapshot.mscz";
+    request.output_path = staging_directory / "output";
+    request.result_path = directory / "result.json";
+    request.runtime = core.runtime_options();
+    request.format = format;
+    request.options = options;
+    request.versions = snapshot.versions;
+    request.cache_directory = directory / "runtime-cache";
+    // The snapshot has no audiosettings.json; send the effective mix.
+    request.mix = core.audio_export_mix(id, options);
+    request.has_mix = true;
+    write_atomic(directory / "request.json", worker_request_json(request).dump());
+
+    reserve_output_path(destination);
+    struct Release {
+        std::filesystem::path path;
+        ~Release() { release_output_path(path); }
+    } release{ destination };
+
+    WorkerProcess process(current_executable_path(), directory / "request.json",
+                          directory / "worker.log");
+    std::optional<int> status;
+    while (!(status = process.poll())) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+    const auto worker_result = Json::parse(read_bounded_file(directory / "result.json", 64 * 1024));
+    if (*status != 0 || !worker_result.value("ok", false))
+        throw std::runtime_error(worker_result.value("error", "Audio export worker failed"));
+
+    const auto staged = staging_directory / "output";
+    const auto bytes = std::filesystem::file_size(staged);
+    if (!bytes || bytes > 256 * 1024 * 1024
+        || bytes != worker_result.at("bytes").get<std::uintmax_t>()) {
+        throw std::runtime_error("Worker output size does not match result");
+    }
+    publish_job_output(staged, destination);
+    return Json{{"path", local_path_utf8(destination)}, {"format", format_name(format)},
+                {"bytes", bytes}, {"revision", snapshot.revision.value}};
+}
+
 } // namespace
 
 struct Engine::Impl {
@@ -460,7 +523,8 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         Json tracks = Json::array();
         for (const AudioTrackInfo& track : data.tracks) {
             tracks.push_back({{"trackId", track.track_id}, {"partId", track.part_id},
-                {"instrumentId", track.instrument_id}, {"name", track.name},
+                {"instrumentId", track.instrument_id}, {"partName", track.part_name},
+                {"name", track.instrument_name}, {"chordSymbols", track.chord_symbols},
                 {"volumeDb", track.output.volume_db}, {"balance", track.output.balance},
                 {"solo", track.output.solo}, {"muted", track.output.muted},
                 {"forceMute", track.output.force_mute}});
@@ -583,11 +647,9 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
                        format == ExportFormat::Svg || format == ExportFormat::Png);
         boolean_option("transparent", options.transparent, format == ExportFormat::Png);
         boolean_option("expandRepeats", options.midi_expand_repeats,
-                       format == ExportFormat::Midi || format == ExportFormat::Wav
-                       || format == ExportFormat::Flac || format == ExportFormat::Ogg || format == ExportFormat::Mp3);
-        boolean_option("exportRPNs", options.midi_export_rpns,
-                       format == ExportFormat::Midi || format == ExportFormat::Wav
-                       || format == ExportFormat::Flac || format == ExportFormat::Ogg || format == ExportFormat::Mp3);
+                       format == ExportFormat::Midi || is_audio_format(format));
+        // RPNs only exist in the MIDI exporter; the engine path ignores them.
+        boolean_option("exportRPNs", options.midi_export_rpns, format == ExportFormat::Midi);
         if (args.contains("mix")) {
             if (!is_audio_format(format))
                 throw std::invalid_argument("mix does not apply to this format");
@@ -597,11 +659,15 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         if (is_output_path_reserved(path))
             throw ToolCallError("busy", "Another job owns this export destination");
 
-        const auto data = impl_->core->export_bytes(id, format, options);
-        if (data.bytes.empty()) throw std::runtime_error("Exporter returned no data");
-        write_atomic(path, data.bytes);
-        result = {{"path", local_path_utf8(path)}, {"format", format_text}, {"bytes", data.bytes.size()},
-            {"revision", data.revision.value}};
+        if (is_audio_format(format)) {
+            result = export_audio_via_worker(*impl_->core, id, format, path, options);
+        } else {
+            const auto data = impl_->core->export_bytes(id, format, options);
+            if (data.bytes.empty()) throw std::runtime_error("Exporter returned no data");
+            write_atomic(path, data.bytes);
+            result = {{"path", local_path_utf8(path)}, {"format", format_text}, {"bytes", data.bytes.size()},
+                {"revision", data.revision.value}};
+        }
     } else {
         throw std::invalid_argument("Unknown tool");
     }

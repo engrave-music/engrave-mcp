@@ -6,7 +6,8 @@
 #include <utility>
 #include <vector>
 
-#include "audio_session.h"
+#include "audio_mix.h"
+#include "engraving/types/types.h"
 
 namespace mu::engraving {
 class Score;
@@ -14,23 +15,29 @@ class Score;
 
 namespace music {
 
-// One logical audio stem: a score part containing a single instrument.
+// One MuseScore playback track (an InstrumentTrackId), in deterministic score
+// order: score parts in Score::parts() order, each part's instruments in
+// Part::instrumentTrackIdList() order, then the part's chord-symbol pseudo
+// track when the part has chord symbols.
 //
-// track_id is the part's zero-based index in Score::parts(), i.e. score order.
-// It is stable for a given score ordering and identical in
-// score_audio_track_info() and score_audio_stems(). Multi-instrument parts are
-// rejected by both functions instead of being split or mixed incorrectly.
+// A track's public trackId is its zero-based index in this list, not a score
+// structure: it only has to be stable for one listing, and it is identical in
+// score_audio_tracks, metadata.tracks and the worker snapshot because all of
+// them derive the list from the same score.
 struct ScoreAudioTrackInfo {
-    std::int64_t track_id = 0;
+    mu::engraving::InstrumentTrackId id;
     std::string part_id;
     std::string instrument_id;
-    std::string name;
+    std::string part_name;
+    std::string instrument_name;
+    bool chord_symbols = false;
+    // Zero-based index in Score::parts().
+    std::size_t part_index = 0;
 };
 
-// Describes the stems score_audio_stems() would produce, without rendering.
-// An empty score (no parts and no staves) produces an empty result.
-// Throws std::invalid_argument for a null score and std::runtime_error for a
-// structurally inconsistent score or an unsupported multi-instrument part.
+// Describes every instrument track of the selected score, including one entry
+// per instrument of a multi-instrument part and instrument change, and the
+// chord-symbol pseudo track. Throws std::invalid_argument for a null score.
 std::vector<ScoreAudioTrackInfo> score_audio_track_info(mu::engraving::Score* score);
 
 struct TrackSoloMute {
@@ -94,20 +101,5 @@ struct ScoreAudioMixDefaults {
 // absent files and malformed JSON all produce neutral defaults. Values outside
 // the supported range are ignored field by field.
 ScoreAudioMixDefaults score_audio_mix_defaults(const std::string& mscz_bytes);
-
-// Renders the score once with the upstream MIDI exporter, then builds one
-// format-1 MIDI file per part by grouping that part's staff tracks. Global
-// conductor events (tempo, time signatures, markers) are copied from the
-// exporter's track 0 into every stem; other parts' channel events are never
-// copied. Each selected staff keeps its own channel events, program changes,
-// controllers/RPNs, and port-change meta events. Text meta events are preserved.
-//
-// Enforces the audio_session limits: at most audio_max_tracks stems and at most
-// 8 MiB of MIDI bytes in total. expand_repeats and export_rpns are passed
-// through unchanged to the upstream ExportMidi algorithm, together with the
-// score's own SynthesizerState.
-// Throws std::invalid_argument for a null score and std::runtime_error when
-// export, MIDI serialization, validation, or the size limits fail.
-std::vector<AudioTrack> score_audio_stems(mu::engraving::Score* score, bool expand_repeats, bool export_rpns);
 
 } // namespace music

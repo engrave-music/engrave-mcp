@@ -1,6 +1,8 @@
 #include "worker_protocol.h"
 #include "atomic_file.h"
 #include "background_job.h"
+#include "engine_audio.h"
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -13,6 +15,7 @@ using Json = nlohmann::json;
 constexpr std::size_t request_limit = 64 * 1024;
 constexpr std::size_t snapshot_limit = 8 * 1024 * 1024;
 constexpr std::size_t output_limit = 256 * 1024 * 1024;
+constexpr std::size_t max_mix_tracks = 256;
 
 std::string string_field(const Json& json, const char* name) {
     if (!json.contains(name) || !json.at(name).is_string())
@@ -45,7 +48,7 @@ AudioOutputParams parse_output(const Json& value) {
 AudioMix parse_mix(const Json& value) {
     AudioMix mix;
     mix.master = parse_output(value.at("master"));
-    if (!value.at("tracks").is_array() || value.at("tracks").size() > audio_max_tracks)
+    if (!value.at("tracks").is_array() || value.at("tracks").size() > max_mix_tracks)
         throw std::invalid_argument("Invalid audio track list");
     for (const auto& track : value.at("tracks"))
         mix.tracks.push_back({track.at("trackId").get<std::int64_t>(), parse_output(track.at("output"))});
@@ -120,11 +123,72 @@ int version_integer(const Json& json, const char* name, int minimum, int maximum
         throw std::invalid_argument(std::string(name) + " is out of range");
     return json.at(name).get<int>();
 }
+
+// Validates one job object. Result and snapshot must live next to the request
+// file, never at a client-selected path.
+ExportWorkerJob parse_job(const Json& job, const std::filesystem::path& request_parent) {
+    ExportWorkerJob result;
+    result.result_path = absolute_field(job, "result");
+    if (result.result_path.parent_path() != request_parent)
+        throw std::invalid_argument("Worker result must be next to its request");
+    result.snapshot_path = absolute_field(job, "snapshot");
+    if (result.snapshot_path.parent_path() != request_parent)
+        throw std::invalid_argument("Worker snapshot must be next to its request");
+    result.output_path = absolute_field(job, "output");
+
+    const auto format = export_format_from_name(string_field(job, "format"));
+    if (!format) throw std::invalid_argument("Unsupported worker export format");
+    result.format = *format;
+    if (!job.contains("options") || !job.at("options").is_object())
+        throw std::invalid_argument("options must be an object");
+    result.options = parse_export_options(job.at("options"), result.format);
+    if (job.contains("mix")) {
+        result.mix = parse_mix(job.at("mix"));
+        result.has_mix = true;
+    }
+    result.versions = ScoreVersions{
+        version_string(job, "mscoreVersion"),
+        version_integer(job, "mscoreRevision", 0, std::numeric_limits<int>::max()),
+        version_integer(job, "mscVersion", 0, 100000),
+    };
+    return result;
+}
+
+Json options_json(const ExportOptions& options, ExportFormat format) {
+    Json result = {{"excerptId", options.excerpt_id}};
+    if (format == ExportFormat::Png || format == ExportFormat::Svg) {
+        result["page"] = options.page;
+        result["drawPageBackground"] = options.draw_page_background;
+    }
+    if (format == ExportFormat::Png) {
+        result["pngDpi"] = options.png_dpi;
+        result["transparent"] = options.transparent;
+    }
+    if (format == ExportFormat::Midi || is_audio_format(format)) {
+        result["expandRepeats"] = options.midi_expand_repeats;
+        // Registered parameter messages only exist in the MIDI exporter; the
+        // MuseScore audio engine reads the score's playback data directly.
+        if (format == ExportFormat::Midi) result["exportRPNs"] = options.midi_export_rpns;
+    }
+    return result;
+}
+
+Json job_json(const ExportWorkerJob& job) {
+    Json result = {{"snapshot", path_utf8(job.snapshot_path)}, {"output", path_utf8(job.output_path)},
+                   {"result", path_utf8(job.result_path)}, {"format", format_name(job.format)},
+                   {"options", options_json(job.options, job.format)},
+                   {"mscoreVersion", job.versions.mscore_version},
+                   {"mscoreRevision", job.versions.mscore_revision},
+                   {"mscVersion", job.versions.msc_version}};
+    if (job.has_mix) result["mix"] = mix_json(job.mix);
+    return result;
+}
 }
 
 bool is_audio_format(ExportFormat format) noexcept {
     return format == ExportFormat::Wav || format == ExportFormat::Flac
-        || format == ExportFormat::Ogg || format == ExportFormat::Mp3;
+        || format == ExportFormat::Ogg || format == ExportFormat::Mp3
+        || format == ExportFormat::Aac;
 }
 std::string path_utf8(const std::filesystem::path& path) {
     const auto value = path.u8string();
@@ -159,7 +223,7 @@ AudioMixOverride parse_audio_mix_override(const Json& json) {
 
     const auto& tracks = json.at("tracks");
     if (!tracks.is_array()) throw std::invalid_argument("mix.tracks must be an array");
-    if (tracks.size() > 256) throw std::invalid_argument("mix.tracks must contain at most 256 entries");
+    if (tracks.size() > max_mix_tracks) throw std::invalid_argument("mix.tracks must contain at most 256 entries");
     result.tracks.reserve(tracks.size());
     for (std::size_t index = 0; index < tracks.size(); ++index) {
         const auto& entry = tracks.at(index);
@@ -177,7 +241,8 @@ AudioMixOverride parse_audio_mix_override(const Json& json) {
 ExportOptions parse_export_options(const Json& args, ExportFormat format) {
     ExportOptions result;
     const bool image = format == ExportFormat::Png || format == ExportFormat::Svg;
-    const bool midi = format == ExportFormat::Midi || is_audio_format(format);
+    const bool midi = format == ExportFormat::Midi;
+    const bool repeats = midi || is_audio_format(format);
     const auto integer = [&](const char* key, int& target, int minimum, int maximum, bool supported) {
         if (!args.contains(key)) return;
         if (!supported) throw std::invalid_argument(std::string(key) + " does not apply to this format");
@@ -197,7 +262,8 @@ ExportOptions parse_export_options(const Json& args, ExportFormat format) {
     integer("pngDpi", result.png_dpi, 36, 1200, format == ExportFormat::Png);
     boolean("drawPageBackground", result.draw_page_background, image);
     boolean("transparent", result.transparent, format == ExportFormat::Png);
-    boolean("expandRepeats", result.midi_expand_repeats, midi);
+    boolean("expandRepeats", result.midi_expand_repeats, repeats);
+    // The audio engine path ignores RPNs entirely, so the option is MIDI-only.
     boolean("exportRPNs", result.midi_export_rpns, midi);
     if (args.contains("mix")) {
         if (!is_audio_format(format))
@@ -208,56 +274,41 @@ ExportOptions parse_export_options(const Json& args, ExportFormat format) {
 }
 
 Json worker_request_json(const ExportWorkerRequest& request) {
-    Json options = {{"excerptId", request.options.excerpt_id}};
-    if (request.format == ExportFormat::Png || request.format == ExportFormat::Svg) {
-        options["page"] = request.options.page;
-        options["drawPageBackground"] = request.options.draw_page_background;
-    }
-    if (request.format == ExportFormat::Png) {
-        options["pngDpi"] = request.options.png_dpi;
-        options["transparent"] = request.options.transparent;
-    }
-    if (request.format == ExportFormat::Midi || is_audio_format(request.format)) {
-        options["expandRepeats"] = request.options.midi_expand_repeats;
-        options["exportRPNs"] = request.options.midi_export_rpns;
-    }
-    Json result = {{"version", 1}, {"parentPid", current_process_id()}, {"snapshot", path_utf8(request.snapshot_path)},
-            {"output", path_utf8(request.output_path)}, {"result", path_utf8(request.result_path)},
-            {"resources", request.runtime.resources_path}, {"soundfont", request.runtime.soundfont},
-            {"format", format_name(request.format)}, {"options", std::move(options)}, {"fonts", request.runtime.font_paths},
-            {"mscoreVersion", request.versions.mscore_version}, {"mscoreRevision", request.versions.mscore_revision},
-            {"mscVersion", request.versions.msc_version}};
+    Json result = {{"version", 1}, {"parentPid", current_process_id()},
+                   {"resources", request.runtime.resources_path},
+                   {"soundfont", request.runtime.soundfont},
+                   {"fonts", request.runtime.font_paths}};
     if (!request.cache_directory.empty()) result["cacheDirectory"] = path_utf8(request.cache_directory);
+    if (!request.jobs.empty()) {
+        Json jobs = Json::array();
+        for (const auto& job : request.jobs) jobs.push_back(job_json(job));
+        result["jobs"] = std::move(jobs);
+        return result;
+    }
+
+    result["snapshot"] = path_utf8(request.snapshot_path);
+    result["output"] = path_utf8(request.output_path);
+    result["result"] = path_utf8(request.result_path);
+    result["format"] = format_name(request.format);
+    result["options"] = options_json(request.options, request.format);
+    result["mscoreVersion"] = request.versions.mscore_version;
+    result["mscoreRevision"] = request.versions.mscore_revision;
+    result["mscVersion"] = request.versions.msc_version;
     if (request.has_mix) result["mix"] = mix_json(request.mix);
     return result;
 }
 
 int run_export_worker(const std::filesystem::path& request_path) noexcept {
-    std::filesystem::path result_path;
+    std::vector<std::filesystem::path> result_paths;
     try {
         const auto request = parse_bounded_json(request_path, request_limit);
         if (!request.is_object() || request.value("version", 0) != 1)
             throw std::invalid_argument("Unsupported worker request version");
         enforce_worker_parent(request.at("parentPid").get<std::uint64_t>());
-        const auto requested_result = absolute_field(request, "result");
-        // Results belong to the caller-created request directory, never a client-selected export path.
-        if (requested_result.parent_path() != request_path.parent_path())
-            throw std::invalid_argument("Worker result must be next to its request");
-        result_path = requested_result;
-        const auto snapshot = absolute_field(request, "snapshot");
-        if (snapshot.parent_path() != request_path.parent_path())
-            throw std::invalid_argument("Worker snapshot must be next to its request");
-        const auto output = absolute_field(request, "output");
-        const auto format = export_format_from_name(string_field(request, "format"));
-        if (!format) throw std::invalid_argument("Unsupported worker export format");
-        const auto options = parse_export_options(request.at("options"), *format);
-        ExportOptions effective = options;
-        if (request.contains("mix")) effective.explicit_mix = parse_mix(request.at("mix"));
-        const ScoreVersions versions{version_string(request, "mscoreVersion"),
-            version_integer(request, "mscoreRevision", 0, std::numeric_limits<int>::max()),
-            version_integer(request, "mscVersion", 0, 100000)};
-        RuntimeOptions runtime{path_utf8(absolute_field(request, "resources")),
-                               is_audio_format(*format) ? request.at("soundfont").get<std::string>() : std::string{}};
+        const auto request_parent = request_path.parent_path();
+
+        RuntimeOptions runtime{path_utf8(absolute_field(request, "resources")), std::string{}};
+        const std::string soundfont = request.value("soundfont", std::string{});
         runtime.font_paths = request.at("fonts").get<std::vector<std::string>>();
         if (request.contains("cacheDirectory")) {
             const auto cache_dir = absolute_field(request, "cacheDirectory");
@@ -266,28 +317,103 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
                     throw std::invalid_argument("Worker cache directory must not contain '..'");
             }
             const auto norm_cache = cache_dir.lexically_normal();
-            const auto norm_req = request_path.parent_path().lexically_normal();
+            const auto norm_req = request_parent.lexically_normal();
             if (norm_cache.parent_path() != norm_req && norm_cache != norm_req)
                 throw std::invalid_argument("Worker cache directory must be in its request directory");
             runtime.cache_directory = path_utf8(norm_cache);
         }
+
+        std::vector<ExportWorkerJob> jobs;
+        if (request.contains("jobs")) {
+            if (!request.at("jobs").is_array() || request.at("jobs").empty()
+                || request.at("jobs").size() > 32)
+                throw std::invalid_argument("jobs must be a non-empty array of at most 32 entries");
+            for (const auto& job : request.at("jobs"))
+                jobs.push_back(parse_job(job, request_parent));
+        } else {
+            jobs.push_back(parse_job(request, request_parent));
+        }
+        result_paths.reserve(jobs.size());
+        for (const auto& job : jobs) result_paths.push_back(job.result_path);
+
         MusicCore core(runtime);
-        const auto score = core.open(read_bounded_file(snapshot, snapshot_limit), InputFormat::Mscz);
-        // The snapshot was serialized by our own writer, which stamped the
-        // running program; restore the source file's version before exporting.
-        core.restore_versions(score.id, versions);
-        const auto data = core.export_bytes(score.id, *format, effective);
-        if (data.bytes.empty() || data.bytes.size() > output_limit)
-            throw std::runtime_error("Worker export exceeds output size limit");
-        write_atomic(output, data.bytes);
-        core.close(score.id);
-        write_atomic(result_path, Json{{"version", 1}, {"ok", true}, {"bytes", data.bytes.size()}}.dump());
-        return 0;
+        bool engine_ready = false;
+        std::string engine_error;
+        bool all_ok = true;
+        for (const ExportWorkerJob& job : jobs) {
+            try {
+                const auto score = core.open(read_bounded_file(job.snapshot_path, snapshot_limit),
+                                             InputFormat::Mscz);
+                const auto close_score = [&core, &score]() {
+                    try { core.close(score.id); } catch (...) {}
+                };
+                try {
+                    core.restore_versions(score.id, job.versions);
+                    ExportOptions effective = job.options;
+                    if (job.has_mix) effective.explicit_mix = job.mix;
+
+                    std::uintmax_t bytes = 0;
+                    if (is_audio_format(job.format)) {
+                        if (!engine_ready) {
+                            if (!initialize_engine_audio(soundfont, &engine_error)) {
+                                throw std::runtime_error(engine_error.empty()
+                                                             ? "Audio engine initialisation failed"
+                                                             : engine_error);
+                            }
+                            engine_ready = true;
+                        }
+                        const auto rendered = core.export_audio(score.id, job.format,
+                                                                path_utf8(job.output_path), effective);
+                        if (!rendered.ok) {
+                            throw std::runtime_error(rendered.error.empty()
+                                                         ? "Audio export failed"
+                                                         : rendered.error);
+                        }
+                        bytes = rendered.bytes;
+                    } else {
+                        const auto data = core.export_bytes(score.id, job.format, effective);
+                        if (data.bytes.empty() || data.bytes.size() > output_limit)
+                            throw std::runtime_error("Worker export exceeds output size limit");
+                        write_atomic(job.output_path, data.bytes);
+                        bytes = data.bytes.size();
+                    }
+                    if (bytes == 0 || bytes > output_limit)
+                        throw std::runtime_error("Worker export is empty or exceeds output size limit");
+                    close_score();
+                    write_atomic(job.result_path,
+                                 Json{{"version", 1}, {"ok", true}, {"bytes", bytes}}.dump());
+                } catch (...) {
+                    close_score();
+                    throw;
+                }
+            } catch (const std::exception& error) {
+                all_ok = false;
+                std::cerr << "Export worker: " << error.what() << '\n';
+                try {
+                    write_atomic(job.result_path,
+                                 Json{{"version", 1}, {"ok", false},
+                                      {"error", std::string(error.what()).substr(0, 2048)}}.dump());
+                } catch (...) {}
+            } catch (...) {
+                all_ok = false;
+                std::cerr << "Export worker: unknown failure\n";
+                try {
+                    write_atomic(job.result_path,
+                                 Json{{"version", 1}, {"ok", false}, {"error", "unknown failure"}}.dump());
+                } catch (...) {}
+            }
+        }
+        return all_ok ? 0 : 1;
     } catch (const std::exception& error) {
         std::cerr << "Export worker: " << error.what() << '\n';
-        if (!result_path.empty()) {
-            try { write_atomic(result_path, Json{{"version", 1}, {"ok", false}, {"error", std::string(error.what()).substr(0, 2048)}}.dump()); }
-            catch (...) {}
+        // A request-level failure before job validation cannot name a result
+        // file; a failure after validation reports every pending job.
+        for (const auto& result_path : result_paths) {
+            try {
+                write_atomic(result_path,
+                             Json{{"version", 1}, {"ok", false},
+                                  {"error", std::string(error.what()).substr(0, 2048)}}.dump());
+            } catch (...) {}
         }
         return 1;
     } catch (...) {

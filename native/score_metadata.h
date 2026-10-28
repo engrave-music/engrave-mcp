@@ -58,7 +58,11 @@ struct ScoreMetadataTrack {
     std::int64_t track_id = 0;
     std::string part_id;
     std::string instrument_id;
+    // Part name and instrument/track name; a chord-symbol pseudo track has
+    // chord_symbols == true and its mixer title as name.
+    std::string part_name;
     std::string name;
+    bool chord_symbols = false;
     double volume_db = 0.0;
     double balance = 0.0;
     bool solo = false;
@@ -67,9 +71,10 @@ struct ScoreMetadataTrack {
 };
 
 // Emits score metadata with "tracks" populated from the score's actual tracks
-// (via score_audio_track_info) and default mix output parameters. Returns an empty
-// object when score is null. If the score structure cannot be partitioned into audio
-// stems, "tracks" remains an empty array.
+// (via score_audio_track_info) in deterministic score order. The base overload
+// has no audiosettings.json context, so it reports neutral output values and
+// marks chord-symbol pseudo tracks muted. Returns an empty object when score
+// is null.
 nlohmann::json score_metadata(mu::engraving::Score* score);
 
 // Emits score metadata with "tracks" populated from explicit track descriptors and
