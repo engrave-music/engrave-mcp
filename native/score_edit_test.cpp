@@ -7,7 +7,7 @@
 #include "engraving/dom/measure.h"
 #include "engraving/dom/mscore.h"
 #include "engraving/dom/part.h"
-#include "engraving/editing/undo.h"
+#include "engraving/editing/transaction/undostack.h"
 #include "engraving/engravingproject.h"
 
 #include <cstddef>
@@ -534,7 +534,7 @@ int main(int argc, char** argv)
         try { music::apply_score_pitch_edit(score, {{{spare_id, 65}, {piano_target_id, 62}}}); }
         catch (const music::NativeEditFailure& e) { engine_failure = !e.poisoned(); }
         expect(engine_failure, "Injected engine failure was not cleanly rolled back");
-        expect(!score->undoStack()->hasActiveCommand()
+        expect(!score->undoStack()->hasActiveTransaction()
                && score->undoStack()->currentIndex() == failure_index
                && score->undoStack()->size() == failure_size && score->undoStack()->canRedo(),
                "Engine rollback damaged the previous redo branch");
