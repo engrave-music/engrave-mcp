@@ -1,4 +1,4 @@
--- Qt-free xmake build for the pinned MuseScore native engine (5.0 layout).
+﻿-- Qt-free xmake build for the pinned MuseScore native engine (5.0 layout).
 --
 -- This is the primary build. CMake is not invoked. The checked-in manifest
 -- (xmake/manifest.lua) is generated from the engine's own CMake source lists by
@@ -682,6 +682,8 @@ target("engraving_playback_tests")
         path.join(source_root, "src/engraving/tests/playback/playbackcontext_tests.cpp"),
         path.join(source_root, "src/engraving/tests/playback/bendsrenderer_tests.cpp"),
         path.join(source_root, "src/engraving/tests/repeat_tests.cpp"),
+        path.join(source_root, "src/engraving/tests/parts_tests.cpp"),
+        path.join(source_root, "src/engraving/tests/utils/scorecomp.cpp"),
         path.join(source_root, "src/engraving/tests/utils/scorerw.cpp"),
         path.join(source_root, "src/engraving/tests/utils/testutils.cpp"),
         path.join(project_root, "native/tests/gtest_main.cpp"),

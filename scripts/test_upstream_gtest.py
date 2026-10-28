@@ -1,4 +1,4 @@
-"""Runner for upstream MuseScore unit tests built with GoogleTest.
+﻿"""Runner for upstream MuseScore unit tests built with GoogleTest.
 
 Executes Qt-free upstream test suites:
   - engraving_playback_tests: tests playback event rendering, playback model,
@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # or gains a skip/disable, so the numbers in docs/dev/validation.md cannot drift
 # from what is executed. Update this table together with the pinned engine.
 EXPECTED_SUITES = {
-    "engraving_playback_tests": {"total": 159, "test_suites": 5},
+    "engraving_playback_tests": {"total": 216, "test_suites": 6},
     "mpe_tests": {"total": 11, "test_suites": 2},
 }
 # Tests that may legitimately be skipped/disabled without failing the lane. The
