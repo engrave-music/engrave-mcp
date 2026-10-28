@@ -66,6 +66,13 @@ bool generate_score_excerpts(MasterScore* score)
 
     // createExcerptsFromParts() hands back raw, unowned excerpts. Keep them
     // owned here until addExcerpt() transfers each one to the document.
+    // Excerpt::createExcerpt() clones measures and links master items with
+    // Score::undo(Link): outside of a load that mutates the score without a
+    // transaction and logs "called outside of transaction". Upstream wraps the
+    // same excerpt/layout construction in a ScoreLoad scope
+    // (notation/internal/masternotation.cpp:456, importmusicxml.cpp:223), so the
+    // derived excerpt structure is built, not pushed as a user undo step.
+    mu::engraving::ScoreLoad scoreLoad;
     std::vector<Excerpt*> pending = Excerpt::createExcerptsFromParts(visible_parts, score);
     std::size_t added_count = 0;
     try {

@@ -20,6 +20,7 @@
 #include "engraving/engravingmodule.h"
 #include "engraving/engravingproject.h"
 #include "engraving/dom/masterscore.h"
+#include "engraving/dom/score.h"
 #include "engraving/dom/excerpt.h"
 #include "engraving/dom/instrtemplate.h"
 #include "engraving/dom/instrument.h"
@@ -196,6 +197,10 @@ void copy_score_versions(engraving::MasterScore* source, engraving::MasterScore*
 
 ScoreProject load_native_score(const std::string& input, const std::string& format) {
     if (input.empty() || input.size() > 8 * 1024 * 1024) throw std::invalid_argument("Input must contain 1..8388608 bytes");
+    // Like NotationProject::doImport (project/internal/notationproject.cpp:304) and
+    // importMusicXmlfromBuffer, the whole reading + setup phase is a load: layout
+    // inside it runs outside a transaction and must not push undo commands or warn.
+    engraving::ScoreLoad scoreLoad;
     auto project = engraving::EngravingProject::create(modularity::globalCtx());
     project->setFileInfoProvider(std::make_shared<engraving::LocalFileInfoProvider>("Untitled.mscz"));
     ByteArray data = byte_array(input);
@@ -259,6 +264,16 @@ ScoreProject load_native_score(const std::string& input, const std::string& form
     } else throw std::invalid_argument("Unsupported score input format");
     auto* score = project->masterScore();
     score->connectTies();
+    // 5.0 moved the post-load MIDI wiring out of EngravingProject::setupMasterScore
+    // into the MSCX reader (rw/read500/read500.cpp:307-315), so a score that did not
+    // come from MSCX keeps an empty MasterScore::midiMapping(): every InstrChannel
+    // still has channel() == -1 (dom/instrument.cpp:319) and
+    // MasterScore::playbackChannel() indexes m_midiMapping with it
+    // (dom/masterscore.h:185), i.e. reads 72*(channel()+1) bytes out of bounds.
+    // Run the same three steps, in the same order, where every reader converges.
+    for (auto* part : score->parts()) part->updateHarmonyChannels(false);
+    score->rebuildMidiMapping();
+    score->updateChannel();
     check(project->setupMasterScore(true));
     // MusicXML import can call Part::setMidiProgram after the MIDI mapping was
     // built, leaving playback channels on the template program until an MSCZ
