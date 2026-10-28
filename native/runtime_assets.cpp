@@ -679,10 +679,13 @@ void install_runtime_font_services()
         auto cacheStore = std::make_shared<CacheStore>();
         auto active = std::make_shared<ActiveTable>();
         auto database = std::make_shared<RuntimeFontsDatabase>(cacheStore, active);
-        auto proxy = std::make_shared<FontsEngineProxy>(cacheStore, createEngine());
 
         auto* ioc = muse::modularity::globalIoc();
         ioc->registerExport<muse::draw::IFontsDatabase>("native", database);
+
+        // FontsEngine::init() subscribes to IFontsDatabase::changed() in 5.0, so the
+        // database must be resolvable before the engine is constructed.
+        auto proxy = std::make_shared<FontsEngineProxy>(cacheStore, createEngine());
         ioc->registerExport<muse::draw::IFontsEngine>("native", proxy);
 
         s_database = std::move(database);
