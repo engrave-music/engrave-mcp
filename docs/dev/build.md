@@ -6,7 +6,7 @@
 
 ## 1. 架构设计与约束
 
-- **构建系统**：以 `xmake.lua` 与显式源码清单 `xmake/manifest.lua` 为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux / Arch WSL2 x86_64 均已验证）。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块）。
+- **构建系统**：以 `xmake.lua` 与显式源码清单 `xmake/manifest.lua` 为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux x86_64 均已验证）。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块）。
 - **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件，以及 MuseScore 4 音频引擎（`muse_audio_engine`：FluidSynth 合成、混音、混响与 SoundTrackWriter）及其编码器 LAME（MP3）、libFLAC、Opus/libopusenc（Ogg）、fdk-aac（AAC），全部来自子模块并以 Qt-free 方式编译；音频仅在 `--worker` 子进程中渲染。libsndfile 已从构建依赖和 pixi 环境中移除；测试分析用的 Python `soundfile` wheel 自带其运行时副本，因此解码检查不依赖系统 libsndfile。捆绑的原生依赖包括 FreeType、HarfBuzz、FluidSynth、FLAC、Opus/libopusenc、LAME 与 fdk-aac（Brotli 依赖已移除）。
 - **底层适配**：采用原生文件系统、进程内设置、FreeType/HarfBuzz 字体引擎和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
 
@@ -21,7 +21,7 @@
 - **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）；首次下载 HarfBuzz 需要 PATH 中的 `7z` 或 `7zz`。
 
 ### Linux 构建环境
-- **验证宿主**：Linux x86_64 (`ssh <linux-host>`, kernel 7.3, Pixi GCC 15.3, C++23) 及 Arch WSL2 x86_64。
+- **验证宿主**：Linux x86_64 (`ssh <linux-host>`, kernel 7.3, Pixi GCC 15.3, C++23)。本项目不使用 WSL（早期 Arch WSL2 验证记录仅作历史保留）。
 - **编译器**：Pixi GCC 15.3，采用 `-std=c++23`、`-O3`、`-fPIC`。
 - **构建工具**：xmake ≥ 3.1.1。
 
@@ -112,7 +112,7 @@ pixi run -e native python scripts/package_windows.py --no-qt --binary build/xmak
 
 ## 7. Linux 原生构建与 Linux 验证
 
-Linux 构建与验证现已常态化运行于 Linux x86_64 宿主机器（`ssh <linux-host>`，路径 `~/OSS/musescore-mcp`），同时也保留了早期的 Arch WSL2 x86_64 验证记录。宿主运行环境为 Linux kernel 7.3、Pixi GCC 15.3、C++23。
+Linux 构建与验证现已常态化运行于 Linux x86_64 宿主机器（`ssh <linux-host>`，路径 `~/OSS/musescore-mcp`）。早期的 Arch WSL2 x86_64 记录仅作历史保留，现在不再使用 WSL。宿主运行环境为 Linux kernel 7.3、Pixi GCC 15.3、C++23。
 
 ### 7.1 构建与打包命令
 
