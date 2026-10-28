@@ -40,6 +40,7 @@ includes("xmake/packages/opus.lua")
 includes("xmake/packages/opusenc.lua")
 includes("xmake/packages/picojson.lua")
 includes("xmake/packages/pugixml.lua")
+includes("xmake/packages/fdk-aac.lua")
 
 add_requires("asio 1.36.0", {system = false})
 
@@ -57,7 +58,7 @@ add_requires("muse-flac 1.4.3", {system = false})
 add_requires("lame 3.100", {system = false})
 add_requires("muse-opus 1.5.2", {system = false})
 add_requires("muse-opusenc 0.2.1", {system = false})
-add_requires("fdk-aac 2.0.3", {system = false})
+add_requires("muse-fdk-aac 2.0.3", {system = false})
 add_requires("muse-pugixml 1.15", {system = false})
 add_requires("utfcpp v4.1.1", {system = false})
 add_requires("muse-picojson 111c9be", {system = false})
@@ -272,6 +273,17 @@ local function render_tool_schema(tools)
     return table.concat(output, "\n") .. "\n"
 end
 
+-- MuseScore 5.0 relies on standard headers arriving transitively (through Qt /
+-- the precompiled header in upstream builds) that neither the Qt-free nor the
+-- MSVC/no-PCH build provides. xmake/compat_includes.h lists them and says why;
+-- it is force-included for every target (engine and host). Delete both once the
+-- engine carries the includes itself (see fork topic T9 for the 4.7.6 edition).
+local compat_includes = path.join(project_root, "xmake", "compat_includes.h")
+if not os.isfile(compat_includes) then
+    raise("xmake/compat_includes.h is missing")
+end
+
+
 local function generate_inputs(target, os, io, json)
     local output_dir = target:targetdir()
     if not output_dir or output_dir == "" then
@@ -333,6 +345,8 @@ local native_include = path.join(native_root, "include")
 local native_lib = path.join(native_root, "lib")
 
 add_includedirs("$(builddir)/xmake-generated")
+-- See xmake/compat_includes.h: engine headers that rely on transitive includes.
+add_forceincludes(compat_includes)
 add_includedirs(path.join(project_root, "native"))
 if os.isdir(native_include) then
     add_sysincludedirs(native_include)
@@ -459,7 +473,7 @@ target("native_fluidsynth")
 target("muse_audio_engine")
     set_kind("static")
     add_deps("muse_generated", "muse_global", "native_fluidsynth")
-    add_packages("muse-flac", "lame", "muse-opus", "muse-opusenc", "fdk-aac")
+    add_packages("muse-flac", "lame", "muse-opus", "muse-opusenc", "muse-fdk-aac")
     add_manifest_target("muse_audio_engine")
 
 target("audio_engine_link_check")
@@ -481,6 +495,9 @@ target("noqt_support")
     set_kind("static")
     add_deps("muse_generated", "muse_global", "muse_draw", "muse_mpe",
         "engraving", "iex_musicxml")
+    -- Compiles the FreeType/HarfBuzz font face implementation itself, so the
+    -- packages must be visible here (a dep's package includes do not propagate).
+    add_packages("freetype", "muse-harfbuzz")
     add_manifest_target("noqt_support")
     add_links("z", {public = true})
 
