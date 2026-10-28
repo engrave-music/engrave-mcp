@@ -363,7 +363,8 @@ font metadata kept in-repo), `67bced6` (qrc-generated resources), `e14e09d`
 - Executed, clean clone + bootstrap (git clone of the branch,
   `bootstrap.py --soundfont --harfbuzz`, prepare, build, mcp_smoke, golden
   compare): Linux passes. linux-host cannot reach raw.githubusercontent.com (TLS
-  EOF), so `.upstream/harfbuzz` was seeded from the existing checkout; the
+  EOF at the time; re-run 2026-10-28 through the host's sing-box proxy:
+  `bootstrap.py --harfbuzz` downloads it, executed), so `.upstream/harfbuzz` was seeded from the existing checkout; the
   submodule and SoundFont were fetched by the clean run. Windows passes too
   (HarfBuzz, submodule and SoundFont downloaded by bootstrap); xmake's aria2
   download of the Asio archive failed the TLS handshake with GitHub twice
