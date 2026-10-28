@@ -848,6 +848,8 @@ add_engine_test("assets_test", "assets_test.cpp")
 add_engine_test("archive_test", "archive_test.cpp")
 add_engine_test("score_audio_test", "score_audio_test.cpp")
 add_engine_test("score_edit_test", "score_edit_test.cpp")
+-- Dev tool for the rebase-proof semantic goldens (roadmap-engrave A0).
+add_engine_test("semantic_dump", "semantic_dump.cpp")
 target("score_edit_test")
     add_defines("MUSIC_CORE_TESTING")
     add_files(path.join(project_root, "native", "score_edit.cpp"))

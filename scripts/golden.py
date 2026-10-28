@@ -27,6 +27,11 @@ Volatile fields removed by normalization (observed by running twice):
 Everything else is compared byte for byte, except ``audio.json`` which uses
 the documented numeric tolerances.
 
+``semantic.json`` (the exported MSCZ) and ``semantic-source.json`` (the fixture
+file) come from the ``semantic_dump`` dev tool next to the server binary. They
+record musical content read from the in-memory DOM, independent of the MSCX
+format version, and are the rebase oracle of roadmap-engrave A0/A2.
+
 Usage:
   golden.py capture --binary B --resources R --soundfont SF --golden DIR \\
                     [--allow-errors]
@@ -45,6 +50,7 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -403,6 +409,26 @@ async def capture_master(session, identity, raw, out_dir, roots):
                        "score.pdf.json", describe_pdf, roots)
     await value_export(session, identity, "wav", raw / "score.wav", out_dir,
                        "audio.json", describe_audio, roots)
+    # Format-independent content of the saved file (roadmap-engrave A0).
+    semantic_dump(raw / "score.mscz", out_dir / "semantic.json", roots)
+
+
+SEMANTIC_DUMP: dict = {}
+
+
+def semantic_dump(source: Path, dest: Path, roots, *extra: str) -> None:
+    """Run the semantic_dump dev tool next to the server binary; errors become .error.txt."""
+    if not source.is_file():
+        write_text(dest.with_suffix(".error.txt"), "source export missing\n")
+        return
+    result = subprocess.run(
+        [str(SEMANTIC_DUMP["binary"]), str(SEMANTIC_DUMP["resources"]), str(source), *extra],
+        capture_output=True, check=False)
+    if result.returncode != 0:
+        write_text(dest.with_suffix(".error.txt"),
+                   sanitize(result.stderr.decode("utf-8", "replace"), roots) + "\n")
+        return
+    write_json(dest, json.loads(result.stdout.decode("utf-8")))
 
 
 async def capture_excerpts(session, identity, raw, out_dir, roots):
@@ -438,6 +464,10 @@ async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots)
         write_text(out_dir / "open.error.txt", sanitize(error, roots) + "\n")
         return
     identity = {"documentId": payload["documentId"]}
+    if source.name != "created.json":
+        # The fixture as the engine reads it, before any save.
+        semantic_dump(source, out_dir / "semantic-source.json", roots,
+                      *(["--generate-excerpts"] if fixture_id in GENERATE_EXCERPTS else []))
     try:
         await capture_master(session, identity, raw, out_dir, roots)
         if fixture_id in GENERATE_EXCERPTS:
@@ -478,6 +508,10 @@ def build_index(root: Path) -> dict:
 
 
 async def capture_tree(binary, resources, soundfont, target, log_path):
+    dump = binary.parent / ("semantic_dump.exe" if sys.platform.startswith("win") else "semantic_dump")
+    if not dump.is_file():
+        raise SystemExit(f"semantic_dump not found next to the server binary: {dump}")
+    SEMANTIC_DUMP.update(binary=dump.resolve(), resources=Path(resources).resolve())
     reset_root(target)
     with tempfile.TemporaryDirectory(prefix="golden-raw-") as temporary:
         raw_root = Path(temporary)

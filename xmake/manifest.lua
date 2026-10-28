@@ -1325,6 +1325,7 @@ MUSESCORE_XMAKE_MANIFEST = {
                 "${PROJECT_ROOT}/native/noqt_runtime.cpp",
                 "${PROJECT_ROOT}/native/score_metadata.cpp",
                 "${PROJECT_ROOT}/native/score_positions.cpp",
+                "${PROJECT_ROOT}/native/score_semantic.cpp",
                 "${PROJECT_ROOT}/native/score_render.cpp",
                 "${PROJECT_ROOT}/native/score_excerpts.cpp",
                 "${PROJECT_ROOT}/native/score_imports.cpp",
