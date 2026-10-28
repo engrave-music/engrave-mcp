@@ -22,7 +22,6 @@
   },
   {
    "dynamic": "f",
-   "subtype": "f (Forte)",
    "tick": 1920,
    "track": 0,
    "type": "Dynamic"
@@ -899,7 +898,6 @@
     {
      "subtype": "System break",
      "tick": 9600,
-     "track": -1,
      "type": "LayoutBreak"
     }
    ],
