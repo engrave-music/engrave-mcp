@@ -821,6 +821,7 @@ MUSESCORE_XMAKE_MANIFEST = {
                 "${PROJECT_ROOT}/native/atomic_file.cpp",
                 "${PROJECT_ROOT}/native/cairo_painter.cpp",
                 "${PROJECT_ROOT}/native/composition.cpp",
+                "${PROJECT_ROOT}/native/noqt_application.cpp",
                 "${PROJECT_ROOT}/native/noqt_runtime.cpp",
                 "${PROJECT_ROOT}/native/score_metadata.cpp",
                 "${PROJECT_ROOT}/native/score_positions.cpp",
@@ -971,6 +972,7 @@ MUSESCORE_XMAKE_MANIFEST = {
         },
         ["noqt_probe"] = {
             sources = {
+                "${PROJECT_ROOT}/native/noqt_application.cpp",
                 "${PROJECT_ROOT}/native/noqt_probe.cpp",
             },
             defines = {

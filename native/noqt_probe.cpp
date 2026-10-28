@@ -1,4 +1,5 @@
 #include "noqt_filesystem.h"
+#include "noqt_application.h"
 #include "global/log.h"
 #include "global/io/buffer.h"
 #include "draw/internal/fontprovider.h"
@@ -47,6 +48,7 @@ int main(int argc, char** argv) {
         auto fonts = std::make_shared<draw::FontsEngine>(modularity::globalCtx());
         modularity::globalIoc()->registerExport<draw::IFontsEngine>("native", fonts);
         modularity::globalIoc()->registerExport<draw::IFontProvider>("native", new EngravingFontProvider());
+        modularity::globalIoc()->registerExport<IApplication>("native", std::make_shared<music::NoQtApplication>());
         fonts->init();
         engraving::EngravingModule engraving;
         engraving.registerExports();

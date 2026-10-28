@@ -1,4 +1,5 @@
 #include "noqt_runtime.h"
+#include "noqt_application.h"
 #include "noqt_filesystem.h"
 #include "offline_audio.h"
 #include "score_metadata.h"
@@ -95,6 +96,9 @@ void initialize_native_runtime(const std::string& assets) {
     modularity::globalIoc()->registerExport<io::IFileSystem>("native", new NativeFileSystem(root));
     install_runtime_font_services();
     modularity::globalIoc()->registerExport<draw::IFontProvider>("native", new EngravingFontProvider());
+    // Writer, MusicXML export, and the $v header macro resolve IApplication
+    // through the project IoC; without it application() is null and export crashes.
+    modularity::globalIoc()->registerExport<IApplication>("native", std::make_shared<NoQtApplication>());
     // Module services live in the process-wide IoC; no desktop application is created.
     engraving::EngravingModule engraving;
     engraving.registerExports();
@@ -204,6 +208,7 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
     if (format == "measurePositions" || format == "segmentPositions")
         return score_positions(score, format == "segmentPositions").dump();
     if (format == "svg" || format == "png" || format == "pdf") return render_score(score, format, options);
+
     ByteArray data;
     io::Buffer buffer(&data);
     buffer.open(io::IODevice::WriteOnly);

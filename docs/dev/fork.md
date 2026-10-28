@@ -50,3 +50,6 @@ Evidence for this pin is in validation.md ("Roadmap step 1").
 The ten `mcp/v4.7.5` topics cherry-picked without conflicts;
 `git range-diff v4.7.5..mcp-4.7.5-1 v4.7.6..mcp/v4.7.6` reports every patch
 identical (`=`). v4.7.6 adds no source file to the compiled modules.
+Tag `mcp-4.7.6-2` = `e099f16b` adds `Revert "TEMPORARY: ..."` on `mcp/v4.7.6`: the host
+registers an `IApplication` (native/noqt_application.cpp), so the writers report the
+real version again. `mcp/v4.7.6` now carries the nine permanent topics only (net).

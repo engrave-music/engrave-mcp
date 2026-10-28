@@ -114,6 +114,9 @@ def get_spanner_props(sp: ET.Element) -> tuple[tuple[str, Any], ...]:
 def normalize_mscx_text(text: str) -> str:
     """Normalize MSCX XML text for MSCZ round-trip text comparison."""
     text = re.sub(r"<eid>[^<]*</eid>", "<eid>0</eid>", text)
+    # The writing program's version lines are not score content; dropping them keeps
+    # pinned digests (which include hunk line numbers) stable across engine versions.
+    text = re.sub(r"[ \t]*<program(?:Version|Revision)>[^<]*</program(?:Version|Revision)>\r?\n", "", text)
     text = re.sub(r"<([a-zA-Z0-9_]+)([^>]*)></\1>", r"<\1\2/>", text)
     return text
 

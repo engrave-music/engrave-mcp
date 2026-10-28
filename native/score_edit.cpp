@@ -186,8 +186,13 @@ public:
         if (!m_active) throw std::runtime_error("Failed to begin pitch edit");
     }
     void finish(bool rollback) {
+        const bool wasDirty = m_score->dirty();
         m_score->endCmd(rollback, true); // Headless excerpts are not marked open.
         m_active = false;
+        // endCmd lays out the edited range before the undo macro marks the score
+        // dirty, so page chrome that depends on dirty() ($v/$r headers) would stay
+        // stale until the next layout. Relayout once, on the clean -> dirty edge.
+        if (!rollback && !wasDirty && m_score->dirty()) m_score->doLayout();
     }
 private:
     Score* m_score;

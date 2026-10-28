@@ -405,3 +405,23 @@ repeatlist volta cases (repeat71/72 and the full repeat_data set), ChordLine pat
 copy into generated parts, parenthesis/tab-grace crash fixes on pre-4.6 MSCX,
 MusicXML named percussion noteheads, Pedal textSizeIsSpatiumDependent.
 Linux evidence: suite logs on linux-host (notes/claude-tests/step2-linux, not in git).
+## Roadmap step 3: version info and platform macros (2026-10-28)
+
+Pin `mcp-4.7.6-2` (`e099f16b`, the TEMPORARY version suppression reverted).
+Decision: `programRevision` is the 7-character SHA of the engine commit actually
+built (the fork submodule), read by xmake at configure time; release builds are not
+unstable (upstream SetupConfigure.cmake for build mode release).
+- Executed on Windows and Linux (`version_info` lane, new): MSCX
+  `programVersion` 4.7.6 and `programRevision` e099f16; MusicXML `<software>MuseScore
+  Studio 4.7.6</software>`; metadata `mscoreVersion` 4.7.6 after an MSCX export;
+  platform metaTag "Microsoft Windows" / "Linux" (Q_OS_* now defined centrally in
+  xmake.lua). fixtures/version/header.mscx (programVersion 4.5.0, `$v` header):
+  unedited SVG shows 4.5.0; after one pitch edit it shows 4.7.6 and does not crash
+  (before: `application()` was null). The `$v` check compares cairo glyph runs with
+  reference runs, since cairo SVG has no text.
+- `endCmd` lays out before the undo macro marks the score dirty, so the first edit
+  left `$v`/`$r` stale; the edit guard now relayouts once on the clean -> dirty edge.
+- Goldens: 47 differences per platform, all only `<programVersion>`/
+  `<programRevision>` elements (values normalized), metadata `mscoreVersion`, and the
+  MSCZ inner MSCX hash; pinned, then rebaselined. No SVG/PNG/PDF/MIDI/audio change.
+- Executed: 23/23 lanes on both hosts.

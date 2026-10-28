@@ -113,7 +113,7 @@ end
 -- Generated inputs (framework config header and MCP tool schema)
 -------------------------------------------------------------------------------
 
-local function read_version(io)
+local function read_version(os, io)
     local text = io.readfile(path.join(source_root, "version.cmake")) or ""
     local function value(name)
         return text:match("set%(" .. name .. '%s+"([^"]*)"%)')
@@ -121,15 +121,37 @@ local function read_version(io)
     local major = value("MUSE_APP_VERSION_MAJOR") or "0"
     local minor = value("MUSE_APP_VERSION_MINOR") or "0"
     local patch = value("MUSE_APP_VERSION_PATCH") or "0"
-    return {
+    local revision = ""
+    local git_args = {"-C", source_root, "rev-parse", "--short=7", "HEAD"}
+    -- Probe first: iorunv raises in the xmake script sandbox when git is absent
+    -- or the source tree is not a checkout, and the revision must fall back.
+    local code = os.execv("git", git_args,
+        {try = true, stdout = os.nuldev(), stderr = os.nuldev()})
+    if code == 0 then
+        local output = os.iorunv("git", git_args)
+        revision = tostring(output or ""):gsub("%s+", "")
+        if not revision:match("^%x%x%x%x%x%x%x$") then
+            print("warning: unexpected engine git revision '" .. revision
+                .. "'; MUSE_APP_REVISION will be empty")
+            revision = ""
+        end
+    else
+        print("warning: cannot read the engine git revision from " .. source_root
+            .. "; MUSE_APP_REVISION will be empty")
+    end
+    local version_label = value("MUSE_APP_VERSION_LABEL")
+    local result = {
         MUSE_APP_NAME_HUMAN_READABLE = "MuseScore Studio",
         MUSE_APP_NAME_MACHINE_READABLE = "MuseScoreStudio",
         MUSE_APP_NAME_HUMAN_READABLE_COMPAT = "MuseScore",
         MUSE_APP_NAME_MACHINE_READABLE_COMPAT = "MuseScore",
         MUSE_APP_NAME = "MuseScore",
         MUSE_APP_TITLE = "MuseScore Studio",
-        MUSE_APP_UNSTABLE = true,
+        -- Upstream SetupConfigure.cmake leaves MUSE_APP_UNSTABLE undefined for
+        -- MUSE_APP_BUILD_MODE=release; debug and releasedbg stay unstable.
+        MUSE_APP_UNSTABLE = not is_mode("release"),
         MUSE_APP_BUILD_NUMBER = "1",
+        MUSE_APP_REVISION = revision,
         MUSE_APP_VERSION = major .. "." .. minor .. "." .. patch,
         MUSE_APP_VERSION_MAJOR = major,
         MUSE_APP_VERSION_MINOR = minor,
@@ -148,6 +170,10 @@ local function read_version(io)
         MUSE_MODULE_MPE = true,
         MUSE_MODULE_MPE_API = true,
     }
+    if version_label and version_label ~= "" then
+        result.MUSE_APP_VERSION_LABEL = version_label
+    end
+    return result
 end
 
 local function render_framework_config(template, variables)
@@ -226,7 +252,7 @@ local function generate_inputs(target, os, io, json)
         raise("cannot read pinned config template: " .. template_path)
     end
     write_if_changed(os, io, path.join(output_dir, "muse_framework_config.h"),
-        render_framework_config(template, read_version(io)))
+        render_framework_config(template, read_version(os, io)))
 
     local tools_path = path.join(project_root, "native", "tools.json")
     local tools = io.readfile(tools_path)
@@ -283,14 +309,39 @@ end
 local manifest_includes = expand_list(manifest.includes)
 add_includedirs(manifest_includes)
 
+-- Qt platform macros normally come from <QtGlobal>; the pinned engine and
+-- native/ adapters branch on them under NO_QT_SUPPORT. Define them once,
+-- project-wide, for every target compiled from the engine and native/:
+--   engraving/dom/masterscore.cpp        platform metaTag
+--   framework/global/io/fileinfo.cpp     Windows drive-letter branches
+--   framework/global/io/dir.cpp          Windows separator normalization
+--   framework/global/runtime.cpp         POSIX thread names
+--   engraving/editing/textedit.cpp and
+--   engraving/editing/editdata.h         platform key handling
+--   engraving/rendering/score/tdraw.cpp
+-- The compiled files behind those branches include no Qt headers; the only
+-- Qt-including files that test Q_OS_* (io/internal/filesystem.cpp,
+-- internal/systeminfo.cpp, global/settings.cpp) are not in the manifest.
 if is_plat("windows") then
     set_runtimes("MD")
     set_exceptions("cxx")
     add_defines("WIN32", "_WINDOWS", "NOMINMAX", "_USE_MATH_DEFINES", "UNICODE", "_UNICODE",
         "_CRT_SECURE_NO_WARNINGS", "_CRT_NONSTDC_NO_WARNINGS",
         "_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING")
+    add_defines("Q_OS_WIN", "Q_OS_WIN32", "Q_OS_WINDOWS")
+    if is_arch("x64", "x86_64") then
+        add_defines("Q_OS_WIN64")
+    end
     add_cxflags("/utf-8", "/bigobj", "/Zc:__cplusplus", {tools = {"cl", "clang_cl"}})
     add_cflags("/utf-8", {tools = {"cl", "clang_cl"}})
+elseif is_plat("macosx") then
+    add_defines("Q_OS_MAC", "Q_OS_MACOS", "Q_OS_DARWIN", "Q_OS_UNIX")
+    add_cxflags("-fPIC", "-pthread")
+    add_ldflags("-pthread")
+elseif is_plat("linux") then
+    add_defines("Q_OS_LINUX", "Q_OS_UNIX")
+    add_cxflags("-fPIC", "-pthread")
+    add_ldflags("-pthread")
 else
     add_cxflags("-fPIC", "-pthread")
     add_ldflags("-pthread")
