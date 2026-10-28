@@ -18,7 +18,6 @@ import subprocess
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from test_imports_guitarpro import FIXTURES
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_INPUT = 8 * 1024 * 1024
@@ -163,6 +162,7 @@ async def run(args):
                         label="close reference",
                     )
 
+                fixtures = (args.upstream / "src/importexport/guitarpro/tests/data").resolve()
                 cases = [
                     ("mscz", exports["mscz"], "mscz"),
                     ("mxl", exports["mxl"], "mxl"),
@@ -170,8 +170,8 @@ async def run(args):
                     ("mid-alias", exports["midi"], "mid"),
                     ("musicxml", source, "musicxml"),
                     ("xml-alias", source, "xml"),
-                    ("gp3", FIXTURES / "tempo.gp3", "gp3"),
-                    ("gtp-alias", FIXTURES / "tempo.gp3", "gtp"),
+                    ("gp3", fixtures / "tempo.gp3", "gp3"),
+                    ("gtp-alias", fixtures / "tempo.gp3", "gtp"),
                 ]
                 for name, path, input_format in cases:
                     assert path.is_file(), path
@@ -278,7 +278,7 @@ async def run(args):
                     )
                     report["rejections"].append(label)
 
-                recovered = await open_path(client, FIXTURES / "tempo.gp3")
+                recovered = await open_path(client, fixtures / "tempo.gp3")
                 await call(
                     client,
                     "score_close",
@@ -301,4 +301,7 @@ if __name__ == "__main__":
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--resources", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--upstream", "--engine-source", dest="upstream", type=Path,
+                        default=ROOT / "vendor/musescore",
+                        help="Path to engine source root")
     asyncio.run(asyncio.wait_for(run(parser.parse_args()), timeout=600))
