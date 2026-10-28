@@ -86,11 +86,13 @@ void check_zip(ZipReader& zip) {
 std::vector<std::unique_ptr<modularity::IContextSetup> > s_contextSetups;
 
 // The Qt-free part of AppFactory::addConsoleModules(): the framework "mpe"
-// module, then the engraving module, then the import/export modules. "draw" is
-// not a module here because DRAW_NO_INTERNAL makes DrawModule a no-op and the
-// host installs its own font database/engine (install_runtime_font_services);
-// "audio" is registered by engine_audio.cpp through EngineGlobalSetup, and "midi"
-// has no compiled module (the MIDI import/export path is a direct function call).
+// module, then the engraving module, then the import/export modules. DrawModule
+// is not instantiated: the host installs its own font database/engine through
+// install_runtime_font_services() (retained runtime fonts, 1200 DPI provider),
+// and DrawModule::registerExports() would fill the same IoC slots with the plain
+// FT ones. "audio" is registered by engine_audio.cpp through EngineGlobalSetup,
+// and "midi" has no compiled module (the MIDI import/export path is a direct
+// function call).
 void setup_modules(const std::vector<modularity::IModuleSetup*>& modules,
                    const std::shared_ptr<iex::musicxml::MusicXmlConfiguration>& musicXml,
                    const IApplication::RunMode runMode)
