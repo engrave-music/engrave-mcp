@@ -303,6 +303,8 @@ local function write_thirdparty_configs(os, io, output_dir)
         "#define HAVE_STDINT_H",
         define_if(not windows, "HAVE_FSEEKO"),
         define_if(not windows, "HAVE_LANGINFO_CODESET"),
+        -- #cmakedefine01 always defines it (0 without a probe); lpc.c only tests defined().
+        define("HAVE_LROUND", 0),
         -- Upstream never sets PROJECT_VERSION for the FLAC subdirectory, so
         -- configure_file substitutes an empty version string.
         "#define PACKAGE_VERSION \"\"",
