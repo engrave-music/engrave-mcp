@@ -6,6 +6,8 @@
 #include "global/io/buffer.h"
 #include "global/io/file.h"
 #include "engraving/dom/masterscore.h"
+#include "engraving/editing/editstyle.h"
+#include "engraving/editing/transaction/transaction.h"
 #include "engraving/engravingerrors.h"
 #include "modularity/ioc.h"
 
@@ -23,7 +25,11 @@ constexpr std::size_t MAX_IMPORT_BYTES = 8 * 1024 * 1024;
 void load_guitarpro_style(mu::engraving::MasterScore* score)
 {
     muse::io::File styleFile(":/engraving/styles/gp-style.mss");
-    if (!score->loadStyle(styleFile)) {
+    // 5.0 loads styles through EditStyle::loadStyle on a transaction. The import
+    // is not an undoable user edit, so this uses the dummy transaction, exactly
+    // like GuitarProReader::read() and the MasterScore::loadStyle that 4.x had.
+    if (!mu::engraving::EditStyle::loadStyle(score->transactionManager()->currentOrDummyTransaction(),
+                                            score, styleFile)) {
         throw std::runtime_error("Failed to load the Guitar Pro style");
     }
 }
