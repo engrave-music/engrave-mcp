@@ -290,16 +290,14 @@ async def run(args):
             done_bg = await client.terminal(bg_job)
             assert done_bg['state'] == 'completed', done_bg
 
-            # Verify WAV energy matches synchronous export (sample-identical or within 1e-6 relative RMS)
+            # Verify WAV matches synchronous export: byte-identical for the same resolved mix
+            assert async_wav.read_bytes() == sync_wav.read_bytes(), "Sync and async WAV outputs must be byte-identical for the same mix"
             samples_async, rms_async = read_wav_energy(async_wav)
             samples_sync, rms_sync = read_wav_energy(sync_wav)
             _, rms_unmuted = read_wav_energy(unmuted_wav)
 
             assert rms_async > 0 and rms_sync > 0
             assert rms_async < rms_unmuted, f"Muting track did not reduce energy: {rms_async} vs {rms_unmuted}"
-
-            rms_diff = abs(rms_async - rms_sync) / max(rms_sync, 1e-9)
-            assert samples_async == samples_sync or rms_diff <= 1e-6, f"RMS difference {rms_diff} exceeds 1e-6"
             evidence['background_audio_mix_matches_sync'] = True
             evidence['export_snapshot_isolation'] = True
 

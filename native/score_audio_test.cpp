@@ -5,6 +5,7 @@
 #include "engraving/dom/masterscore.h"
 #include "engraving/compat/midi/midicoreevent.h"
 #include "global/io/buffer.h"
+#include "global/serialization/zipwriter.h"
 #include "importexport/midi/internal/midishared/midifile.h"
 
 #include <fstream>
@@ -120,6 +121,66 @@ int main(int argc, char** argv)
         expect(!forced.tracks[0].output.force_mute && forced.tracks[1].output.force_mute,
                "forceMute must silence non-solo tracks");
         expect(!music::is_neutral_mix(forced), "Soloed mix must not be neutral");
+
+        // Hostile deeply nested JSON (>64 nesting) and oversized entry (>1 MiB)
+        {
+            // 1) Hostile nested JSON: [[[[... 100 deep
+            std::string nested = "";
+            for (int i = 0; i < 100; ++i) nested += "[";
+            for (int i = 0; i < 100; ++i) nested += "]";
+            muse::ByteArray zip_bytes;
+            {
+                muse::io::Buffer buf(&zip_bytes);
+                expect(buf.open(muse::io::IODevice::WriteOnly), "Cannot open zip buffer");
+                muse::ZipWriter writer(&buf);
+                writer.addFile("audiosettings.json", muse::ByteArray(nested.data(), nested.size()));
+                writer.close();
+            }
+            std::string nested_archive(reinterpret_cast<const char*>(zip_bytes.constData()), zip_bytes.size());
+            const auto nested_defaults = music::score_audio_mix_defaults(nested_archive);
+            expect(nested_defaults.is_neutral(), "Deeply nested hostile document must yield neutral defaults");
+
+            // 2) Oversized entry: > 1 MiB uncompressed size
+            {
+                std::string huge(1024 * 1024 + 16, ' ');
+                muse::ByteArray huge_zip;
+                muse::io::Buffer huge_buf(&huge_zip);
+                expect(huge_buf.open(muse::io::IODevice::WriteOnly), "Cannot open huge zip buffer");
+                muse::ZipWriter huge_writer(&huge_buf);
+                huge_writer.addFile("audiosettings.json", muse::ByteArray(huge.data(), huge.size()));
+                huge_writer.close();
+                std::string huge_archive(reinterpret_cast<const char*>(huge_zip.constData()), huge_zip.size());
+                const auto huge_defaults = music::score_audio_mix_defaults(huge_archive);
+                expect(huge_defaults.is_neutral(), "Oversized audiosettings entry must yield neutral defaults");
+            }
+        }
+
+        // Excerpts audiosettings.json fixture (mix_parts.mscz)
+        {
+            std::ifstream parts_stream("fixtures/audio/mix_parts.mscz", std::ios::binary);
+            expect(bool(parts_stream), "Missing fixtures/audio/mix_parts.mscz");
+            const std::string parts_bytes{std::istreambuf_iterator<char>(parts_stream),
+                                          std::istreambuf_iterator<char>()};
+            const auto parts_defaults = music::score_audio_mix_defaults(parts_bytes);
+            // Root defaults: Violin is muted
+            auto violin_it = parts_defaults.tracks.find({"1", "violin"});
+            expect(violin_it != parts_defaults.tracks.end() && violin_it->second.muted,
+                   "mix_parts root must report Violin muted");
+
+            // Excerpt 0 (Violin): Violin is NOT muted in excerpt (ignores root mute)
+            const auto* ex0_map = parts_defaults.get_excerpt_map(0, "0_Violin");
+            expect(ex0_map != nullptr, "mix_parts must find excerpt 0 audiosettings");
+            auto ex0_violin = ex0_map->find({"1", "violin"});
+            expect(ex0_violin != ex0_map->end() && !ex0_violin->second.muted,
+                   "Excerpt 0 must have Violin unmuted");
+
+            // Excerpt 2 (Cello): Cello IS muted in excerpt
+            const auto* ex2_map = parts_defaults.get_excerpt_map(2, "2_Cello");
+            expect(ex2_map != nullptr, "mix_parts must find excerpt 2 audiosettings");
+            auto ex2_cello = ex2_map->find({"3", "baryton"});
+            expect(ex2_cello != ex2_map->end() && ex2_cello->second.muted,
+                   "Excerpt 2 must have Cello muted");
+        }
 
         auto project = music::load_native_score(fixture, "musicxml");
         auto* score = project->masterScore();

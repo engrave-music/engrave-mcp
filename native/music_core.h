@@ -259,12 +259,6 @@ public:
     // to hand an effective mix to a background worker. Read-only: exports and
     // mix resolution never change document state or revision.
     AudioMix audio_export_mix(DocumentId id, const ExportOptions& options = {});
-    // Owns freshly rendered stems, the selected SoundFont, and the applied mix.
-    // The returned session must be destroyed on this MusicCore's owner thread.
-    // Its asset lease keeps the frozen SoundFont alive if it outlives this core.
-    std::unique_ptr<AudioSession> create_audio_session(DocumentId id,
-                                                       const ExportOptions& options = {},
-                                                       double start_seconds = 0);
     RegionData query_region(DocumentId id, const ScoreRegion& region);
     ScoreInfo replace_measures(DocumentId id, std::size_t part_index, std::size_t start_measure,
                                const std::vector<Measure>& measures);

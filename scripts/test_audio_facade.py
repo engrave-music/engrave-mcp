@@ -143,11 +143,16 @@ async def test_audio_facade(args):
         checks.append("metadata_tracks_consistent")
 
         if args.soundfont:
-            # 2. Reference full mix export (neutral defaults)
+            # 2. Reference full mix export (explicit 0 dB mix)
             ref_wav = output_dir / "reference.wav"
             await c.tool(
                 "score_export",
-                {"documentId": doc_id, "format": "wav", "path": str(ref_wav.resolve())},
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(ref_wav.resolve()),
+                    "mix": {"master": {"volumeDb": 0.0}},
+                },
             )
             _, _, _, _, ref_rms, ref_max, _, _ = analyze_wav(ref_wav)
             assert ref_rms > 0 and ref_max > 0, "Reference audio must not be silent"
@@ -232,6 +237,47 @@ async def test_audio_facade(args):
             diff1 = abs(solo1_rms - mute0_rms) / max(mute0_rms, 1e-9)
             assert diff1 <= 0.01, f"Solo track 1 RMS ({solo1_rms}) differs from mute track 0 RMS ({mute0_rms}) by {diff1:.4f}"
             checks.append("solo_energy_parity_verified")
+
+            # 4b. Solo + mute together on track 0 -> all tracks silent (track 0 muted, track 1 force-muted)
+            solo_mute_wav = output_dir / "solo_and_mute.wav"
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(solo_mute_wav.resolve()),
+                    "mix": {
+                        "tracks": [
+                            {"trackId": track_ids[0], "solo": True, "muted": True},
+                        ]
+                    },
+                },
+            )
+            _, _, _, _, sm_rms, sm_max, _, _ = analyze_wav(solo_mute_wav)
+            assert sm_max <= 1, f"Solo+mute track peak {sm_max} > 1 LSB"
+            assert sm_rms < 1e-4, f"Solo+mute track RMS {sm_rms} > 1e-4"
+            checks.append("solo_and_mute_silent_verified")
+
+            # 4c. Two solos -> both tracks active (neither force-muted)
+            two_solos_wav = output_dir / "two_solos.wav"
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(two_solos_wav.resolve()),
+                    "mix": {
+                        "tracks": [
+                            {"trackId": track_ids[0], "solo": True},
+                            {"trackId": track_ids[1], "solo": True},
+                        ]
+                    },
+                },
+            )
+            _, _, _, _, two_solos_rms, _, _, _ = analyze_wav(two_solos_wav)
+            two_solos_diff = abs(two_solos_rms - ref_rms) / max(ref_rms, 1e-9)
+            assert two_solos_diff <= 0.01, f"Two solos RMS ({two_solos_rms}) differs from ref ({ref_rms}) by {two_solos_diff:.4f}"
+            checks.append("two_solos_verified")
 
             # 5. volumeDb within ±0.2 dB of the expected gain on a single-track score
             single_score = {
@@ -321,6 +367,43 @@ async def test_audio_facade(args):
             assert r_rms_right > 0 and l_rms_right <= 0.02 * r_rms_right, f"Hard right pan leaked into left channel: L={l_rms_right}, R={r_rms_right}"
             checks.append("balance_lr_energy_verified")
 
+            # 6b. Per-track balance via L/R energy (isolate track 0 by muting track 1)
+            tr_left_wav = output_dir / "track0_panned_left.wav"
+            tr_right_wav = output_dir / "track0_panned_right.wav"
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(tr_left_wav.resolve()),
+                    "mix": {
+                        "tracks": [
+                            {"trackId": track_ids[0], "balance": -1.0},
+                            {"trackId": track_ids[1], "muted": True},
+                        ]
+                    },
+                },
+            )
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(tr_right_wav.resolve()),
+                    "mix": {
+                        "tracks": [
+                            {"trackId": track_ids[0], "balance": 1.0},
+                            {"trackId": track_ids[1], "muted": True},
+                        ]
+                    },
+                },
+            )
+            _, _, _, _, _, _, tr_l_left, tr_r_left = analyze_wav(tr_left_wav)
+            _, _, _, _, _, _, tr_l_right, tr_r_right = analyze_wav(tr_right_wav)
+            assert tr_l_left > 0 and tr_r_left <= 0.02 * tr_l_left, f"Track hard left leaked into R: L={tr_l_left}, R={tr_r_left}"
+            assert tr_r_right > 0 and tr_l_right <= 0.02 * tr_r_right, f"Track hard right leaked into L: L={tr_l_right}, R={tr_r_right}"
+            checks.append("track_balance_lr_energy_verified")
+
             # 7. Master volumeDb
             master_neg12_wav = output_dir / "master_neg12db.wav"
             await c.tool(
@@ -395,6 +478,8 @@ async def test_audio_facade(args):
 
         for case_name, bad_mix in invalid_cases:
             bad_path = output_dir / f"bad_{case_name}.wav"
+            if bad_path.exists():
+                bad_path.unlink()
             res = await c.tool(
                 "score_export",
                 {
@@ -412,6 +497,8 @@ async def test_audio_facade(args):
         # Mix on non-audio formats must be rejected
         for bad_fmt in ["svg", "midi", "musicxml", "png", "pdf"]:
             non_audio_path = output_dir / f"bad_fmt_{bad_fmt}.{bad_fmt}"
+            if non_audio_path.exists():
+                non_audio_path.unlink()
             res = await c.tool(
                 "score_export",
                 {
@@ -425,6 +512,50 @@ async def test_audio_facade(args):
             assert res.get("isError") is True, f"Expected mix rejection for format {bad_fmt}"
             assert not non_audio_path.exists()
         checks.append("mix_on_non_audio_rejected")
+
+        # Live async rejection via score_export_start: unknown trackId
+        async_track_path = output_dir / "async_bad_track.wav"
+        if async_track_path.exists():
+            async_track_path.unlink()
+        async_bad_track = await c.tool(
+            "score_export_start",
+            {
+                "documentId": doc_id,
+                "format": "wav",
+                "path": str(async_track_path.resolve()),
+                "mix": {"tracks": [{"trackId": 999999, "muted": True}]},
+            },
+            error=True,
+        )
+        assert async_bad_track.get("isError") is True, f"Expected async rejection for unknown trackId: {async_bad_track}"
+        assert not async_track_path.exists()
+        checks.append("async_unknown_track_rejected")
+
+        # Live async rejection via score_export_start: mix on non-audio
+        async_fmt_path = output_dir / "async_bad_fmt.musicxml"
+        if async_fmt_path.exists():
+            async_fmt_path.unlink()
+        async_bad_fmt = await c.tool(
+            "score_export_start",
+            {
+                "documentId": doc_id,
+                "format": "musicxml",
+                "path": str(async_fmt_path.resolve()),
+                "mix": {"master": {"volumeDb": 0.0}},
+            },
+            error=True,
+        )
+        assert async_bad_fmt.get("isError") is True, f"Expected async rejection for mix on musicxml: {async_bad_fmt}"
+        assert not async_fmt_path.exists()
+        checks.append("async_mix_on_non_audio_rejected")
+
+        # Live call to removed tool name returns unknown tool
+        for removed_name in ["score_audio_get_mix", "score_audio_set_mix", "score_audio_start", "score_audio_read", "score_audio_seek"]:
+            removed_res = await c.call("tools/call", {"name": removed_name, "arguments": {}})
+            assert "error" in removed_res, f"Expected RPC error for removed tool {removed_name}, got {removed_res}"
+            err_msg = removed_res["error"].get("message", "").lower()
+            assert "unknown tool" in err_msg, f"Expected 'unknown tool' in error message for {removed_name}, got {err_msg}"
+        checks.append("removed_tools_rejected")
 
         # Exports never change the document revision
         doc_get_after = await c.tool("score_get", {"documentId": doc_id})
@@ -497,6 +628,118 @@ async def test_audio_facade(args):
                 checks.append("mscz_default_mix_audio_verified")
 
             await c.tool("score_close", {"documentId": mscz_doc})
+
+        # 11b. Excerpt-specific mixer settings from MSCZ (fixtures/audio/mix_parts.mscz)
+        mix_parts_path = ROOT / "fixtures/audio/mix_parts.mscz"
+        if mix_parts_path.is_file():
+            parts_mscz = await c.tool("score_open", {"path": str(mix_parts_path.resolve())})
+            parts_doc = parts_mscz["documentId"]
+
+            # Excerpt 0 (Violin): muted in root audiosettings.json, but unmuted in Excerpts/0_Violin/audiosettings.json
+            violin_part_tracks = (await c.tool("score_audio_tracks", {"documentId": parts_doc, "excerptId": 0}))["tracks"]
+            violin_part_tr = next(t for t in violin_part_tracks if t["name"] == "Violin")
+            assert violin_part_tr["muted"] is False, f"Violin excerpt must not inherit root mute: {violin_part_tr}"
+
+            # Excerpt 2 (Cello): unmuted in root audiosettings.json, but muted in Excerpts/2_Cello/audiosettings.json
+            cello_part_tracks = (await c.tool("score_audio_tracks", {"documentId": parts_doc, "excerptId": 2}))["tracks"]
+            cello_part_tr = next(t for t in cello_part_tracks if t["name"] == "Cello")
+            assert cello_part_tr["muted"] is True, f"Cello excerpt must apply its own mute: {cello_part_tr}"
+
+            if args.soundfont:
+                # Export Violin excerpt: audible (ignores root mute)
+                violin_part_wav = output_dir / "excerpt_violin.wav"
+                await c.tool(
+                    "score_export",
+                    {"documentId": parts_doc, "excerptId": 0, "format": "wav", "path": str(violin_part_wav.resolve())},
+                )
+                _, _, _, _, v_rms, v_max, _, _ = analyze_wav(violin_part_wav)
+                assert v_rms > 0 and v_max > 0, "Violin part export must be audible"
+
+                # Export Cello excerpt: silent (part's own mute applies)
+                cello_part_wav = output_dir / "excerpt_cello_muted.wav"
+                await c.tool(
+                    "score_export",
+                    {"documentId": parts_doc, "excerptId": 2, "format": "wav", "path": str(cello_part_wav.resolve())},
+                )
+                _, _, _, _, c_rms, c_max, _, _ = analyze_wav(cello_part_wav)
+                assert c_max <= 1, f"Cello part export peak {c_max} > 1 LSB"
+                assert c_rms < 1e-4, f"Cello part export RMS {c_rms} > 1e-4"
+                checks.append("mscz_parts_audio_settings_verified")
+
+            await c.tool("score_close", {"documentId": parts_doc})
+
+        # 12. Score whose parts cannot be planned per track (instrument change score)
+        change_score_path = ROOT / "vendor/musescore/src/engraving/tests/instrumentchange_data/change-ref.mscx"
+        if change_score_path.is_file():
+            change_opened = await c.tool("score_open", {"path": str(change_score_path.resolve())})
+            ch_doc = change_opened["documentId"]
+
+            # Sync & async metadata report tracks: []
+            ch_get = await c.tool("score_get", {"documentId": ch_doc})
+            assert ch_get["metadata"]["tracks"] == [], f"Expected tracks: [] for multi-instrument part, got {ch_get['metadata']['tracks']}"
+
+            ch_tracks_err = await c.tool("score_audio_tracks", {"documentId": ch_doc}, error=True)
+            assert ch_tracks_err.get("isError") is True, f"Expected error from score_audio_tracks: {ch_tracks_err}"
+
+            # Async metadata export via score_export_start
+            meta_path = output_dir / "change_meta.json"
+            meta_job = await c.tool(
+                "score_export_start",
+                {"documentId": ch_doc, "format": "metadata", "path": str(meta_path.resolve())},
+            )
+            meta_done = await c.terminal(meta_job)
+            assert meta_done["state"] == "completed", meta_done
+            meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
+            assert meta_data["tracks"] == [], f"Async metadata tracks must be empty: {meta_data['tracks']}"
+
+            if args.soundfont:
+                # Sync plain WAV export succeeds via legacy renderer
+                ch_sync_wav = output_dir / "change_sync.wav"
+                await c.tool(
+                    "score_export",
+                    {"documentId": ch_doc, "format": "wav", "path": str(ch_sync_wav.resolve())},
+                )
+                _, _, _, _, ch_s_rms, ch_s_max, _, _ = analyze_wav(ch_sync_wav)
+                assert ch_s_rms > 0 and ch_s_max > 0, "Sync legacy WAV export must produce audio"
+
+                # Async plain WAV export succeeds via legacy renderer
+                ch_async_wav = output_dir / "change_async.wav"
+                ch_job = await c.tool(
+                    "score_export_start",
+                    {"documentId": ch_doc, "format": "wav", "path": str(ch_async_wav.resolve())},
+                )
+                ch_done = await c.terminal(ch_job)
+                assert ch_done["state"] == "completed", ch_done
+                assert ch_async_wav.read_bytes() == ch_sync_wav.read_bytes(), "Sync and async unplannable WAV must be byte-identical"
+
+                # Sync non-neutral mix request is rejected
+                bad_mix_sync = await c.tool(
+                    "score_export",
+                    {
+                        "documentId": ch_doc,
+                        "format": "wav",
+                        "path": str((output_dir / "change_bad_mix.wav").resolve()),
+                        "mix": {"master": {"volumeDb": -6.0}},
+                    },
+                    error=True,
+                )
+                assert bad_mix_sync.get("isError") is True
+
+                # Async non-neutral mix request is rejected
+                bad_mix_async = await c.tool(
+                    "score_export_start",
+                    {
+                        "documentId": ch_doc,
+                        "format": "wav",
+                        "path": str((output_dir / "change_bad_mix_async.wav").resolve()),
+                        "mix": {"master": {"volumeDb": -6.0}},
+                    },
+                    error=True,
+                )
+                assert bad_mix_async.get("isError") is True
+                checks.append("unplannable_score_sync_async_verified")
+
+            await c.tool("score_close", {"documentId": ch_doc})
 
         await c.tool("score_close", {"documentId": doc_id})
         checks.append("score_closed")

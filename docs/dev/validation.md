@@ -474,3 +474,12 @@ native/result.h. 16 tools remain.
   in audiosettings.json) exports a silent Cello by default and an audible one with
   an override; a background WAV with a mix is byte-identical to the synchronous one;
   exports never advance the revision.
+Step 4 review fixes (Opus 5.5, verified): audiosettings.json is read only below
+1 MiB uncompressed and 64 nesting levels (picojson recursion), with unit tests
+for hostile archives; part exports take volume/balance from the root file and
+solo/mute from the part's own Excerpts/<name>/audiosettings.json (fixture
+fixtures/audio/mix_parts.mscz); sync and async choose the renderer from the
+resolved mix and share one error policy for scores that cannot be planned per
+track; background WAV is byte-identical to synchronous WAV for the same mix
+(asserted); dead streaming code removed; docs corrected (step 4 evidence is
+ec43ba5 on Windows and Linux, MSCZ export does not write audiosettings.json).

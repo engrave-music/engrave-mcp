@@ -288,8 +288,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     Json describe(const Job& job) const {
         Json result = {{"jobId", job.id}, {"documentId", document_id_to_string(job.document)},
                        {"revision", job.revision.value}, {"state", job.state},
-                       {"format", format_name(job.format)}, {"path", path_utf8(job.destination)},
-                       {"kind", "export"}};
+                       {"format", format_name(job.format)}, {"path", path_utf8(job.destination)}};
         if (job.state == "completed") result["bytes"] = job.bytes;
         if (!job.error.empty()) result["error"] = job.error;
         if (job.cancel_requested && !job.terminal()) result["cancelRequested"] = true;
@@ -388,20 +387,15 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 if (!is_audio_format(format)) request.runtime.soundfont.clear();
                 if (is_audio_format(format)) {
                     // The snapshot does not embed audiosettings.json; send the
-                    // effective default-plus-override mix to the worker. A
-                    // neutral mix is omitted so WAV keeps the legacy renderer.
+                    // effective default-plus-override mix to the worker.
                     const auto mix = engine.core().audio_export_mix(document, options);
-                    if (!is_neutral_mix(mix)) {
-                        request.mix = mix;
-                        request.has_mix = true;
-                    }
+                    request.mix = mix;
+                    request.has_mix = true;
                 } else if (format == ExportFormat::Metadata) {
                     try {
                         const auto mix = engine.core().audio_export_mix(document, options);
-                        if (!is_neutral_mix(mix)) {
-                            request.mix = mix;
-                            request.has_mix = true;
-                        }
+                        request.mix = mix;
+                        request.has_mix = true;
                     } catch (const CoreError& error) {
                         // A score that cannot be planned as audio stems still
                         // has metadata; it simply carries no track list.

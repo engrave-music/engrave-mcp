@@ -23,3 +23,26 @@ This fixture verifies that:
 - `score_audio_tracks` and score metadata (`score_get`, `metadata.json`) report default mixer properties per track (`volumeDb`, `balance`, `solo`, `muted`, `forceMute`), showing Cello as `muted: true`.
 - Plain audio export (`score_export` format `wav`) renders the score with Cello silent by default.
 - Supplying an explicit export option `mix` overriding `muted: false` for Cello brings the Cello track back in the rendered audio.
+
+## `mix_parts.mscz`
+
+`mix_parts.mscz` is an MSCZ fixture with excerpts where both the full score and individual part excerpts carry their own `audiosettings.json` settings, matching MuseScore 4's per-notation mixer layout (`notationproject.cpp:247-259`).
+
+### Generation Method
+
+Generated using the helper script `artifacts/trim-tests/make_mix_parts_mscz.py`:
+1. **Base Score**: Created from `fixtures/golden/created.json` ("Native Evening / 原生晚曲") with 3 parts (Violin, Piano, Cello).
+2. **Excerpts Generation**: Generated via native MCP `score_generate_excerpts` and exported to MSCZ via `score_export`.
+3. **Settings Injection**:
+   - **Root `audiosettings.json`**: Configures master volume/balance (0.0 dB) and track output volume/balance (0.0 dB). Violin (`partId: "1"`, `instrumentId: "violin"`) is configured with `soloMuteState: { "mute": true, "solo": false }` (muted in full score). Piano and Cello are unmuted.
+   - **`Excerpts/0_Violin/audiosettings.json`**: Configures Violin with `soloMuteState: { "mute": false, "solo": false }` (unmuted for the excerpt).
+   - **`Excerpts/2_Cello/audiosettings.json`**: Configures Cello with `soloMuteState: { "mute": true, "solo": false }` (muted for the excerpt, while unmuted in root).
+
+### Test Purpose
+
+This fixture verifies that:
+- Volume and balance are project-wide and inherited from root `audiosettings.json`.
+- Part (excerpt) exports do not inherit the full score's solo/mute:
+  - Exporting excerpt 0 (Violin, `excerptId: 0`) ignores the full score's mute on Violin and renders audible audio because its own excerpt `audiosettings.json` specifies `mute: false`.
+  - Exporting excerpt 2 (Cello, `excerptId: 2`) applies the excerpt's own mute, rendering silent audio despite Cello being unmuted in the root score.
+

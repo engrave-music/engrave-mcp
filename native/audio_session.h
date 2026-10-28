@@ -60,7 +60,7 @@ bool is_neutral_mix(const AudioMix& mix) noexcept;
 // MusicCore supplies a frozen runtime asset; direct callers own this obligation.
 class AudioSession {
 public:
-    AudioSession(std::vector<AudioTrack> tracks, std::string soundfont, double start_seconds = 0,
+    AudioSession(std::vector<AudioTrack> tracks, std::string soundfont,
                  std::shared_ptr<const void> retained_assets = {});
     ~AudioSession();
     AudioSession(const AudioSession&) = delete;
@@ -69,10 +69,6 @@ public:
     AudioSession& operator=(AudioSession&&) = delete;
 
     AudioChunk read_chunk();
-    std::vector<AudioChunk> read_batch(std::size_t batch_size);
-    // Exact frame seek by rendering/discarding; backward seeks reconstruct synths.
-    // O(time), cooperatively cancellable between blocks. Cancellation is permanent.
-    void seek(double seconds);
     void cancel() noexcept;
     bool cancelled() const noexcept;
     AudioMix mix() const;

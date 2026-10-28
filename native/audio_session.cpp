@@ -171,7 +171,7 @@ void validate_soundfont(const std::string& path) {
 
 struct AudioSession::Impl {
 public:
-    Impl(std::vector<AudioTrack> tracks, std::string soundfont, double start_seconds)
+    Impl(std::vector<AudioTrack> tracks, std::string soundfont)
         : owner_thread_(std::this_thread::get_id()),
           soundfont_path_(std::move(soundfont)) {
 
@@ -179,10 +179,6 @@ public:
 
         if (tracks.empty() || tracks.size() > audio_max_tracks) {
             throw std::invalid_argument("Track count must be between 1 and 15");
-        }
-
-        if (!std::isfinite(start_seconds) || start_seconds < 0.0 || start_seconds >= 600.0) {
-            throw std::invalid_argument("start_seconds must be finite and in [0, 600)");
         }
 
         constexpr size_t max_midi_bytes = 8 * 1024 * 1024;
@@ -222,10 +218,6 @@ public:
         for (auto& track : tracks) {
             stems_.emplace_back(track.track_id, std::move(track.midi));
             init_stem(stems_.back());
-        }
-
-        if (start_seconds > 0.0) {
-            seek_internal(start_seconds);
         }
     }
 
@@ -267,34 +259,6 @@ public:
         chunk.end_time = static_cast<double>(current_frame_) / audio_sample_rate;
         chunk.done = eof_reached_;
         return chunk;
-    }
-
-    std::vector<AudioChunk> read_batch(size_t max_chunks) {
-        check_owner_thread();
-        if (max_chunks < 1 || max_chunks > 256) {
-            throw std::invalid_argument("read_batch count must be between 1 and 256");
-        }
-
-        std::vector<AudioChunk> batch;
-        batch.reserve(max_chunks);
-        for (size_t i = 0; i < max_chunks; ++i) {
-            AudioChunk chunk = read_chunk();
-            bool done = chunk.done;
-            batch.push_back(std::move(chunk));
-            if (done) {
-                break;
-            }
-        }
-        return batch;
-    }
-
-    void seek(double seconds) {
-        check_owner_thread();
-        if (!std::isfinite(seconds) || seconds < 0.0 || seconds >= 600.0) {
-            throw std::invalid_argument("Seek target seconds must be finite and in [0, 600)");
-        }
-        if (failure_) std::rethrow_exception(failure_);
-        seek_internal(seconds);
     }
 
     AudioMix mix() const {
@@ -416,28 +380,6 @@ private:
         return consumed;
     }
 
-    void seek_internal(double seconds) {
-        if (cancelled()) return;
-        const auto target = static_cast<int64_t>(std::floor(seconds * audio_sample_rate));
-        if (target < current_frame_) {
-            std::vector<Stem> replacement;
-            replacement.reserve(stems_.size());
-            for (const auto& stem : stems_) {
-                if (cancelled()) return;
-                replacement.emplace_back(stem.track_id, stem.midi_data);
-                init_stem(replacement.back());
-            }
-            stems_.swap(replacement);
-            current_frame_ = rendered_frame_ = 0;
-            pending_offset_ = pending_frames_ = 0;
-            backend_done_ = eof_reached_ = false;
-        }
-        try {
-            while (current_frame_ < target && !cancelled() && !eof_reached_)
-                consume(static_cast<size_t>(std::min<int64_t>(audio_chunk_frames, target - current_frame_)), nullptr);
-        } catch (...) { failure_ = std::current_exception(); throw; }
-    }
-
     void apply_mix(AudioChunk& chunk, size_t frames, size_t source_offset, size_t output_offset) {
         bool any_solo = false;
         for (const auto& tp : mix_.tracks) {
@@ -516,23 +458,15 @@ private:
     std::vector<std::vector<float>> stem_buffers_right_;
 };
 
-AudioSession::AudioSession(std::vector<AudioTrack> tracks, std::string soundfont, double start_seconds,
+AudioSession::AudioSession(std::vector<AudioTrack> tracks, std::string soundfont,
                            std::shared_ptr<const void> retained_assets)
     : retained_assets_(std::move(retained_assets)),
-      impl_(std::make_unique<Impl>(std::move(tracks), std::move(soundfont), start_seconds)) {}
+      impl_(std::make_unique<Impl>(std::move(tracks), std::move(soundfont))) {}
 
 AudioSession::~AudioSession() = default;
 
 AudioChunk AudioSession::read_chunk() {
     return impl_->read_chunk();
-}
-
-std::vector<AudioChunk> AudioSession::read_batch(size_t max_chunks) {
-    return impl_->read_batch(max_chunks);
-}
-
-void AudioSession::seek(double seconds) {
-    impl_->seek(seconds);
 }
 
 void AudioSession::cancel() noexcept {

@@ -27,11 +27,6 @@ struct AudioTrackMixOverride {
 struct AudioMixOverride {
     AudioOutputOverride master;
     std::vector<AudioTrackMixOverride> tracks;
-    bool empty() const noexcept
-    {
-        return !master.volume_db && !master.balance && !master.solo && !master.muted
-            && tracks.empty();
-    }
 };
 
 struct ExportOptions {

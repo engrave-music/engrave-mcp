@@ -1,4 +1,5 @@
 #include "music_core.h"
+#include <nlohmann/json.hpp>
 
 #include <fstream>
 #include <filesystem>
@@ -330,6 +331,39 @@ int main(int argc, char** argv) {
         expect(!core.get(with_excerpts.id, generated.excerpts.front().id).musicxml.empty(),
             "Selected excerpt could not export MusicXML");
         core.close(with_excerpts.id);
+
+        // Instrument change / multi-instrument score:
+        // Metadata reports tracks: [], neutral mix WAV succeeds via legacy renderer,
+        // non-neutral mix throws CoreError::Code::invalid_argument.
+        {
+            std::ifstream stream("vendor/musescore/src/engraving/tests/instrumentchange_data/change-ref.mscx", std::ios::binary);
+            if (stream) {
+                const std::string bytes{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+                const auto inst_doc = core.open(bytes, InputFormat::Mscx);
+                const auto meta_data = core.export_bytes(inst_doc.id, ExportFormat::Metadata);
+                const auto meta_json = nlohmann::json::parse(meta_data.bytes);
+                expect(meta_json.contains("tracks") && meta_json["tracks"].is_array() && meta_json["tracks"].empty(),
+                       "Multi-instrument score metadata must report empty tracks");
+
+                if (!core.runtime_options().soundfont.empty()) {
+                    const auto wav_data = core.export_bytes(inst_doc.id, ExportFormat::Wav);
+                    expect(!wav_data.bytes.empty(), "Legacy WAV export failed for unplannable score with neutral mix");
+                }
+
+                bool rejected = false;
+                try {
+                    ExportOptions options;
+                    AudioMixOverride mix_override;
+                    mix_override.master.volume_db = -6.0;
+                    options.mix = mix_override;
+                    (void)core.export_bytes(inst_doc.id, ExportFormat::Wav, options);
+                } catch (const CoreError& error) {
+                    rejected = error.code() == CoreError::Code::invalid_argument;
+                }
+                expect(rejected, "Non-neutral mix on unplannable score must be rejected with invalid_argument");
+                core.close(inst_doc.id);
+            }
+        }
 
         std::cout << "typed music core checks passed\n";
         return 0;
