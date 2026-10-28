@@ -745,10 +745,22 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
                                || (excerptSelected && mutedParts.count(trackId.partId) > 0);
         if (!isMetronome) {
             // Desktop adds the two Fluid default sends only for non-metronome
-            // tracks (playbackcontroller.cpp:1220-1227). Mixer index 0 feeds the
-            // first aux track (muse/framework/audio/engine/internal/mixer.cpp:
-            // 283-309), which is the reverb added below.
-            params.auxSends = { AuxSendParams { kDefaultAuxSend, true }, AuxSendParams { kDefaultAuxSend, true } };
+            // tracks (playbackcontroller.cpp:1220-1227; defaultAuxSendValue is
+            // 0.30 for both, playbackconfiguration.cpp:272-289). Mixer index 0
+            // feeds the first aux track (muse/framework/audio/engine/internal/
+            // mixer.cpp:283-309), which is the reverb added below.
+            //
+            // The second send must stay at zero: 5.0 always gives an aux track
+            // an FxChain (AudioContext::onFxChainParamsChanged builds one even
+            // for an empty AudioFxChain, audiocontext.cpp:355-369) and the
+            // mixer only skips an aux whose chain *pointer* is null
+            // (mixer.cpp:275-277, 291-293), so the empty "Aux 2" track is a
+            // pass-through that would add 0.30 x the track signal - i.e. 1.3x
+            // dry, +2.28 dB - to the master. 4.7.6 skipped an aux whose fx
+            // chain *params* were empty (4.7.6 mixer.cpp:507-509, 527-529), so
+            // that send was discarded there; keeping it zero reproduces the
+            // 4.7.6 mix bit-exactly.
+            params.auxSends = { AuxSendParams { kDefaultAuxSend, true }, AuxSendParams { 0.0f, true } };
         }
 
         const std::string name = track_name(masterScore, model, trackId);
