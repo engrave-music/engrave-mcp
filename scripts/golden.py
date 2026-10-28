@@ -60,6 +60,8 @@ from pathlib import Path
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from musicxml_semantic import musicxml_semantic
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_DIR = ROOT / "fixtures" / "golden"
 EXTRA_FIXTURES = (ROOT / "fixtures" / "evening.musicxml",)
@@ -357,7 +359,11 @@ async def text_export(session, identity, fmt, raw, out_dir, name, normalize, roo
         write_text(out_dir / f"{name}.error.txt", sanitize(error, roots) + "\n")
         return None
     try:
-        return write_text(out_dir / name, normalize(read_text(raw)))
+        text = normalize(read_text(raw))
+        if normalize is normalize_musicxml:
+            # Engine-independent content, the A2 oracle for MusicXML (roadmap-engrave A0).
+            write_json(out_dir / "musicxml-semantic.json", musicxml_semantic(text))
+        return write_text(out_dir / name, text)
     except Exception as exc:  # noqa: BLE001 - record instead of aborting the fixture
         write_text(out_dir / f"{name}.error.txt",
                    f"transform failed: {type(exc).__name__}: {sanitize(str(exc), roots)}\n")

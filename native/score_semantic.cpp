@@ -46,6 +46,20 @@ namespace {
 
 std::string str(const muse::String& value) { return value.toStdString(); }
 std::string str(muse::AsciiStringView value) { return std::string(value.ascii(), value.size()); }
+// Instrument names are stored as rich text; formatting tags are appearance.
+std::string plain(const muse::String& rich)
+{
+    muse::String text;
+    bool tag = false;
+    for (size_t i = 0; i < rich.size(); ++i) {
+        const char16_t c = rich.at(i).unicode();
+        if (c == u'<') tag = true;
+        else if (c == u'>') tag = false;
+        else if (!tag) text.append(rich.at(i));
+    }
+    return TextBase::unEscape(text).toStdString();
+}
+
 std::string fraction(const Fraction& f) { return std::to_string(f.numerator()) + "/" + std::to_string(f.denominator()); }
 
 // Same names as the MSCX grace tags parsed by scripts/test_roundtrip.py.
@@ -122,7 +136,9 @@ json note_json(const Note* note)
         out["play"] = false;
     }
     if (const Tie* tie = note->tieFor()) {
-        if (const Note* end = tie->endNote()) {
+        if (tie->type() == ElementType::LAISSEZ_VIB) {
+            out["laissezVib"] = true;
+        } else if (const Note* end = tie->endNote()) {
             out["tieTo"] = { end->tick().ticks(), static_cast<int>(end->track()), end->pitch() };
         } else {
             out["tieTo"] = nullptr; // partial tie (e.g. into a volta)
@@ -152,7 +168,7 @@ json note_json(const Note* note)
 json chord_rest_json(const ChordRest* cr)
 {
     json out;
-    out["kind"] = cr->isChord() ? "chord" : "rest";
+    out["kind"] = cr->isChord() ? "chord" : cr->isMeasureRepeat() ? "measureRepeat" : "rest";
     out["tick"] = cr->tick().ticks();
     out["ticks"] = cr->isChord() && toChord(cr)->isGrace() ? 0 : cr->actualTicks().ticks();
     out["duration"] = str(TConv::toXml(cr->durationType().type()));
@@ -242,8 +258,8 @@ json part_json(const Part* part)
     json out;
     out["id"] = part->id().toStdString();
     out["partName"] = str(part->partName());
-    out["longName"] = str(part->longName());
-    out["shortName"] = str(part->shortName());
+    out["longName"] = plain(part->longName());
+    out["shortName"] = plain(part->shortName());
     out["instrumentId"] = str(part->instrumentId());
     out["show"] = part->show();
     const Interval transpose = part->instrument()->transpose();

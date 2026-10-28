@@ -132,8 +132,8 @@
       {
        "head": "normal",
        "headType": "auto",
+       "laissezVib": true,
        "pitch": 81,
-       "tieTo": null,
        "tpc1": 17,
        "tpc2": 17
       }

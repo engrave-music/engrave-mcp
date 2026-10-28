@@ -497,7 +497,7 @@
     },
     {
      "duration": "measure",
-     "kind": "rest",
+     "kind": "measureRepeat",
      "tick": 14400,
      "ticks": 2880
     }
@@ -940,7 +940,7 @@
   {
    "id": "1",
    "instrumentId": "piano",
-   "longName": "<font size=\"12.4059\"/><font face=\"Times New Roman\"/>Piano",
+   "longName": "Piano",
    "partName": "Piano",
    "shortName": "",
    "show": true,
