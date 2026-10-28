@@ -273,16 +273,6 @@ local function render_tool_schema(tools)
     return table.concat(output, "\n") .. "\n"
 end
 
--- MuseScore 5.0 relies on standard headers arriving transitively (through Qt /
--- the precompiled header in upstream builds) that neither the Qt-free nor the
--- MSVC/no-PCH build provides. xmake/compat_includes.h lists them and says why;
--- it is force-included for every target (engine and host). Delete both once the
--- engine carries the includes itself (see fork topic T9 for the 4.7.6 edition).
-local compat_includes = path.join(project_root, "xmake", "compat_includes.h")
-if not os.isfile(compat_includes) then
-    raise("xmake/compat_includes.h is missing")
-end
-
 
 local function generate_inputs(target, os, io, json)
     local output_dir = target:targetdir()
@@ -345,8 +335,6 @@ local native_include = path.join(native_root, "include")
 local native_lib = path.join(native_root, "lib")
 
 add_includedirs("$(builddir)/xmake-generated")
--- See xmake/compat_includes.h: engine headers that rely on transitive includes.
-add_forceincludes(compat_includes)
 add_includedirs(path.join(project_root, "native"))
 if os.isdir(native_include) then
     add_sysincludedirs(native_include)
