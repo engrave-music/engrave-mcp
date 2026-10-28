@@ -104,6 +104,24 @@
   "semantic-source.json": "771ec68230a370eb936a52d16519105aee94bda612c1b7903dfe77389ebe4747",
   "semantic.json": "771ec68230a370eb936a52d16519105aee94bda612c1b7903dfe77389ebe4747"
  },
+ "edit-replace-measures": {
+  "midi.json": "d995dfed9360b2fb993b9807e073411b89f394e3ee118fc612bddce2a8ed6022",
+  "score.mscx": "c5e52c56f54f7d58578ae54e2860551259f971a9025f6dec6957bd21db68e9a1",
+  "score.musicxml": "4ff58eca6ec0f7669a655c412c3a0d98feb18fb522e612a987594d4acf1241fa",
+  "semantic.json": "ec14ec485e3b802dbe585e0c81d69bc900a9291deb77b10acd6ef8bd5ed2b949"
+ },
+ "edit-set-pitches-coverage": {
+  "midi.json": "ea18ea0662ae89d478cad7a18890d89c1c290e286e827f20d5712264415ae29e",
+  "score.mscx": "6cd9936f7fdab83dfb911c4751e456b63f1a7ab25670360c7feadb59969a4d29",
+  "score.musicxml": "2a5c2a06a9b5c62550e5c52c3ded98a82d1b1cb2375703932527e385c94c3bdd",
+  "semantic.json": "d046674335bcceff88cf1f849c7898c5489d7ccd4824fb5df7c931dc54364b71"
+ },
+ "edit-set-pitches-linked": {
+  "midi.json": "7d705ac09bbbe42a2245efe15f74559c16542eebf349d419c48d70107b65b310",
+  "score.mscx": "85b625f090973aa283893d6aa40088bdb0754136df210b214d5c01a38f47f697",
+  "score.musicxml": "6d572dec8647ab152de92ff6d0e0892e0f712da67786f49e032a946b09e2ebb6",
+  "semantic.json": "a9fe4e78938b538e591800d90ecaab44063f52b633614d23bb7c2957e1f7e3bf"
+ },
  "evening.musicxml": {
   "audio.json": "4086b399f910344a23477c9d53a93d690513329d0235f81e7b2b54a144691cba",
   "measurePositions.json": "f23882cd8a08f633bf6feff5f39c4e0447abd0b45724c0a50210af3147772a77",
