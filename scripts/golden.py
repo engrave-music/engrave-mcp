@@ -479,6 +479,78 @@ async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots)
         await call_tool(session, "score_close", identity)
 
 
+# Edit scenarios (roadmap-engrave A0): the edit tools' observable results, which A2 must
+# preserve on 5.0. Each opens a source, applies one edit and captures the saved content.
+EDIT_SCENARIOS = {
+    "edit-replace-measures": {
+        "source": "created.json", "tool": "score_replace_measures",
+        "arguments": {"partIndex": 0, "startMeasure": 1, "measures": [{"notes": [
+            {"pitches": [60, 64, 67], "ticks": 960}, {"pitches": [62], "ticks": 480},
+            {"pitches": [], "ticks": 240}, {"pitches": [65], "ticks": 240}]}]},
+    },
+    "edit-set-pitches-coverage": {"source": "coverage.musicxml", "tool": "score_set_pitches",
+                                  "part": 0, "measures": 2, "notes": 4, "delta": 2},
+    # Generated part excerpts are linked to the master, so the edit must reach them too
+    # (linked_parts.mscx is unusable here: every note in it is tied).
+    "edit-set-pitches-linked": {"source": "chordline_path.mscx", "tool": "score_set_pitches",
+                                "generate": True, "part": 0, "measures": 2, "notes": 3,
+                                "delta": 1},
+}
+
+
+async def capture_edit(session, name, scenario, raw_root, out_dir, roots):
+    raw = raw_root / name
+    raw.mkdir(parents=True, exist_ok=True)
+    source = FIXTURE_DIR / scenario["source"]
+    if source.name == "created.json":
+        payload, error = await call_tool(
+            session, "score_create", {"score": json.loads(read_text(source))})
+    else:
+        payload, error = await call_tool(session, "score_open", {"path": str(source)})
+    if error:
+        write_text(out_dir / "open.error.txt", sanitize(error, roots) + "\n")
+        return
+    identity = {"documentId": payload["documentId"]}
+    try:
+        if scenario.get("generate"):
+            _, error = await call_tool(session, "score_generate_excerpts", identity)
+            if error:
+                write_text(out_dir / "generate.error.txt", sanitize(error, roots) + "\n")
+                return
+        if scenario["tool"] == "score_set_pitches":
+            view, error = await call_tool(session, "score_query_region", {
+                **identity, "partIndex": scenario["part"], "firstMeasure": 0,
+                "measureCount": scenario["measures"]})
+            if error:
+                write_text(out_dir / "query.error.txt", sanitize(error, roots) + "\n")
+                return
+            # Tied notes are skipped: a pitch change on one tie end is rejected by design.
+            targets = [n for n in view["notes"] if not n["tied"]][:scenario["notes"]]
+            base = view["revision"] if "revision" in view else view["score"]["revision"]
+            arguments = {**identity, "baseRevision": base, "operationId": name,
+                         "changes": [{"noteId": n["id"], "pitch": n["pitch"] + scenario["delta"]}
+                                     for n in targets]}
+        else:
+            arguments = {**identity, **scenario["arguments"]}
+        _, error = await call_tool(session, scenario["tool"], arguments)
+        if error:
+            write_text(out_dir / "edit.error.txt", sanitize(error, roots) + "\n")
+            return
+        await text_export(session, identity, "mscx", raw / "score.mscx", out_dir,
+                          "score.mscx", normalize_mscx, roots)
+        await text_export(session, identity, "musicxml", raw / "score.musicxml", out_dir,
+                          "score.musicxml", normalize_musicxml, roots)
+        await value_export(session, identity, "midi", raw / "score.mid", out_dir,
+                           "midi.json", lambda path: describe_midi(path.read_bytes()), roots)
+        error = await export(session, identity, "mscz", raw / "score.mscz")
+        if error:
+            write_text(out_dir / "mscz.error.txt", sanitize(error, roots) + "\n")
+        else:
+            semantic_dump(raw / "score.mscz", out_dir / "semantic.json", roots)
+    finally:
+        await call_tool(session, "score_close", identity)
+
+
 def fixture_files() -> list[Path]:
     files = sorted(path for path in FIXTURE_DIR.iterdir()
                    if path.is_file() and path.name != "README.md")
@@ -529,6 +601,14 @@ async def capture_tree(binary, resources, soundfont, target, log_path):
                                                   target / source.name, [raw_root, target])
                         except Exception as exc:  # noqa: BLE001 - keep other fixtures going
                             write_text(target / source.name / "capture.error.txt",
+                                       f"{type(exc).__name__}: "
+                                       f"{sanitize(str(exc), [raw_root, target])}\n")
+                    for name, scenario in EDIT_SCENARIOS.items():
+                        try:
+                            await capture_edit(session, name, scenario, raw_root,
+                                               target / name, [raw_root, target])
+                        except Exception as exc:  # noqa: BLE001
+                            write_text(target / name / "capture.error.txt",
                                        f"{type(exc).__name__}: "
                                        f"{sanitize(str(exc), [raw_root, target])}\n")
     return build_index(target)
