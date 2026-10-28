@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Prepare and validate the checked-in xmake migration inputs.
+"""Validate the pinned engine checkout and the checked-in xmake inputs.
 
-The file intentionally does not invoke CMake, Ninja or xmake.  It validates
-the pinned source trees and the local native package environment, and can run
-the one-time manifest capture against the existing CMake baseline build.
+The file intentionally does not invoke CMake, Ninja or xmake.  It checks that
+the engine checkout has the MuseScore 5.0 layout the build expects, that the
+local native package environment provides what native/ needs, and that
+``xmake/manifest.lua`` is present.  ``--generate-manifest`` runs the generator
+from ``scripts/capture_xmake_manifest.py`` when the engine moves.
 
 Usage:
-    python scripts/prepare_xmake.py --capture
+    python scripts/prepare_xmake.py --generate-manifest
     python scripts/prepare_xmake.py --check
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -22,38 +23,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import capture_xmake_manifest as capture  # noqa: E402
 
 
-def _harfbuzz_candidates(project_root: Path) -> list[Path]:
-    return [
-        project_root / ".upstream" / "harfbuzz",
-        project_root / ".upstream" / "harfbuzz" / "harfbuzz",
-        project_root / ".upstream" / "harfbuzz" / "harfbuzz-12.3.0",
-    ]
-
-
-def _find_harfbuzz(project_root: Path) -> Path | None:
-    for candidate in _harfbuzz_candidates(project_root):
-        if (candidate / "src" / "harfbuzz.cc").is_file():
-            return candidate.resolve()
-    return None
-
-
 def _find_native_root(project_root: Path) -> Path:
     env = project_root / ".pixi" / "envs" / "native"
     library = env / "Library"
     return library if library.is_dir() else env
 
 
-def validate(project_root: Path, require_harfbuzz: bool) -> list[str]:
+def validate(project_root: Path) -> list[str]:
     errors: list[str] = []
-    pin = json.loads((project_root / "upstream.lock.json").read_text(encoding="utf-8-sig"))
     source_root = project_root / "vendor" / "musescore"
     native_root = _find_native_root(project_root)
 
+    # Engine layout: MuseScore 5.0 absorbed muse_framework at muse/, so the
+    # framework paths are muse/framework/... and the module CMake files are the
+    # manifest's input.
     required_files = {
         "MuseScore submodule": source_root / "version.cmake",
-        "MuseScore module selection": source_root / "src" / "framework" / "global" / "globalmodule.cpp",
+        "framework module list": source_root / "muse" / "framework" / "CMakeLists.txt",
+        "global module": source_root / "muse" / "framework" / "global" / "CMakeLists.txt",
+        "engraving module": source_root / "src" / "engraving" / "CMakeLists.txt",
         "framework config template": source_root
-        / "src"
+        / "muse"
         / "framework"
         / "cmake"
         / "muse_framework_config.h.in",
@@ -65,22 +55,6 @@ def validate(project_root: Path, require_harfbuzz: bool) -> list[str]:
     for label, path in required_files.items():
         if not path.is_file():
             errors.append(f"missing {label}: {path}")
-    harfbuzz_root = _find_harfbuzz(project_root)
-    if harfbuzz_root is None:
-        message = (
-            "missing pinned HarfBuzz source (expected one of: "
-            + ", ".join(str(path) for path in _harfbuzz_candidates(project_root))
-            + ")"
-        )
-        if require_harfbuzz:
-            errors.append(message)
-        else:
-            print(f"warning: {message}", file=sys.stderr)
-    else:
-        print(f"harfbuzz: {harfbuzz_root}")
-        marker = project_root / pin["harfbuzzDependency"]["sourceDirectory"] / ".archive-sha256"
-        if not marker.is_file() or marker.read_text().strip() != pin["harfbuzzDependency"]["sha256"]:
-            errors.append("HarfBuzz bootstrap marker does not match upstream.lock.json")
 
     library_dir = native_root / "lib"
     if not library_dir.is_dir():
@@ -90,20 +64,26 @@ def validate(project_root: Path, require_harfbuzz: bool) -> list[str]:
         for name in expected:
             if not (library_dir / name).is_file():
                 errors.append(f"missing native link library: {library_dir / name}")
+
     manifest = project_root / "xmake" / "manifest.lua"
     if not manifest.is_file():
         errors.append(
-            f"missing xmake manifest: {manifest} (run with --capture once)"
+            f"missing xmake manifest: {manifest} "
+            "(run with --generate-manifest against the engine checkout)"
         )
+    # Third-party dependencies are pinned packages, not trees in the engine.
+    for recipe in ("harfbuzz", "flac", "opus", "opusenc", "pugixml", "picojson", "fdk-aac"):
+        if not (project_root / "xmake" / "packages" / f"{recipe}.lua").is_file():
+            errors.append(f"missing package recipe: xmake/packages/{recipe}.lua")
     return errors
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--capture",
+        "--generate-manifest",
         action="store_true",
-        help="run the one-time compile_commands capture before validating",
+        help="regenerate xmake/manifest.lua from the engine's CMake source lists",
     )
     parser.add_argument(
         "--check",
@@ -111,42 +91,25 @@ def main(argv: list[str] | None = None) -> int:
         help="only validate the checked-in inputs (default)",
     )
     parser.add_argument(
-        "--compile-commands",
+        "--source-root",
         type=Path,
-        help="override the CMake baseline compile_commands.json",
-    )
-    parser.add_argument(
-        "--allow-missing-harfbuzz",
-        action="store_true",
-        help="warn instead of failing when HarfBuzz has not been moved yet",
+        help="engine checkout to read (default: vendor/musescore)",
     )
     args = parser.parse_args(argv)
 
     project_root = Path(__file__).resolve().parents[1]
-    if args.capture:
-        compile_commands = (
-            args.compile_commands
-            or project_root / "build" / "native-windows" / "compile_commands.json"
-        )
-        output = project_root / "xmake" / "manifest.lua"
+    source_root = (args.source_root or project_root / "vendor" / "musescore").resolve()
+
+    if args.generate_manifest:
         try:
-            harfbuzz_root = _find_harfbuzz(project_root)
-            manifest = capture.capture(
-                compile_commands.resolve(),
-                project_root,
-                (project_root / "vendor" / "musescore").resolve(),
-                harfbuzz_root,
-            )
-            capture.write_manifest(manifest, output)
-        except (OSError, ValueError, KeyError) as error:
+            manifest = capture.build_manifest(source_root, project_root, verbose=False)
+            capture.write_manifest(manifest, project_root / "xmake" / "manifest.lua")
+        except (OSError, capture.CmakeError, ValueError, KeyError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
-        print(f"wrote {output}")
+        print(f"wrote {project_root / 'xmake' / 'manifest.lua'}")
 
-    errors = validate(
-        project_root,
-        require_harfbuzz=not args.allow_missing_harfbuzz and not args.capture,
-    )
+    errors = validate(project_root)
     if errors:
         for error in errors:
             print(f"error: {error}", file=sys.stderr)

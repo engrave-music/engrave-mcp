@@ -1,7 +1,6 @@
 """Bootstrap the pinned engine submodule and optional SoundFont asset."""
 import argparse
 import hashlib
-import json
 import os
 from pathlib import Path
 import shutil
@@ -80,43 +79,8 @@ def ensure_soundfont():
     print(f"Downloaded and verified SoundFont: {SOUNDFONT}")
 
 
-def ensure_harfbuzz():
-    pin = json.loads((ROOT / "upstream.lock.json").read_text(encoding="utf-8-sig"))["harfbuzzDependency"]
-    destination = ROOT / pin["sourceDirectory"]
-    marker = destination / ".archive-sha256"
-    if destination.exists():
-        if (marker.is_file() and marker.read_text().strip() == pin["sha256"]
-                and (destination / "harfbuzz/src/harfbuzz.cc").is_file()):
-            print(f"HarfBuzz source already prepared: {destination}")
-            return
-        raise RuntimeError(f"{destination} exists without the expected archive marker; refusing to overwrite")
-    extractor = shutil.which("7z") or shutil.which("7zz")
-    if not extractor:
-        raise RuntimeError("HarfBuzz bootstrap requires 7z or 7zz on PATH")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="harfbuzz-", dir=destination.parent) as staging_name:
-        staging = Path(staging_name)
-        archive = staging / "source.7z"
-        request = urllib.request.Request(pin["archiveUrl"], headers={"User-Agent": "musescore-mcp-bootstrap/1"})
-        with urllib.request.urlopen(request, timeout=120) as response, archive.open("wb") as output:
-            shutil.copyfileobj(response, output, 1024 * 1024)
-        if digest(archive) != pin["sha256"]:
-            raise RuntimeError("HarfBuzz archive SHA256 mismatch")
-        extraction_root = staging / "extracted"
-        run(extractor, "x", str(archive), f"-o{extraction_root}", "-y")
-        extracted = extraction_root / "harfbuzz"
-        if not (extracted / "harfbuzz/src/harfbuzz.cc").is_file():
-            raise RuntimeError("Unexpected HarfBuzz archive layout")
-        (extracted / ".archive-sha256").write_text(pin["sha256"] + "\n", encoding="utf-8")
-        extracted.rename(destination)
-    print(f"Downloaded and prepared pinned HarfBuzz source: {destination}")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Prepare the pinned upstream checkout for a clean build.")
-    parser.add_argument(
-        "--harfbuzz", action="store_true", help="Download the pinned HarfBuzz sources for xmake",
-    )
     parser.add_argument(
         "--soundfont",
         action="store_true",
@@ -124,8 +88,6 @@ def main():
     )
     arguments = parser.parse_args()
     ensure_source()
-    if arguments.harfbuzz:
-        ensure_harfbuzz()
     if arguments.soundfont:
         ensure_soundfont()
 

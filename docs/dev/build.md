@@ -18,7 +18,7 @@
 - **版本控制与工具**：Git（用于管理工程与拉取 `vendor/musescore` 子模块）。全新克隆需运行 `git submodule update --init --depth 1` 或 `python scripts/bootstrap.py`。
 - **编译器**：Visual Studio x64 MSVC 工具链（推荐 VS 2022 / 18.10+，MSVC 14.51+）；构建脚本自动初始化开发环境，单独打包需在 VS 开发人员终端执行。
 - **包管理器**：Pixi。构建与验证在 `native` 环境（`-e native`，纯原生无 Qt 编译环境）下执行。
-- **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）；首次下载 HarfBuzz 需要 PATH 中的 `7z` 或 `7zz`。
+- **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）。第三方依赖已改为固定版本的 xmake 包（见 `xmake/packages/`），首次配置会下载并本地构建它们，不再需要 `7z` 解压 HarfBuzz。
 
 ### Linux 构建环境
 - **验证宿主**：Linux x86_64 (`ssh <linux-host>`, kernel 7.3, Pixi GCC 15.3, C++23)。本项目不使用 WSL（早期 Arch WSL2 验证记录仅作历史保留）。
@@ -32,11 +32,11 @@
 ### 3.1 检出引擎子模块与下载音色库
 引擎源码采用 Git 子模块 `vendor/musescore` 形式引入（锁定至 Fork 仓库 https://github.com/Locietta/engrave ，分支 `mcp/v4.7.6`，Tag `mcp-4.7.6-4`，Commit `6cd717f2`，提交台账参见 `docs/dev/fork.md`）。旧版 webmscore、`.upstream/webmscore`、`patches/*.patch` 以及 Brotli 依赖均已废弃移除。
 
-全新克隆的项目可执行 `git submodule update --init --depth 1` 初始化子模块，或直接运行 `bootstrap.py`。`scripts/bootstrap.py` 会自动执行浅子模块更新（`git submodule update --init --depth 1 -- vendor/musescore`），并按需下载经哈希验证的 HarfBuzz 源码（解压至 `.upstream/harfbuzz`）与基础 SF3 音色库：
+全新克隆的项目可执行 `git submodule update --init --depth 1` 初始化子模块，或直接运行 `bootstrap.py`。``scripts/bootstrap.py` 会自动执行浅子模块更新（`git submodule update --init --depth 1 -- vendor/musescore`），并按需下载经哈希验证的基础 SF3 音色库；第三方 C/C++ 依赖由 xmake 包管理器按 `xmake/packages/` 中固定的版本与校验和获取：
 
 ```powershell
 pixi install -e native --locked
-pixi run -e native python scripts/bootstrap.py --soundfont --harfbuzz
+pixi run -e native python scripts/bootstrap.py --soundfont
 ```
 
 ### 3.2 子模块校验与资源准备
@@ -50,7 +50,7 @@ pixi run -e native python scripts/bootstrap.py --soundfont --harfbuzz
 python scripts/generate_resources.py --check
 ```
 
-xmake 的生成目标在各自构建目录写入框架配置与工具定义；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。源码清单已提交，常规构建不运行 `capture_xmake_manifest.py`，也不读取已移除的旧版 CMake 目录。
+xmake 的生成目标在各自构建目录写入框架配置与工具定义；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。源码清单已提交，常规构建不运行 `capture_xmake_manifest.py`：该脚本从引擎自身的 CMake 源清单（`muse/framework/*/CMakeLists.txt`、`src/*/CMakeLists.txt`）生成 `xmake/manifest.lua`，仅在引擎目录结构变化时用 `python scripts/capture_xmake_manifest.py --source-root <engine>` 重新生成。
 
 Windows 和 Linux 已验证长 UTF-8 schema 的完整传递、修改 schema 只重编译 `noqt_engine.cpp`，以及恢复后的无变化构建不编译/链接。生成器分块编码字符串，避免 MSVC 单个字符串长度限制。验收命令：
 
@@ -118,7 +118,7 @@ Linux 构建与验证现已常态化运行于 Linux x86_64 宿主机器（`ssh <
 
 ```bash
 pixi install -e native --locked
-pixi run --locked -e native python scripts/bootstrap.py --soundfont --harfbuzz
+pixi run --locked -e native python scripts/bootstrap.py --soundfont
 pixi run --locked -e native python scripts/prepare.py
 bash scripts/build-native.sh 8
 pixi run --locked -e native python scripts/package_linux.py --binary build/xmake-linux/musescore-mcp --output artifacts/linux-next

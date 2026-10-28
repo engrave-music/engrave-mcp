@@ -10,8 +10,8 @@ try {
     Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
     & pixi run --locked -e native python scripts/prepare.py
     if ($LASTEXITCODE) { throw 'Native source preparation failed' }
-    & pixi run --locked -e native python scripts/bootstrap.py --harfbuzz
-    if ($LASTEXITCODE) { throw 'HarfBuzz source preparation failed' }
+    & pixi run --locked -e native python scripts/bootstrap.py
+    if ($LASTEXITCODE) { throw 'Engine bootstrap failed' }
     & pixi run --locked -e native python scripts/prepare_xmake.py --check
     if ($LASTEXITCODE) { throw 'xmake input validation failed' }
     & xmake f -y -m release -o $BuildDirectory

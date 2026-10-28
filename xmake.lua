@@ -431,7 +431,10 @@ target("muse_global")
 target("muse_draw")
     set_kind("static")
     add_deps("muse_generated", "muse_global")
-    add_packages("freetype", "muse-harfbuzz")
+    -- public: every consumer includes draw headers that reach <ft2build.h>/<hb-ft.h>
+    -- (fontsengine.h, fontfaceutils.h), and xmake only propagates package include
+    -- dirs of a dependency when the package is public.
+    add_packages("freetype", "muse-harfbuzz", {public = true})
     add_manifest_target("muse_draw")
 
 target("muse_mpe")
@@ -495,9 +498,6 @@ target("noqt_support")
     set_kind("static")
     add_deps("muse_generated", "muse_global", "muse_draw", "muse_mpe",
         "engraving", "iex_musicxml")
-    -- Compiles the FreeType/HarfBuzz font face implementation itself, so the
-    -- packages must be visible here (a dep's package includes do not propagate).
-    add_packages("freetype", "muse-harfbuzz")
     add_manifest_target("noqt_support")
     add_links("z", {public = true})
 
@@ -517,8 +517,12 @@ target("score_engine")
 -- (muse_audio_engine); the process-wide engine state lives in engine_audio.cpp.
 target("engine_audio")
     set_kind("static")
-    add_deps("muse_generated", "score_engine", "muse_audio_engine")
+    add_deps("muse_generated", "score_engine", "muse_audio_engine", "native_fluidsynth")
     add_manifest_target("engine_audio")
+    -- engine_audio.cpp reaches into FluidSynth (soundfont/synth settings), so the
+    -- FluidSynth include roots must be visible here; manifest includes are
+    -- per-target and do not travel through add_deps.
+    add_includedirs(expand_list(manifest.targets.native_fluidsynth.includes))
 
 target("music_core")
     set_kind("static")
