@@ -1059,7 +1059,6 @@
     {
      "subtype": "System break",
      "tick": 7200,
-     "track": -1,
      "type": "LayoutBreak"
     }
    ],
