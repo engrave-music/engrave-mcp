@@ -19,6 +19,11 @@
 - **编译器**：Visual Studio x64 MSVC 工具链（推荐 VS 2022 / 18.10+，MSVC 14.51+）；构建脚本自动初始化开发环境，单独打包需在 VS 开发人员终端执行。
 - **包管理器**：Pixi。构建与验证在 `native` 环境（`-e native`，纯原生无 Qt 编译环境）下执行。
 - **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）。第三方依赖已改为固定版本的 xmake 包（见 `xmake/packages/`），首次配置会下载并本地构建它们，不再需要 `7z` 解压 HarfBuzz。
+  > [!TIP]
+  > **下载器配置（机器级）**：在部分 Windows 宿主上，xmake 内置的 aria2 在下载第三方依赖包时可能遭遇 TLS 握手失败（`SSL/TLS handshake failure`）。若遇到包下载中断，可配置 xmake 全局改用 curl：
+  > ```powershell
+  > xmake g --downloader=curl
+  > ```
 
 ### Linux 构建环境
 - **验证宿主**：Linux x86_64 (`ssh <linux-host>`, kernel 7.3, Pixi GCC 15.3, C++23)。本项目不使用 WSL（早期 Arch WSL2 验证记录仅作历史保留）。
@@ -39,16 +44,26 @@ pixi install -e native --locked
 pixi run -e native python scripts/bootstrap.py --soundfont
 ```
 
-### 3.2 子模块校验与资源准备
-`scripts/prepare.py` 会执行以下幂等操作：
-1. 校验 `vendor/musescore` 子模块已初始化、指向仓库记录的提交，且工作区绝对洁净（无本地修改或未跟踪文件；若状态不符则拒绝执行）。
-2. 根据 `resources.json` 清单（共 69 项资源），直接从已提交的 Git blob 中读取资源文件并同步到 `.runtime/assets`，同时清理其中不再匹配的旧版残留文件。此流程不再应用任何 patch。
-
-运行时资源清单 `resources.json` 由 `scripts/generate_resources.py` 从 `vendor/musescore` 的 Qt 资源清单（`src/engraving/engraving.qrc`、`src/engraving/data/fonts/*.qrc` 以及 MPE 的 `qt_add_resources` 配置块）外加一项显式历史回退样式（`legacy-style-defaults-v450.mss`）自动解析生成。可执行以下命令验证其时效性与一致性：
+### 3.2 资源清单生成与资产分发 (Runtime Asset Staging)
+运行时资源清单 `resources.json` 由 `scripts/generate_resources.py` 从引擎的 Qt 资源清单（`src/engraving/engraving.qrc`、`src/engraving/data/fonts/*.qrc` 以及 MPE 的 `qt_add_resources` 配置块）外加一项显式历史回退样式（`legacy-style-defaults-v450.mss`）自动解析生成。对于 5.0 引擎，脚本支持 `--source-root` 参数以读取新的 MPE 路径（`muse/framework/mpe`）与 11 种制表谱字体（`fonts_Tabulature.qrc` 中的 `MuseScoreTab*.ttf`）：
 
 ```powershell
+python scripts/generate_resources.py --source-root <path-to-engine>
 python scripts/generate_resources.py --check
 ```
+
+资产准备与分发：
+1. **主检出（production）**：`scripts/prepare.py` 会校验子模块，根据 `resources.json` 清单将资源从 Git blob 同步到 `.runtime/assets`。
+2. **5.0 / worktree 独立分发**：在多 worktree（如 `engrave/a2`）或测试独立引擎时，`.runtime` 可能是指向主检出的 Junction 或符号链接，**切勿直接修改或覆盖 `.runtime`**。应将资源同步到构建目录下的独立暂存目录（如 `build/scratch_assets`）：
+   ```powershell
+   # 将 resources.json 中声明的资产复制到暂存目录
+   python -c "import json, shutil, pathlib; r=json.loads(pathlib.Path('resources.json').read_text('utf-8')); src=pathlib.Path('<engine_root>'); dst=pathlib.Path('build/scratch_assets'); [dst.joinpath(k).parent.mkdir(parents=True, exist_ok=True) or shutil.copy2(src/v, dst/k) for k, v in r.items()]"
+   ```
+   随后通过命令行将暂存路径传给二进制文件运行：
+   ```powershell
+   build/noqt_probe.exe build/scratch_assets <input.musicxml> <output.musicxml>
+   build/assets_test.exe build/scratch_assets artifacts/assets_test <test_font_path>
+   ```
 
 xmake 的生成目标在各自构建目录写入框架配置与工具定义；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。源码清单已提交，常规构建不运行 `capture_xmake_manifest.py`：该脚本从引擎自身的 CMake 源清单（`muse/framework/*/CMakeLists.txt`、`src/*/CMakeLists.txt`）生成 `xmake/manifest.lua`，仅在引擎目录结构变化时用 `python scripts/capture_xmake_manifest.py --source-root <engine>` 重新生成。
 
