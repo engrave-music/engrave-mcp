@@ -41,11 +41,6 @@ EXPECTED_TOOL_NAMES = [
     "score_job_get",
     "score_job_cancel",
     "score_audio_tracks",
-    "score_audio_get_mix",
-    "score_audio_set_mix",
-    "score_audio_start",
-    "score_audio_read",
-    "score_audio_seek",
 ]
 
 EXPORT_FORMATS = [
@@ -626,47 +621,80 @@ def build_cases() -> list[Case]:
     for tool, arguments in unknown_bases.items():
         add(f"{tool} unknown top-level field", tool, {**arguments, "unexpected": 1}, False)
 
-    params = {"volumeDb": 0, "balance": 0, "solo": False, "muted": False, "forceMute": False}
-    mix = {"master": params, "tracks": [{"trackId": 0, "output": params}]}
-    for name in ("score_audio_tracks", "score_audio_get_mix"):
-        add(f"{name} master", name, doc, True)
-        add(f"{name} excerpt", name, {**doc, "excerptId": 0}, True)
-        add(f"{name} unknown", name, {**doc, "extra": True}, False)
-    add("complete audio mix", "score_audio_set_mix", {**doc, "mix": mix}, True)
-    # Partial patches: master, tracks and each output field are optional.
-    add("patch without master", "score_audio_set_mix", {**doc, "mix": {"tracks": []}}, True)
-    add("empty patch", "score_audio_set_mix", {**doc, "mix": {}}, True)
-    add("track without output", "score_audio_set_mix", {**doc, "mix": {"tracks": [{"trackId": 0}]}}, False)
-    for key, value in (("volumeDb", -121), ("volumeDb", 25), ("balance", -1.1),
-                       ("balance", 1.1), ("solo", 1), ("volumeDb", True), ("unexpected", 0)):
-        invalid = {"master": {**params, key: value}, "tracks": mix["tracks"]}
-        add(f"invalid master {key}={value}", "score_audio_set_mix", {**doc, "mix": invalid}, False)
-    for key in params:
-        partial = {name: value for name, value in params.items() if name != key}
-        add(f"partial output without {key}", "score_audio_set_mix",
-            {**doc, "mix": {"master": params, "tracks": [{"trackId": 0, "output": partial}]}}, True)
-    for track_id in (-1, 0.5, True, 9223372036854775808):
-        add(f"invalid track id {track_id}", "score_audio_set_mix",
-            {**doc, "mix": {"master": params, "tracks": [{"trackId": track_id, "output": params}]}}, False)
-    add("too many audio tracks", "score_audio_set_mix",
-        {**doc, "mix": {"master": params, "tracks": [{"trackId": i, "output": params} for i in range(16)]}}, False)
-    add("stream default", "score_audio_start", doc, True)
-    add("stream all options", "score_audio_start",
-        {**doc, "excerptId": 0, "expectedRevision": 1, "startTime": 0.25,
-         "expandRepeats": False, "exportRPNs": False}, True)
-    for seconds in (-0.01, 600, 600.01, True, "1"):
-        add(f"stream invalid start {seconds}", "score_audio_start", {**doc, "startTime": seconds}, False)
-        add(f"stream invalid seek {seconds}", "score_audio_seek", {**job, "seconds": seconds}, False)
-    for seconds in (0, 0.25, 599.999):
-        add(f"stream seek {seconds}", "score_audio_seek", {**job, "seconds": seconds}, True)
-    add("stream read default", "score_audio_read", job, True)
-    for batch in (1, 16):
-        add(f"stream read {batch}", "score_audio_read", {**job, "batchSize": batch}, True)
-    for batch in (0, 17, 0.5, True):
-        add(f"stream read invalid {batch}", "score_audio_read", {**job, "batchSize": batch}, False)
-    for name, value in (("score_audio_start", doc), ("score_audio_read", job),
-                         ("score_audio_seek", {**job, "seconds": 0})):
-        add(f"{name} unknown field", name, {**value, "extra": 1}, False)
+    # score_audio_tracks contract
+    add("score_audio_tracks master", "score_audio_tracks", doc, True)
+    add("score_audio_tracks excerpt", "score_audio_tracks", {**doc, "excerptId": 0}, True)
+    add("score_audio_tracks unknown", "score_audio_tracks", {**doc, "extra": True}, False)
+
+    # mix export option on score_export and score_export_start
+    audio_formats = ("wav", "flac", "ogg", "mp3")
+    non_audio_formats = ("svg", "png", "midi", "musicxml", "mxl", "mscz", "mscx", "pdf", "metadata", "measurePositions", "segmentPositions")
+    valid_mixes = [
+        ("empty mix", {}),
+        ("master only", {"master": {"volumeDb": -6.0, "balance": 0.5}}),
+        ("master volumeDb bounds low", {"master": {"volumeDb": -120}}),
+        ("master volumeDb bounds high", {"master": {"volumeDb": 24}}),
+        ("master balance bounds low", {"master": {"balance": -1}}),
+        ("master balance bounds high", {"master": {"balance": 1}}),
+        ("tracks empty", {"tracks": []}),
+        ("tracks single minimal", {"tracks": [{"trackId": 0}]}),
+        ("tracks single full", {"tracks": [{"trackId": 0, "volumeDb": -12.0, "balance": -0.5, "solo": True, "muted": False}]}),
+        ("tracks volume bounds", {"tracks": [{"trackId": 0, "volumeDb": -120}, {"trackId": 1, "volumeDb": 24}]}),
+        ("tracks balance bounds", {"tracks": [{"trackId": 0, "balance": -1}, {"trackId": 1, "balance": 1}]}),
+        ("tracks solo only", {"tracks": [{"trackId": 0, "solo": False}]}),
+        ("tracks muted only", {"tracks": [{"trackId": 0, "muted": True}]}),
+        ("tracks max items 256", {"tracks": [{"trackId": i} for i in range(256)]}),
+        ("master and tracks", {"master": {"volumeDb": 0, "balance": 0}, "tracks": [{"trackId": 0, "volumeDb": 0, "balance": 0, "solo": False, "muted": False}]}),
+    ]
+
+    for label, mix_obj in valid_mixes:
+        for fmt in audio_formats:
+            add(f"export {fmt} {label}", "score_export",
+                {"documentId": "score-1", "format": fmt, "path": f"out.{fmt}", "mix": mix_obj}, True)
+            add(f"async {fmt} {label}", "score_export_start",
+                {"documentId": "score-1", "format": fmt, "path": f"out.{fmt}", "mix": mix_obj}, True)
+
+    # allOf format restriction: mix is rejected on non-audio formats
+    for fmt in non_audio_formats:
+        add(f"export {fmt} with mix rejected", "score_export",
+            {"documentId": "score-1", "format": fmt, "path": f"out.{fmt}", "mix": {}}, False)
+        add(f"async {fmt} with mix rejected", "score_export_start",
+            {"documentId": "score-1", "format": fmt, "path": f"out.{fmt}", "mix": {}}, False)
+
+    # mix rejection cases on audio formats
+    invalid_mix_cases = [
+        ("mix not an object", "invalid_mix_string"),
+        ("mix unknown root field", {"master": {"volumeDb": 0}, "unexpected": 1}),
+        ("master volumeDb below -120", {"master": {"volumeDb": -121}}),
+        ("master volumeDb above 24", {"master": {"volumeDb": 25}}),
+        ("master volumeDb string", {"master": {"volumeDb": "0"}}),
+        ("master balance below -1", {"master": {"balance": -1.1}}),
+        ("master balance above 1", {"master": {"balance": 1.1}}),
+        ("master forbidden key solo", {"master": {"solo": True}}),
+        ("master forbidden key muted", {"master": {"muted": True}}),
+        ("master forbidden key forceMute", {"master": {"forceMute": True}}),
+        ("master unknown field", {"master": {"unexpected": 1}}),
+        ("track trackId negative", {"tracks": [{"trackId": -1}]}),
+        ("track trackId float", {"tracks": [{"trackId": 0.5}]}),
+        ("track trackId bool", {"tracks": [{"trackId": True}]}),
+        ("track missing trackId", {"tracks": [{"volumeDb": 0}]}),
+        ("track volumeDb below -120", {"tracks": [{"trackId": 0, "volumeDb": -121}]}),
+        ("track volumeDb above 24", {"tracks": [{"trackId": 0, "volumeDb": 25}]}),
+        ("track balance below -1", {"tracks": [{"trackId": 0, "balance": -1.1}]}),
+        ("track balance above 1", {"tracks": [{"trackId": 0, "balance": 1.1}]}),
+        ("track solo not bool", {"tracks": [{"trackId": 0, "solo": 1}]}),
+        ("track muted not bool", {"tracks": [{"trackId": 0, "muted": 1}]}),
+        ("track forbidden key forceMute", {"tracks": [{"trackId": 0, "forceMute": True}]}),
+        ("track forbidden legacy output object", {"tracks": [{"trackId": 0, "output": {"volumeDb": 0}}]}),
+        ("track unknown field", {"tracks": [{"trackId": 0, "unexpected": 1}]}),
+        ("tracks exceeding 256 items", {"tracks": [{"trackId": i} for i in range(257)]}),
+    ]
+
+    for label, bad_mix in invalid_mix_cases:
+        add(f"export wav {label}", "score_export",
+            {"documentId": "score-1", "format": "wav", "path": "out.wav", "mix": bad_mix}, False)
+        add(f"async wav {label}", "score_export_start",
+            {"documentId": "score-1", "format": "wav", "path": "out.wav", "mix": bad_mix}, False)
     return cases
 
 
@@ -920,23 +948,13 @@ async def _run_live(binary: Path, assets: Path | None, tools: list[dict[str, Any
             revision = created["revision"]
 
             tracks = await session.ok("score_audio_tracks", {"documentId": document})
-            original_mix = await session.ok("score_audio_get_mix", {"documentId": document})
-            mix = original_mix["mix"]
-            if {track["trackId"] for track in tracks["tracks"]} != {
-                track["trackId"] for track in mix["tracks"]
-            }:
-                raise AssertionError("Default mix does not cover the advertised audio tracks")
-            mix["master"]["balance"] = 0.25
-            request = {"documentId": document, "mix": mix}
-            changed_mix = await session.ok("score_audio_set_mix", request)
-            unchanged_mix = await session.ok("score_audio_set_mix", request)
-            if changed_mix["revision"] != revision + 1 or unchanged_mix != changed_mix:
-                raise AssertionError("Mix change/no-op publication violated revision semantics")
-            reread_mix = await session.ok("score_audio_get_mix", {"documentId": document})
-            if reread_mix != changed_mix:
-                raise AssertionError("Published audio mix differs from the accepted request")
+            if not isinstance(tracks.get("tracks"), list) or len(tracks["tracks"]) != 2:
+                raise AssertionError(f"Expected 2 audio tracks: {tracks!r}")
+            for tr in tracks["tracks"]:
+                for key in ("trackId", "name", "partId", "instrumentId", "volumeDb", "balance", "solo", "muted", "forceMute"):
+                    if key not in tr:
+                        raise AssertionError(f"Audio track missing {key}: {tr!r}")
             evidence["audio_tracks"] = len(tracks["tracks"])
-            evidence["audio_mix_roundtrip"] = True
 
             query = await session.ok(
                 "score_query_region",
@@ -948,8 +966,8 @@ async def _run_live(binary: Path, assets: Path | None, tools: list[dict[str, Any
                 },
             )
             notes = query.get("notes")
-            if query.get("revision") != changed_mix["revision"]:
-                raise AssertionError("Region projection did not publish the latest mix revision")
+            if query.get("revision") != revision:
+                raise AssertionError("Region projection revision did not match score revision")
             if not isinstance(notes, list) or not notes:
                 raise AssertionError(f"score_query_region returned no notes: {query!r}")
             note = next(
@@ -981,8 +999,14 @@ async def _run_live(binary: Path, assets: Path | None, tools: list[dict[str, Any
             evidence["valid_edit_changed_notes"] = int(edited["changedNotes"])
 
             rejections = {
-                "stream time upper bound": await session.rejected(
-                    "score_audio_start", {"documentId": document, "startTime": 600}
+                "mix on non-audio format": await session.rejected(
+                    "score_export",
+                    {
+                        "documentId": document,
+                        "format": "svg",
+                        "path": str(directory / "rejected.svg"),
+                        "mix": {"master": {"volumeDb": 0}},
+                    },
                 ),
                 "unknown field": await session.rejected(
                     "score_get", {"documentId": document, "unexpected": 1}

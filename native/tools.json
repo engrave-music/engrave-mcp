@@ -327,7 +327,7 @@
   },
   {
     "name": "score_export",
-    "description": "Export to a local file atomically, replacing an existing file. Parent directory must exist. page is zero-based for SVG/PNG; PDF exports all pages. Audio export (WAV/FLAC/OGG/MP3) requires a SoundFont from --soundfont or runtime_set_soundfont. measurePositions/segmentPositions follow the webmscore position schema, with corrected segment widths and always repeat-expanded times (ms). Coordinates use 1200-DPI layout units, independent of PNG DPI; id/elid are local to each result, not stable edit IDs. Format-specific options are rejected on other formats.",
+    "description": "Export to a local file atomically, replacing an existing file. Parent directory must exist. page is zero-based for SVG/PNG; PDF exports all pages. Audio export (WAV/FLAC/OGG/MP3) requires a SoundFont from --soundfont or runtime_set_soundfont. mix overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral); it never changes document state or revision. measurePositions/segmentPositions follow the webmscore position schema, with corrected segment widths and always repeat-expanded times (ms). Coordinates use 1200-DPI layout units, independent of PNG DPI; id/elid are local to each result, not stable edit IDs. Format-specific options are rejected on other formats.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -401,6 +401,62 @@
           "type": "boolean",
           "default": true,
           "description": "MIDI/WAV/FLAC/OGG/MP3 only. Include registered parameter messages in playback."
+        },
+        "mix": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "master": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -120,
+                  "maximum": 24
+                },
+                "balance": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              }
+            },
+            "tracks": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "trackId"
+                ],
+                "properties": {
+                  "trackId": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "volumeDb": {
+                    "type": "number",
+                    "minimum": -120,
+                    "maximum": 24
+                  },
+                  "balance": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  },
+                  "solo": {
+                    "type": "boolean"
+                  },
+                  "muted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "description": "WAV/FLAC/OGG/MP3 only. Overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral). Use trackIds from score_audio_tracks; unknown or duplicate trackIds reject the export."
         }
       },
       "required": [
@@ -514,6 +570,25 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "required": [
+              "mix"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "wav",
+                  "flac",
+                  "ogg",
+                  "mp3"
+                ]
+              }
+            }
+          }
         }
       ],
       "additionalProperties": false
@@ -521,7 +596,7 @@
   },
   {
     "name": "score_close",
-    "description": "Close a live document and release its score resources. Its handle expires; already captured export and audio jobs retain their independent snapshots.",
+    "description": "Close a live document and release its score resources. Its handle expires; already captured export jobs retain their independent snapshots.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -786,6 +861,62 @@
           "default": true,
           "description": "MIDI/WAV/FLAC/OGG/MP3 only. Include registered parameter messages in playback."
         },
+        "mix": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "master": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -120,
+                  "maximum": 24
+                },
+                "balance": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              }
+            },
+            "tracks": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "trackId"
+                ],
+                "properties": {
+                  "trackId": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "volumeDb": {
+                    "type": "number",
+                    "minimum": -120,
+                    "maximum": 24
+                  },
+                  "balance": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  },
+                  "solo": {
+                    "type": "boolean"
+                  },
+                  "muted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "description": "WAV/FLAC/OGG/MP3 only. Overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral). Use trackIds from score_audio_tracks; unknown or duplicate trackIds reject the export."
+        },
         "expectedRevision": {
           "type": "integer",
           "minimum": 1,
@@ -904,6 +1035,25 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "required": [
+              "mix"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "wav",
+                  "flac",
+                  "ogg",
+                  "mp3"
+                ]
+              }
+            }
+          }
         }
       ],
       "additionalProperties": false
@@ -911,7 +1061,7 @@
   },
   {
     "name": "score_job_get",
-    "description": "Read an export or audio job summary, including frozen document revision and state. Export jobs additionally report destination and completed byte count or failure text. Terminal states are completed, failed and cancelled.",
+    "description": "Read a background export job summary, including frozen document revision and state. Reports destination and completed byte count or failure text. Terminal states are completed, failed and cancelled.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -919,7 +1069,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[^\\u0000]*$",
-          "description": "Opaque job id returned by score_export_start or score_audio_start."
+          "description": "Opaque job id returned by score_export_start."
         }
       },
       "required": [
@@ -930,7 +1080,7 @@
   },
   {
     "name": "score_job_cancel",
-    "description": "Request cancellation of an export or audio job. A completed file publication cannot be undone by a late cancel. Returns the job summary.",
+    "description": "Request cancellation of a background export job. A completed file publication cannot be undone by a late cancel. Returns the job summary.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -938,7 +1088,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[^\\u0000]*$",
-          "description": "Opaque job id returned by score_export_start or score_audio_start."
+          "description": "Opaque job id returned by score_export_start."
         }
       },
       "required": [
@@ -949,7 +1099,7 @@
   },
   {
     "name": "score_audio_tracks",
-    "description": "List actual audio track IDs and part/instrument identities for the full score or an explicit excerpt. Requires no SoundFont.",
+    "description": "List actual audio track IDs, part/instrument identities and the score's default mix output values for the full score or an explicit excerpt. Defaults come from the source MSCZ audiosettings.json when present, otherwise they are neutral; forceMute is derived from solo. Requires no SoundFont.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -968,229 +1118,6 @@
       },
       "required": [
         "documentId"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "score_audio_get_mix",
-    "description": "Read the current master and per-track audio mix for the full score or an explicit excerpt.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "documentId": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^score-[1-9][0-9]*$"
-        },
-        "excerptId": {
-          "type": "integer",
-          "minimum": -1,
-          "maximum": 2147483647,
-          "default": -1,
-          "description": "Excerpt index; -1 selects the master score."
-        }
-      },
-      "required": [
-        "documentId"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "score_audio_set_mix",
-    "description": "Atomically patch the master and per-track audio mix. master, tracks and every output field are optional: unspecified fields and unlisted tracks keep their current values, and supplying every field replaces the whole mix. Use trackIds from score_audio_tracks; unknown or duplicate trackIds or out-of-range values reject the whole patch. Volume is dB and balance is -1..1. Changing the mix advances document revision; a patch that changes nothing is a no-op.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "documentId": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^score-[1-9][0-9]*$"
-        },
-        "excerptId": {
-          "type": "integer",
-          "minimum": -1,
-          "maximum": 2147483647,
-          "default": -1,
-          "description": "Excerpt index; -1 selects the master score."
-        },
-        "mix": {
-          "type": "object",
-          "properties": {
-            "master": {
-              "type": "object",
-              "properties": {
-                "volumeDb": {
-                  "type": "number",
-                  "minimum": -120,
-                  "maximum": 24
-                },
-                "balance": {
-                  "type": "number",
-                  "minimum": -1,
-                  "maximum": 1
-                },
-                "solo": {
-                  "type": "boolean"
-                },
-                "muted": {
-                  "type": "boolean"
-                },
-                "forceMute": {
-                  "type": "boolean"
-                }
-              },
-              "additionalProperties": false
-            },
-            "tracks": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "trackId": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9223372036854775807
-                  },
-                  "output": {
-                    "type": "object",
-                    "properties": {
-                      "volumeDb": {
-                        "type": "number",
-                        "minimum": -120,
-                        "maximum": 24
-                      },
-                      "balance": {
-                        "type": "number",
-                        "minimum": -1,
-                        "maximum": 1
-                      },
-                      "solo": {
-                        "type": "boolean"
-                      },
-                      "muted": {
-                        "type": "boolean"
-                      },
-                      "forceMute": {
-                        "type": "boolean"
-                      }
-                    },
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "trackId",
-                  "output"
-                ],
-                "additionalProperties": false
-              },
-              "maxItems": 15
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "required": [
-        "documentId",
-        "mix"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "score_audio_start",
-    "description": "Start audio streaming in an isolated worker from a frozen revision, excerpt, mix and SoundFont. startTime is seconds. Read bounded batches with score_audio_read; seek with score_audio_seek; cancel using score_job_cancel. An idle session expires after 120 seconds.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "documentId": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^score-[1-9][0-9]*$"
-        },
-        "excerptId": {
-          "type": "integer",
-          "minimum": -1,
-          "maximum": 2147483647,
-          "default": -1,
-          "description": "Excerpt index; -1 selects the master score."
-        },
-        "expectedRevision": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 18446744073709551615,
-          "description": "Reject the job if the document revision is no longer current."
-        },
-        "startTime": {
-          "type": "number",
-          "minimum": 0,
-          "default": 0,
-          "exclusiveMaximum": 600,
-          "description": "Absolute playback time in seconds, 0 inclusive to 600 exclusive."
-        },
-        "expandRepeats": {
-          "type": "boolean",
-          "default": true
-        },
-        "exportRPNs": {
-          "type": "boolean",
-          "default": true
-        }
-      },
-      "required": [
-        "documentId"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "score_audio_read",
-    "description": "Read 1..16 audio chunks (default 1) from an audio job. Each chunk has at most 512 stereo float samples at 44100 Hz, done and start/end times. One read or seek may be pending per session; another command reports busy.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "jobId": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^[^\\u0000]*$",
-          "description": "Opaque job id returned by score_audio_start."
-        },
-        "batchSize": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 16,
-          "default": 1
-        }
-      },
-      "required": [
-        "jobId"
-      ],
-      "additionalProperties": false
-    }
-  },
-  {
-    "name": "score_audio_seek",
-    "description": "Seek an audio job to an absolute time in seconds, rendering and discarding samples as needed. One read or seek may be pending per session; cancel through score_job_cancel.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "jobId": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^[^\\u0000]*$",
-          "description": "Opaque job id returned by score_audio_start."
-        },
-        "seconds": {
-          "type": "number",
-          "minimum": 0,
-          "exclusiveMaximum": 600,
-          "description": "Absolute playback time in seconds, 0 inclusive to 600 exclusive."
-        }
-      },
-      "required": [
-        "jobId",
-        "seconds"
       ],
       "additionalProperties": false
     }

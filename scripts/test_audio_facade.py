@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Integration tests for the audio facade MCP endpoints."""
+"""Integration tests for audio export options and audio facade MCP endpoints."""
+
+from __future__ import annotations
 
 import argparse
 import asyncio
@@ -11,8 +13,10 @@ import struct
 import sys
 import wave
 
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_async_session import Client
+from test_export_options import bar
 
 
 def analyze_wav(path: Path):
@@ -29,7 +33,11 @@ def analyze_wav(path: Path):
 
     rms = math.sqrt(sum(s * s for s in samples) / len(samples))
     max_abs = max(abs(s) for s in samples)
-    return channels, width, rate, frames, rms, max_abs
+    left_samples = samples[0::2]
+    right_samples = samples[1::2]
+    left_rms = math.sqrt(sum(s * s for s in left_samples) / len(left_samples))
+    right_rms = math.sqrt(sum(s * s for s in right_samples) / len(right_samples))
+    return channels, width, rate, frames, rms, max_abs, left_rms, right_rms
 
 
 def check_audio_header(fmt: str, data: bytes) -> bool:
@@ -74,8 +82,6 @@ async def test_audio_facade(args):
                     ],
                 },
                 {
-                    # "Bass" matches MuseScore's vocal template while program 43 is
-                    # cello: regression for playback-channel sync after MusicXML import.
                     "name": "Bass",
                     "midiProgram": 43,
                     "measures": [
@@ -104,14 +110,7 @@ async def test_audio_facade(args):
         rev = created["revision"]
         checks.append("score_created")
 
-        ref_wav = output_dir / "reference.wav"
-        if args.soundfont:
-            await c.tool(
-                "score_export",
-                {"documentId": doc_id, "format": "wav", "path": str(ref_wav.resolve())},
-            )
-            checks.append("reference_wav_exported")
-
+        # 1. Inspect score_audio_tracks and metadata tracks defaults
         tracks_res = await c.tool("score_audio_tracks", {"documentId": doc_id})
         tracks = tracks_res["tracks"]
         assert len(tracks) == 2, f"Expected 2 tracks, got {len(tracks)}"
@@ -119,243 +118,385 @@ async def test_audio_facade(args):
         assert len(set(track_ids)) == 2, "Track IDs must be distinct"
         for t in tracks:
             assert t["name"].strip() != "", "Track name must not be empty"
-        checks.append("tracks_verified")
-
-        mix_res = await c.tool("score_audio_get_mix", {"documentId": doc_id})
-        default_mix = copy.deepcopy(mix_res["mix"])
-        rev = mix_res["revision"]
-        mix_track_ids = [t["trackId"] for t in default_mix["tracks"]]
-        assert set(mix_track_ids) == set(track_ids), "Mix track IDs must match score tracks"
-        checks.append("default_mix_verified")
+            assert "partId" in t and "instrumentId" in t
+            # Defaults for created score: 0 dB, balance 0, not solo, not muted, forceMute false
+            assert t["volumeDb"] == 0.0, f"Expected default volumeDb 0.0, got {t['volumeDb']}"
+            assert t["balance"] == 0.0, f"Expected default balance 0.0, got {t['balance']}"
+            assert t["solo"] is False, f"Expected default solo False, got {t['solo']}"
+            assert t["muted"] is False, f"Expected default muted False, got {t['muted']}"
+            assert t["forceMute"] is False, f"Expected default forceMute False, got {t['forceMute']}"
+        checks.append("tracks_defaults_verified")
 
         doc_get_init = await c.tool("score_get", {"documentId": doc_id})
         meta_init = doc_get_init["metadata"]
-        assert "tracks" in meta_init and len(meta_init["tracks"]) == len(tracks), (
-            f"Expected {len(tracks)} metadata tracks, got {len(meta_init.get('tracks', []))}"
-        )
+        assert "tracks" in meta_init and len(meta_init["tracks"]) == len(tracks)
         for meta_tr in meta_init["tracks"]:
-            matching_audio = next(t for t in tracks if t["trackId"] == meta_tr["trackId"])
-            matching_mix = next(t for t in default_mix["tracks"] if t["trackId"] == meta_tr["trackId"])
-            assert meta_tr["partId"] == matching_audio["partId"]
-            assert meta_tr["instrumentId"] == matching_audio["instrumentId"]
-            assert meta_tr["name"] == matching_audio["name"]
-            assert meta_tr["volumeDb"] == matching_mix["output"]["volumeDb"]
-            assert meta_tr["balance"] == matching_mix["output"]["balance"]
-            assert meta_tr["solo"] == matching_mix["output"]["solo"]
-            assert meta_tr["muted"] == matching_mix["output"]["muted"]
-            assert meta_tr["forceMute"] == matching_mix["output"]["forceMute"]
+            matching = next(t for t in tracks if t["trackId"] == meta_tr["trackId"])
+            assert meta_tr["partId"] == matching["partId"]
+            assert meta_tr["instrumentId"] == matching["instrumentId"]
+            assert meta_tr["name"] == matching["name"]
+            assert meta_tr["volumeDb"] == matching["volumeDb"]
+            assert meta_tr["balance"] == matching["balance"]
+            assert meta_tr["solo"] == matching["solo"]
+            assert meta_tr["muted"] == matching["muted"]
+            assert meta_tr["forceMute"] == matching["forceMute"]
         checks.append("metadata_tracks_consistent")
 
-        noop_res = await c.tool(
-            "score_audio_set_mix",
-            {"documentId": doc_id, "mix": copy.deepcopy(default_mix)},
-        )
-        assert noop_res["revision"] == rev, "No-op set_mix must not increment revision"
-        checks.append("noop_set_mix_verified")
+        if args.soundfont:
+            # 2. Reference full mix export (neutral defaults)
+            ref_wav = output_dir / "reference.wav"
+            await c.tool(
+                "score_export",
+                {"documentId": doc_id, "format": "wav", "path": str(ref_wav.resolve())},
+            )
+            _, _, _, _, ref_rms, ref_max, _, _ = analyze_wav(ref_wav)
+            assert ref_rms > 0 and ref_max > 0, "Reference audio must not be silent"
+            checks.append("reference_wav_exported")
 
-        reordered = copy.deepcopy(default_mix)
-        reordered["tracks"] = list(reversed(reordered["tracks"]))
-        reordered_res = await c.tool(
-            "score_audio_set_mix",
-            {"documentId": doc_id, "mix": reordered},
-        )
-        assert reordered_res["revision"] == rev, "Reordered tracks must not increment revision"
-        checks.append("reordered_set_mix_verified")
+            # 3. Muted track silent
+            # A: Both tracks muted -> output must be silent
+            both_muted_wav = output_dir / "both_muted.wav"
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(both_muted_wav.resolve()),
+                    "mix": {
+                        "tracks": [
+                            {"trackId": track_ids[0], "muted": True},
+                            {"trackId": track_ids[1], "muted": True},
+                        ]
+                    },
+                },
+            )
+            _, _, _, _, both_muted_rms, both_muted_max, _, _ = analyze_wav(both_muted_wav)
+            assert both_muted_max <= 1, f"Both tracks muted sample peak {both_muted_max} > 1 LSB"
+            assert both_muted_rms < 1e-4, f"Both tracks muted RMS {both_muted_rms} > 1e-4"
+            checks.append("both_tracks_muted_silent")
 
-        mod_mix = copy.deepcopy(default_mix)
-        mod_mix["master"]["volumeDb"] = -6.0
-        mod_res = await c.tool(
-            "score_audio_set_mix",
-            {"documentId": doc_id, "mix": mod_mix},
-        )
-        assert mod_res["revision"] == rev + 1, "Valid mix modification must increment revision by 1"
-        rev = mod_res["revision"]
-        checks.append("valid_mod_verified")
+            # B: Muting track 0 or track 1 reduces energy
+            mute0_wav = output_dir / "mute0.wav"
+            mute1_wav = output_dir / "mute1.wav"
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(mute0_wav.resolve()),
+                    "mix": {"tracks": [{"trackId": track_ids[0], "muted": True}]},
+                },
+            )
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(mute1_wav.resolve()),
+                    "mix": {"tracks": [{"trackId": track_ids[1], "muted": True}]},
+                },
+            )
+            _, _, _, _, mute0_rms, mute0_max, _, _ = analyze_wav(mute0_wav)
+            _, _, _, _, mute1_rms, mute1_max, _, _ = analyze_wav(mute1_wav)
+            assert 0 < mute0_rms < ref_rms, f"Track 0 muted RMS {mute0_rms} not in (0, {ref_rms})"
+            assert 0 < mute1_rms < ref_rms, f"Track 1 muted RMS {mute1_rms} not in (0, {ref_rms})"
+            checks.append("individual_track_mute_verified")
 
-        mod_track_mix = copy.deepcopy(mod_res["mix"])
-        mod_track_mix["tracks"][0]["output"]["volumeDb"] = -12.0
-        mod_track_mix["tracks"][0]["output"]["muted"] = True
-        mod_track_res = await c.tool(
-            "score_audio_set_mix",
-            {"documentId": doc_id, "mix": mod_track_mix},
-        )
-        assert mod_track_res["revision"] == rev + 1
-        rev = mod_track_res["revision"]
+            # 4. Solo -> other tracks silent (energy ratio)
+            solo0_wav = output_dir / "solo0.wav"
+            solo1_wav = output_dir / "solo1.wav"
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(solo0_wav.resolve()),
+                    "mix": {"tracks": [{"trackId": track_ids[0], "solo": True}]},
+                },
+            )
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(solo1_wav.resolve()),
+                    "mix": {"tracks": [{"trackId": track_ids[1], "solo": True}]},
+                },
+            )
+            _, _, _, _, solo0_rms, _, _, _ = analyze_wav(solo0_wav)
+            _, _, _, _, solo1_rms, _, _, _ = analyze_wav(solo1_wav)
 
-        doc_get_track_mod = await c.tool("score_get", {"documentId": doc_id})
-        meta_track_mod = doc_get_track_mod["metadata"]["tracks"]
-        tr0 = next(t for t in meta_track_mod if t["trackId"] == mod_track_mix["tracks"][0]["trackId"])
-        assert tr0["volumeDb"] == -12.0
-        assert tr0["muted"] is True
-        checks.append("metadata_tracks_updated_after_mix_change")
+            # Soloing track 0 mutes track 1, so solo0 should match mute1
+            diff0 = abs(solo0_rms - mute1_rms) / max(mute1_rms, 1e-9)
+            assert diff0 <= 0.01, f"Solo track 0 RMS ({solo0_rms}) differs from mute track 1 RMS ({mute1_rms}) by {diff0:.4f}"
+            diff1 = abs(solo1_rms - mute0_rms) / max(mute0_rms, 1e-9)
+            assert diff1 <= 0.01, f"Solo track 1 RMS ({solo1_rms}) differs from mute track 0 RMS ({mute0_rms}) by {diff1:.4f}"
+            checks.append("solo_energy_parity_verified")
 
-        meta_job_file = output_dir / "meta_job.json"
-        meta_job = await c.tool(
-            "score_export_start",
-            {"documentId": doc_id, "format": "metadata", "path": str(meta_job_file.resolve())},
-        )
-        done_meta_job = await c.terminal(meta_job)
-        assert done_meta_job["state"] == "completed", done_meta_job
-        assert meta_job_file.exists()
-        async_meta = json.loads(meta_job_file.read_text(encoding="utf-8"))
-        assert async_meta["tracks"] == meta_track_mod, f"Async metadata tracks mismatch: {async_meta['tracks']} != {meta_track_mod}"
-        checks.append("background_metadata_mix_verified")
+            # 5. volumeDb within ±0.2 dB of the expected gain on a single-track score
+            single_score = {
+                "score": {
+                    "title": "Single part gain test",
+                    "tempo": 120,
+                    "parts": [
+                        {
+                            "name": "Piano",
+                            "midiProgram": 1,
+                            "measures": [
+                                {
+                                    "notes": [
+                                        {"pitches": [60], "ticks": 480},
+                                        {"pitches": [64], "ticks": 480},
+                                        {"pitches": [67], "ticks": 480},
+                                        {"pitches": [72], "ticks": 480},
+                                    ]
+                                }
+                            ],
+                        }
+                    ],
+                }
+            }
+            single_created = await c.tool("score_create", single_score)
+            single_doc = single_created["documentId"]
+            single_track_id = (await c.tool("score_audio_tracks", {"documentId": single_doc}))["tracks"][0]["trackId"]
 
-        # Partial patches (webmscore setAudioOutputParams): only named fields change.
-        before_patch = copy.deepcopy(mod_track_res["mix"])
-        second_id = before_patch["tracks"][1]["trackId"]
-        patched = await c.tool(
-            "score_audio_set_mix",
-            {"documentId": doc_id, "mix": {"tracks": [{"trackId": second_id, "output": {"balance": 0.5}}]}},
-        )
-        assert patched["revision"] == rev + 1, "Partial patch must advance revision once"
-        expected = copy.deepcopy(before_patch)
-        expected["tracks"][1]["output"]["balance"] = 0.5
-        assert patched["mix"] == expected, f"Partial patch changed unnamed fields: {patched['mix']}"
-        rev = patched["revision"]
-        noop_patch = await c.tool(
-            "score_audio_set_mix", {"documentId": doc_id, "mix": {"master": {"volumeDb": -6.0}}}
-        )
-        assert noop_patch["revision"] == rev, "Partial patch with current values must be a no-op"
-        reverted = await c.tool(
-            "score_audio_set_mix",
-            {"documentId": doc_id, "mix": {"tracks": [{"trackId": second_id, "output": {"balance": 0.0}}]}},
-        )
-        assert reverted["mix"] == before_patch
-        rev = reverted["revision"]
-        mod_track_res = reverted
-        checks.append("partial_patch_verified")
+            gain_0db_wav = output_dir / "gain_0db.wav"
+            gain_neg6db_wav = output_dir / "gain_neg6db.wav"
 
-        invalid_cases = []
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": single_doc,
+                    "format": "wav",
+                    "path": str(gain_0db_wav.resolve()),
+                    "mix": {"tracks": [{"trackId": single_track_id, "volumeDb": 0.0}]},
+                },
+            )
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": single_doc,
+                    "format": "wav",
+                    "path": str(gain_neg6db_wav.resolve()),
+                    "mix": {"tracks": [{"trackId": single_track_id, "volumeDb": -6.0}]},
+                },
+            )
 
-        m = {"master": {"volumeDb": 3.0}, "tracks": [{"trackId": second_id, "output": {"muted": True}},
-                                                     {"trackId": 999999, "output": {"muted": True}}]}
-        invalid_cases.append(("partial_with_unknown_id", {"documentId": doc_id, "mix": m}))
+            _, _, _, _, rms_0db, _, _, _ = analyze_wav(gain_0db_wav)
+            _, _, _, _, rms_neg6db, _, _, _ = analyze_wav(gain_neg6db_wav)
+            assert rms_0db > 0 and rms_neg6db > 0
+            measured_gain_db = 20.0 * math.log10(rms_neg6db / rms_0db)
+            expected_gain_db = -6.0
+            gain_error = abs(measured_gain_db - expected_gain_db)
+            assert gain_error <= 0.2, (
+                f"Gain at -6 dB measured {measured_gain_db:.3f} dB (diff {gain_error:.3f} dB > 0.2 dB tolerance)"
+            )
+            await c.tool("score_close", {"documentId": single_doc})
+            checks.append("volume_gain_accuracy_verified")
 
-        m = copy.deepcopy(default_mix)
-        m["tracks"][1]["trackId"] = m["tracks"][0]["trackId"]
-        invalid_cases.append(("duplicate_ids", {"documentId": doc_id, "mix": m}))
+            # 6. Balance via L/R energy
+            left_wav = output_dir / "panned_left.wav"
+            right_wav = output_dir / "panned_right.wav"
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(left_wav.resolve()),
+                    "mix": {"master": {"balance": -1.0}},
+                },
+            )
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(right_wav.resolve()),
+                    "mix": {"master": {"balance": 1.0}},
+                },
+            )
+            _, _, _, _, _, _, l_rms_left, r_rms_left = analyze_wav(left_wav)
+            _, _, _, _, _, _, l_rms_right, r_rms_right = analyze_wav(right_wav)
+            assert l_rms_left > 0 and r_rms_left <= 0.02 * l_rms_left, f"Hard left pan leaked into right channel: L={l_rms_left}, R={r_rms_left}"
+            assert r_rms_right > 0 and l_rms_right <= 0.02 * r_rms_right, f"Hard right pan leaked into left channel: L={l_rms_right}, R={r_rms_right}"
+            checks.append("balance_lr_energy_verified")
 
-        m = copy.deepcopy(default_mix)
-        m["tracks"][0]["trackId"] = 999999
-        invalid_cases.append(("unknown_id", {"documentId": doc_id, "mix": m}))
+            # 7. Master volumeDb
+            master_neg12_wav = output_dir / "master_neg12db.wav"
+            await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(master_neg12_wav.resolve()),
+                    "mix": {"master": {"volumeDb": -12.0}},
+                },
+            )
+            _, _, _, _, master_neg12_rms, _, _, _ = analyze_wav(master_neg12_wav)
+            measured_master_db = 20.0 * math.log10(master_neg12_rms / ref_rms)
+            master_error = abs(measured_master_db - (-12.0))
+            assert master_error <= 0.2, f"Master volume -12 dB measured {measured_master_db:.3f} dB (diff {master_error:.3f} dB > 0.2 dB)"
+            checks.append("master_volume_gain_verified")
 
-        m = {"tracks": [{"trackId": second_id}]}
-        invalid_cases.append(("track_without_output", {"documentId": doc_id, "mix": m}))
+            # 8. Compressed exports with mix
+            for fmt in ["flac", "ogg", "mp3"]:
+                comp_path = output_dir / f"mix_export.{fmt}"
+                await c.tool(
+                    "score_export",
+                    {
+                        "documentId": doc_id,
+                        "format": fmt,
+                        "path": str(comp_path.resolve()),
+                        "mix": {"master": {"volumeDb": -3.0}},
+                    },
+                )
+                assert comp_path.exists() and comp_path.stat().st_size > 0, f"{fmt} file empty"
+                data = comp_path.read_bytes()
+                assert check_audio_header(fmt, data), f"Invalid {fmt} header"
+            checks.append("compressed_exports_passed")
 
-        m = copy.deepcopy(default_mix)
-        m["master"]["unexpectedField"] = True
-        invalid_cases.append(("extra_field", {"documentId": doc_id, "mix": m}))
-
-        m = copy.deepcopy(default_mix)
-        m["master"]["muted"] = "invalid_bool"
-        invalid_cases.append(("wrong_type_bool", {"documentId": doc_id, "mix": m}))
-
-        m = copy.deepcopy(default_mix)
-        m["master"]["volumeDb"] = "loud"
-        invalid_cases.append(("wrong_type_number", {"documentId": doc_id, "mix": m}))
-
-        m = copy.deepcopy(default_mix)
-        m["master"]["volumeDb"] = 25.0
-        invalid_cases.append(("volumeDb_25", {"documentId": doc_id, "mix": m}))
-
-        m = copy.deepcopy(default_mix)
-        m["master"]["balance"] = 2.0
-        invalid_cases.append(("balance_2", {"documentId": doc_id, "mix": m}))
-
-        m = copy.deepcopy(default_mix)
-        invalid_cases.append(("unknown_arg_reject", {"documentId": doc_id, "mix": m, "unknown": "value"}))
-
-        for case_name, bad_args in invalid_cases:
-            await c.tool("score_audio_set_mix", bad_args, error=True)
-            verify = await c.tool("score_audio_get_mix", {"documentId": doc_id})
-            assert verify["revision"] == rev, f"Revision changed on invalid case {case_name}"
-            assert verify["mix"] == mod_track_res["mix"], f"Mix changed on invalid case {case_name}"
-        checks.append("invalid_mixes_verified")
-
+        # 9. Excerpts with mix
         exc_res = await c.tool("score_generate_excerpts", {"documentId": doc_id})
         excerpts = exc_res["excerpts"]
         assert len(excerpts) > 0, "Expected at least one excerpt"
         excerpt_id = excerpts[0]["id"]
         rev = exc_res["revision"]
 
-        exc_get = await c.tool(
-            "score_audio_get_mix",
-            {"documentId": doc_id, "excerptId": excerpt_id},
-        )
-        excerpt_mix = copy.deepcopy(exc_get["mix"])
-        assert not excerpt_mix["master"]["muted"], "Default excerpt master should not be muted"
-
-        excerpt_mix["master"]["muted"] = True
-        exc_set = await c.tool(
-            "score_audio_set_mix",
-            {"documentId": doc_id, "excerptId": excerpt_id, "mix": excerpt_mix},
-        )
-        assert exc_set["mix"]["master"]["muted"] is True
-        assert exc_set["revision"] == rev + 1
-        rev = exc_set["revision"]
-
-        master_check = await c.tool("score_audio_get_mix", {"documentId": doc_id})
-        assert master_check["mix"]["master"]["volumeDb"] == -6.0
-        assert not master_check["mix"]["master"]["muted"]
-
-        reset_res = await c.tool(
-            "score_audio_set_mix",
-            {"documentId": doc_id, "mix": copy.deepcopy(default_mix)},
-        )
-        assert reset_res["revision"] == rev + 1, "Master reset must advance revision once"
-        rev = reset_res["revision"]
-
-        exc_recheck = await c.tool(
-            "score_audio_get_mix",
-            {"documentId": doc_id, "excerptId": excerpt_id},
-        )
-        assert exc_recheck["mix"]["master"]["muted"] is True, "Excerpt mute must persist across master reset"
-        checks.append("excerpts_verified")
-
-        doc_get = await c.tool("score_get", {"documentId": doc_id})
-        assert doc_get["revision"] == rev, f"score_get revision mismatch: {doc_get['revision']} != {rev}"
-        checks.append("revision_coherent")
-
+        exc_tracks = (await c.tool("score_audio_tracks", {"documentId": doc_id, "excerptId": excerpt_id}))["tracks"]
+        assert len(exc_tracks) > 0, "Excerpt must have audio tracks"
         if args.soundfont:
-            reset_wav = output_dir / "reset.wav"
-            await c.tool(
-                "score_export",
-                {"documentId": doc_id, "format": "wav", "path": str(reset_wav.resolve())},
-            )
-            ref_c, ref_w, ref_r, ref_n, ref_rms, _ = analyze_wav(ref_wav)
-            rst_c, rst_w, rst_r, rst_n, rst_rms, _ = analyze_wav(reset_wav)
-            assert ref_rms > 0 and rst_rms > 0, "Reference and reset must contain audible PCM"
-            assert (ref_c, ref_w, ref_r, ref_n) == (rst_c, rst_w, rst_r, rst_n), "WAV properties mismatch"
-            max_rms = max(ref_rms, rst_rms, 1e-9)
-            rms_diff = abs(ref_rms - rst_rms) / max_rms
-            assert rms_diff <= 0.01, f"RMS difference {rms_diff:.4f} exceeds 1%"
-            checks.append("wav_comparison_passed")
-
-            muted_wav = output_dir / "mutedexcerpt.wav"
+            exc_wav = output_dir / "excerpt_mix.wav"
             await c.tool(
                 "score_export",
                 {
                     "documentId": doc_id,
                     "excerptId": excerpt_id,
                     "format": "wav",
-                    "path": str(muted_wav.resolve()),
+                    "path": str(exc_wav.resolve()),
+                    "mix": {"master": {"volumeDb": -2.0}},
                 },
             )
-            _, _, _, _, _, muted_max = analyze_wav(muted_wav)
-            assert muted_max <= 1, f"Muted excerpt max sample {muted_max} > 1 LSB"
-            checks.append("muted_excerpt_passed")
+            _, _, _, _, exc_rms, _, _, _ = analyze_wav(exc_wav)
+            assert exc_rms > 0, "Excerpt export must produce audio"
+            checks.append("excerpt_mix_export_passed")
 
-            for fmt in ["flac", "ogg", "mp3"]:
-                comp_path = output_dir / f"master.{fmt}"
+        # 10. Rejection cases for mix option
+        invalid_cases = [
+            ("unknown_trackId", {"tracks": [{"trackId": 999999, "muted": True}]}),
+            ("duplicate_trackId", {"tracks": [{"trackId": track_ids[0]}, {"trackId": track_ids[0]}]}),
+            ("volumeDb_too_high", {"master": {"volumeDb": 25.0}}),
+            ("volumeDb_too_low", {"master": {"volumeDb": -121.0}}),
+            ("balance_too_high", {"master": {"balance": 1.5}}),
+            ("balance_too_low", {"master": {"balance": -1.5}}),
+            ("forceMute_key_not_accepted", {"tracks": [{"trackId": track_ids[0], "forceMute": True}]}),
+            ("unexpected_key_master", {"master": {"unexpected": True}}),
+            ("unexpected_key_track", {"tracks": [{"trackId": track_ids[0], "unexpected": True}]}),
+        ]
+
+        for case_name, bad_mix in invalid_cases:
+            bad_path = output_dir / f"bad_{case_name}.wav"
+            res = await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": "wav",
+                    "path": str(bad_path.resolve()),
+                    "mix": bad_mix,
+                },
+                error=True,
+            )
+            assert res.get("isError") is True, f"Expected error for {case_name}, got {res}"
+            assert not bad_path.exists(), f"File should not be created for invalid case {case_name}"
+        checks.append("invalid_mix_options_rejected")
+
+        # Mix on non-audio formats must be rejected
+        for bad_fmt in ["svg", "midi", "musicxml", "png", "pdf"]:
+            non_audio_path = output_dir / f"bad_fmt_{bad_fmt}.{bad_fmt}"
+            res = await c.tool(
+                "score_export",
+                {
+                    "documentId": doc_id,
+                    "format": bad_fmt,
+                    "path": str(non_audio_path.resolve()),
+                    "mix": {"master": {"volumeDb": 0.0}},
+                },
+                error=True,
+            )
+            assert res.get("isError") is True, f"Expected mix rejection for format {bad_fmt}"
+            assert not non_audio_path.exists()
+        checks.append("mix_on_non_audio_rejected")
+
+        # Exports never change the document revision
+        doc_get_after = await c.tool("score_get", {"documentId": doc_id})
+        assert doc_get_after["revision"] == rev, f"Document revision changed from {rev} to {doc_get_after['revision']}"
+        checks.append("export_never_changes_revision")
+
+        # 11. Default mix from MSCZ (fixtures/audio/mix.mscz)
+        mix_fixture_path = ROOT / "fixtures/audio/mix.mscz"
+        if mix_fixture_path.is_file():
+            opened_mscz = await c.tool("score_open", {"path": str(mix_fixture_path.resolve())})
+            mscz_doc = opened_mscz["documentId"]
+
+            # Inspect tracks: Cello should be muted by default
+            mscz_tracks_res = await c.tool("score_audio_tracks", {"documentId": mscz_doc})
+            mscz_tracks = mscz_tracks_res["tracks"]
+            assert len(mscz_tracks) == 3, f"Expected 3 tracks in mix.mscz, got {len(mscz_tracks)}"
+
+            cello_track = next((t for t in mscz_tracks if t["name"] == "Cello"), None)
+            assert cello_track is not None, f"Cello track not found in {mscz_tracks}"
+            assert cello_track["muted"] is True, f"Cello must be muted by default from audiosettings.json: {cello_track}"
+
+            violin_track = next(t for t in mscz_tracks if t["name"] == "Violin")
+            assert violin_track["muted"] is False, f"Violin must not be muted: {violin_track}"
+
+            # Inspect metadata.tracks
+            mscz_get = await c.tool("score_get", {"documentId": mscz_doc})
+            meta_cello = next(t for t in mscz_get["metadata"]["tracks"] if t["name"] == "Cello")
+            assert meta_cello["muted"] is True, f"Metadata must report Cello muted: {meta_cello}"
+            checks.append("mscz_default_mix_metadata_verified")
+
+            if args.soundfont:
+                # Plain WAV export: Cello is silent by default
+                default_mscz_wav = output_dir / "mscz_default.wav"
                 await c.tool(
                     "score_export",
-                    {"documentId": doc_id, "format": fmt, "path": str(comp_path.resolve())},
+                    {"documentId": mscz_doc, "format": "wav", "path": str(default_mscz_wav.resolve())},
                 )
-                assert comp_path.exists() and comp_path.stat().st_size > 0, f"{fmt} file empty"
-                data = comp_path.read_bytes()
-                assert check_audio_header(fmt, data), f"Invalid {fmt} header"
-            checks.append("compressed_exports_passed")
+                _, _, _, _, def_mscz_rms, _, _, _ = analyze_wav(default_mscz_wav)
+
+                # Export with mix explicitly unmuting Cello: brings Cello back, higher energy
+                unmute_mscz_wav = output_dir / "mscz_unmuted_cello.wav"
+                await c.tool(
+                    "score_export",
+                    {
+                        "documentId": mscz_doc,
+                        "format": "wav",
+                        "path": str(unmute_mscz_wav.resolve()),
+                        "mix": {"tracks": [{"trackId": cello_track["trackId"], "muted": False}]},
+                    },
+                )
+                _, _, _, _, unmute_mscz_rms, _, _, _ = analyze_wav(unmute_mscz_wav)
+                assert unmute_mscz_rms > def_mscz_rms + 0.001, (
+                    f"Unmuting Cello must increase RMS energy: {unmute_mscz_rms} vs default {def_mscz_rms}"
+                )
+
+                # Export with explicit mix keeping Cello muted: matches default export
+                explicit_mute_wav = output_dir / "mscz_explicit_mute.wav"
+                await c.tool(
+                    "score_export",
+                    {
+                        "documentId": mscz_doc,
+                        "format": "wav",
+                        "path": str(explicit_mute_wav.resolve()),
+                        "mix": {"tracks": [{"trackId": cello_track["trackId"], "muted": True}]},
+                    },
+                )
+                _, _, _, _, exp_mute_rms, _, _, _ = analyze_wav(explicit_mute_wav)
+                mute_diff = abs(exp_mute_rms - def_mscz_rms) / max(def_mscz_rms, 1e-9)
+                assert mute_diff <= 0.01, f"Explicit mute RMS differs from default mix RMS by {mute_diff:.4f}"
+                checks.append("mscz_default_mix_audio_verified")
+
+            await c.tool("score_close", {"documentId": mscz_doc})
 
         await c.tool("score_close", {"documentId": doc_id})
         checks.append("score_closed")

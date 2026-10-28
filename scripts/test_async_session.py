@@ -3,11 +3,23 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 from pathlib import Path
+import struct
 import tempfile
 import time
+import wave
 from test_export_options import canonical_notes, bar
+
+def read_wav_energy(path: Path) -> tuple[tuple[int, ...], float]:
+    with wave.open(str(path), 'rb') as wf:
+        channels, width, rate, frames = wf.getnchannels(), wf.getsampwidth(), wf.getframerate(), wf.getnframes()
+        assert (channels, width, rate) == (2, 2, 44100) and frames > 0
+        data = wf.readframes(frames)
+        samples = struct.unpack(f'<{len(data) // 2}h', data)
+        rms = math.sqrt(sum(s * s for s in samples) / len(samples))
+        return samples, rms
 
 class Client:
     def __init__(self, binary, resources, soundfont, directory):
@@ -234,51 +246,65 @@ async def run(args):
         assert (await client.terminal(closing))['state']=='completed'
         evidence.update(disjoint_edits=4,overlap_conflicts=1,dedup=True,snapshot_revision=done['revision'],
                         worker_failure_preserved_output=True,close_preserved_snapshot=True)
+        # Strengthen export-job cases: expectedRevision mismatch rejection
+        test_doc = (await client.tool('score_create', {'score': score}))['documentId']
+        cur_rev = (await client.tool('score_get', {'documentId': test_doc}))['revision']
+        bad_rev = await client.tool(
+            'score_export_start',
+            {'documentId': test_doc, 'format': 'musicxml', 'path': str(out / 'bad-rev.musicxml'),
+             'expectedRevision': cur_rev + 999},
+            error=True
+        )
+        assert bad_rev.get('isError'), bad_rev
+        evidence['expected_revision_mismatch_rejected'] = True
+
         if args.soundfont:
-            # Stream data comes from a frozen revision and mix, including after live close.
-            audio_doc=(await client.tool('score_create',{'score':score}))['documentId']
-            mix=(await client.tool('score_audio_get_mix',{'documentId':audio_doc}))['mix']
-            mix['master']['muted']=True
-            muted=await client.tool('score_audio_set_mix',{'documentId':audio_doc,'mix':mix})
-            stream=await client.tool('score_audio_start',{'documentId':audio_doc,'expectedRevision':muted['revision']})
-            mix['master']['muted']=False
-            await client.tool('score_audio_set_mix',{'documentId':audio_doc,'mix':mix})
-            first_chunks=await client.tool('score_audio_read',{'jobId':stream['jobId'],'batchSize':16})
-            assert first_chunks['revision']==muted['revision'] and first_chunks['sampleRate']==44100
-            assert 1<=len(first_chunks['chunks'])<=16
-            for chunk in first_chunks['chunks']:
-                assert len(chunk['left'])==len(chunk['right'])<=512
-                assert all(sample==0 for sample in chunk['left']+chunk['right'])
-            await client.tool('score_audio_seek',{'jobId':stream['jobId'],'seconds':0})
-            again=await client.tool('score_audio_read',{'jobId':stream['jobId']})
-            assert again['chunks'][0]['startTime']==0
-            # Verify ok:false seek keeps the session alive
-            bad_seek = await client.tool('score_audio_seek', {'jobId': stream['jobId'], 'seconds': -5}, error=True)
-            assert bad_seek.get('isError')
-            post_seek_chunks = await client.tool('score_audio_read', {'jobId': stream['jobId']})
-            assert post_seek_chunks['chunks']
-            evidence['stream_ok_false_seek_kept_alive'] = True
-            await client.tool('score_close',{'documentId':audio_doc})
-            assert (await client.tool('score_audio_read',{'jobId':stream['jobId']}))['chunks']
-            await client.tool('score_job_cancel',{'jobId':stream['jobId']})
-            assert (await client.terminal(stream))['state']=='cancelled'
-            ended=await client.tool('score_audio_read',{'jobId':stream['jobId']},error=True)
-            assert ended['structuredContent']['error']['code']=='not_found'
-            evidence.update(stream_snapshot_mix=True,stream_read_seek=True,stream_survives_close=True)
-            # Streams own a separate worker budget: two open sessions must not
-            # leave an export queued behind them.
-            streams_doc=(await client.tool('score_create',{'score':score}))['documentId']
-            first_stream=await client.tool('score_audio_start',{'documentId':streams_doc})
-            second_stream=await client.tool('score_audio_start',{'documentId':streams_doc})
-            export=await client.tool('score_export_start',{'documentId':streams_doc,'format':'musicxml',
-                                                           'path':str(out/'streams-export.musicxml')})
-            assert (await client.terminal(export))['state']=='completed'
-            for session in (first_stream,second_stream):
-                assert (await client.tool('score_job_get',{'jobId':session['jobId']}))['state']=='running'
-                await client.tool('score_job_cancel',{'jobId':session['jobId']})
-                assert (await client.terminal(session))['state']=='cancelled'
-            await client.tool('score_close',{'documentId':streams_doc})
-            evidence['export_with_two_streams']=True
+            # Background audio export with a mix that mutes one track.
+            # Verify snapshot isolation and that WAV energy matches synchronous export with the same mix.
+            audio_doc = (await client.tool('score_create', {'score': score}))['documentId']
+            tracks = (await client.tool('score_audio_tracks', {'documentId': audio_doc}))['tracks']
+            assert len(tracks) >= 2, tracks
+            mute_track_id = tracks[1]['trackId']
+            mix_muted = {'tracks': [{'trackId': mute_track_id, 'muted': True}]}
+
+            async_wav = out / 'async-mix.wav'
+            sync_wav = out / 'sync-mix.wav'
+            unmuted_wav = out / 'unmuted.wav'
+
+            # Run sync export with mix and unmuted sync export
+            await client.tool('score_export', {'documentId': audio_doc, 'format': 'wav', 'path': str(sync_wav), 'mix': mix_muted})
+            await client.tool('score_export', {'documentId': audio_doc, 'format': 'wav', 'path': str(unmuted_wav)})
+
+            # Start background export with mix
+            bg_job = await client.tool('score_export_start', {'documentId': audio_doc, 'format': 'wav', 'path': str(async_wav), 'mix': mix_muted})
+
+            # Test snapshot isolation: perform an edit while background job is captured/running
+            edit_rev = (await client.tool('score_get', {'documentId': audio_doc}))['revision']
+            await client.tool('score_replace_measures', {
+                'documentId': audio_doc, 'partIndex': 0, 'startMeasure': 0,
+                'measures': [bar(72, 72, 72, 72)], 'baseRevision': edit_rev,
+                'operationId': 'edit-during-bg-export'
+            })
+
+            # Background export finishes with the snapshot it captured
+            done_bg = await client.terminal(bg_job)
+            assert done_bg['state'] == 'completed', done_bg
+
+            # Verify WAV energy matches synchronous export (sample-identical or within 1e-6 relative RMS)
+            samples_async, rms_async = read_wav_energy(async_wav)
+            samples_sync, rms_sync = read_wav_energy(sync_wav)
+            _, rms_unmuted = read_wav_energy(unmuted_wav)
+
+            assert rms_async > 0 and rms_sync > 0
+            assert rms_async < rms_unmuted, f"Muting track did not reduce energy: {rms_async} vs {rms_unmuted}"
+
+            rms_diff = abs(rms_async - rms_sync) / max(rms_sync, 1e-9)
+            assert samples_async == samples_sync or rms_diff <= 1e-6, f"RMS difference {rms_diff} exceeds 1e-6"
+            evidence['background_audio_mix_matches_sync'] = True
+            evidence['export_snapshot_isolation'] = True
+
+            await client.tool('score_close', {'documentId': audio_doc})
+            await client.tool('score_close', {'documentId': test_doc})
             large={'title':'Background audio','tempo':60,'parts':[
                 {'name':f'Part {p}','midiProgram':1+p,'measures':[bar(48+p,52+p,55+p,60+p) for _ in range(128)]}
                 for p in range(8)]}

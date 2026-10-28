@@ -19,12 +19,12 @@ struct ExportWorkerRequest {
     std::filesystem::path cache_directory;
     AudioMix mix;
     bool has_mix = false;
-    bool stream = false;
-    double start_seconds = 0;
 };
 bool is_audio_format(ExportFormat format) noexcept;
 std::string path_utf8(const std::filesystem::path& path);
 ExportOptions parse_export_options(const nlohmann::json& args, ExportFormat format);
+// Strict decoder for the score_export/score_export_start "mix" option.
+AudioMixOverride parse_audio_mix_override(const nlohmann::json& json);
 nlohmann::json worker_request_json(const ExportWorkerRequest& request);
 int run_export_worker(const std::filesystem::path& request_path) noexcept;
 // Throws if bytes exceed the supplied bound; never allocates from untrusted file size.

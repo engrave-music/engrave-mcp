@@ -1,7 +1,9 @@
 #include "music_core.h"
 
+#include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -178,6 +180,49 @@ int main(int argc, char** argv) {
         expect(fourth.id.value == 4, "Document ids are not monotonic and non-reused");
         core.close(fourth.id);
         core.close(created.id);
+
+        // Default mix comes from the MSCZ archive and survives a DOM reload.
+        std::ifstream mix_stream("fixtures/audio/mix.mscz", std::ios::binary);
+        expect(bool(mix_stream), "Missing fixtures/audio/mix.mscz");
+        const std::string mix_bytes{std::istreambuf_iterator<char>(mix_stream),
+                                    std::istreambuf_iterator<char>()};
+        const auto mixed = core.open(mix_bytes, InputFormat::Mscz);
+        auto mixed_tracks = core.audio_tracks(mixed.id);
+        expect(mixed_tracks.tracks.size() == 3, "MSCZ default mix did not expose three tracks");
+        expect(mixed_tracks.tracks.at(2).output.muted, "MSCZ default track mute was not reported");
+        expect(!mixed_tracks.tracks.at(2).output.force_mute, "No solo means no force-mute");
+        const auto mixed_excerpts = core.generate_excerpts(mixed.id);
+        expect(!mixed_excerpts.excerpts.empty(), "MSCZ excerpt generation produced no excerpts");
+        auto reloaded_tracks = core.audio_tracks(mixed.id);
+        expect(reloaded_tracks.tracks.size() == 3 && reloaded_tracks.tracks.at(2).output.muted,
+               "Default mix was lost across excerpt generation");
+        expect(core.describe(mixed.id).revision == mixed_excerpts.revision,
+               "Default mix lookup changed the document revision");
+
+        ExportOptions mix_override;
+        mix_override.mix = AudioMixOverride{};
+        AudioTrackMixOverride solo_track;
+        solo_track.track_id = 0;
+        solo_track.output.solo = true;
+        mix_override.mix->tracks.push_back(solo_track);
+        const auto resolved = core.audio_export_mix(mixed.id, mix_override);
+        expect(resolved.tracks.at(0).output.solo && !resolved.tracks.at(0).output.force_mute,
+               "Export override did not solo the requested track");
+        expect(resolved.tracks.at(1).output.force_mute && resolved.tracks.at(2).output.force_mute,
+               "Export override did not force-mute non-solo tracks");
+        expect(core.describe(mixed.id).revision == mixed_excerpts.revision,
+               "Mix resolution changed the document revision");
+
+        bool unknown_track_rejected = false;
+        try {
+            ExportOptions bad = mix_override;
+            bad.mix->tracks.front().track_id = 99;
+            (void)core.audio_export_mix(mixed.id, bad);
+        } catch (const CoreError& error) {
+            unknown_track_rejected = error.code() == CoreError::Code::invalid_argument;
+        }
+        expect(unknown_track_rejected, "Unknown export mix trackId was accepted");
+        core.close(mixed.id);
 
         const auto runtime = core.runtime_options();
         expect(!runtime.resources_path.empty(), "Runtime resources path is empty");

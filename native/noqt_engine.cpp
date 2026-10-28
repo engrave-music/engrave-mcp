@@ -3,6 +3,7 @@
 #include "atomic_file.h"
 #include "background_job.h"
 #include "mcp_transport.h"
+#include "worker_protocol.h"
 
 #include <algorithm>
 #include <cctype>
@@ -102,7 +103,7 @@ void only_keys(const Json& j, std::initializer_list<const char*> allowed,
     }
 }
 
-std::string path_utf8(const std::filesystem::path& path) {
+std::string local_path_utf8(const std::filesystem::path& path) {
     const auto text = path.u8string();
     return std::string(reinterpret_cast<const char*>(text.data()), text.size());
 }
@@ -182,106 +183,6 @@ int excerpt_arg(const Json& args) {
     if (value < -1 || value > std::numeric_limits<int>::max())
         throw std::invalid_argument("excerptId is out of range");
     return static_cast<int>(value);
-}
-
-double audio_number_arg(const Json& object, const char* key, const std::string& path,
-                        double minimum, double maximum) {
-    if (!object.contains(key))
-        throw std::invalid_argument(path + "." + key + " is required");
-    const auto& value = object.at(key);
-    if (!value.is_number() || value.is_boolean())
-        throw std::invalid_argument(path + "." + key + " must be a number");
-    const double result = value.get<double>();
-    if (!std::isfinite(result) || result < minimum || result > maximum)
-        throw std::invalid_argument(path + "." + key + " is out of range");
-    return result;
-}
-
-bool audio_bool_arg(const Json& object, const char* key, const std::string& path) {
-    if (!object.contains(key))
-        throw std::invalid_argument(path + "." + key + " is required");
-    const auto& value = object.at(key);
-    if (!value.is_boolean())
-        throw std::invalid_argument(path + "." + key + " must be a boolean");
-    return value.get<bool>();
-}
-
-// A complete snapshot is a patch that names every field, so both forms share
-// one decoder; unspecified fields and unlisted tracks keep their current state.
-AudioOutputPatch decode_audio_output_patch(const Json& json, const std::string& path) {
-    if (!json.is_object()) throw std::invalid_argument(path + " must be an object");
-    only_keys(json, {"volumeDb", "balance", "solo", "muted", "forceMute"},
-              "Unknown key in " + path + ": ");
-    AudioOutputPatch patch;
-    if (json.contains("volumeDb")) patch.volume_db = audio_number_arg(json, "volumeDb", path, -120.0, 24.0);
-    if (json.contains("balance")) patch.balance = audio_number_arg(json, "balance", path, -1.0, 1.0);
-    if (json.contains("solo")) patch.solo = audio_bool_arg(json, "solo", path);
-    if (json.contains("muted")) patch.muted = audio_bool_arg(json, "muted", path);
-    if (json.contains("forceMute")) patch.force_mute = audio_bool_arg(json, "forceMute", path);
-    return patch;
-}
-
-AudioMixPatch decode_audio_mix_patch(const Json& json) {
-    if (!json.is_object()) throw std::invalid_argument("mix must be an object");
-    only_keys(json, {"master", "tracks"}, "Unknown key in mix: ");
-
-    AudioMixPatch patch;
-    if (json.contains("master")) patch.master = decode_audio_output_patch(json.at("master"), "mix.master");
-    if (!json.contains("tracks")) return patch;
-
-    const auto& tracks = json.at("tracks");
-    if (!tracks.is_array()) throw std::invalid_argument("mix.tracks must be an array");
-    if (tracks.size() > audio_max_tracks)
-        throw std::invalid_argument("mix.tracks must contain at most 15 entries");
-    std::vector<AudioTrackPatch> entries;
-    entries.reserve(tracks.size());
-    for (std::size_t index = 0; index < tracks.size(); ++index) {
-        const auto& entry = tracks.at(index);
-        const std::string path = "mix.tracks[" + std::to_string(index) + "]";
-        if (!entry.is_object()) throw std::invalid_argument(path + " must be an object");
-        only_keys(entry, {"trackId", "output"}, "Unknown key in " + path + ": ");
-        if (!entry.contains("trackId"))
-            throw std::invalid_argument(path + ".trackId is required");
-        const std::string track_type_error = path + ".trackId must be an integer";
-        const std::string track_range_error = path + ".trackId is out of range";
-        const auto track_id = checked_integer(entry.at("trackId"),
-            track_type_error.c_str(), track_range_error.c_str());
-        if (track_id < 0)
-            throw std::invalid_argument(path + ".trackId must be non-negative");
-        if (!entry.contains("output"))
-            throw std::invalid_argument(path + ".output is required");
-
-        AudioTrackPatch track;
-        track.track_id = track_id;
-        track.output = decode_audio_output_patch(entry.at("output"), path + ".output");
-        entries.push_back(std::move(track));
-    }
-    patch.tracks = std::move(entries);
-    return patch;
-}
-
-Json audio_output_json(const AudioOutputParams& output) {
-    Json json = Json::object();
-    json["volumeDb"] = output.volume_db;
-    json["balance"] = output.balance;
-    json["solo"] = output.solo;
-    json["muted"] = output.muted;
-    json["forceMute"] = output.force_mute;
-    return json;
-}
-
-Json audio_mix_json(const AudioMix& mix) {
-    Json tracks = Json::array();
-    for (const AudioTrackParams& track : mix.tracks) {
-        Json entry = Json::object();
-        entry["trackId"] = track.track_id;
-        entry["output"] = audio_output_json(track.output);
-        tracks.push_back(std::move(entry));
-    }
-    Json json = Json::object();
-    json["master"] = audio_output_json(mix.master);
-    json["tracks"] = std::move(tracks);
-    return json;
 }
 
 Note decode_note(const Json& json) {
@@ -484,7 +385,7 @@ Engine::Engine(int&, char** argv, const std::string& soundfont, const std::strin
         assets = std::filesystem::absolute(std::filesystem::u8path(resources));
     }
 
-    impl_->core = std::make_unique<MusicCore>(RuntimeOptions{path_utf8(assets), soundfont});
+    impl_->core = std::make_unique<MusicCore>(RuntimeOptions{local_path_utf8(assets), soundfont});
 }
 
 Engine::~Engine() = default;
@@ -519,7 +420,7 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         auto format = InputFormat::MusicXml;
         if (has_path) {
             const auto path = std::filesystem::u8path(text_arg(args, "path"));
-            auto extension = path_utf8(path.extension());
+            auto extension = local_path_utf8(path.extension());
             if (!extension.empty()) extension.erase(0, 1);
             std::transform(extension.begin(), extension.end(), extension.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -559,19 +460,12 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         Json tracks = Json::array();
         for (const AudioTrackInfo& track : data.tracks) {
             tracks.push_back({{"trackId", track.track_id}, {"partId", track.part_id},
-                {"instrumentId", track.instrument_id}, {"name", track.name}});
+                {"instrumentId", track.instrument_id}, {"name", track.name},
+                {"volumeDb", track.output.volume_db}, {"balance", track.output.balance},
+                {"solo", track.output.solo}, {"muted", track.output.muted},
+                {"forceMute", track.output.force_mute}});
         }
         result = {{"revision", data.revision.value}, {"tracks", std::move(tracks)}};
-    } else if (tool == "score_audio_get_mix") {
-        only_keys(args, {"documentId", "excerptId"});
-        const auto data = impl_->core->audio_mix(document_id(args), excerpt_arg(args));
-        result = {{"revision", data.revision.value}, {"mix", audio_mix_json(data.mix)}};
-    } else if (tool == "score_audio_set_mix") {
-        only_keys(args, {"documentId", "excerptId", "mix"});
-        if (!args.contains("mix")) throw std::invalid_argument("mix is required");
-        const auto data = impl_->core->set_audio_mix(
-            document_id(args), decode_audio_mix_patch(args.at("mix")), excerpt_arg(args));
-        result = {{"revision", data.revision.value}, {"mix", audio_mix_json(data.mix)}};
     } else if (tool == "runtime_set_soundfont") {
         only_keys(args, {"path"});
         const auto asset = impl_->core->set_soundfont(text_arg(args, "path"));
@@ -658,7 +552,7 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         result = {{"closed", true}};
     } else if (tool == "score_export") {
         only_keys(args, {"documentId", "format", "path", "page", "pngDpi", "drawPageBackground",
-                         "transparent", "expandRepeats", "exportRPNs", "excerptId"});
+                         "transparent", "expandRepeats", "exportRPNs", "excerptId", "mix"});
         const auto id = document_id(args);
         const auto format_text = text_arg(args, "format");
         const auto parsed_format = export_format_from_name(format_text);
@@ -694,6 +588,11 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         boolean_option("exportRPNs", options.midi_export_rpns,
                        format == ExportFormat::Midi || format == ExportFormat::Wav
                        || format == ExportFormat::Flac || format == ExportFormat::Ogg || format == ExportFormat::Mp3);
+        if (args.contains("mix")) {
+            if (!is_audio_format(format))
+                throw std::invalid_argument("mix does not apply to this format");
+            options.mix = parse_audio_mix_override(args.at("mix"));
+        }
 
         if (is_output_path_reserved(path))
             throw ToolCallError("busy", "Another job owns this export destination");
@@ -701,7 +600,7 @@ std::string Engine::call(const std::string& tool, const std::string& arguments_j
         const auto data = impl_->core->export_bytes(id, format, options);
         if (data.bytes.empty()) throw std::runtime_error("Exporter returned no data");
         write_atomic(path, data.bytes);
-        result = {{"path", path_utf8(path)}, {"format", format_text}, {"bytes", data.bytes.size()},
+        result = {{"path", local_path_utf8(path)}, {"format", format_text}, {"bytes", data.bytes.size()},
             {"revision", data.revision.value}};
     } else {
         throw std::invalid_argument("Unknown tool");

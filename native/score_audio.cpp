@@ -8,9 +8,11 @@
 #include "score_audio.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -18,6 +20,8 @@
 
 #include "global/io/buffer.h"
 #include "global/io/iodevice.h"
+#include "global/serialization/json.h"
+#include "global/serialization/zipreader.h"
 
 #include "engraving/compat/midi/midicoreevent.h"
 #include "engraving/dom/instrument.h"
@@ -41,6 +45,41 @@ using mu::iex::midi::MidiTrack;
 
 // Mirrors the total MIDI budget enforced by AudioSession::Impl.
 constexpr std::size_t max_total_midi_bytes = 8 * 1024 * 1024;
+// audiosettings.json is tiny; reject pathological archives before parsing.
+constexpr std::size_t max_audio_settings_bytes = 1024 * 1024;
+constexpr std::size_t max_audio_settings_tracks = 4096;
+
+std::optional<double> settings_number(const muse::JsonObject& object, const char* key)
+{
+    if (!object.contains(key)) return std::nullopt;
+    const auto value = object.value(key);
+    if (!value.isNumber()) return std::nullopt;
+    const double number = value.toDouble();
+    if (!std::isfinite(number)) return std::nullopt;
+    return number;
+}
+
+std::optional<bool> settings_bool(const muse::JsonObject& object, const char* key)
+{
+    if (!object.contains(key)) return std::nullopt;
+    const auto value = object.value(key);
+    if (!value.isBool()) return std::nullopt;
+    return value.toBool();
+}
+
+// Unknown fields are ignored by design. Out-of-range known fields are ignored
+// individually so one corrupt value cannot discard the rest of the mix.
+void apply_settings_output(AudioOutputParams& output, const muse::JsonObject& object)
+{
+    if (const auto volume = settings_number(object, "volumeDb");
+        volume && *volume >= -120.0 && *volume <= 24.0) {
+        output.volume_db = *volume;
+    }
+    if (const auto balance = settings_number(object, "balance");
+        balance && *balance >= -1.0 && *balance <= 1.0) {
+        output.balance = *balance;
+    }
+}
 
 struct PartPlan {
     std::int64_t track_id = 0;
@@ -418,6 +457,58 @@ std::vector<ScoreAudioTrackInfo> score_audio_track_info(Score* score)
             plan.instrument_id,
             plan.name,
         });
+    }
+    return result;
+}
+
+ScoreAudioMixDefaults score_audio_mix_defaults(const std::string& mscz_bytes)
+{
+    ScoreAudioMixDefaults result;
+    if (mscz_bytes.size() < 4) return result;
+    try {
+        muse::ByteArray archive(mscz_bytes.data(), mscz_bytes.size());
+        muse::io::Buffer buffer(&archive);
+        if (!buffer.open(muse::io::IODevice::ReadOnly)) return result;
+        muse::ZipReader zip(&buffer);
+        if (zip.hasError()) return result;
+        const muse::ByteArray json = zip.fileData("audiosettings.json");
+        if (zip.hasError() || json.empty() || json.size() > max_audio_settings_bytes) return result;
+
+        std::string error;
+        const muse::JsonDocument document = muse::JsonDocument::fromJson(json, &error);
+        if (!error.empty() || !document.isObject()) return result;
+        const muse::JsonObject root = document.rootObject();
+
+        const auto master = root.value("master");
+        if (master.isObject()) apply_settings_output(result.master, master.toObject());
+
+        const auto tracks = root.value("tracks");
+        if (!tracks.isArray()) return result;
+        const muse::JsonArray array = tracks.toArray();
+        if (array.size() > max_audio_settings_tracks) return result;
+        for (std::size_t index = 0; index < array.size(); ++index) {
+            const auto entry = array.at(index);
+            if (!entry.isObject()) continue;
+            const muse::JsonObject track = entry.toObject();
+            const auto part_id = track.value("partId");
+            const auto instrument_id = track.value("instrumentId");
+            if (!part_id.isString() || !instrument_id.isString()) continue;
+
+            AudioOutputParams output;
+            const auto settings = track.value("out");
+            if (settings.isObject()) apply_settings_output(output, settings.toObject());
+            const auto solo_mute = track.value("soloMuteState");
+            if (solo_mute.isObject()) {
+                const muse::JsonObject state = solo_mute.toObject();
+                if (const auto solo = settings_bool(state, "solo")) output.solo = *solo;
+                if (const auto muted = settings_bool(state, "mute")) output.muted = *muted;
+            }
+            result.tracks.emplace(
+                std::make_pair(part_id.toStdString(), instrument_id.toStdString()), output);
+        }
+    } catch (...) {
+        // A damaged archive or unexpected JSON shape is not a score-open error.
+        return {};
     }
     return result;
 }

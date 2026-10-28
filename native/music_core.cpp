@@ -21,6 +21,7 @@
 #include <map>
 #include <new>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -327,9 +328,10 @@ struct MusicCore::Impl {
         Revision last_dom_reload{1};
         Revision retry_floor{1};
         bool poisoned = false;
-        // Absence means the all-default mix for the selected score. Entries
-        // are full replacement mixes keyed by excerpt id (-1 is the full score).
-        std::map<int, AudioMix> audio_mixes;
+        // Immutable default mix from the source MSCZ audiosettings.json (or
+        // neutral). Keyed by (partId, instrumentId) so it survives DOM reloads
+        // and is mapped to current track IDs on demand.
+        ScoreAudioMixDefaults audio_mix_defaults;
         std::list<HistoryEntry> history;
         std::list<ReplayEntry> replays;
         std::size_t replay_payload_bytes = 0;
@@ -500,9 +502,8 @@ struct MusicCore::Impl {
         return describe_audio_tracks(select_score(project->masterScore(), excerpt_id));
     }
 
-    static std::vector<ScoreMetadataTrack> describe_metadata_tracks(mu::engraving::Score* score,
-                                                                   const AudioMix& mix) {
-        const auto track_infos = describe_audio_tracks(score);
+    static std::vector<ScoreMetadataTrack> describe_metadata_tracks(
+        const std::vector<AudioTrackInfo>& track_infos, const AudioMix& mix) {
         std::vector<ScoreMetadataTrack> meta_tracks;
         meta_tracks.reserve(track_infos.size());
         for (const AudioTrackInfo& info : track_infos) {
@@ -531,7 +532,8 @@ struct MusicCore::Impl {
     // tracks are then empty.
     static std::vector<ScoreMetadataTrack> metadata_tracks_or_empty(const Document& document,
                                                                    mu::engraving::Score* score,
-                                                                   int excerpt_id) {
+                                                                   int excerpt_id,
+                                                                   const std::optional<AudioMix>& resolved = std::nullopt) {
         std::vector<AudioTrackInfo> tracks;
         try {
             tracks = describe_audio_tracks(score);
@@ -544,7 +546,9 @@ struct MusicCore::Impl {
         } catch (const std::runtime_error&) {
             return {};
         }
-        return describe_metadata_tracks(score, current_audio_mix(document, excerpt_id, tracks));
+        const AudioMix mix = resolved ? canonical_audio_mix(*resolved, tracks)
+                                      : default_audio_mix(document, tracks);
+        return describe_metadata_tracks(tracks, mix);
     }
 
     static void validate_audio_output(const AudioOutputParams& output, std::string_view label) {
@@ -559,18 +563,46 @@ struct MusicCore::Impl {
         }
     }
 
-    static AudioMix default_audio_mix(const std::vector<AudioTrackInfo>& tracks) {
+    static void validate_audio_override(const AudioOutputOverride& output, std::string_view label) {
+        if (output.volume_db
+            && (!std::isfinite(*output.volume_db) || *output.volume_db < -120.0
+                || *output.volume_db > 24.0)) {
+            throw CoreError(CoreError::Code::invalid_argument,
+                            std::string(label) + " volumeDb must be finite and in [-120, 24]");
+        }
+        if (output.balance
+            && (!std::isfinite(*output.balance) || *output.balance < -1.0
+                || *output.balance > 1.0)) {
+            throw CoreError(CoreError::Code::invalid_argument,
+                            std::string(label) + " balance must be finite and in [-1, 1]");
+        }
+    }
+
+    // Maps the immutable (partId, instrumentId) defaults onto the selected
+    // score's current track IDs and derives forceMute.
+    static AudioMix default_audio_mix(const Document& document,
+                                      const std::vector<AudioTrackInfo>& tracks) {
         AudioMix mix;
+        mix.master = document.audio_mix_defaults.master;
+        validate_audio_output(mix.master, "Document master mix");
         mix.tracks.reserve(tracks.size());
-        for (const AudioTrackInfo& track : tracks)
-            mix.tracks.push_back(AudioTrackParams{track.track_id, AudioOutputParams{}});
+        for (const AudioTrackInfo& track : tracks) {
+            AudioOutputParams output;
+            const auto it = document.audio_mix_defaults.tracks.find(
+                std::make_pair(track.part_id, track.instrument_id));
+            if (it != document.audio_mix_defaults.tracks.end()) output = it->second;
+            validate_audio_output(output, "Document track mix");
+            mix.tracks.push_back(AudioTrackParams{track.track_id, output});
+        }
+        derive_force_mute(mix);
         return mix;
     }
 
-    // Validates the complete replacement and returns it in actual score order.
+    // Validates a complete mix (used for worker-supplied explicit mixes) and
+    // returns it in actual score order with a recomputed forceMute.
     static AudioMix canonical_audio_mix(const AudioMix& candidate,
                                         const std::vector<AudioTrackInfo>& tracks) {
-        validate_audio_output(candidate.master, "Master mix");
+        validate_audio_output(candidate.master, "Audio mix master");
         if (candidate.tracks.size() != tracks.size()) {
             throw CoreError(CoreError::Code::invalid_argument,
                             "Audio mix must contain exactly one entry for each selected track");
@@ -582,7 +614,7 @@ struct MusicCore::Impl {
                 throw CoreError(CoreError::Code::invalid_argument,
                                 "Audio mix trackId must be non-negative");
             }
-            validate_audio_output(track.output, "Track mix");
+            validate_audio_output(track.output, "Audio mix track");
             if (!by_id.emplace(track.track_id, &track).second) {
                 throw CoreError(CoreError::Code::invalid_argument,
                                 "Audio mix contains duplicate trackId "
@@ -605,124 +637,63 @@ struct MusicCore::Impl {
             throw CoreError(CoreError::Code::invalid_argument,
                             "Audio mix contains an unknown trackId");
         }
+        derive_force_mute(canonical);
         return canonical;
     }
 
-    static void validate_audio_output_patch(const AudioOutputPatch& patch, std::string_view label) {
-        if (patch.volume_db.has_value()) {
-            if (!std::isfinite(*patch.volume_db) || *patch.volume_db < -120.0 || *patch.volume_db > 24.0) {
+    // Replaces only the fields the export supplied. forceMute is never accepted
+    // as input and is recomputed from the resulting solo flags.
+    static AudioMix apply_audio_override(AudioMix mix, const AudioMixOverride& override,
+                                         const std::vector<AudioTrackInfo>& tracks) {
+        validate_audio_override(override.master, "mix.master");
+
+        std::map<std::int64_t, AudioTrackParams*> by_id;
+        for (AudioTrackParams& track : mix.tracks) {
+            by_id.emplace(track.track_id, &track);
+        }
+        std::set<std::int64_t> seen_ids;
+        for (const AudioTrackMixOverride& entry : override.tracks) {
+            if (entry.track_id < 0) {
                 throw CoreError(CoreError::Code::invalid_argument,
-                                std::string(label) + " volumeDb must be finite and in [-120, 24]");
+                                "mix.tracks trackId must be non-negative");
             }
-        }
-        if (patch.balance.has_value()) {
-            if (!std::isfinite(*patch.balance) || *patch.balance < -1.0 || *patch.balance > 1.0) {
+            if (!seen_ids.insert(entry.track_id).second) {
                 throw CoreError(CoreError::Code::invalid_argument,
-                                std::string(label) + " balance must be finite and in [-1, 1]");
+                                "mix.tracks contains duplicate trackId "
+                                    + std::to_string(entry.track_id));
             }
-        }
-    }
-
-    static void apply_output_patch(AudioOutputParams& target, const AudioOutputPatch& patch) {
-        if (patch.volume_db.has_value()) target.volume_db = *patch.volume_db;
-        if (patch.balance.has_value()) target.balance = *patch.balance;
-        if (patch.solo.has_value()) target.solo = *patch.solo;
-        if (patch.muted.has_value()) target.muted = *patch.muted;
-        if (patch.force_mute.has_value()) target.force_mute = *patch.force_mute;
-    }
-
-    static AudioMix canonical_patched_mix(const AudioMix& current,
-                                          const AudioMixPatch& patch,
-                                          const std::vector<AudioTrackInfo>& tracks) {
-        if (patch.master.has_value()) {
-            validate_audio_output_patch(*patch.master, "Master mix");
-        }
-
-        if (patch.tracks.has_value()) {
-            if (patch.tracks->size() > audio_max_tracks) {
+            const auto found = by_id.find(entry.track_id);
+            if (found == by_id.end()) {
                 throw CoreError(CoreError::Code::invalid_argument,
-                                "Audio mix patch cannot contain more than 15 track entries");
+                                "mix.tracks contains unknown trackId "
+                                    + std::to_string(entry.track_id)
+                                    + "; use trackIds from score_audio_tracks");
             }
-
-            std::map<std::int64_t, const AudioTrackInfo*> valid_tracks;
-            for (const AudioTrackInfo& track : tracks) {
-                valid_tracks.emplace(track.track_id, &track);
-            }
-
-            std::set<std::int64_t> seen_ids;
-            for (const AudioTrackPatch& track_patch : *patch.tracks) {
-                if (track_patch.track_id < 0) {
-                    throw CoreError(CoreError::Code::invalid_argument,
-                                    "Audio mix trackId must be non-negative");
-                }
-                if (!seen_ids.insert(track_patch.track_id).second) {
-                    throw CoreError(CoreError::Code::invalid_argument,
-                                    "Audio mix contains duplicate trackId " + std::to_string(track_patch.track_id));
-                }
-                if (valid_tracks.find(track_patch.track_id) == valid_tracks.end()) {
-                    throw CoreError(CoreError::Code::invalid_argument,
-                                    "Audio mix contains an unknown trackId");
-                }
-                validate_audio_output_patch(track_patch.output, "Track mix");
-            }
+            validate_audio_override(entry.output, "mix.tracks");
+            AudioOutputParams& output = found->second->output;
+            if (entry.output.volume_db) output.volume_db = *entry.output.volume_db;
+            if (entry.output.balance) output.balance = *entry.output.balance;
+            if (entry.output.solo) output.solo = *entry.output.solo;
+            if (entry.output.muted) output.muted = *entry.output.muted;
         }
+        if (override.master.volume_db) mix.master.volume_db = *override.master.volume_db;
+        if (override.master.balance) mix.master.balance = *override.master.balance;
 
-        AudioMix candidate = current;
-        if (patch.master.has_value()) {
-            apply_output_patch(candidate.master, *patch.master);
-        }
-        if (patch.tracks.has_value()) {
-            for (const AudioTrackPatch& track_patch : *patch.tracks) {
-                for (AudioTrackParams& candidate_track : candidate.tracks) {
-                    if (candidate_track.track_id == track_patch.track_id) {
-                        apply_output_patch(candidate_track.output, track_patch.output);
-                        break;
-                    }
-                }
-            }
-        }
-        return candidate;
-    }
-
-    static AudioMix current_audio_mix(const Document& document, int excerpt_id,
-                                      const std::vector<AudioTrackInfo>& tracks) {
-        const auto it = document.audio_mixes.find(excerpt_id);
-        if (it == document.audio_mixes.end()) return default_audio_mix(tracks);
-        try {
-            return canonical_audio_mix(it->second, tracks);
-        } catch (const std::bad_alloc&) {
-            throw;
-        } catch (const CoreError& error) {
+        if (by_id.size() != tracks.size()) {
             throw CoreError(CoreError::Code::invalid_argument,
-                            "Stored audio mix is incompatible with the selected score: "
-                                + std::string(error.what()));
+                            "Audio mix track set does not match the selected score");
         }
+        derive_force_mute(mix);
+        return mix;
     }
 
-    static bool is_default_audio_mix(const AudioMix& mix) {
-        if (!(mix.master == AudioOutputParams{})) return false;
-        for (const AudioTrackParams& track : mix.tracks)
-            if (!(track.output == AudioOutputParams{})) return false;
-        return true;
-    }
-
-    // Keep stored mixes only while their excerpt still exists and its ordered
-    // track identities match. Obsolete excerpt mappings are dropped instead of
-    // being applied silently to a different score.
-    static std::map<int, AudioMix> preserved_audio_mixes(const std::map<int, AudioMix>& mixes,
-                                                         const ScoreProject& project) {
-        std::map<int, AudioMix> result;
-        for (const auto& [excerpt_id, mix] : mixes) {
-            try {
-                const auto tracks = describe_audio_tracks(project, excerpt_id);
-                result.emplace(excerpt_id, canonical_audio_mix(mix, tracks));
-            } catch (const std::bad_alloc&) {
-                throw;
-            } catch (...) {
-                // Invalid excerpt or changed track identities: drop the entry.
-            }
-        }
-        return result;
+    static AudioMix resolved_audio_mix(const Document& document,
+                                       const std::vector<AudioTrackInfo>& tracks,
+                                       const ExportOptions& options) {
+        if (options.explicit_mix) return canonical_audio_mix(*options.explicit_mix, tracks);
+        AudioMix mix = default_audio_mix(document, tracks);
+        if (options.mix) mix = apply_audio_override(std::move(mix), *options.mix, tracks);
+        return mix;
     }
 
     std::unique_ptr<AudioSession> make_audio_session(const Document& document,
@@ -733,7 +704,7 @@ struct MusicCore::Impl {
                             "Set a SoundFont to enable audio sessions");
         auto* score = select_score(document.project->masterScore(), options.excerpt_id);
         const auto tracks = describe_audio_tracks(score);
-        const AudioMix mix = current_audio_mix(document, options.excerpt_id, tracks);
+        const AudioMix mix = resolved_audio_mix(document, tracks, options);
         auto stems = score_audio_stems(score, options.midi_expand_repeats,
                                        options.midi_export_rpns);
         auto session = std::make_unique<AudioSession>(std::move(stems), soundfont,
@@ -742,69 +713,9 @@ struct MusicCore::Impl {
         return session;
     }
 
-    AudioMixData get_audio_mix(const Document& document, int excerpt_id) const {
-        const auto tracks = describe_audio_tracks(document.project, excerpt_id);
-        return AudioMixData{document.revision, current_audio_mix(document, excerpt_id, tracks)};
-    }
-
-    AudioMixData set_audio_mix(Document& document, const AudioMix& candidate, int excerpt_id) {
-        const auto tracks = describe_audio_tracks(document.project, excerpt_id);
-        const AudioMix canonical = canonical_audio_mix(candidate, tracks);
-        const AudioMix current = current_audio_mix(document, excerpt_id, tracks);
-        if (canonical == current) return AudioMixData{document.revision, current};
-
-        if (document.revision.value == std::numeric_limits<std::uint64_t>::max())
-            throw CoreError(CoreError::Code::resource_limit, "Document revision limit reached");
-        const Revision next{document.revision.value + 1};
-
-        // Copy and modify the map before publication so allocation failure
-        // cannot leave a partially updated document. Setting the all-default
-        // mix removes the entry and restores the legacy export behavior.
-        std::map<int, AudioMix> prepared = document.audio_mixes;
-        if (is_default_audio_mix(canonical)) prepared.erase(excerpt_id);
-        else prepared.insert_or_assign(excerpt_id, canonical);
-
-        AudioMixData result{next, canonical};
-        std::list<HistoryEntry> history;
-        {
-            HistoryEntry entry;
-            entry.revision = next;
-            history.push_back(std::move(entry));
-        }
-
-        document.audio_mixes.swap(prepared);
-        document.revision = next;
-        // A mix change does not rebuild the DOM, so last_dom_reload is unchanged.
-        publish_history(document, history);
-        return result;
-    }
-
-    AudioMixData set_audio_mix(Document& document, const AudioMixPatch& patch, int excerpt_id) {
-        const auto tracks = describe_audio_tracks(document.project, excerpt_id);
-        const AudioMix current = current_audio_mix(document, excerpt_id, tracks);
-        const AudioMix canonical = canonical_patched_mix(current, patch, tracks);
-        if (canonical == current) return AudioMixData{document.revision, current};
-
-        if (document.revision.value == std::numeric_limits<std::uint64_t>::max())
-            throw CoreError(CoreError::Code::resource_limit, "Document revision limit reached");
-        const Revision next{document.revision.value + 1};
-
-        std::map<int, AudioMix> prepared = document.audio_mixes;
-        if (is_default_audio_mix(canonical)) prepared.erase(excerpt_id);
-        else prepared.insert_or_assign(excerpt_id, canonical);
-
-        AudioMixData result{next, canonical};
-        std::list<HistoryEntry> history;
-        {
-            HistoryEntry entry;
-            entry.revision = next;
-            history.push_back(std::move(entry));
-        }
-
-        document.audio_mixes.swap(prepared);
-        document.revision = next;
-        publish_history(document, history);
-        return result;
+    AudioMix export_mix(const Document& document, const ExportOptions& options) const {
+        const auto tracks = describe_audio_tracks(document.project, options.excerpt_id);
+        return resolved_audio_mix(document, tracks, options);
     }
 
     static std::optional<AudioFormat> audio_format(ExportFormat format) noexcept {
@@ -826,12 +737,14 @@ struct MusicCore::Impl {
         return data;
     }
 
-    ScoreInfo insert(ScoreProject project, std::optional<Composition> composition) {
+    ScoreInfo insert(ScoreProject project, std::optional<Composition> composition,
+                     ScoreAudioMixDefaults defaults = {}) {
         const DocumentId id{next_document++};
         const auto result = info(id, project, Revision{1}, composition.has_value());
         Document document;
         document.project = std::move(project);
         document.composition = std::move(composition);
+        document.audio_mix_defaults = std::move(defaults);
         document.revision = Revision{1};
         document.last_dom_reload = Revision{1};
         documents.emplace(id.value, std::move(document));
@@ -915,10 +828,8 @@ struct MusicCore::Impl {
             entry.write_scopes = {scope};
             history_prepared.push_back(std::move(entry));
         }
-        auto audio_prepared = preserved_audio_mixes(document.audio_mixes, project);
 
         document.project = std::move(project);
-        document.audio_mixes.swap(audio_prepared);
         *document.composition = std::move(candidate);
         document.revision = revision;
         document.last_dom_reload = revision;
@@ -1024,21 +935,33 @@ struct MusicCore::Impl {
         const auto& document = find(id);
         if (format == ExportFormat::Metadata) {
             auto* selected = select_score(document.project->masterScore(), options.excerpt_id);
-            const auto meta_tracks = metadata_tracks_or_empty(document, selected, options.excerpt_id);
+            const auto meta_tracks = metadata_tracks_or_empty(document, selected, options.excerpt_id,
+                                                              options.explicit_mix);
             return ExportData{document.revision, score_metadata(selected, meta_tracks).dump()};
         }
         if (const auto codec = audio_format(format)) {
-            if (format != ExportFormat::Wav) {
-                return ExportData{document.revision,
-                                  encode_audio_export(document, options, *codec)};
-            }
-            // Keep the exact legacy single-track WAV path whenever the selected
-            // mix is all-default (including an absent map entry).
-            const auto stored = document.audio_mixes.find(options.excerpt_id);
-            if (stored != document.audio_mixes.end()
-                && !is_default_audio_mix(stored->second)) {
-                return ExportData{document.revision,
-                                  encode_audio_export(document, options, *codec)};
+            // WAV without any mix override and with neutral document defaults
+            // keeps the legacy single-track renderer for numeric compatibility.
+            const bool may_use_legacy = format == ExportFormat::Wav && !options.explicit_mix
+                && !options.mix && document.audio_mix_defaults.is_neutral();
+            bool use_legacy = may_use_legacy;
+            if (!may_use_legacy) {
+                try {
+                    const auto tracks = describe_audio_tracks(document.project, options.excerpt_id);
+                    const AudioMix mix = resolved_audio_mix(document, tracks, options);
+                    use_legacy = format == ExportFormat::Wav && !options.explicit_mix
+                        && !options.mix && is_neutral_mix(mix);
+                } catch (const CoreError&) {
+                    // A score that cannot be planned as audio stems still has
+                    // the legacy single-track WAV renderer. With an explicit
+                    // mix there is no sensible fallback, so report the error.
+                    if (format != ExportFormat::Wav || options.explicit_mix || options.mix) throw;
+                    use_legacy = true;
+                }
+                if (!use_legacy) {
+                    return ExportData{document.revision,
+                                      encode_audio_export(document, options, *codec)};
+                }
             }
         }
         auto data = export_native_score(document.project, export_backend_name(format), options, soundfont);
@@ -1117,8 +1040,12 @@ ScoreInfo MusicCore::open(const std::string& bytes, InputFormat format) {
     try {
         impl_->check_owner();
         impl_->ensure_capacity();
+        // MSCZ can carry the project's default mixer settings. Read them before
+        // the DOM exists and keep the identity-keyed values with the document.
+        ScoreAudioMixDefaults defaults;
+        if (format == InputFormat::Mscz) defaults = score_audio_mix_defaults(bytes);
         auto project = load_native_score(bytes, input_backend_name(format));
-        return impl_->insert(std::move(project), std::nullopt);
+        return impl_->insert(std::move(project), std::nullopt, std::move(defaults));
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
     }
@@ -1201,9 +1128,8 @@ ExcerptsData MusicCore::generate_excerpts(DocumentId id) {
         const Revision next{document.revision.value + 1};
         ExcerptsData result{next, list_score_excerpts(candidate->masterScore())};
         std::list<Impl::HistoryEntry> history{{next, {}, {}}};
-        auto audio_prepared = Impl::preserved_audio_mixes(document.audio_mixes, candidate);
+        // audio_mix_defaults is identity-keyed, so it survives this reload.
         document.project = std::move(candidate);
-        document.audio_mixes.swap(audio_prepared);
         document.revision = next;
         document.last_dom_reload = next;
         Impl::publish_history(document, history);
@@ -1217,38 +1143,22 @@ AudioTracksData MusicCore::audio_tracks(DocumentId id, int excerpt_id) {
     try {
         impl_->check_owner();
         const auto& document = impl_->find(id);
-        return AudioTracksData{document.revision,
-                                Impl::describe_audio_tracks(document.project, excerpt_id)};
+        auto tracks = Impl::describe_audio_tracks(document.project, excerpt_id);
+        const AudioMix mix = Impl::default_audio_mix(document, tracks);
+        for (std::size_t index = 0; index < tracks.size() && index < mix.tracks.size(); ++index) {
+            tracks[index].output = mix.tracks[index].output;
+        }
+        return AudioTracksData{document.revision, std::move(tracks)};
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
     }
 }
 
-AudioMixData MusicCore::audio_mix(DocumentId id, int excerpt_id) {
+AudioMix MusicCore::audio_export_mix(DocumentId id, const ExportOptions& options) {
     try {
         impl_->check_owner();
         const auto& document = impl_->find(id);
-        return impl_->get_audio_mix(document, excerpt_id);
-    } catch (...) {
-        translate_current_exception(CoreError::Code::engine_failure);
-    }
-}
-
-AudioMixData MusicCore::set_audio_mix(DocumentId id, const AudioMix& mix, int excerpt_id) {
-    try {
-        impl_->check_owner();
-        auto& document = impl_->find(id);
-        return impl_->set_audio_mix(document, mix, excerpt_id);
-    } catch (...) {
-        translate_current_exception(CoreError::Code::engine_failure);
-    }
-}
-
-AudioMixData MusicCore::set_audio_mix(DocumentId id, const AudioMixPatch& patch, int excerpt_id) {
-    try {
-        impl_->check_owner();
-        auto& document = impl_->find(id);
-        return impl_->set_audio_mix(document, patch, excerpt_id);
+        return impl_->export_mix(document, options);
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
     }

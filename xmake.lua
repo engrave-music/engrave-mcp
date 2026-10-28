@@ -11,7 +11,7 @@
 --   score_engine                     private engraving and format adapters
 --   music_core                       typed owner-thread document facade
 --   musescore_mcp                    stdio JSON-RPC host (musescore-mcp binary)
---   probe targets                    existing noqt/offline audio probes
+--   test targets                     engine, core and adapter regression binaries
 
 set_project("musescore-mcp")
 set_xmakever("3.1.1")
@@ -531,15 +531,6 @@ target("noqt_support_test")
         add_files(path.join(project_root, "native", "utf8.manifest"))
     end
 
-target("offline_audio_probe")
-    set_kind("binary")
-    add_deps("muse_generated", "native_audio")
-    add_manifest_target("offline_audio_probe")
-    add_links("z")
-    if is_plat("windows") then
-        add_files(path.join(project_root, "native", "utf8.manifest"))
-    end
-
 target("score_positions_test")
     set_kind("binary")
     add_deps("muse_generated", "score_engine")
@@ -595,12 +586,4 @@ target_end()
 add_engine_test("music_core_test", "music_core_test.cpp")
 target("music_core_test")
     add_deps("music_core")
-target_end()
-
-target("audio_test")
-    set_kind("binary")
-    add_deps("native_audio")
-    add_files(path.join(project_root, "native", "audio_test.cpp"))
-    add_links("sndfile")
-    if is_plat("windows") then add_files(path.join(project_root, "native", "utf8.manifest")) end
 target_end()

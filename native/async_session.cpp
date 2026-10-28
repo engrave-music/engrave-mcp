@@ -60,13 +60,6 @@ void only_keys(const Json& args, std::initializer_list<std::string_view> keys) {
         if (std::find(keys.begin(), keys.end(), key) == keys.end())
             throw std::invalid_argument("Unknown argument: " + key);
 }
-double finite_seconds(const Json& value) {
-    if (!value.is_number()) throw std::invalid_argument("Time must be a number");
-    const auto seconds = value.get<double>();
-    if (!std::isfinite(seconds) || seconds < 0 || seconds >= 600)
-        throw std::invalid_argument("Time must be finite and in [0, 600) seconds");
-    return seconds;
-}
 std::filesystem::path private_directory(const std::filesystem::path& parent) {
     std::random_device random;
     for (int i = 0; i != 16; ++i) {
@@ -101,9 +94,6 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         std::size_t captured_bytes = 0;
         std::uintmax_t bytes = 0;
         bool cancel_requested = false;
-        bool stream = false, command_busy = false, ready = false;
-        std::uint64_t sequence = 0;
-        std::chrono::steady_clock::time_point last_activity = std::chrono::steady_clock::now();
         std::unique_ptr<WorkerProcess> process;
         bool reserved = false;
         bool terminal() const { return state == "completed" || state == "failed" || state == "cancelled"; }
@@ -151,16 +141,13 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     std::deque<std::string> order;
     std::deque<std::shared_ptr<Impl>> owner_keep_alive;
     std::uint64_t serial = 0;
-    std::size_t running_streams = 0, running_exports = 0;
+    std::size_t running_exports = 0;
     bool closing = false;
     std::atomic<bool> owner_closing{false};
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     std::atomic<bool> test_owner_busy{false};
 #endif
-    // Streams live for the whole audio session, so exporting shares the active
-    // job cap but has its own worker budget rather than starving behind them.
-    static constexpr std::size_t max_running_streams = 2, max_running_exports = 2,
-                                 max_active = 16, max_retained = 64;
+    static constexpr std::size_t max_running_exports = 2, max_active = 16, max_retained = 64;
 
     Impl(RuntimeOptions options, std::filesystem::path executable) : executable(std::move(executable)) {
         std::promise<void> ready;
@@ -301,15 +288,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     Json describe(const Job& job) const {
         Json result = {{"jobId", job.id}, {"documentId", document_id_to_string(job.document)},
                        {"revision", job.revision.value}, {"state", job.state},
-                       {"format", format_name(job.format)}, {"path", path_utf8(job.destination)}};
-        if (job.stream) {
-            result.erase("path");
-            result.erase("format");
-            result["kind"] = "audio";
-            result["ready"] = job.ready;
-            result["sampleRate"] = 44100;
-            result["chunkFrames"] = 512;
-        } else result["kind"] = "export";
+                       {"format", format_name(job.format)}, {"path", path_utf8(job.destination)},
+                       {"kind", "export"}};
         if (job.state == "completed") result["bytes"] = job.bytes;
         if (!job.error.empty()) result["error"] = job.error;
         if (job.cancel_requested && !job.terminal()) result["cancelRequested"] = true;
@@ -338,26 +318,21 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             } else ++it;
         }
     }
-    asio::awaitable<std::shared_ptr<Job>> create(Json args, bool stream = false) {
+    asio::awaitable<std::shared_ptr<Job>> create(Json args) {
         if (closing) throw std::runtime_error("Session is shutting down");
-        if (stream) only_keys(args, {"documentId", "excerptId", "expectedRevision", "startTime", "expandRepeats", "exportRPNs"});
-        else only_keys(args, {"documentId", "format", "path", "page", "pngDpi", "drawPageBackground",
-                              "transparent", "expandRepeats", "exportRPNs", "expectedRevision", "excerptId"});
-        const double start = stream && args.contains("startTime") ? finite_seconds(args.at("startTime")) : 0;
+        only_keys(args, {"documentId", "format", "path", "page", "pngDpi", "drawPageBackground",
+                         "transparent", "expandRepeats", "exportRPNs", "expectedRevision", "excerptId", "mix"});
         const auto active = std::count_if(jobs.begin(), jobs.end(), [](const auto& pair) { return !pair.second->terminal(); });
         if (active >= max_active) throw CoreError(CoreError::Code::resource_limit, "Background job queue full (limit 16)");
-        const auto format = stream ? std::optional<ExportFormat>{ExportFormat::Wav} : export_format_from_name(text_arg(args, "format"));
+        const auto format = export_format_from_name(text_arg(args, "format"));
         if (!format) throw std::invalid_argument("Unsupported export format");
         const auto options = parse_export_options(args, *format);
-        std::filesystem::path destination;
-        if (!stream) {
-            destination = normalize_output_path(std::filesystem::u8path(text_arg(args, "path")));
-            if (is_output_path_reserved(destination))
+        const auto destination = normalize_output_path(std::filesystem::u8path(text_arg(args, "path")));
+        if (is_output_path_reserved(destination))
+            throw ToolCallError("busy", "Another job owns this export destination");
+        for (const auto& [_, job] : jobs)
+            if (!job->terminal() && same_output_path(job->destination, destination))
                 throw ToolCallError("busy", "Another job owns this export destination");
-            for (const auto& [_, job] : jobs)
-                if (!job->terminal() && !job->stream && same_output_path(job->destination, destination))
-                    throw ToolCallError("busy", "Another job owns this export destination");
-        }
         const auto document = document_id_from_string(text_arg(args, "documentId"));
         constexpr std::size_t maximum_snapshot = 8 * 1024 * 1024;
         if (maximum_snapshot > 64 * 1024 * 1024 - snapshot_bytes)
@@ -366,7 +341,6 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         job->id = "job-" + std::to_string(++serial);
         job->document = document;
         job->format = *format;
-        job->stream = stream;
         job->destination = destination;
         // Registration and reservation are part of the guarded section: any
         // failure below must erase the job and release its slot, reservation
@@ -374,10 +348,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         bool registered = false, ordered = false;
         try {
             // Reserved only once the job owns the path, so Job::cleanup always releases it.
-            if (!destination.empty()) {
-                reserve_output_path(destination);
-                job->reserved = true;
-            }
+            reserve_output_path(destination);
+            job->reserved = true;
             prune();
             jobs.emplace(job->id, job);
             registered = true;
@@ -386,12 +358,12 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             job->captured_bytes = maximum_snapshot;
             snapshot_bytes += maximum_snapshot;
             job->directory = private_directory(std::filesystem::absolute(std::filesystem::temp_directory_path()));
-            if (!stream) job->staging_directory = private_directory(destination.parent_path());
+            job->staging_directory = private_directory(destination.parent_path());
             const auto directory = job->directory;
             const auto staging_directory = job->staging_directory;
             const auto target_doc = document_id_to_string(document);
             auto captured = co_await on_owner([document, args = std::move(args), directory, staging_directory,
-                                              format = *format, options, stream, start](Engine& engine) {
+                                              format = *format, options](Engine& engine) {
                 const auto info = engine.core().describe(document);
                 if (args.contains("expectedRevision")) {
                     const auto& revision = args.at("expectedRevision");
@@ -413,23 +385,27 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 // source values so the worker exports what the session reports.
                 request.versions = result.snapshot.versions;
                 request.cache_directory = directory / "runtime-cache";
-                request.stream = stream;
-                request.start_seconds = start;
-                if (!is_audio_format(format) && !stream) {
-                    request.runtime.soundfont.clear();
-                }
-                if (stream) request.output_path = directory / "unused-output";
-                if (is_audio_format(format) || format == ExportFormat::Metadata) {
-                    try {
-                        request.mix = engine.core().audio_mix(document, options.excerpt_id).mix;
+                if (!is_audio_format(format)) request.runtime.soundfont.clear();
+                if (is_audio_format(format)) {
+                    // The snapshot does not embed audiosettings.json; send the
+                    // effective default-plus-override mix to the worker. A
+                    // neutral mix is omitted so WAV keeps the legacy renderer.
+                    const auto mix = engine.core().audio_export_mix(document, options);
+                    if (!is_neutral_mix(mix)) {
+                        request.mix = mix;
                         request.has_mix = true;
+                    }
+                } else if (format == ExportFormat::Metadata) {
+                    try {
+                        const auto mix = engine.core().audio_export_mix(document, options);
+                        if (!is_neutral_mix(mix)) {
+                            request.mix = mix;
+                            request.has_mix = true;
+                        }
                     } catch (const CoreError& error) {
                         // A score that cannot be planned as audio stems still
-                        // has metadata; it simply carries no mix or track list.
-                        if (format != ExportFormat::Metadata
-                            || error.code() != CoreError::Code::invalid_argument) {
-                            throw;
-                        }
+                        // has metadata; it simply carries no track list.
+                        if (error.code() != CoreError::Code::invalid_argument) throw;
                     }
                 }
                 write_atomic(directory / "request.json", worker_request_json(request).dump());
@@ -482,30 +458,12 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             asio::steady_timer timer(executor);
             std::optional<int> status;
             while (!(status = job->process->poll())) {
-                if (job->stream && !job->cancel_requested) {
-                    if (!job->ready && std::filesystem::exists(job->directory / "result.json")) {
-                        const auto ready = Json::parse(read_bounded_file(job->directory / "result.json", 64 * 1024));
-                        if (!ready.value("ok", false)) throw std::runtime_error(ready.value("error", "Audio worker failed"));
-                        job->ready = ready.value("ready", false);
-                        job->last_activity = std::chrono::steady_clock::now();
-                    }
-                    if (!job->command_busy && std::chrono::steady_clock::now() - job->last_activity > std::chrono::seconds(120)) {
-                        job->error = "Audio session idle timeout";
-                        job->cancel_requested = true;
-                    }
-                }
                 if (job->cancel_requested || closing) job->process->terminate();
                 timer.expires_after(std::chrono::milliseconds(20));
                 co_await timer.async_wait(asio::use_awaitable);
             }
-            if (job->cancel_requested || closing) job->state = "cancelled";
-            else if (job->stream) {
-                if (*status == 0 && (std::chrono::steady_clock::now() - job->last_activity >= std::chrono::seconds(120))) {
-                    job->state = "cancelled";
-                    if (job->error.empty()) job->error = "Audio session idle timeout";
-                } else {
-                    throw std::runtime_error("Audio worker exited before cancellation");
-                }
+            if (job->cancel_requested || closing) {
+                job->state = "cancelled";
             } else {
                 const auto result = Json::parse(read_bounded_file(job->directory / "result.json", 64 * 1024));
                 if (*status != 0 || !result.value("ok", false))
@@ -527,109 +485,23 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             if (job->state == "failed") job->error = "Unknown export worker failure";
         }
         release(job);
-        if (job->stream) --running_streams;
-        else --running_exports;
+        --running_exports;
         launch(executor);
-    }
-    asio::awaitable<Json> audio_command(const std::string& name, Json args) {
-        if (name == "score_audio_read") only_keys(args, {"jobId", "batchSize"});
-        else only_keys(args, {"jobId", "seconds"});
-        auto job = find(args);
-        if (!job->stream) throw std::invalid_argument("Job is not an audio session");
-        if (job->terminal() || job->cancel_requested) throw ToolCallError("not_found", "Audio session has ended");
-        if (job->command_busy) throw ToolCallError("busy", "Audio session already has a pending command");
-        if (job->state != "running") throw ToolCallError("busy", job->state == "queued"
-            ? "Audio session is waiting for a worker slot" : "Audio session is preparing");
-        Json command;
-        if (name == "score_audio_read") {
-            const auto count = args.value("batchSize", Json(1));
-            if (!count.is_number_integer() || count < 1 || count > 16)
-                throw std::invalid_argument("batchSize must be an integer between 1 and 16");
-            command = {{"operation", "read"}, {"batchSize", count}};
-        } else {
-            if (!args.contains("seconds")) throw std::invalid_argument("seconds is required");
-            if (!args.at("seconds").is_number()) throw std::invalid_argument("seconds must be numeric");
-            const auto sec = args.at("seconds").get<double>();
-            if (!std::isfinite(sec)) throw std::invalid_argument("seconds must be finite");
-            command = {{"operation", "seek"}, {"seconds", sec}};
-        }
-        job->command_busy = true;
-        struct CommandGuard {
-            std::shared_ptr<Job> job;
-            ~CommandGuard() { job->command_busy = false; job->last_activity = std::chrono::steady_clock::now(); }
-        } guard{job};
-        const auto executor = co_await asio::this_coro::executor;
-        asio::steady_timer timer(executor);
-        const auto directory = job->directory;
-        bool worker_error = false;
-        std::string worker_error_message;
-        try {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
-            while (!job->ready) {
-                if (job->terminal() || job->cancel_requested) throw ToolCallError("cancelled", "Audio session ended during startup");
-                if (std::chrono::steady_clock::now() > deadline) throw ToolCallError("timeout", "Audio worker startup timed out");
-                timer.expires_after(std::chrono::milliseconds(5));
-                co_await timer.async_wait(asio::use_awaitable);
-            }
-            command["sequence"] = ++job->sequence;
-            write_atomic(directory / "command.json", command.dump());
-            for (;;) {
-                if (job->terminal() || job->cancel_requested) throw ToolCallError("cancelled", "Audio command cancelled");
-                if (std::filesystem::exists(directory / "reply.json")) {
-                    auto reply = Json::parse(read_bounded_file(directory / "reply.json", 1024 * 1024));
-                    std::filesystem::remove(directory / "reply.json");
-                    if (reply.at("sequence").get<std::uint64_t>() != job->sequence)
-                        throw std::runtime_error("Audio worker sequence mismatch");
-                    if (!reply.value("ok", false)) {
-                        worker_error = true;
-                        worker_error_message = reply.value("error", "Audio command failed");
-                        if (!reply.value("recoverable", false)) {
-                            cancel(job);
-                        }
-                        break;
-                    }
-                    reply.erase("version"); reply.erase("ok"); reply.erase("sequence");
-                    reply["jobId"] = job->id;
-                    reply["revision"] = job->revision.value;
-                    reply["sampleRate"] = 44100;
-                    co_return reply;
-                }
-                if (std::chrono::steady_clock::now() > deadline) throw ToolCallError("timeout", "Audio command timed out");
-                timer.expires_after(std::chrono::milliseconds(5));
-                co_await timer.async_wait(asio::use_awaitable);
-            }
-        } catch (...) {
-            // Abandoning a command invalidates its sequence; kill only this owned child.
-            cancel(job);
-            throw;
-        }
-        if (worker_error) {
-            throw ToolCallError("engine_failure", worker_error_message);
-        }
     }
     void launch(asio::any_io_executor executor) {
         if (closing) return;
         for (const auto& id : order) {
             auto job = jobs.at(id);
             if (job->state != "queued") continue;
-            // A full stream budget must not hold back queued exports, and vice versa.
-            if (job->stream ? running_streams >= max_running_streams
-                            : running_exports >= max_running_exports) {
-                continue;
-            }
+            if (running_exports >= max_running_exports) continue;
             try {
                 job->process = std::make_unique<WorkerProcess>(executable, job->directory / "request.json", job->directory / "worker.log");
                 job->state = "running";
-                job->last_activity = std::chrono::steady_clock::now();
-                if (job->stream) ++running_streams;
-                else ++running_exports;
+                ++running_exports;
                 auto self = shared_from_this();
                 asio::co_spawn(executor, [self, job]() -> asio::awaitable<void> { co_await self->monitor(job); }, asio::detached);
             } catch (const std::exception& error) {
-                if (job->state == "running") {
-                    if (job->stream) --running_streams;
-                    else --running_exports;
-                }
+                if (job->state == "running") --running_exports;
                 job->state = "failed";
                 job->error = std::string(error.what()).substr(0, 2048);
                 release(job);
@@ -713,13 +585,11 @@ asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json argume
                 throw ToolCallError("busy", "Another job owns this export destination");
         }
     }
-    if (name == "score_export_start" || name == "score_audio_start") {
-        auto job = co_await self->create(std::move(arguments), name == "score_audio_start");
+    if (name == "score_export_start") {
+        auto job = co_await self->create(std::move(arguments));
         self->launch(executor);
         co_return self->describe(*job);
     }
-    if (name == "score_audio_read" || name == "score_audio_seek")
-        co_return co_await self->audio_command(name, std::move(arguments));
     if (name == "score_job_get" || name == "score_job_cancel") {
         only_keys(arguments, {"jobId"});
         auto job = self->find(arguments);
@@ -781,7 +651,7 @@ asio::awaitable<nlohmann::json> AsyncSession::call(std::string name, Json argume
         if (name == "score_close") result.closed_document = text_arg(arguments, "documentId");
         else if (result.payload.is_object() && result.payload.contains("documentId"))
             refresh.push_back(document_id_from_string(result.payload.at("documentId").get<std::string>()));
-        else if (name == "score_generate_excerpts" || name == "score_audio_set_mix")
+        else if (name == "score_generate_excerpts")
             refresh.push_back(document_id_from_string(text_arg(arguments, "documentId")));
         // A projection failure must not turn an already committed edit into a reported failure.
         for (const auto id : refresh) {

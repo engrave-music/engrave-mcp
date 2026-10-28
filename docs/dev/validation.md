@@ -454,3 +454,22 @@ New round-trip baseline losses: ghost_note (first save after the 4.10 read write
 one NoteParenGroup twice) and a 4/4 time signature added to linked tab staves after
 MusicXML import. New lane `repeats`: all 72 upstream repeat_tests.cpp orders
 match through measurePositions (executed, Windows).
+
+## Roadmap step 4: trim streaming audio and stateful mix (2026-10-28)
+
+Removed tools score_audio_start/read/seek and score_audio_get_mix/set_mix with the
+worker stream protocol, the stream budget and the 120 s/150 s timers; per-document
+mix state and its revision bumps are gone. Audio exports (score_export and
+score_export_start, wav/flac/ogg/mp3) take a `mix` option that overrides, field by
+field, the document's default mix: the MSCZ audiosettings.json mix (master
+volumeDb/balance; tracks by partId+instrumentId: out.volumeDb/balance,
+soloMuteState.mute/solo) when opened from such an archive, otherwise neutral.
+forceMute is derived. score_audio_tracks and metadata.tracks report the defaults.
+Deleted: offline_audio_probe, audio_test, dead Qt-era native/engine.cpp and
+native/result.h. 16 tools remain.
+- Executed, Windows: 23/23 lanes; goldens unchanged (no export output changed);
+  audio_facade covers solo/mute silence, volumeDb gain (within 0.2 dB), balance by
+  L/R energy, master volume and rejections; fixtures/audio/mix.mscz (Cello muted
+  in audiosettings.json) exports a silent Cello by default and an audible one with
+  an override; a background WAV with a mix is byte-identical to the synchronous one;
+  exports never advance the revision.

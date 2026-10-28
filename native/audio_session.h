@@ -44,6 +44,14 @@ struct AudioChunk {
     std::vector<float> right;
 };
 
+// Recomputes forceMute as playback does: when any track is soloed, every
+// non-solo track is force-muted. The stored mute flags are left untouched.
+void derive_force_mute(AudioMix& mix) noexcept;
+
+// True when master and every track use neutral output parameters, i.e. the
+// legacy single-track renderer produces the same audible result.
+bool is_neutral_mix(const AudioMix& mix) noexcept;
+
 // All sessions in a process share one audio owner OS thread. Only cancel() and
 // cancelled() may be called from another thread. Use processes for parallel audio.
 // Sessions retain MIDI and their loaded SoundFont; replacing a global SoundFont

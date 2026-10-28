@@ -164,47 +164,19 @@ struct ExcerptsData {
 };
 
 // Owned descriptor for one audio stem of a selected score. The fields mirror
-// the private score_audio helper without exposing raw score objects.
+// the private score_audio helper without exposing raw score objects. output
+// carries the document's default mix values for this track.
 struct AudioTrackInfo {
     std::int64_t track_id = 0;
     std::string part_id;
     std::string instrument_id;
     std::string name;
+    AudioOutputParams output;
 };
 
 struct AudioTracksData {
     Revision revision;
     std::vector<AudioTrackInfo> tracks;
-};
-
-struct AudioMixData {
-    Revision revision;
-    AudioMix mix;
-};
-
-// Partial audio output parameters patch. Unspecified fields keep current state.
-struct AudioOutputPatch {
-    std::optional<double> volume_db;
-    std::optional<double> balance;
-    std::optional<bool> solo;
-    std::optional<bool> muted;
-    std::optional<bool> force_mute;
-    bool operator==(const AudioOutputPatch&) const = default;
-};
-
-// Partial track mix patch specifying a trackId and a subset of output parameters.
-struct AudioTrackPatch {
-    std::int64_t track_id = 0;
-    AudioOutputPatch output;
-    bool operator==(const AudioTrackPatch&) const = default;
-};
-
-// Partial audio mix patch. Both master and tracks are optional.
-// tracks may specify a subset of tracks. Unspecified fields retain current state.
-struct AudioMixPatch {
-    std::optional<AudioOutputPatch> master;
-    std::optional<std::vector<AudioTrackPatch>> tracks;
-    bool operator==(const AudioMixPatch&) const = default;
 };
 
 struct ExportData {
@@ -280,12 +252,13 @@ public:
     std::shared_ptr<const ScoreReadSnapshot> read_snapshot(DocumentId id);
     ExcerptsData excerpts(DocumentId id);
     ExcerptsData generate_excerpts(DocumentId id);
-    // Audio descriptors and the full replacement mix for the selected score.
-    // Mix changes advance the document revision but never mark a DOM reload.
+    // Audio descriptors for the selected score, including the document's
+    // default output values (MSCZ audiosettings.json or neutral).
     AudioTracksData audio_tracks(DocumentId id, int excerpt_id = -1);
-    AudioMixData audio_mix(DocumentId id, int excerpt_id = -1);
-    AudioMixData set_audio_mix(DocumentId id, const AudioMix& mix, int excerpt_id = -1);
-    AudioMixData set_audio_mix(DocumentId id, const AudioMixPatch& patch, int excerpt_id = -1);
+    // Resolve the default mix plus any export-time overrides. Used by the host
+    // to hand an effective mix to a background worker. Read-only: exports and
+    // mix resolution never change document state or revision.
+    AudioMix audio_export_mix(DocumentId id, const ExportOptions& options = {});
     // Owns freshly rendered stems, the selected SoundFont, and the applied mix.
     // The returned session must be destroyed on this MusicCore's owner thread.
     // Its asset lease keeps the frozen SoundFont alive if it outlives this core.

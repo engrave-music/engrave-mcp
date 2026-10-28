@@ -129,6 +129,36 @@ void initialize_stem_synth(Stem& stem, const std::string& soundfont) {
 
 } // namespace
 
+void derive_force_mute(AudioMix& mix) noexcept
+{
+    bool any_solo = false;
+    for (const auto& track : mix.tracks) {
+        if (track.output.solo) {
+            any_solo = true;
+            break;
+        }
+    }
+    for (auto& track : mix.tracks) {
+        track.output.force_mute = any_solo && !track.output.solo;
+    }
+    // The master bus has no solo concept; explicit master mute is the only
+    // way it is silenced.
+    mix.master.force_mute = false;
+}
+
+bool is_neutral_mix(const AudioMix& mix) noexcept
+{
+    if (!(mix.master == AudioOutputParams{})) {
+        return false;
+    }
+    for (const auto& track : mix.tracks) {
+        if (!(track.output == AudioOutputParams{})) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void validate_soundfont(const std::string& path) {
     check_soundfont_path(path);
     detail::initialize_fluid_runtime();

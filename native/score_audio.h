@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "audio_session.h"
@@ -30,6 +32,30 @@ struct ScoreAudioTrackInfo {
 // Throws std::invalid_argument for a null score and std::runtime_error for a
 // structurally inconsistent score or an unsupported multi-instrument part.
 std::vector<ScoreAudioTrackInfo> score_audio_track_info(mu::engraving::Score* score);
+
+// Per-document default mix read from an MSCZ archive's audiosettings.json.
+// Tracks are keyed by the same (partId, instrumentId) identities that
+// score_audio_track_info() reports. Unknown entries and fields are ignored;
+// missing, malformed or non-MSCZ input yields neutral defaults.
+struct ScoreAudioMixDefaults {
+    AudioOutputParams master;
+    std::map<std::pair<std::string, std::string>, AudioOutputParams> tracks;
+
+    bool is_neutral() const noexcept
+    {
+        if (!(master == AudioOutputParams{})) return false;
+        for (const auto& [identity, output] : tracks) {
+            (void)identity;
+            if (!(output == AudioOutputParams{})) return false;
+        }
+        return true;
+    }
+};
+
+// Reads audiosettings.json from MSCZ bytes. Never throws: invalid archives,
+// absent files and malformed JSON all produce neutral defaults. Values outside
+// the supported range are ignored field by field.
+ScoreAudioMixDefaults score_audio_mix_defaults(const std::string& mscz_bytes);
 
 // Renders the score once with the upstream MIDI exporter, then builds one
 // format-1 MIDI file per part by grouping that part's staff tracks. Global

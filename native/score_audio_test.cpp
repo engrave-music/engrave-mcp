@@ -87,6 +87,40 @@ int main(int argc, char** argv)
     try {
         if (argc != 3) throw std::invalid_argument("Usage: score_audio_test ASSETS UPSTREAM_ROOT");
         music::initialize_native_runtime(argv[1]);
+
+        // Default mix: a document opened from MSCZ carries the archive's
+        // audiosettings.json values, matched by (partId, instrumentId).
+        expect(music::score_audio_mix_defaults("").is_neutral(), "Empty input must give neutral defaults");
+        expect(music::score_audio_mix_defaults("not a zip archive").is_neutral(),
+               "Invalid archive must give neutral defaults");
+        std::ifstream mix_stream("fixtures/audio/mix.mscz", std::ios::binary);
+        expect(bool(mix_stream), "Missing fixtures/audio/mix.mscz");
+        const std::string mix_bytes{std::istreambuf_iterator<char>(mix_stream),
+                                    std::istreambuf_iterator<char>()};
+        const auto defaults = music::score_audio_mix_defaults(mix_bytes);
+        expect(!defaults.is_neutral(), "MSCZ audiosettings.json was not read");
+        expect(defaults.master.volume_db == 0.0 && defaults.master.balance == 0.0,
+               "Unexpected fixture master defaults");
+        auto mix_project = music::load_native_score(mix_bytes, "mscz");
+        const auto mix_tracks = music::score_audio_track_info(mix_project->masterScore());
+        expect(mix_tracks.size() == 3, "Mix fixture must expose three tracks");
+        std::size_t muted_tracks = 0;
+        for (const auto& track : mix_tracks) {
+            const auto found = defaults.tracks.find({ track.part_id, track.instrument_id });
+            expect(found != defaults.tracks.end(), "audiosettings entry did not match a score track");
+            if (found->second.muted) ++muted_tracks;
+        }
+        expect(muted_tracks == 1, "MSCZ soloMuteState.mute was not applied");
+
+        music::AudioMix forced;
+        forced.tracks.push_back({0, music::AudioOutputParams{}});
+        forced.tracks.push_back({1, music::AudioOutputParams{}});
+        forced.tracks[0].output.solo = true;
+        music::derive_force_mute(forced);
+        expect(!forced.tracks[0].output.force_mute && forced.tracks[1].output.force_mute,
+               "forceMute must silence non-solo tracks");
+        expect(!music::is_neutral_mix(forced), "Soloed mix must not be neutral");
+
         auto project = music::load_native_score(fixture, "musicxml");
         auto* score = project->masterScore();
         const auto info = music::score_audio_track_info(score);
@@ -117,7 +151,8 @@ int main(int argc, char** argv)
             }
             expect(rejected, "Ambiguous instrument changes were silently mixed");
         }
-        std::cout << "{\"status\":\"passed\",\"logicalTracks\":2,\"staffTracks\":3,\"tempoPreserved\":true,\"programsPreserved\":true,\"staffKeysPreserved\":true,\"rpnOptions\":true,\"instrumentChange\":\"explicitly_rejected\"}\n";
+        std::cout << "{\"status\":\"passed\",\"logicalTracks\":2,\"staffTracks\":3,\"tempoPreserved\":true,\"programsPreserved\":true,\"staffKeysPreserved\":true,\"rpnOptions\":true,\"instrumentChange\":\"explicitly_rejected\",\"msczMixDefaults\":{\"tracks\":3,\"mutedTracks\":"
+                  << muted_tracks << "},\"forceMuteDerived\":true}\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

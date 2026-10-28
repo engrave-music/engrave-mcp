@@ -563,6 +563,34 @@ async def main() -> None:
                     ("out_of_range_pngDpi_too_high", {"format": "png", "pngDpi": 1201}),
                     ("out_of_range_page_negative", {"format": "svg", "page": -1}),
                     ("out_of_range_page_beyond_pages", {"format": "svg", "page": 999}),
+                    # Mix format restrictions (wav/flac/ogg/mp3 only)
+                    ("out_of_format_mix_svg", {"format": "svg", "mix": {"master": {"volumeDb": 0.0}}}),
+                    ("out_of_format_mix_png", {"format": "png", "mix": {"master": {"volumeDb": 0.0}}}),
+                    ("out_of_format_mix_midi", {"format": "midi", "mix": {"master": {"volumeDb": 0.0}}}),
+                    ("out_of_format_mix_musicxml", {"format": "musicxml", "mix": {"master": {"volumeDb": 0.0}}}),
+                    ("out_of_format_mix_pdf", {"format": "pdf", "mix": {"master": {"volumeDb": 0.0}}}),
+                    ("out_of_format_mix_mscz", {"format": "mscz", "mix": {"master": {"volumeDb": 0.0}}}),
+                    # Mix range restrictions
+                    ("out_of_range_mix_master_volumeDb_high", {"format": "wav", "mix": {"master": {"volumeDb": 24.1}}}),
+                    ("out_of_range_mix_master_volumeDb_low", {"format": "wav", "mix": {"master": {"volumeDb": -120.1}}}),
+                    ("out_of_range_mix_master_balance_high", {"format": "wav", "mix": {"master": {"balance": 1.1}}}),
+                    ("out_of_range_mix_master_balance_low", {"format": "wav", "mix": {"master": {"balance": -1.1}}}),
+                    ("out_of_range_mix_track_volumeDb_high", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "volumeDb": 24.1}]}}),
+                    ("out_of_range_mix_track_volumeDb_low", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "volumeDb": -120.1}]}}),
+                    ("out_of_range_mix_track_balance_high", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "balance": 1.1}]}}),
+                    ("out_of_range_mix_track_balance_low", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "balance": -1.1}]}}),
+                    ("out_of_range_mix_trackId_negative", {"format": "wav", "mix": {"tracks": [{"trackId": -1}]}}),
+                    # Mix unknown / forbidden keys
+                    ("unknown_key_mix_root", {"format": "wav", "mix": {"unknownProp": True}}),
+                    ("unknown_key_mix_master", {"format": "wav", "mix": {"master": {"unknownProp": True}}}),
+                    ("forbidden_key_mix_master_solo", {"format": "wav", "mix": {"master": {"solo": True}}}),
+                    ("forbidden_key_mix_master_muted", {"format": "wav", "mix": {"master": {"muted": True}}}),
+                    ("forbidden_key_mix_track_forceMute", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "forceMute": True}]}}),
+                    ("forbidden_key_mix_track_output", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "output": {}}]}}),
+                    ("unknown_key_mix_track", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "unknownProp": 1}]}}),
+                    # Semantic mix rejections: duplicate and unknown trackIds
+                    ("duplicate_trackId_mix", {"format": "wav", "mix": {"tracks": [{"trackId": 0}, {"trackId": 0}]}}),
+                    ("unknown_trackId_mix", {"format": "wav", "mix": {"tracks": [{"trackId": 999999}]}}),
                 ]
 
                 sentinel_evidence = []
@@ -750,7 +778,7 @@ async def main() -> None:
                     "Metadata 'tracks' must not be empty"
                 )
                 first_meta_track = meta_data["tracks"][0]
-                for required_key in ("trackId", "name", "partId", "instrumentId", "volumeDb", "volume", "balance", "solo", "muted", "forceMute"):
+                for required_key in ("trackId", "name", "partId", "instrumentId", "volumeDb", "balance", "solo", "muted", "forceMute"):
                     assert required_key in first_meta_track, f"Metadata track missing required field {required_key}"
                 report["evidence"]["metadata_export"] = {
                     "executed": True,

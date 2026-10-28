@@ -6,8 +6,6 @@
 #include <stdexcept>
 #include <limits>
 #include <cmath>
-#include <thread>
-#include <chrono>
 
 namespace music {
 namespace {
@@ -29,13 +27,6 @@ Json parse_bounded_json(const std::filesystem::path& path, std::size_t limit) {
         if (depth > 64) throw std::invalid_argument("Worker JSON nesting exceeds 64 levels");
         return true;
     });
-}
-double seconds_value(const Json& value) {
-    if (!value.is_number()) throw std::invalid_argument("Time must be numeric");
-    const auto seconds = value.get<double>();
-    if (!std::isfinite(seconds) || seconds < 0 || seconds >= 600)
-        throw std::invalid_argument("Time must be finite and in [0, 600) seconds");
-    return seconds;
 }
 Json output_json(const AudioOutputParams& output) {
     return {{"volumeDb", output.volume_db}, {"balance", output.balance}, {"solo", output.solo},
@@ -60,68 +51,54 @@ AudioMix parse_mix(const Json& value) {
         mix.tracks.push_back({track.at("trackId").get<std::int64_t>(), parse_output(track.at("output"))});
     return mix; // Core validates finite ranges, duplicate IDs and complete track identity.
 }
-void serve_audio_commands(AudioSession& session, const std::filesystem::path& directory) {
-    auto idle_since = std::chrono::steady_clock::now();
-    std::uint64_t expected_sequence = 1;
-    const auto command_path = directory / "command.json", reply_path = directory / "reply.json";
-    for (;;) {
-        if (!std::filesystem::exists(command_path)) {
-            if (std::chrono::steady_clock::now() - idle_since > std::chrono::seconds(150)) return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            continue;
+void reject_unknown_keys(const Json& object, std::initializer_list<const char*> allowed,
+                         const std::string& path) {
+    if (!object.is_object()) throw std::invalid_argument(path + " must be an object");
+    for (auto it = object.begin(); it != object.end(); ++it) {
+        bool found = false;
+        for (const char* key : allowed) {
+            if (it.key() == key) {
+                found = true;
+                break;
+            }
         }
-        if (std::filesystem::exists(reply_path)) throw std::runtime_error("Unconsumed audio reply");
-        Json reply = {{"version", 1}, {"sequence", expected_sequence}};
-        try {
-            const auto command = parse_bounded_json(command_path, request_limit);
-            std::filesystem::remove(command_path);
-            const auto& sequence = command.at("sequence");
-            if (!sequence.is_number_integer() || sequence < 1 || sequence != expected_sequence)
-                throw std::invalid_argument("Audio command sequence mismatch");
-            const auto operation = string_field(command, "operation");
-            if (operation == "read") {
-                const auto& batch = command.at("batchSize");
-                if (!batch.is_number_integer() || batch < 1 || batch > 16)
-                    throw std::invalid_argument("Audio batchSize must be between 1 and 16");
-                Json chunks = Json::array();
-                for (const auto& chunk : session.read_batch(batch.get<std::size_t>())) {
-                    if (chunk.left.size() > audio_chunk_frames || chunk.right.size() != chunk.left.size())
-                        throw std::runtime_error("Audio chunk exceeded frame bound");
-                    chunks.push_back({{"done", chunk.done}, {"startTime", chunk.start_time},
-                        {"endTime", chunk.end_time}, {"left", chunk.left}, {"right", chunk.right}});
-                }
-                reply["chunks"] = std::move(chunks);
-            } else if (operation == "seek") {
-                const auto seconds = seconds_value(command.at("seconds"));
-                session.seek(seconds);
-                reply["seconds"] = seconds;
-            } else throw std::invalid_argument("Unknown audio operation");
-            reply["ok"] = true;
-        } catch (const std::invalid_argument& error) {
-            std::error_code ignored;
-            std::filesystem::remove(command_path, ignored);
-            reply["ok"] = false;
-            reply["recoverable"] = true;
-            reply["error"] = std::string(error.what()).substr(0, 2048);
-        } catch (const std::exception& error) {
-            std::error_code ignored;
-            std::filesystem::remove(command_path, ignored);
-            reply["ok"] = false;
-            reply["recoverable"] = false;
-            reply["error"] = std::string(error.what()).substr(0, 2048);
-        } catch (...) {
-            std::error_code ignored;
-            std::filesystem::remove(command_path, ignored);
-            reply["ok"] = false;
-            reply["recoverable"] = false;
-            reply["error"] = "Unknown audio command failure";
-        }
-        ++expected_sequence;
-        const auto encoded = reply.dump();
-        if (encoded.size() > 1024 * 1024) throw std::runtime_error("Audio reply exceeds byte limit");
-        write_atomic(reply_path, encoded);
-        idle_since = std::chrono::steady_clock::now();
+        if (!found) throw std::invalid_argument("Unknown key in " + path + ": " + it.key());
     }
+}
+void decode_output_override(const Json& object, AudioOutputOverride& output, const std::string& path) {
+    const auto number = [&](const char* key, std::optional<double>& target, double minimum, double maximum) {
+        if (!object.contains(key)) return;
+        const auto& value = object.at(key);
+        if (!value.is_number() || value.is_boolean())
+            throw std::invalid_argument(path + "." + key + " must be a number");
+        const double result = value.get<double>();
+        if (!std::isfinite(result) || result < minimum || result > maximum)
+            throw std::invalid_argument(path + "." + key + " is out of range");
+        target = result;
+    };
+    const auto boolean = [&](const char* key, std::optional<bool>& target) {
+        if (!object.contains(key)) return;
+        const auto& value = object.at(key);
+        if (!value.is_boolean()) throw std::invalid_argument(path + "." + key + " must be a boolean");
+        target = value.get<bool>();
+    };
+    number("volumeDb", output.volume_db, -120.0, 24.0);
+    number("balance", output.balance, -1.0, 1.0);
+    boolean("solo", output.solo);
+    boolean("muted", output.muted);
+}
+std::int64_t track_id_value(const Json& value, const std::string& path) {
+    if (!value.is_number_integer() || value.is_boolean())
+        throw std::invalid_argument(path + " must be a non-negative integer");
+    if (value.is_number_unsigned()) {
+        const auto raw = value.get<std::uint64_t>();
+        if (raw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+            throw std::invalid_argument(path + " is out of range");
+        return static_cast<std::int64_t>(raw);
+    }
+    const auto raw = value.get<std::int64_t>();
+    if (raw < 0) throw std::invalid_argument(path + " must be a non-negative integer");
+    return raw;
 }
 std::filesystem::path absolute_field(const Json& json, const char* name) {
     auto path = std::filesystem::u8path(string_field(json, name));
@@ -169,6 +146,34 @@ std::string read_bounded_file(const std::filesystem::path& path, std::size_t lim
     return result;
 }
 
+AudioMixOverride parse_audio_mix_override(const Json& json) {
+    if (!json.is_object()) throw std::invalid_argument("mix must be an object");
+    reject_unknown_keys(json, {"master", "tracks"}, "mix");
+
+    AudioMixOverride result;
+    if (json.contains("master")) {
+        reject_unknown_keys(json.at("master"), {"volumeDb", "balance"}, "mix.master");
+        decode_output_override(json.at("master"), result.master, "mix.master");
+    }
+    if (!json.contains("tracks")) return result;
+
+    const auto& tracks = json.at("tracks");
+    if (!tracks.is_array()) throw std::invalid_argument("mix.tracks must be an array");
+    if (tracks.size() > 256) throw std::invalid_argument("mix.tracks must contain at most 256 entries");
+    result.tracks.reserve(tracks.size());
+    for (std::size_t index = 0; index < tracks.size(); ++index) {
+        const auto& entry = tracks.at(index);
+        const std::string path = "mix.tracks[" + std::to_string(index) + "]";
+        reject_unknown_keys(entry, {"trackId", "volumeDb", "balance", "solo", "muted"}, path);
+        if (!entry.contains("trackId")) throw std::invalid_argument(path + ".trackId is required");
+        AudioTrackMixOverride track;
+        track.track_id = track_id_value(entry.at("trackId"), path + ".trackId");
+        decode_output_override(entry, track.output, path);
+        result.tracks.push_back(std::move(track));
+    }
+    return result;
+}
+
 ExportOptions parse_export_options(const Json& args, ExportFormat format) {
     ExportOptions result;
     const bool image = format == ExportFormat::Png || format == ExportFormat::Svg;
@@ -194,6 +199,11 @@ ExportOptions parse_export_options(const Json& args, ExportFormat format) {
     boolean("transparent", result.transparent, format == ExportFormat::Png);
     boolean("expandRepeats", result.midi_expand_repeats, midi);
     boolean("exportRPNs", result.midi_export_rpns, midi);
+    if (args.contains("mix")) {
+        if (!is_audio_format(format))
+            throw std::invalid_argument("mix does not apply to this format");
+        result.mix = parse_audio_mix_override(args.at("mix"));
+    }
     return result;
 }
 
@@ -214,7 +224,7 @@ Json worker_request_json(const ExportWorkerRequest& request) {
     Json result = {{"version", 1}, {"parentPid", current_process_id()}, {"snapshot", path_utf8(request.snapshot_path)},
             {"output", path_utf8(request.output_path)}, {"result", path_utf8(request.result_path)},
             {"resources", request.runtime.resources_path}, {"soundfont", request.runtime.soundfont},
-            {"format", format_name(request.format)}, {"options", std::move(options)}, {"fonts", request.runtime.font_paths}, {"stream", request.stream}, {"startTime", request.start_seconds},
+            {"format", format_name(request.format)}, {"options", std::move(options)}, {"fonts", request.runtime.font_paths},
             {"mscoreVersion", request.versions.mscore_version}, {"mscoreRevision", request.versions.mscore_revision},
             {"mscVersion", request.versions.msc_version}};
     if (!request.cache_directory.empty()) result["cacheDirectory"] = path_utf8(request.cache_directory);
@@ -241,12 +251,13 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
         const auto format = export_format_from_name(string_field(request, "format"));
         if (!format) throw std::invalid_argument("Unsupported worker export format");
         const auto options = parse_export_options(request.at("options"), *format);
+        ExportOptions effective = options;
+        if (request.contains("mix")) effective.explicit_mix = parse_mix(request.at("mix"));
         const ScoreVersions versions{version_string(request, "mscoreVersion"),
             version_integer(request, "mscoreRevision", 0, std::numeric_limits<int>::max()),
             version_integer(request, "mscVersion", 0, 100000)};
-        const bool stream = request.value("stream", false);
         RuntimeOptions runtime{path_utf8(absolute_field(request, "resources")),
-                               (is_audio_format(*format) || stream) ? request.at("soundfont").get<std::string>() : std::string{}};
+                               is_audio_format(*format) ? request.at("soundfont").get<std::string>() : std::string{}};
         runtime.font_paths = request.at("fonts").get<std::vector<std::string>>();
         if (request.contains("cacheDirectory")) {
             const auto cache_dir = absolute_field(request, "cacheDirectory");
@@ -265,19 +276,7 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
         // The snapshot was serialized by our own writer, which stamped the
         // running program; restore the source file's version before exporting.
         core.restore_versions(score.id, versions);
-        if (request.contains("mix")) core.set_audio_mix(score.id, parse_mix(request.at("mix")), options.excerpt_id);
-        if (request.value("stream", false)) {
-            if (!is_audio_format(*format)) throw std::invalid_argument("Streaming requires audio format");
-            {
-                auto session = core.create_audio_session(score.id, options, seconds_value(request.at("startTime")));
-                write_atomic(result_path, Json{{"version", 1}, {"ok", true}, {"ready", true},
-                                              {"sampleRate", 44100}, {"chunkFrames", 512}}.dump());
-                serve_audio_commands(*session, request_path.parent_path());
-            }
-            core.close(score.id);
-            return 0;
-        }
-        const auto data = core.export_bytes(score.id, *format, options);
+        const auto data = core.export_bytes(score.id, *format, effective);
         if (data.bytes.empty() || data.bytes.size() > output_limit)
             throw std::runtime_error("Worker export exceeds output size limit");
         write_atomic(output, data.bytes);
