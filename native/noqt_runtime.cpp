@@ -32,7 +32,9 @@
 #include "importexport/musicxml/internal/musicxmlconfiguration.h"
 #include "importexport/midi/internal/midiexport/exportmidi.h"
 #include <iostream>
+#include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace music {
 using namespace muse;
@@ -78,6 +80,60 @@ void check_zip(ZipReader& zip) {
     }
     if (zip.hasError()) throw std::invalid_argument("Invalid archive");
 }
+
+// Context-scoped module setups (modularity::IContextSetup) belong to the
+// process-wide context and are never destroyed while the engine lives.
+std::vector<std::unique_ptr<modularity::IContextSetup> > s_contextSetups;
+
+// The Qt-free part of AppFactory::addConsoleModules(): the framework "mpe"
+// module, then the engraving module, then the import/export modules. "draw" is
+// not a module here because DRAW_NO_INTERNAL makes DrawModule a no-op and the
+// host installs its own font database/engine (install_runtime_font_services);
+// "audio" is registered by engine_audio.cpp through EngineGlobalSetup, and "midi"
+// has no compiled module (the MIDI import/export path is a direct function call).
+void setup_modules(const std::vector<modularity::IModuleSetup*>& modules,
+                   const std::shared_ptr<iex::musicxml::MusicXmlConfiguration>& musicXml,
+                   const IApplication::RunMode runMode)
+{
+    // Phase order and grouping follow BaseApplication::doSetup(): every module
+    // registers its resources and exports first, only then imports are resolved,
+    // then onPreInit -> onInit -> onAllInited run over the whole list.
+    for (auto* module : modules) module->registerResources();
+    for (auto* module : modules) module->registerExports();
+
+    for (auto* module : modules) module->resolveImports();
+
+    for (auto* module : modules) module->onPreInit(runMode);
+
+    for (auto* module : modules) module->onInit(runMode);
+    // MusicXmlModule::onInit() does exactly this. MUSICXML_NO_INTERNAL leaves that
+    // module empty, so the host creates and initialises the configuration itself.
+    if (musicXml) musicXml->init();
+
+    for (auto* module : modules) module->onAllInited(runMode);
+}
+
+// BaseApplication::setupContext(): the context-scoped setups, in the same phase
+// order as the global ones. With engraving internals compiled in this registers
+// the palette score provider, the context configuration and the elements
+// provider; under ENGRAVING_NO_INTERNAL every EngravingContext hook is empty.
+void setup_context_modules(const std::vector<modularity::IModuleSetup*>& modules,
+                           const modularity::ContextPtr& ctx,
+                           const IApplication::RunMode runMode)
+{
+    std::vector<modularity::IContextSetup*> setups;
+    for (auto* module : modules) {
+        if (auto* setup = module->newContext(ctx)) {
+            s_contextSetups.emplace_back(setup);
+            setups.push_back(setup);
+        }
+    }
+    for (auto* setup : setups) setup->registerExports();
+    for (auto* setup : setups) setup->resolveImports();
+    for (auto* setup : setups) setup->onPreInit(runMode);
+    for (auto* setup : setups) setup->onInit(runMode);
+    for (auto* setup : setups) setup->onAllInited(runMode);
+}
 }
 
 void initialize_native_runtime(const std::string& assets) {
@@ -91,21 +147,33 @@ void initialize_native_runtime(const std::string& assets) {
     auto* logger = logger::Logger::instance();
     logger->clearDests();
     logger->addDest(new StderrLog());
+
+    const IApplication::RunMode runMode = IApplication::RunMode::ConsoleApp;
+
+    // Host-owned exports come first, like BaseApplication::doSetup() registering
+    // IApplication before any module's exports.
     modularity::globalIoc()->registerExport<io::IFileSystem>("native", new NativeFileSystem(root));
     install_runtime_font_services();
     modularity::globalIoc()->registerExport<draw::IFontProvider>("native", new EngravingFontProvider());
     // Writer, MusicXML export, and the $v header macro resolve IApplication
     // through the project IoC; without it application() is null and export crashes.
-    modularity::globalIoc()->registerExport<IApplication>("native", std::make_shared<NoQtApplication>());
+    auto application = std::make_shared<NoQtApplication>();
+    modularity::globalIoc()->registerExport<IApplication>("native", application);
+
     // Module services live in the process-wide IoC; no desktop application is created.
-    engraving::EngravingModule engraving;
-    engraving.registerExports();
-    engraving.onInit(IApplication::RunMode::ConsoleApp);
     mpe::MpeModule mpe;
-    mpe.registerExports();
-    auto xml = std::make_shared<iex::musicxml::MusicXmlConfiguration>();
-    modularity::globalIoc()->registerExport<iex::musicxml::IMusicXmlConfiguration>("native", xml);
-    xml->init();
+    engraving::EngravingModule engraving;
+    std::vector<modularity::IModuleSetup*> modules{ &mpe, &engraving };
+    auto musicXml = std::make_shared<iex::musicxml::MusicXmlConfiguration>();
+    modularity::globalIoc()->registerExport<iex::musicxml::IMusicXmlConfiguration>("native", musicXml);
+
+    setup_modules(modules, musicXml, runMode);
+
+    // BaseApplication::setupNewContext() creates the context and runs the context
+    // setups after the global ones; NoQtApplication's single context is globalCtx.
+    const modularity::ContextPtr ctx = application->setupNewContext();
+    setup_context_modules(modules, ctx, runMode);
+
     engraving::loadInstrumentTemplates(":/engraving/instruments/instruments.xml");
 }
 
@@ -280,7 +348,7 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
             style_buffer.open(io::IODevice::WriteOnly);
             score_buffer.open(io::IODevice::WriteOnly);
             score->style().write(&style_buffer);
-            success = engraving::rw::RWRegister::writer(score->iocContext())->writeScore(score, &score_buffer);
+            success = engraving::rw::RWRegister::writer()->writeScore(score, &score_buffer);
             writer.writeStyleFile(style_data);
             writer.writeScoreFile(score_data);
         }

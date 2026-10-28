@@ -652,7 +652,11 @@ AudioRenderResult export_score_audio(MasterScore* master, const AudioRenderReque
     const int lastUtick = masterScore->repeatList(request.use_repeats).ticks();
     const double playTime = masterScore->utick2utime(lastUtick);
     const msecs_t totalDurationMs = msecs_t(static_cast<int64_t>((playTime + kPlaybackTailSecs) * 1000.0));
-    if (totalDurationMs <= 0) {
+    // Compare the raw value: msecs_t is a number_t<int64_t> since 5.0 and its
+    // operator<=(T) / operator<=(number_t<T>) overloads are equally viable for an
+    // int literal (C2666). The meaning is unchanged - a non-positive millisecond
+    // duration means the score has nothing to play.
+    if (totalDurationMs.raw() <= 0) {
         return fail("score has no audio duration");
     }
 
