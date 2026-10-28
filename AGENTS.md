@@ -17,7 +17,8 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
 - The user authorized Gemini 3.8 Flash via `agy` for worker/documentation tasks and
-  DeepSeek Flash via `dsh headless` for worker/simple verification tasks. Honor those model choices.
+  DeepSeek Flash for worker/simple verification tasks (via Pi, `opencode-go/deepseek-v4.1-flash`,
+  thinking max; formerly `dsh headless`). Honor those model choices.
 - At major milestones, use GPT-6.1 Terra via Codex for independent reviews (replaced
   Opus 5.5 on 2026-10-28; Argon reviews are paused for quota).
 - Do not print credentials or read credential files. Use existing CLI authentication.
