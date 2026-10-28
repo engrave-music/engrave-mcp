@@ -84,7 +84,7 @@ nlohmann::json score_positions(mu::engraving::Score* score, bool segments) {
     const auto add_event = [&](const void* item, int tick) {
         const auto it = ids.find(item);
         if (it == ids.end()) throw std::runtime_error("Playback element has no layout position");
-        const auto time = checked_int(std::nearbyint(repeats.utick2utime(tick) * 1000.0));
+        const auto time = checked_int(std::nearbyint(score->utick2utime(tick) * 1000.0));
         events.push_back({{"elid", it->second}, {"position", time}});
     };
     for (const auto* repeat : repeats) {
