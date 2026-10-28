@@ -18,8 +18,8 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
 - The user authorized Gemini 3.8 Flash via `agy` for worker/documentation tasks and
   DeepSeek Flash via `dsh headless` for worker/simple verification tasks. Honor those model choices.
-- At major milestones, use Opus 5.5 via Claude Code for independent reviews (Argon reviews
-  are paused for quota).
+- At major milestones, use GPT-6.1 Terra via Codex for independent reviews (replaced
+  Opus 5.5 on 2026-10-28; Argon reviews are paused for quota).
 - Do not print credentials or read credential files. Use existing CLI authentication.
 - State which claims are source-reviewed, compiled, or actually executed; never conflate them.
 - Commit each verified milestone as it is reached. Keep review fixes in small follow-up commits; do not defer all commits to the end.
