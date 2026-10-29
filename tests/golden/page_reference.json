@@ -1,11 +1,11 @@
 {
-  "version": 2,
+  "version": 3,
   "description": "4.7.6 SVG page statistics computed by scripts/check_rendered_page.py from the source in each entry; SVG hashes are of normalized exports.",
   "pages": {
     "bend.gp/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/bend.gp/page-0.svg",
         "svg_sha256": "fa586a96af72c008dfb3b310fd0c6dc5586cdd006aa3913062887bf6dbb06f4d"
       },
@@ -21,13 +21,27 @@
         "noteheads": 15,
         "total_uses": 26,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "notehead": 1.0,
+          "other": 1.0
+        },
+        "glyph_median_sizes": {
+          "notehead": [
+            6.4375,
+            5.265625
+          ],
+          "other": [
+            6.21875,
+            9.859375
+          ]
+        }
       }
     },
     "bends.mid/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/bends.mid/page-0.svg",
         "svg_sha256": "e342f5f962e72b6485eb9377806fb7ca06953a1c07901156451d83bd2028e8c8"
       },
@@ -43,13 +57,27 @@
         "noteheads": 6,
         "total_uses": 16,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "notehead": 1.0,
+          "other": 1.0
+        },
+        "glyph_median_sizes": {
+          "notehead": [
+            7.390625,
+            5.359375
+          ],
+          "other": [
+            6.1796875,
+            9.265625
+          ]
+        }
       }
     },
     "chordline_path.mscx/excerpt-0/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/chordline_path.mscx/excerpt-0/page-0.svg",
         "svg_sha256": "d9fe1b2fb461dc487093ec03df78cc07d497e28d7366d1edd734ecc661bfc57a"
       },
@@ -65,13 +93,27 @@
         "noteheads": 4,
         "total_uses": 22,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            8.3046875,
+            10.90625
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "chordline_path.mscx/excerpt-1/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/chordline_path.mscx/excerpt-1/page-0.svg",
         "svg_sha256": "382a7aca581fc3f3d125830e726aada11e07a5e70b47993c05b93bd852b1792a"
       },
@@ -87,13 +129,27 @@
         "noteheads": 6,
         "total_uses": 23,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            8.484375,
+            10.90625
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "chordline_path.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/chordline_path.mscx/page-0.svg",
         "svg_sha256": "f2f8099bf32fa77513c05ac19dd32098a5b40ad53f565877ac0eed89b001ae16"
       },
@@ -109,13 +165,27 @@
         "noteheads": 75,
         "total_uses": 117,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            7.6328125,
+            9.9375
+          ],
+          "notehead": [
+            6.5,
+            2.71875
+          ]
+        }
       }
     },
     "coverage.musicxml/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/coverage.musicxml/page-0.svg",
         "svg_sha256": "9e03dded51741bb15c31d23e7f8b603ce570feaed86570fd6d1cc8448109f645"
       },
@@ -131,13 +201,27 @@
         "noteheads": 27,
         "total_uses": 84,
         "overlap_pairs": 2,
-        "overlap_area": 4.45546
+        "overlap_area": 4.45546,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            5.671875,
+            7.2890625
+          ],
+          "notehead": [
+            5.734375,
+            5.265625
+          ]
+        }
       }
     },
     "created.json/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/created.json/page-0.svg",
         "svg_sha256": "a46c6db3287c357cfc5ac0ef0a7e3dc0a81e00473bc04cf5d05873054d1099ab"
       },
@@ -153,7 +237,21 @@
         "noteheads": 27,
         "total_uses": 75,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            7.828125,
+            9.859375
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "custom_part_name.mscx/page-0.svg": {
@@ -182,13 +280,27 @@
         "noteheads": 12,
         "total_uses": 24,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            8.171875,
+            8.453125
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "drums_import.musicxml/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/drums_import.musicxml/page-0.svg",
         "svg_sha256": "3a88bf789300d2acab8e6bc2d9352dc9c8417c380f7a57f73c1f707dce1143ab"
       },
@@ -204,13 +316,27 @@
         "noteheads": 12,
         "total_uses": 30,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            8.703125,
+            11.546875
+          ],
+          "notehead": [
+            7.796875,
+            6.3515625
+          ]
+        }
       }
     },
     "evening.musicxml/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/evening.musicxml/page-0.svg",
         "svg_sha256": "d70e868eaca04d87e4dda6ed3ad11f0a0d702c5b3323d1e57dbfed910a899cac"
       },
@@ -226,13 +352,27 @@
         "noteheads": 162,
         "total_uses": 282,
         "overlap_pairs": 6,
-        "overlap_area": 27.307808
+        "overlap_area": 27.307808,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            5.671875,
+            9.859375
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "ghost_note.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/ghost_note.mscx/page-0.svg",
         "svg_sha256": "6a1f89a16deddd94d204351ae16bbb49aa791dfde061b0cfa41692b23c8abffb"
       },
@@ -248,13 +388,27 @@
         "noteheads": 14,
         "total_uses": 53,
         "overlap_pairs": 2,
-        "overlap_area": 2.050281
+        "overlap_area": 2.050281,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            5.1171875,
+            7.21875
+          ],
+          "notehead": [
+            5.28125,
+            4.96875
+          ]
+        }
       }
     },
     "hairpins_and_repeats.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/hairpins_and_repeats.mscx/page-0.svg",
         "svg_sha256": "8494a15eb07ba28b28e0d8772e4c63d9c604bb9a370e490595cae3f946b2e1e1"
       },
@@ -270,13 +424,27 @@
         "noteheads": 12,
         "total_uses": 24,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            8.171875,
+            8.453125
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "layout_elements.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/layout_elements.mscx/page-0.svg",
         "svg_sha256": "283f3114e08e6e0034a0328701a25611a9f1d7c3ca76cc4ab216502445393788"
       },
@@ -292,13 +460,27 @@
         "noteheads": 89,
         "total_uses": 288,
         "overlap_pairs": 27,
-        "overlap_area": 221.401347
+        "overlap_area": 221.401347,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            4.609375,
+            8.1640625
+          ],
+          "notehead": [
+            5.828125,
+            4.90625
+          ]
+        }
       }
     },
     "linked_parts.mscx/excerpt-0/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/linked_parts.mscx/excerpt-0/page-0.svg",
         "svg_sha256": "2e35c92307ffdf009c4192e8ff1bede71f07a58064624bba7c53cefb6f7e07b3"
       },
@@ -314,13 +496,27 @@
         "noteheads": 16,
         "total_uses": 33,
         "overlap_pairs": 4,
-        "overlap_area": 1.424933
+        "overlap_area": 1.424933,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            4.65625,
+            11.515625
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "linked_parts.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/linked_parts.mscx/page-0.svg",
         "svg_sha256": "06ceba4860c4f6504dd362eb0868ddd6bd418086041df7411ad3476598538957"
       },
@@ -336,13 +532,27 @@
         "noteheads": 14,
         "total_uses": 28,
         "overlap_pairs": 4,
-        "overlap_area": 1.424933
+        "overlap_area": 1.424933,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            4.65625,
+            11.515625
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "lyrics.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/lyrics.mscx/page-0.svg",
         "svg_sha256": "1fff95ee7203a3ecc79f9e16708d5c45fb64ea4795805bf5522339cdc21011a7"
       },
@@ -358,13 +568,22 @@
         "noteheads": 0,
         "total_uses": 30,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            4.9375,
+            7.515625
+          ]
+        }
       }
     },
     "named_noteheads_perc.musicxml/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/named_noteheads_perc.musicxml/page-0.svg",
         "svg_sha256": "9a59925b67686f1e5a961c503b1892bde66fed8bbe2c80e2a2b7bd09a19faac7"
       },
@@ -380,13 +599,27 @@
         "noteheads": 9,
         "total_uses": 49,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            8.90625,
+            10.921875
+          ],
+          "notehead": [
+            5.328125,
+            4.96875
+          ]
+        }
       }
     },
     "pedal.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/pedal.mscx/page-0.svg",
         "svg_sha256": "2e51fb55fc994be1c681bd882de93f6e3087634bda352e4a98e1dfd47b346da9"
       },
@@ -402,13 +635,27 @@
         "noteheads": 37,
         "total_uses": 83,
         "overlap_pairs": 4,
-        "overlap_area": 11.76351
+        "overlap_area": 11.76351,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            8.453125,
+            10.578125
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "perc_stem_dir.musicxml/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/perc_stem_dir.musicxml/page-0.svg",
         "svg_sha256": "36675fb51375917adc3674627ef29b08f4672027f1f48696d1a3a4f0420160c6"
       },
@@ -424,13 +671,27 @@
         "noteheads": 39,
         "total_uses": 94,
         "overlap_pairs": 9,
-        "overlap_area": 44.660542
+        "overlap_area": 44.660542,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            4.140625,
+            6.9765625
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "repeat70.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/repeat70.mscx/page-0.svg",
         "svg_sha256": "5c2dd088de256b029f8da5552a814a703c37b76c1923004a0380c0163d67bcdb"
       },
@@ -446,13 +707,27 @@
         "noteheads": 9,
         "total_uses": 113,
         "overlap_pairs": 3,
-        "overlap_area": 21.674271
+        "overlap_area": 21.674271,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            6.87513331,
+            7.9375
+          ],
+          "notehead": [
+            7.453125,
+            5.40625
+          ]
+        }
       }
     },
     "repeat71.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/repeat71.mscx/page-0.svg",
         "svg_sha256": "6d7b39a8eeee40fd172daa96c9cb1c9648ad1246d1a07da2106d280afc52753a"
       },
@@ -468,13 +743,27 @@
         "noteheads": 9,
         "total_uses": 127,
         "overlap_pairs": 2,
-        "overlap_area": 14.535304
+        "overlap_area": 14.535304,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            6.87513331,
+            7.9375
+          ],
+          "notehead": [
+            7.453125,
+            5.40625
+          ]
+        }
       }
     },
     "repeat72.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/repeat72.mscx/page-0.svg",
         "svg_sha256": "f7e8016c85ddc72245266ab6bde84b411d964d73f573e8260a12ababa30cc625"
       },
@@ -490,13 +779,27 @@
         "noteheads": 9,
         "total_uses": 114,
         "overlap_pairs": 3,
-        "overlap_area": 21.674263
+        "overlap_area": 21.674263,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            6.87513331,
+            7.9375
+          ],
+          "notehead": [
+            7.453125,
+            5.40625
+          ]
+        }
       }
     },
     "repeat_with_2_voltas.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/repeat_with_2_voltas.mscx/page-0.svg",
         "svg_sha256": "b5c90687a188dbf462ef9fe75b1d4259699dbdf8f5efbc3314974b727feffd57"
       },
@@ -512,13 +815,27 @@
         "noteheads": 35,
         "total_uses": 76,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            6.1015625,
+            9.9375
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "slurs.mscz/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/slurs.mscz/page-0.svg",
         "svg_sha256": "113e1d8aaaa0914bb1801cf4cbb657d0fa5cf8d8e12d603f0594a2fab896f651"
       },
@@ -534,13 +851,27 @@
         "noteheads": 40,
         "total_uses": 45,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "notehead": 1.0,
+          "other": 1.0
+        },
+        "glyph_median_sizes": {
+          "notehead": [
+            4.515625,
+            3.671875
+          ],
+          "other": [
+            6.9221302,
+            9.6875
+          ]
+        }
       }
     },
     "slurs.mscz/page-1.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/slurs.mscz/page-1.svg",
         "svg_sha256": "42d6f93f7eb00d28b558abce7835f80d47ede8a2acd715d81f665d494f04fc27"
       },
@@ -556,13 +887,27 @@
         "noteheads": 22,
         "total_uses": 32,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            1.984375,
+            1.96875
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     },
     "tab_grace_prebend.mscx/page-0.svg": {
       "source": {
         "kind": "git_commit",
-        "commit": "08b1a158190b20ab69970bc57d1bcd586d1d9789",
+        "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
         "path": "tests/golden/windows/tab_grace_prebend.mscx/page-0.svg",
         "svg_sha256": "89275251a6778b422a40124eb54fa6a6483e568baf07a59b765c85e97f4aea59"
       },
@@ -578,8 +923,23 @@
         "noteheads": 12,
         "total_uses": 51,
         "overlap_pairs": 0,
-        "overlap_area": 0.0
+        "overlap_area": 0.0,
+        "glyph_min_scales": {
+          "other": 1.0,
+          "notehead": 1.0
+        },
+        "glyph_median_sizes": {
+          "other": [
+            5.109375,
+            6.375
+          ],
+          "notehead": [
+            6.4375,
+            5.265625
+          ]
+        }
       }
     }
-  }
+  },
+  "count_exceptions": []
 }

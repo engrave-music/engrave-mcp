@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import math
@@ -16,6 +17,8 @@ import check_rendered_page as page
 
 ROOT = Path(__file__).resolve().parents[1]
 PEDAL = ROOT / "tests/golden/windows/pedal.mscx/page-0.svg"
+BEND = ROOT / "tests/golden/windows/bend.gp/page-0.svg"
+LAYOUT = ROOT / "tests/golden/windows/layout_elements.mscx/page-0.svg"
 REFERENCE = ROOT / "tests/golden/page_reference.json"
 
 
@@ -151,6 +154,58 @@ class TestRenderedPageControls(unittest.TestCase):
         self.assertTrue(any(issue.startswith("total_uses:") for issue in issues), issues)
         self.assertTrue(any(issue.startswith("text_runs:") for issue in issues), issues)
 
+    def test_reviewer_scaled_every_bend_use_to_near_zero(self):
+        root = ET.fromstring(BEND.read_text(encoding="utf-8"))
+        for use in root.iter(page.SVG + "use"):
+            use.set("transform", "translate(200 200) scale(0.000001)")
+        reference = json.loads(REFERENCE.read_text(encoding="utf-8"))["pages"]["bend.gp/page-0.svg"]["stats"]
+        issues = page.page_issues(page.parse_svg_page(ET.tostring(root, encoding="unicode")), reference)
+        self.assertTrue(any("glyph minimum scale" in issue for issue in issues), issues)
+
+    def test_one_shrunken_glyph_is_rejected(self):
+        use = next(self.root.iter(page.SVG + "use"))
+        use.set("transform", "translate(200 200) scale(0.01)")
+        issues = page.page_issues(self.stats(), self.reference)
+        self.assertTrue(any("glyph minimum scale" in issue for issue in issues), issues)
+
+    def test_reviewer_root_opacity_zero(self):
+        self.root.set("opacity", "0")
+        issues = page.page_issues(self.stats(), self.reference)
+        self.assertTrue(any("hidden by opacity 0" in issue for issue in issues), issues)
+
+    def test_hidden_ancestor_and_style_are_rejected(self):
+        group = next(g for g in self.root.iter(page.SVG + "g") if g.find(page.SVG + "use") is not None)
+        for attribute, value in (("display", "none"), ("visibility", "hidden"),
+                                 ("style", "opacity: 0% !important")):
+            with self.subTest(attribute=attribute):
+                group.set(attribute, value)
+                issues = page.page_issues(self.stats(), self.reference)
+                self.assertTrue(any("hidden by" in issue for issue in issues), issues)
+                del group.attrib[attribute]
+
+    def test_unpainted_path_and_glyph_ancestor_are_rejected(self):
+        defs = {el for d in self.root.iter(page.SVG + "defs") for el in d.iter()}
+        path = next(p for p in self.root.iter(page.SVG + "path")
+                    if p not in defs and p.get("fill") == "none" and p.get("stroke"))
+        original = path.get("stroke")
+        path.set("stroke", "none")
+        issues = page.page_issues(self.stats(), self.reference)
+        self.assertTrue(any("path has no visible fill or stroke" in issue for issue in issues), issues)
+        path.set("stroke", original)
+        group = next(g for g in self.root.iter(page.SVG + "g") if g.find(page.SVG + "use") is not None)
+        group.set("style", "fill:none; stroke:none")
+        issues = page.page_issues(self.stats(), self.reference)
+        self.assertTrue(any("glyph " in issue and "no visible fill or stroke" in issue for issue in issues), issues)
+
+    def test_reviewer_removed_one_layout_glyph(self):
+        root = ET.fromstring(LAYOUT.read_text(encoding="utf-8"))
+        parents = {child: parent for parent in root.iter() for child in parent}
+        use = next(root.iter(page.SVG + "use"))
+        parents[use].remove(use)
+        reference = json.loads(REFERENCE.read_text(encoding="utf-8"))["pages"]["layout_elements.mscx/page-0.svg"]["stats"]
+        issues = page.page_issues(page.parse_svg_page(ET.tostring(root, encoding="unicode")), reference)
+        self.assertTrue(any(issue.startswith("total_uses:") for issue in issues), issues)
+
     def test_cli_uses_checked_in_stats_and_rejects_translated_path(self):
         defs = {el for d in self.root.iter(page.SVG + "defs") for el in d.iter()}
         path = next(p for p in self.root.iter(page.SVG + "path") if p not in defs)
@@ -159,7 +214,7 @@ class TestRenderedPageControls(unittest.TestCase):
             target = temp / "pedal.mscx/page-0.svg"
             target.parent.mkdir()
             target.write_text(self.source, encoding="utf-8")
-            payload = {"version": 2, "pages": {"pedal.mscx/page-0.svg": {"stats": self.reference}}}
+            payload = {"version": 3, "pages": {"pedal.mscx/page-0.svg": {"stats": self.reference}}}
             reference = temp / "reference.json"
             reference.write_text(json.dumps(payload), encoding="utf-8")
             args = ["check_rendered_page.py", "--golden", str(temp),
@@ -172,6 +227,33 @@ class TestRenderedPageControls(unittest.TestCase):
             with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
                 self.assertEqual(page.main(), 1)
             self.assertIn("outside viewBox", output.getvalue())
+
+    def test_count_exception_requires_exact_changed_counts_and_svg_hash(self):
+        use = next(self.root.iter(page.SVG + "use"))
+        self.parents[use].remove(use)
+        source = ET.tostring(self.root, encoding="unicode")
+        stats = page.parse_svg_page(source)
+        counts = {name: getattr(stats, name) for name in ("paths", "text_runs", "noteheads", "total_uses")
+                  if getattr(stats, name) != self.reference[name]}
+        with tempfile.TemporaryDirectory(prefix="rendered-count-") as temporary:
+            temp = Path(temporary)
+            target = temp / "pedal.mscx/page-0.svg"
+            target.parent.mkdir()
+            target.write_text(source, encoding="utf-8", newline="\n")
+            entry = {"page": "pedal.mscx/page-0.svg", "counts": counts,
+                     "svg_sha256": hashlib.sha256(target.read_bytes()).hexdigest(), "reason": "control"}
+            payload = {"version": 3, "pages": {entry["page"]: {"stats": self.reference}},
+                       "count_exceptions": [entry]}
+            reference = temp / "reference.json"
+            args = ["check_rendered_page.py", "--golden", str(temp), "--reference", str(reference)]
+            reference.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(page.main(), 0)
+            target.write_text(source + "\n", encoding="utf-8", newline="\n")
+            output = io.StringIO()
+            with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
+                self.assertEqual(page.main(), 1)
+            self.assertIn("SHA-256 does not match", output.getvalue())
 
 
 if __name__ == "__main__":
