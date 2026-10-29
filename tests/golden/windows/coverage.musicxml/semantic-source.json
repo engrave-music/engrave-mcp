@@ -2,7 +2,6 @@
  "annotations": [
   {
    "dynamic": "mf",
-   "subtype": "mf (Mezzo-forte)",
    "tick": 480,
    "track": 0,
    "type": "Dynamic"

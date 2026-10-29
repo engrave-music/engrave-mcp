@@ -2,7 +2,6 @@
  "annotations": [
   {
    "dynamic": "mp",
-   "subtype": "mp (Mezzo-piano)",
    "tick": 0,
    "track": 0,
    "type": "Dynamic"
@@ -24,21 +23,18 @@
   },
   {
    "dynamic": "mp",
-   "subtype": "mp (Mezzo-piano)",
    "tick": 0,
    "track": 4,
    "type": "Dynamic"
   },
   {
    "dynamic": "mp",
-   "subtype": "mp (Mezzo-piano)",
    "tick": 0,
    "track": 8,
    "type": "Dynamic"
   },
   {
    "dynamic": "mf",
-   "subtype": "mf (Mezzo-forte)",
    "tick": 15360,
    "track": 0,
    "type": "Dynamic"
@@ -52,35 +48,30 @@
   },
   {
    "dynamic": "mf",
-   "subtype": "mf (Mezzo-forte)",
    "tick": 15360,
    "track": 4,
    "type": "Dynamic"
   },
   {
    "dynamic": "mf",
-   "subtype": "mf (Mezzo-forte)",
    "tick": 15360,
    "track": 8,
    "type": "Dynamic"
   },
   {
    "dynamic": "p",
-   "subtype": "p (Piano)",
    "tick": 28800,
    "track": 0,
    "type": "Dynamic"
   },
   {
    "dynamic": "p",
-   "subtype": "p (Piano)",
    "tick": 28800,
    "track": 4,
    "type": "Dynamic"
   },
   {
    "dynamic": "p",
-   "subtype": "p (Piano)",
    "tick": 28800,
    "track": 8,
    "type": "Dynamic"

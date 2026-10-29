@@ -2,35 +2,30 @@
  "annotations": [
   {
    "dynamic": "p",
-   "subtype": "p (Piano)",
    "tick": 0,
    "track": 0,
    "type": "Dynamic"
   },
   {
    "dynamic": "f",
-   "subtype": "f (Forte)",
    "tick": 1920,
    "track": 0,
    "type": "Dynamic"
   },
   {
    "dynamic": "fff",
-   "subtype": "fff (Fortississimo)",
    "tick": 3360,
    "track": 0,
    "type": "Dynamic"
   },
   {
    "dynamic": "ppp",
-   "subtype": "ppp (Pianississimo)",
    "tick": 3840,
    "track": 0,
    "type": "Dynamic"
   },
   {
    "dynamic": "p",
-   "subtype": "p (Piano)",
    "tick": 5280,
    "track": 0,
    "type": "Dynamic"

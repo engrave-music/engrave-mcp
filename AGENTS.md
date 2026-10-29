@@ -18,11 +18,16 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
-- The user authorized Gemini 3.8 Flash via `agy` for worker/documentation tasks and
-  DeepSeek Flash for worker/simple verification tasks (via Pi, `opencode-go/deepseek-v4.1-flash`,
-  thinking max; formerly `dsh headless`). Honor those model choices.
-- At major milestones, use GPT-6.1 Terra via Codex for independent reviews (replaced
-  Opus 5.5 on 2026-10-28; Argon reviews are paused for quota).
+- Worker models authorized by the user (2026-10-29 allocation): DeepSeek Flash via Pi
+  (`opencode-go/deepseek-v4.1-flash`, thinking max) for hard implementation; GPT-6.1 Terra
+  via Codex at reasoning effort max for tests and verification (on par with DeepSeek max for
+  implementation; never use Terra below max, xhigh is far weaker); Gemini 3.8 Flash for
+  general coding and documentation (fast, and its code reads closest to human style; a good
+  default for well-scoped implementation). Honor those model choices.
+- Reviews: each roadmap step (A1, A2, ...) gets an independent GPT-6.1 Terra review
+  (effort max); each phase (A, I, B) gets a final GPT-6 Astra review via Codex before it is
+  accepted, looking for remaining defects and poor implementation approaches across the phase.
+  (Terra replaced Opus 5.5 on 2026-10-28; Argon reviews are paused for quota.)
 - Do not print credentials or read credential files. Use existing CLI authentication.
 - State which claims are source-reviewed, compiled, or actually executed; never conflate them.
 - Commit each verified milestone as it is reached. Keep review fixes in small follow-up commits; do not defer all commits to the end.
