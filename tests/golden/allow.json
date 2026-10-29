@@ -1,3 +1,294 @@
 {
- "entries": []
+ "entries": [
+  {
+   "fixture": "coverage.musicxml",
+   "kind": "different",
+   "output": "audio.json",
+   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d enables the written D.C. al Fine repeat (352800 to 507150 frames); cabd23667d6923faf5a5e951c7dd60ceee873915 and 362f33d08f7b2a3e09cd0bc30a2055fa785daacd account for the velocity mapping; framework 2a68e47ad03265ee4da43ebb5169bbadf06cd7bd allocates SND channels per staff/voice and narrows sostenuto across staves. Those changes were accepted in the A2 decisions; the pedal scope is an upstream report candidate. See notes/a2/audio-parity-roots.md for prior executed isolation.",
+   "sha256": {
+    "windows": "4710bd78711992ae6b1ea7630a91ce8cb96a6c4862a19cf52ba63d1cb6ae6d85"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "coverage.musicxml",
+   "kind": "different",
+   "output": "midi.json",
+   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d (Import explicit MusicXML sound jump attributes regardless of inferTextType) reads this fixture's explicit Fine and Da Capo al Fine as navigation, restoring the written repeat in export/playback.",
+   "sha256": {
+    "windows": "e65c0d43472e9fcf5d65c41d3095a856c86536a057cf7b6f1896df41722b7a72"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "coverage.musicxml",
+   "kind": "different",
+   "output": "musicxml-semantic.json",
+   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d (Import explicit MusicXML sound jump attributes regardless of inferTextType) reads this fixture's explicit Fine and Da Capo al Fine as navigation, restoring the written repeat in export/playback.",
+   "sha256": {
+    "windows": "931c5aed8afb8110eaac5f342008b1a43bf7b48bc0458bdb8a0958e22b993193"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "coverage.musicxml",
+   "kind": "different",
+   "output": "semantic-source.json",
+   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d imports the explicit MusicXML Fine and Da Capo sound attributes as navigation: StaffText becomes marker/jump and the playback order gains the written repeat.",
+   "sha256": {
+    "windows": "b463f4fc52836e807bff9bbb40ebabb07d4e81ea5f75d0f95ef88ce9dcc1106c"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "coverage.musicxml",
+   "kind": "different",
+   "output": "semantic.json",
+   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d imports the explicit MusicXML Fine and Da Capo sound attributes as navigation: StaffText becomes marker/jump and the playback order gains the written repeat.",
+   "sha256": {
+    "windows": "b463f4fc52836e807bff9bbb40ebabb07d4e81ea5f75d0f95ef88ce9dcc1106c"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "edit-set-pitches-coverage",
+   "kind": "different",
+   "output": "midi.json",
+   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d (Import explicit MusicXML sound jump attributes regardless of inferTextType) reads this fixture's explicit Fine and Da Capo al Fine as navigation, restoring the written repeat in export/playback.",
+   "sha256": {
+    "windows": "4b87d4876b0ff6112693ce8296a06b27e877dc1d2f76bbd7651fd0f8c5277693"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "edit-set-pitches-coverage",
+   "kind": "different",
+   "output": "musicxml-semantic.json",
+   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d (Import explicit MusicXML sound jump attributes regardless of inferTextType) reads this fixture's explicit Fine and Da Capo al Fine as navigation, restoring the written repeat in export/playback.",
+   "sha256": {
+    "windows": "244204588746c44070d0161f590a0922c28731bfa2da92ba4702f687df77304e"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "edit-set-pitches-coverage",
+   "kind": "different",
+   "output": "semantic.json",
+   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d imports the explicit MusicXML Fine and Da Capo sound attributes as navigation: StaffText becomes marker/jump and the playback order gains the written repeat.",
+   "sha256": {
+    "windows": "b7a99b89bc8730ca03280abe6071cd95e2683e85b7456f581ef3fa338a7c97d7"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "evening.musicxml",
+   "kind": "different",
+   "output": "audio.json",
+   "reason": "Upstream cabd23667d6923faf5a5e951c7dd60ceee873915 removes default expression patterns and 362f33d08f7b2a3e09cd0bc30a2055fa785daacd handles empty dynamic maps. For 76 single-note-dynamics notes velocity changes to 64; the decisions accept this. Earlier executed profile restoration reproduced the 4.7.6 events and bit-identical audio. Frames stay equal; peak 0.315535 to 0.309523.",
+   "sha256": {
+    "windows": "ea61c167e9eb5a99edb1cdc1772977c5a5afb0dfffa00a9a2d660050f32f9a8a"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "kind": "different",
+   "output": "audio.json",
+   "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 restores the fermata tempo at the next segment rather than one MIDI tick early. The accepted shift yields 867226 to 867270 frames and 38 samples displacement after the fermata. Earlier executed fermata-removal control reduced the render difference to at most 9.6e-07; see notes/a2/audio-parity-roots.md.",
+   "sha256": {
+    "windows": "1d0fa9dd2daf20f76bbcba24edd411ed79b37ad918d12e6cfaf4ca3c698732e2"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "kind": "different",
+   "output": "midi.json",
+   "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 moves the fermata tempo restore from tick 7679 to 7680, changing the 72-to-144 BPM transition by one MIDI tick; this timing change is accepted in the A2 decisions.",
+   "sha256": {
+    "windows": "b107280cc5ab5b1b656518b5a8f9a94e23372a9e00449474902915092c10ba86"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "kind": "different",
+   "output": "semantic-source.json",
+   "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 moves the fermata tempo restore from tick 7679 to 7680, changing the 72-to-144 BPM transition by one MIDI tick; this timing change is accepted in the A2 decisions.",
+   "sha256": {
+    "windows": "1914949f2ef0893d391c8bd33394bc68ec0bed5a89e5ebc4a6ff64ef410bb6ec"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "kind": "different",
+   "output": "semantic.json",
+   "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 moves the fermata tempo restore from tick 7679 to 7680, changing the 72-to-144 BPM transition by one MIDI tick; this timing change is accepted in the A2 decisions.",
+   "sha256": {
+    "windows": "1914949f2ef0893d391c8bd33394bc68ec0bed5a89e5ebc4a6ff64ef410bb6ec"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "pedal.mscx",
+   "kind": "different",
+   "output": "midi.json",
+   "reason": "Upstream 8bba2d2823f8a6b155b16fb78f40f1f31bcf3aee (Group naming) derives Part::partName from the instrument long name; for this fixture an empty part name becomes Piano.",
+   "sha256": {
+    "windows": "1a918a0083795fa128b7481c45d994c59524815ed709d44393c66029ec6a0980"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "pedal.mscx",
+   "kind": "different",
+   "output": "semantic-source.json",
+   "reason": "Upstream 8bba2d2823f8a6b155b16fb78f40f1f31bcf3aee (Group naming) derives Part::partName from the instrument long name; for this fixture an empty part name becomes Piano.",
+   "sha256": {
+    "windows": "e756deb069f59d2879373ba6f22312e15db7a4f9aab5a14309d1f61e4d2761ba"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "pedal.mscx",
+   "kind": "different",
+   "output": "semantic.json",
+   "reason": "Upstream 8bba2d2823f8a6b155b16fb78f40f1f31bcf3aee (Group naming) derives Part::partName from the instrument long name; for this fixture an empty part name becomes Piano.",
+   "sha256": {
+    "windows": "e756deb069f59d2879373ba6f22312e15db7a4f9aab5a14309d1f61e4d2761ba"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "kind": "different",
+   "output": "midi.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "kind": "different",
+   "output": "semantic-source.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "kind": "different",
+   "output": "semantic.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "kind": "different",
+   "output": "midi.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "kind": "different",
+   "output": "semantic-source.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "119b068a9227f19c2720c164a839f27ab473f04f25d53e221808f21e1ea61233"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "kind": "different",
+   "output": "semantic.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "119b068a9227f19c2720c164a839f27ab473f04f25d53e221808f21e1ea61233"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "kind": "different",
+   "output": "midi.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "kind": "different",
+   "output": "semantic-source.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "kind": "different",
+   "output": "semantic.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "kind": "different",
+   "output": "midi.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "a26f2d4826a44355732877ada99d6a66f220943f56b2fa51d41d5ca99a6c6f3b"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "kind": "different",
+   "output": "semantic-source.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "c5ca121ca4d0eec7e99055b5f512d8ff04be36adda34af115a8a073fbc8ec18d"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "kind": "different",
+   "output": "semantic.json",
+   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "sha256": {
+    "windows": "c5ca121ca4d0eec7e99055b5f512d8ff04be36adda34af115a8a073fbc8ec18d"
+   },
+   "step": "A2"
+  },
+  {
+   "fixture": "tab_grace_prebend.mscx",
+   "kind": "different",
+   "output": "musicxml-semantic.json",
+   "reason": "Upstream 82d2980cc47ebc037c0f89db5f45fbbcc4fab762 (use generic approach for alter values) exports the existing 50-cent offset as alter=0.5; 313ef5a2762849e83c8790ea5a7863626b48cf96 (do not write explicit accidental on tab staff) omits duplicated TAB accidentals.",
+   "sha256": {
+    "windows": "9c1f143d3e7400419d38f1d17890553747ba5d2aaefe2a13f507ba79874e8e47"
+   },
+   "step": "A2"
+  }
+ ]
 }
