@@ -28,24 +28,29 @@ Volatile fields normalized (observed by running twice):
     MusicXML also mirrors the MSCX creationDate/platform metaTags as
     ``miscellaneous-field`` values; those are blanked too.
 Everything else is compared byte for byte, except ``audio.json`` which uses
-the documented numeric tolerances. For spectral centroid envelope comparisons,
-the metric is mathematically undefined only in windows where signal amplitude
-is strictly below the 16-bit PCM quantization floor (rounds to 0.0 in the
-5-decimal RMS envelope, < 5e-6 / -106 dBFS) in both golden and actual; in such
-windows, residual noise centroid differences are ignored while preserving strict
-tolerances (2.0 Hz) for all non-silent windows including quiet nonzero tones.
+the documented numeric tolerances. ``audio.json`` also stores exact silence
+evidence per 0.25 s window: ``nonzeroSamples`` counts, per channel, the WAV
+samples that are not exactly zero. A spectral centroid is compared (2.0 Hz)
+in every window except those whose count is zero on *both* sides, i.e. windows
+the PCM proves are exactly all-zero; a rounded-zero RMS envelope alone is not
+evidence of silence. A baseline without the field is rejected instead of
+falling back to a weaker rule.
 
 ``semantic.json`` (the exported MSCZ) and ``semantic-source.json`` (the fixture
 file) come from the ``semantic_dump`` dev tool next to the server binary. They
 record musical content read from the in-memory DOM, independent of the MSCX
 format version, and are the rebase oracle of roadmap-engrave A0/A2.
 
+EID normalization is always token mode, which preserves target identity. The
+4.7.6 blanked representation (``<eid/>``) is only readable with the explicit
+``--legacy-blank-eids`` migration flag, which a legacy baseline requires.
+
 Usage:
   golden.py capture --binary B --resources R --soundfont SF --golden DIR \\
-                    [--allow-errors]
+                    [--allow-errors] [--legacy-blank-eids]
   golden.py compare --binary B --resources R --soundfont SF --golden DIR \\
                     --allow tests/golden/allow.json --output OUTDIR \\
-                    [--platform windows|linux]
+                    [--platform windows|linux] [--legacy-blank-eids]
   golden.py pin --golden DIR --output OUTDIR [--platform windows|linux]
 """
 
@@ -63,6 +68,7 @@ import sys
 import tempfile
 import zipfile
 from fnmatch import fnmatch
+from functools import partial
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -79,12 +85,19 @@ GENERATE_EXCERPTS = {"chordline_path.mscx"}
 AUDIO_TOLERANCES = {"peak": 1e-4, "rms": 1e-4, "rmsEnvelope": 1e-4,
                     "spectralCentroidHz": 1.0, "centroidEnvelope": 2.0}
 AUDIO_EXACT = {"sampleRate", "channels", "frames"}
+# Per-window exact silence evidence (count of nonzero PCM samples per channel). It is
+# written by describe_audio, gates the centroid comparison and is not a tolerance.
+SILENCE_EVIDENCE = "nonzeroSamples"
 ALLOW_KINDS = ("different", "missing", "extra")
 DEFAULT_PLATFORM = "windows" if sys.platform.startswith("win") else "linux"
 
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+class GoldenFormatError(ValueError):
+    """A golden file lacks evidence this golden.py requires; recapture it."""
 
 
 def read_text(path: Path) -> str:
@@ -106,9 +119,6 @@ EID_TAGS = (
     "mmRestLast", "startMeasure", "endMeasure", "sharedPart",
 )
 
-BLANK_EIDS: bool = False
-
-
 def uses_blanked_eids(golden_root: Path | None) -> bool:
     """Detect whether a golden tree uses 4.7.6-style blanked EID tags (<eid/>)."""
     if golden_root is None or not golden_root.exists():
@@ -125,11 +135,24 @@ def uses_blanked_eids(golden_root: Path | None) -> bool:
     return False
 
 
-def normalize_mscx(text: str, blank_eids: bool | None = None) -> str:
-    if blank_eids is None:
-        blank_eids = BLANK_EIDS
+def require_eid_mode(golden_root: Path | None, legacy_blank_eids: bool) -> None:
+    """Reject a blanked-EID baseline unless the migration flag is explicit.
 
-    if blank_eids:
+    Token mode is the only automatic representation because blanking loses which measure
+    or element a ``startMeasure``/``sharedPart``/... reference targets; a tree that was
+    captured that way also captures the weak representation. Reading one is therefore an
+    explicit migration action, not a fallback golden.py may select on its own.
+    """
+    if not legacy_blank_eids and uses_blanked_eids(golden_root):
+        raise SystemExit(
+            f"golden tree {golden_root} stores blanked EIDs (<eid/>), which cannot detect a "
+            "changed reference target. Token mode is the only automatic EID representation: "
+            "recapture the baseline, or pass --legacy-blank-eids to read the legacy tree "
+            "explicitly.")
+
+
+def normalize_mscx(text: str, legacy_blank_eids: bool = False) -> str:
+    if legacy_blank_eids:
         for tag in EID_TAGS:
             text = re.sub(rf"<{tag}>[^<]*</{tag}>", rf"<{tag}/>", text)
     else:
@@ -224,11 +247,15 @@ def describe_audio(path: Path) -> dict:
     rms = [round(float(np.sqrt(np.mean(audio[:, channel] ** 2))), 6) for channel in range(channels)]
     window = max(1, int(round(rate * 0.25)))
     mono = audio.mean(axis=1)
-    envelope, centroids = [], []
+    envelope, centroids, nonzero = [], [], []
     for start in range(0, frames, window):
         chunk = audio[start:start + window]
         envelope.append([round(float(np.sqrt(np.mean(chunk[:, channel] ** 2))), 5)
                          for channel in range(channels)])
+        # Exact silence evidence: the stored RMS is rounded, so only a zero sample count
+        # proves a window is all-zero PCM (and hence that its centroid means nothing).
+        nonzero.append([int(np.count_nonzero(chunk[:, channel]))
+                        for channel in range(channels)])
         segment = mono[start:start + window]
         spectrum = np.abs(np.fft.rfft(segment))
         frequencies = np.fft.rfftfreq(len(segment), 1.0 / rate)
@@ -246,11 +273,11 @@ def describe_audio(path: Path) -> dict:
         weight += float(spectrum.sum())
     return {"sampleRate": int(rate), "channels": int(channels), "frames": int(frames),
             "peak": peak, "rms": rms, "rmsEnvelope": envelope,
-            "centroidEnvelope": centroids,
+            "centroidEnvelope": centroids, "nonzeroSamples": nonzero,
             "spectralCentroidHz": round(weighted / weight, 1) if weight else 0.0}
 
 
-def describe_mscz(path: Path) -> dict:
+def describe_mscz(path: Path, legacy_blank_eids: bool = False) -> dict:
     with zipfile.ZipFile(path) as archive:
         names = sorted(archive.namelist())
         entries, texts = [], {}
@@ -258,7 +285,8 @@ def describe_mscz(path: Path) -> dict:
             data = archive.read(name)
             base = name.rsplit("/", 1)[-1].lower()
             if base.endswith(".mscx"):
-                normalized = normalize_mscx(data.decode("utf-8"))
+                normalized = normalize_mscx(data.decode("utf-8"),
+                                            legacy_blank_eids=legacy_blank_eids)
                 entries.append({"name": name, "sha256": sha256(normalized.encode("utf-8"))})
             elif base in ("audiosettings.json", "viewsettings.json"):
                 entries.append({"name": name, "size": len(data)})
@@ -435,13 +463,15 @@ async def value_export(session, identity, fmt, raw, out_dir, name, transform, ro
     return value
 
 
-async def capture_master(session, identity, raw, out_dir, roots):
+async def capture_master(session, identity, raw, out_dir, roots, legacy_blank_eids: bool = False):
+    normalized_mscx = partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids)
     await text_export(session, identity, "mscx", raw / "score.mscx", out_dir,
-                      "score.mscx", normalize_mscx, roots)
+                      "score.mscx", normalized_mscx, roots)
     await text_export(session, identity, "musicxml", raw / "score.musicxml", out_dir,
                       "score.musicxml", normalize_musicxml, roots)
     await value_export(session, identity, "mscz", raw / "score.mscz", out_dir,
-                       "mscz.json", describe_mscz, roots)
+                       "mscz.json", partial(describe_mscz, legacy_blank_eids=legacy_blank_eids),
+                       roots)
     await value_export(session, identity, "mxl", raw / "score.mxl", out_dir,
                        "mxl.json", describe_mxl, roots)
     await value_export(session, identity, "midi", raw / "score.mid", out_dir,
@@ -487,16 +517,17 @@ def semantic_dump(source: Path, dest: Path, roots, *extra: str) -> None:
     write_json(dest, json.loads(result.stdout.decode("utf-8")))
 
 
-async def capture_excerpts(session, identity, raw, out_dir, roots):
+async def capture_excerpts(session, identity, raw, out_dir, roots, legacy_blank_eids: bool = False):
     payload, error = await call_tool(session, "score_list_excerpts", identity)
     if error:
         write_text(out_dir / "excerpts.error.txt", sanitize(error, roots) + "\n")
         return
+    normalized_mscx = partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids)
     for excerpt in payload.get("excerpts", []):
         index = excerpt["id"]
         folder = out_dir / f"excerpt-{index}"
         await text_export(session, identity, "mscx", raw / f"excerpt-{index}.mscx", folder,
-                          "score.mscx", normalize_mscx, roots, excerptId=index)
+                          "score.mscx", normalized_mscx, roots, excerptId=index)
         await text_export(session, identity, "musicxml", raw / f"excerpt-{index}.musicxml",
                           folder, "score.musicxml", normalize_musicxml, roots, excerptId=index)
         await value_export(session, identity, "midi", raw / f"excerpt-{index}.mid", folder,
@@ -508,7 +539,8 @@ async def capture_excerpts(session, identity, raw, out_dir, roots):
                           folder, "page-0.svg", normalize_svg, roots, excerptId=index, page=0)
 
 
-async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots):
+async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots,
+                          legacy_blank_eids: bool = False):
     raw = raw_root / fixture_id
     raw.mkdir(parents=True, exist_ok=True)
     if source.name == "created.json":
@@ -525,12 +557,12 @@ async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots)
         semantic_dump(source, out_dir / "semantic-source.json", roots,
                       *(["--generate-excerpts"] if fixture_id in GENERATE_EXCERPTS else []))
     try:
-        await capture_master(session, identity, raw, out_dir, roots)
+        await capture_master(session, identity, raw, out_dir, roots, legacy_blank_eids)
         if fixture_id in GENERATE_EXCERPTS:
             _, error = await call_tool(session, "score_generate_excerpts", identity)
             if error:
                 write_text(out_dir / "generate.error.txt", sanitize(error, roots) + "\n")
-        await capture_excerpts(session, identity, raw, out_dir, roots)
+        await capture_excerpts(session, identity, raw, out_dir, roots, legacy_blank_eids)
     finally:
         await call_tool(session, "score_close", identity)
 
@@ -554,7 +586,8 @@ EDIT_SCENARIOS = {
 }
 
 
-async def capture_edit(session, name, scenario, raw_root, out_dir, roots):
+async def capture_edit(session, name, scenario, raw_root, out_dir, roots,
+                       legacy_blank_eids: bool = False):
     raw = raw_root / name
     raw.mkdir(parents=True, exist_ok=True)
     source = FIXTURE_DIR / scenario["source"]
@@ -593,7 +626,8 @@ async def capture_edit(session, name, scenario, raw_root, out_dir, roots):
             write_text(out_dir / "edit.error.txt", sanitize(error, roots) + "\n")
             return
         await text_export(session, identity, "mscx", raw / "score.mscx", out_dir,
-                          "score.mscx", normalize_mscx, roots)
+                          "score.mscx", partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids),
+                          roots)
         await text_export(session, identity, "musicxml", raw / "score.musicxml", out_dir,
                           "score.musicxml", normalize_musicxml, roots)
         await value_export(session, identity, "midi", raw / "score.mid", out_dir,
@@ -635,10 +669,9 @@ def build_index(root: Path) -> dict:
     return index
 
 
-async def capture_tree(binary, resources, soundfont, target, log_path, golden_root: Path | None = None):
-    global BLANK_EIDS
-    if golden_root is not None:
-        BLANK_EIDS = uses_blanked_eids(golden_root)
+async def capture_tree(binary, resources, soundfont, target, log_path, golden_root: Path | None = None,
+                       legacy_blank_eids: bool = False):
+    require_eid_mode(golden_root, legacy_blank_eids)
     dump = binary.parent / ("semantic_dump.exe" if sys.platform.startswith("win") else "semantic_dump")
     if not dump.is_file():
         raise SystemExit(f"semantic_dump not found next to the server binary: {dump}")
@@ -657,7 +690,8 @@ async def capture_tree(binary, resources, soundfont, target, log_path, golden_ro
                     for source in fixture_files():
                         try:
                             await capture_fixture(session, source.name, source, raw_root,
-                                                  target / source.name, [raw_root, target])
+                                                  target / source.name, [raw_root, target],
+                                                  legacy_blank_eids)
                         except Exception as exc:  # noqa: BLE001 - keep other fixtures going
                             write_text(target / source.name / "capture.error.txt",
                                        f"{type(exc).__name__}: "
@@ -665,7 +699,8 @@ async def capture_tree(binary, resources, soundfont, target, log_path, golden_ro
                     for name, scenario in EDIT_SCENARIOS.items():
                         try:
                             await capture_edit(session, name, scenario, raw_root,
-                                               target / name, [raw_root, target])
+                                               target / name, [raw_root, target],
+                                               legacy_blank_eids)
                         except Exception as exc:  # noqa: BLE001
                             write_text(target / name / "capture.error.txt",
                                        f"{type(exc).__name__}: "
@@ -720,29 +755,55 @@ def verify_golden_index(root: Path, index: dict) -> list[str]:
     return issues
 
 
+def silence_windows(audio: dict) -> list[bool]:
+    """Per-window exact-silence flags from the stored PCM evidence."""
+    counts = audio.get(SILENCE_EVIDENCE)
+    if counts is None:
+        raise GoldenFormatError(
+            f"audio.json has no {SILENCE_EVIDENCE!r} silence evidence, so exact silence (and "
+            "therefore whether a centroid window may be skipped) cannot be established; "
+            "recapture the baseline with the current scripts/golden.py")
+    windows = []
+    for window in counts:
+        if not isinstance(window, (list, tuple)):
+            raise GoldenFormatError(
+                f"audio.json {SILENCE_EVIDENCE!r} values must be per-channel lists")
+        try:
+            windows.append(all(int(count) == 0 for count in window))
+        except (TypeError, ValueError):
+            raise GoldenFormatError(
+                f"audio.json {SILENCE_EVIDENCE!r} values must be sample counts") from None
+    return windows
+
+
 def audio_equal(golden, actual, key=None) -> bool:
     if isinstance(golden, dict) and isinstance(actual, dict):
+        if "centroidEnvelope" in golden or "centroidEnvelope" in actual:
+            # Exact silence evidence is required on both sides before any window is skipped;
+            # a baseline without it is rejected, not compared under a weaker rule.
+            g_silent = silence_windows(golden)
+            a_silent = silence_windows(actual)
         if golden.keys() != actual.keys():
             return False
         has_centroids = "centroidEnvelope" in golden and "centroidEnvelope" in actual
         has_rms = "rmsEnvelope" in golden and "rmsEnvelope" in actual
         for name in golden:
+            if name == SILENCE_EVIDENCE:
+                # Evidence for the centroid gate below, not a compared tolerance: the count of
+                # nonzero samples legitimately differs in reverb/release tails.
+                continue
             if name == "centroidEnvelope" and has_centroids and has_rms:
                 g_cents = golden["centroidEnvelope"]
                 a_cents = actual["centroidEnvelope"]
-                g_rms_env = golden["rmsEnvelope"]
-                a_rms_env = actual["rmsEnvelope"]
-                if len(g_cents) != len(a_cents) or len(g_cents) != len(g_rms_env) or len(a_cents) != len(a_rms_env):
+                if len(g_cents) != len(a_cents) or len(g_cents) != len(g_silent) \
+                        or len(a_cents) != len(a_silent):
                     return False
                 tol = AUDIO_TOLERANCES.get("centroidEnvelope", 2.0)
                 for i, (g_c, a_c) in enumerate(zip(g_cents, a_cents)):
-                    # Spectral centroid is numerically meaningless only when the signal
-                    # is strictly below the 16-bit PCM quantization floor (< 5e-6 / -106 dBFS,
-                    # rounding to 0.0 in the 5-decimal RMS envelope) in BOTH windows.
-                    # Quiet nonzero signals (e.g. RMS 0.00010) must still be compared.
-                    g_val = max(g_rms_env[i]) if isinstance(g_rms_env[i], (list, tuple)) else g_rms_env[i]
-                    a_val = max(a_rms_env[i]) if isinstance(a_rms_env[i], (list, tuple)) else a_rms_env[i]
-                    if float(g_val) <= 0.0 and float(a_val) <= 0.0:
+                    # Only a window whose PCM samples are exactly all-zero on BOTH sides has no
+                    # meaningful spectral centroid. A rounded-zero RMS is not such proof, and
+                    # quiet nonzero windows (e.g. RMS 0.00010) are compared like any other.
+                    if g_silent[i] and a_silent[i]:
                         continue
                     if abs(g_c - a_c) > tol:
                         return False
@@ -766,7 +827,7 @@ def files_equal(golden: Path, actual: Path, output: str) -> bool:
     if output == "audio.json":
         try:
             return audio_equal(json.loads(read_text(golden)), json.loads(read_text(actual)))
-        except (ValueError, KeyError):
+        except (json.JSONDecodeError, KeyError):
             return False
     return golden.read_bytes() == actual.read_bytes()
 
@@ -816,19 +877,31 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
             golden_sha = sha256(golden_file.read_bytes()) if golden_file.is_file() else None
             actual_sha = sha256(actual_file.read_bytes()) if actual_file.is_file() else None
             golden_error = golden_sha is not None and name.endswith(".error.txt")
+            golden_format = None
             if actual_sha is None:
                 kind = "missing"
             elif name not in expected:
                 kind = "extra"
             elif golden_sha is None:
                 kind = "different"
-            elif files_equal(golden_file, actual_file, name) and not golden_error:
-                kind = None
             else:
-                kind = "different"
+                try:
+                    same = files_equal(golden_file, actual_file, name)
+                except GoldenFormatError as exc:
+                    # A baseline missing required evidence is an error, not a difference an
+                    # allow entry may cover: it must be recaptured.
+                    same, golden_format = False, str(exc)
+                kind = None if same and not golden_error else "different"
             if kind is None:
                 counts["identical"] += 1
                 results[name] = {"status": "identical", "sha256": actual_sha}
+                continue
+            if golden_format:
+                counts["goldenError"] += 1
+                results[name] = {"status": "golden-format", "kind": kind,
+                                 "goldenSha256": golden_sha, "actualSha256": actual_sha,
+                                 "error": golden_format}
+                print(f"golden-format {fixture}/{name}: {golden_format}")
                 continue
 
             position, entry, problem = allow_accept(allow, fixture, name, kind, actual_sha, platform)
@@ -870,10 +943,12 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
 
 def command_capture(args) -> int:
     args.golden.mkdir(parents=True, exist_ok=True)
+    require_eid_mode(args.golden, args.legacy_blank_eids)
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
         index = asyncio.run(asyncio.wait_for(capture_tree(
             args.binary, args.resources, args.soundfont, args.golden,
-            Path(temporary) / "server-stderr.log", golden_root=args.golden), timeout=1800))
+            Path(temporary) / "server-stderr.log", golden_root=args.golden,
+            legacy_blank_eids=args.legacy_blank_eids), timeout=1800))
     count = sum(len(files) for files in index.values())
     size = sum(path.stat().st_size for path in args.golden.rglob("*") if path.is_file())
     print(f"captured {len(index)} fixtures, {count} outputs, {size} bytes into {args.golden}")
@@ -889,11 +964,13 @@ def command_capture(args) -> int:
 def command_compare(args) -> int:
     allow = load_allow(args.allow)
     args.output.mkdir(parents=True, exist_ok=True)
+    require_eid_mode(args.golden, args.legacy_blank_eids)
     actual = args.output / "actual"
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
         asyncio.run(asyncio.wait_for(capture_tree(
             args.binary, args.resources, args.soundfont, actual,
-            Path(temporary) / "server-stderr.log", golden_root=args.golden), timeout=1800))
+            Path(temporary) / "server-stderr.log", golden_root=args.golden,
+            legacy_blank_eids=args.legacy_blank_eids), timeout=1800))
         # Keep a copy of the server log for debugging (outside the compared tree).
         shutil.copyfile(Path(temporary) / "server-stderr.log", args.output / "server-stderr.log")
     return compare_trees(args.golden, actual, allow, args.output, args.platform)
@@ -933,6 +1010,10 @@ def main() -> int:
             sub.add_argument("--allow", type=Path, required=True)
             sub.add_argument("--output", type=Path, required=True)
             sub.add_argument("--platform", choices=("windows", "linux"), default=DEFAULT_PLATFORM)
+        sub.add_argument("--legacy-blank-eids", action="store_true",
+                         help="read/write the 4.7.6 blanked-EID representation instead of "
+                              "token EIDs (explicit migration only; it cannot detect a "
+                              "changed reference target)")
     pin = subparsers.add_parser("pin")
     pin.add_argument("--golden", type=Path, required=True)
     pin.add_argument("--output", type=Path, required=True)

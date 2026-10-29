@@ -6,16 +6,17 @@ Tests:
      - Shifts a spanner endpoint -> detected
      - Drops a note tie -> detected
      - Changes a note pitch -> detected
-  2. Spectral centroid near-silence tolerances:
-     - Silence below 16-bit quantisation floor (< 5e-6, stored 0.0) -> ignored
-     - Quiet tone above floor (e.g. RMS 0.00010) within tolerance -> passed
-     - Quiet tone above floor (e.g. RMS 0.00010) diverging (> 2.0 Hz) -> detected/failed
+  2. Spectral centroid silence rule (exact PCM evidence, no rounded-RMS shortcut):
+     - Windows with zero nonzero samples on both sides -> centroid ignored
+     - Rounded-zero RMS with nonzero samples on either side -> centroid compared
+     - Quiet tone (e.g. RMS 0.00010) within / beyond 2.0 Hz -> passed / detected
      - Asymmetric silence vs quiet tone -> detected/failed
+     - Baseline without the evidence field -> rejected, not compared weakly
   3. EID token normalization:
      - All 9 EID-valued XML tags covered
      - Identity renaming preservation
      - Deliberate target modification detected
-     - Blanked EID fallback support for 4.7.6 baseline compatibility
+     - Legacy blanked tree rejected unless the explicit migration flag is given
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ import copy
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -128,78 +130,72 @@ class TestSemanticCheckerMutations(unittest.TestCase):
         self.assertTrue(len(failed) > 0, "Changing note pitch must be detected")
 
 
-class TestCentroidNearSilenceTolerances(unittest.TestCase):
-    def test_numerical_silence_below_quantization_floor_ignored(self):
-        """When both golden and actual are 0.0 RMS (below 16-bit noise floor), centroid differences are ignored."""
-        golden_audio = {
+class TestCentroidSilenceEvidence(unittest.TestCase):
+    def audio(self, centroid, nonzero, rms=None):
+        """A minimal audio.json with exact PCM silence evidence for one window."""
+        return {
             "sampleRate": 44100, "channels": 2, "frames": 22050,
             "peak": [0.0, 0.0], "rms": [0.0, 0.0],
-            "rmsEnvelope": [[0.0, 0.0], [0.0, 0.0]],
-            "centroidEnvelope": [0.0, 0.0],
+            "rmsEnvelope": [rms if rms is not None else [0.0, 0.0]],
+            "centroidEnvelope": [centroid],
+            "nonzeroSamples": [nonzero],
             "spectralCentroidHz": 0.0,
         }
-        actual_audio = {
-            "sampleRate": 44100, "channels": 2, "frames": 22050,
-            "peak": [0.0, 0.0], "rms": [0.0, 0.0],
-            "rmsEnvelope": [[0.0, 0.0], [0.0, 0.0]],
-            # Centroid calculated on sub-quantization floating point noise (e.g. 1500 Hz vs 0 Hz)
-            "centroidEnvelope": [1500.0, 2300.0],
-            "spectralCentroidHz": 0.0,
-        }
+
+    def test_exactly_silent_windows_ignore_centroid(self):
+        """Both windows have no nonzero PCM sample, so their centroids are meaningless."""
+        golden_audio = self.audio(0.0, [0, 0])
+        actual_audio = self.audio(1500.0, [0, 0])
         self.assertTrue(golden.audio_equal(golden_audio, actual_audio))
 
-    def test_quiet_tone_above_floor_within_tolerance_passes(self):
-        """When both golden and actual have quiet nonzero signals, centroids within tolerance pass."""
-        golden_audio = {
-            "sampleRate": 44100, "channels": 2, "frames": 22050,
-            "peak": [0.0002, 0.0002], "rms": [0.00010, 0.00010],
-            "rmsEnvelope": [[0.00010, 0.00010]],
-            "centroidEnvelope": [440.0],
-            "spectralCentroidHz": 440.0,
-        }
-        actual_audio = {
-            "sampleRate": 44100, "channels": 2, "frames": 22050,
-            "peak": [0.0002, 0.0002], "rms": [0.00010, 0.00010],
-            "rmsEnvelope": [[0.00010, 0.00010]],
-            "centroidEnvelope": [441.5],  # diff 1.5 Hz <= 2.0 Hz
-            "spectralCentroidHz": 440.5,
-        }
+    def test_rounded_zero_rms_with_samples_still_compared(self):
+        """A rounded-zero RMS is not silence: one or two nonzero samples keep the 2 Hz rule.
+
+        This is the A2 re-review case: a single 1-LSB sample stores RMS 0.0 in the 5-decimal
+        envelope but the centroid moved from 11024.0 to 8011.4 Hz.
+        """
+        golden_audio = self.audio(11024.0, [1, 1])
+        actual_audio = self.audio(8011.4, [2, 2])
+        self.assertFalse(golden.audio_equal(golden_audio, actual_audio))
+
+    def test_quiet_tone_within_tolerance_passes(self):
+        """Quiet nonzero signals compare centroids against the 2.0 Hz tolerance."""
+        golden_audio = self.audio(440.0, [22050, 22050], rms=[0.00010, 0.00010])
+        actual_audio = self.audio(441.5, [22050, 22050], rms=[0.00010, 0.00010])
         self.assertTrue(golden.audio_equal(golden_audio, actual_audio))
 
-    def test_quiet_tone_above_floor_diverging_centroid_fails(self):
-        """Quiet nonzero signals (e.g. RMS 0.00010) must still compare centroids and fail if diff > 2.0 Hz."""
-        golden_audio = {
-            "sampleRate": 44100, "channels": 2, "frames": 22050,
-            "peak": [0.0002, 0.0002], "rms": [0.00010, 0.00010],
-            "rmsEnvelope": [[0.00010, 0.00010]],
-            "centroidEnvelope": [100.0],
-            "spectralCentroidHz": 100.0,
-        }
-        actual_audio = {
-            "sampleRate": 44100, "channels": 2, "frames": 22050,
-            "peak": [0.0002, 0.0002], "rms": [0.00010, 0.00010],
-            "rmsEnvelope": [[0.00010, 0.00010]],
-            "centroidEnvelope": [10000.0],  # diff 9900 Hz > 2.0 Hz
-            "spectralCentroidHz": 100.0,
-        }
+    def test_quiet_tone_diverging_centroid_fails(self):
+        """Quiet nonzero signals (e.g. RMS 0.00010) must still fail a > 2.0 Hz centroid move."""
+        golden_audio = self.audio(100.0, [22050, 22050], rms=[0.00010, 0.00010])
+        actual_audio = self.audio(10000.0, [22050, 22050], rms=[0.00010, 0.00010])
         self.assertFalse(golden.audio_equal(golden_audio, actual_audio))
 
     def test_asymmetric_silence_fails(self):
-        """If one side is silent (0.0) and the other side is quiet tone, must not be ignored."""
-        golden_audio = {
-            "sampleRate": 44100, "channels": 2, "frames": 22050,
-            "peak": [0.0, 0.0], "rms": [0.0, 0.0],
-            "rmsEnvelope": [[0.0, 0.0]],
-            "centroidEnvelope": [0.0],
-            "spectralCentroidHz": 0.0,
-        }
-        actual_audio = {
-            "sampleRate": 44100, "channels": 2, "frames": 22050,
-            "peak": [0.0002, 0.0002], "rms": [0.00010, 0.00010],
-            "rmsEnvelope": [[0.00010, 0.00010]],
-            "centroidEnvelope": [440.0],
-            "spectralCentroidHz": 440.0,
-        }
+        """One all-zero window against a window with samples must not be skipped."""
+        golden_audio = self.audio(0.0, [0, 0])
+        actual_audio = self.audio(440.0, [2, 2], rms=[0.0002, 0.0002])
+        self.assertFalse(golden.audio_equal(golden_audio, actual_audio))
+
+    def test_missing_silence_evidence_is_rejected(self):
+        """A baseline captured before the evidence field fails clearly instead of skipping."""
+        golden_audio = self.audio(0.0, [0, 0])
+        legacy = {key: value for key, value in golden_audio.items()
+                  if key != golden.SILENCE_EVIDENCE}
+        with tempfile.TemporaryDirectory(prefix="golden-audio-") as temporary:
+            directory = Path(temporary)
+            (directory / "golden").write_text(json.dumps(legacy), encoding="utf-8")
+            (directory / "actual").write_text(json.dumps(golden_audio), encoding="utf-8")
+            with self.assertRaises(golden.GoldenFormatError) as raised:
+                golden.files_equal(directory / "golden", directory / "actual", "audio.json")
+        message = str(raised.exception)
+        self.assertIn(golden.SILENCE_EVIDENCE, message)
+        self.assertIn("recapture", message)
+
+    def test_silence_evidence_length_must_match_envelope(self):
+        """Evidence for a different window count cannot gate the centroid comparison."""
+        golden_audio = self.audio(0.0, [0, 0])
+        actual_audio = self.audio(0.0, [0, 0])
+        actual_audio["nonzeroSamples"] = []
         self.assertFalse(golden.audio_equal(golden_audio, actual_audio))
 
 
@@ -252,7 +248,7 @@ class TestEidTokenNormalization(unittest.TestCase):
     </Spanner>
   </Score>
 </museScore>"""
-        normalized = golden.normalize_mscx(mscx_input, blank_eids=False)
+        normalized = golden.normalize_mscx(mscx_input)
 
         # Confirm all 9 tags are normalized to eN tokens
         self.assertIn("<eid>e1</eid>", normalized)
@@ -281,21 +277,53 @@ class TestEidTokenNormalization(unittest.TestCase):
   <Measure><eid>102</eid></Measure>
   <PageLocks><pageLock><startMeasure>102</startMeasure><endMeasure>102</endMeasure></pageLock></PageLocks>
 </Score>"""
-        norm_a = golden.normalize_mscx(score_a, blank_eids=False)
-        norm_b = golden.normalize_mscx(score_b, blank_eids=False)
+        norm_a = golden.normalize_mscx(score_a)
+        norm_b = golden.normalize_mscx(score_b)
+        self.assertIn("<startMeasure>e1</startMeasure>", norm_a)
+        self.assertIn("<startMeasure>e2</startMeasure>", norm_b)
         self.assertNotEqual(norm_a, norm_b, "Scores targeting different measures must produce different normalized tokens")
 
-    def test_blanked_mode_fallback(self):
-        """When blank_eids is True, all tags are replaced with self-closing tags (<tag/>)."""
-        sample = """<Score>
-  <eid>101</eid>
-  <startMeasure>101</startMeasure>
-  <sharedPart>501</sharedPart>
+    def test_legacy_blank_eids_hides_target_change(self):
+        """The 4.7.6 blanked representation cannot see a retargeted lock (why it is not automatic)."""
+        score_a = """<Score>
+  <Measure><eid>101</eid></Measure>
+  <Measure><eid>102</eid></Measure>
+  <PageLocks><pageLock><startMeasure>101</startMeasure></pageLock></PageLocks>
 </Score>"""
-        blanked = golden.normalize_mscx(sample, blank_eids=True)
-        self.assertIn("<eid/>", blanked)
-        self.assertIn("<startMeasure/>", blanked)
-        self.assertIn("<sharedPart/>", blanked)
+        score_b = """<Score>
+  <Measure><eid>101</eid></Measure>
+  <Measure><eid>102</eid></Measure>
+  <PageLocks><pageLock><startMeasure>102</startMeasure></pageLock></PageLocks>
+</Score>"""
+        blank_a = golden.normalize_mscx(score_a, legacy_blank_eids=True)
+        blank_b = golden.normalize_mscx(score_b, legacy_blank_eids=True)
+        self.assertIn("<startMeasure/>", blank_a)
+        self.assertIn("<sharedPart/>", golden.normalize_mscx(
+            "<Score><sharedPart>501</sharedPart></Score>", legacy_blank_eids=True))
+        self.assertEqual(blank_a, blank_b)
+
+    def test_legacy_tree_rejected_without_explicit_flag(self):
+        """A blanked-EID baseline is only readable through --legacy-blank-eids."""
+        with tempfile.TemporaryDirectory(prefix="golden-legacy-") as temporary:
+            root = Path(temporary) / "legacy"
+            (root / "fixture.mscx").mkdir(parents=True)
+            (root / "fixture.mscx" / "score.mscx").write_text(
+                '<museScore version="4.70">\n<Score><eid/></Score>\n</museScore>\n',
+                encoding="utf-8")
+            self.assertTrue(golden.uses_blanked_eids(root))
+            with self.assertRaises(SystemExit) as raised:
+                golden.require_eid_mode(root, legacy_blank_eids=False)
+            self.assertIn("--legacy-blank-eids", str(raised.exception))
+            golden.require_eid_mode(root, legacy_blank_eids=True)
+        # A token-mode tree needs no flag.
+        with tempfile.TemporaryDirectory(prefix="golden-token-") as temporary:
+            root = Path(temporary) / "token"
+            (root / "fixture.mscx").mkdir(parents=True)
+            (root / "fixture.mscx" / "score.mscx").write_text(
+                '<museScore version="5.00">\n<Score><eid>e1</eid></Score>\n</museScore>\n',
+                encoding="utf-8")
+            self.assertFalse(golden.uses_blanked_eids(root))
+            golden.require_eid_mode(root, legacy_blank_eids=False)
 
 
 if __name__ == "__main__":
