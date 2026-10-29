@@ -35,6 +35,9 @@ KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
     "drums_import.musicxml": {
         "mscz_text": ("3a759cb7769875f9", "The only content change is the same synthesized title size element; hunk context and line numbers differ in 5.00 serialization."),
     },
+    "custom_part_name.mscx": {
+        "musicxml": ("05dd75d215fedcc1", "invisible fff dynamic is not exported"),
+    },
     "hairpins_and_repeats.mscx": {
         "musicxml": ("05dd75d215fedcc1", "invisible fff dynamic is not exported"),
     },
