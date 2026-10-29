@@ -45,7 +45,11 @@ public:
 class RegisteredContextServiceImpl : public IRegisteredContextService
 {
 public:
-    int contextValue() const override { return 100; }
+    explicit RegisteredContextServiceImpl(int value) : m_value(value) {}
+    int contextValue() const override { return m_value; }
+
+private:
+    int m_value = 0;
 };
 
 class IUnregisteredGlobalService : MODULE_GLOBAL_INTERFACE
@@ -95,18 +99,41 @@ public:
  *    (e.g., if (!inject()) { ... }) and detect missing dependencies to log
  *    errors or fail clearly for required services.
  *
- * 4. Context Isolation and Removal:
- *    Contexts with distinct IDs (e.g., id 1 vs id 2) have independent IoC
- *    registries. removeIoC(ctx) properly removes non-zero context registries.
- *
- * 5. Registered Exports Resolve:
+ * 4. Registered Exports Resolve In Their Own Registry:
  *    Global exports registered via globalIoc()->registerExport<I>(module, impl)
- *    resolve properly via GlobalInject. Contextual exports registered via
- *    ioc(ctx)->registerExport<I>(module, impl) resolve properly via
- *    ContextInject for the corresponding context.
+ *    resolve via GlobalInject. Contextual exports registered via
+ *    ioc(ctx)->registerExport<I>(module, impl) resolve via ContextInject, and
+ *    only for that context: registries are keyed by context id, so distinct
+ *    ids do not see each other's exports and never see the global registry.
+ *
+ * 5. Context Removal:
+ *    removeIoC(ctx) refuses context 0 and a null context. For a non-zero id it
+ *    deletes that registry: the exports registered there become unresolvable,
+ *    an injection that already resolved from it reports null (the registry
+ *    notifies its subscribers while it is destroyed), and every other context
+ *    as well as the global registry keep their services. The id can be reused
+ *    and the replacement registry starts empty.
+ *
+ * 6. Reset:
+ *    resetAll() clears the services that are still registered - the global
+ *    registry plus every live context registry - without any unregister() call.
+ *    The registries release their references (the caller's shared_ptr becomes
+ *    the only owner) and already-resolved injections report null.
+ *
+ * 7. Required Dependencies:
+ *    A required export that is missing resolves to null; resolve() and the
+ *    injections never throw or assert. The host turns that null into a clear
+ *    failure at its own call sites:
+ *      native/engine_audio.cpp:464-466   IFileSystem    -> "native runtime (IFileSystem) is not initialised; ..."
+ *      native/score_render.cpp:38-39     IScoreRenderer -> "Score renderer unavailable"
+ *      native/cairo_painter.cpp:390-392  IFontsDatabase -> "CairoPainter: IFontsDatabase is not registered"
+ *    Those call sites live in translation units this test binary does not link,
+ *    so what is pinned here is the condition they guard on: after resetAll() a
+ *    required lookup is null and an injection that resolved earlier reports null
+ *    as well, so a host guard cannot keep using a cleared required service.
  * =========================================================================
  */
-void test_ioc_contract()
+void test_ioc_contract(const std::filesystem::path& assetsRoot)
 {
     using namespace kors::modularity;
 
@@ -154,10 +181,8 @@ void test_ioc_contract()
     expect(ioc1 != nullptr && ioc2 != nullptr, "non-zero context IoCs are non-null");
     expect(ioc1 != ioc2, "context 1 and context 2 are isolated instances");
     expect(ioc1 != c0Ioc && ioc2 != c0Ioc, "non-zero contexts are isolated from context 0");
-    removeIoC(ctx1);
-    removeIoC(ctx2);
 
-    // 3. Registered exports resolve
+    // 3. Registered exports resolve, but only inside their own registry
     // 3a. Global export
     auto globalImpl = std::make_shared<RegisteredGlobalServiceImpl>();
     gIoc->registerExport<IRegisteredGlobalService>("contract_test", globalImpl);
@@ -168,16 +193,35 @@ void test_ioc_contract()
     expect(gIoc->resolve<IRegisteredGlobalService>("contract_test") == globalImpl,
            "globalIoc()->resolve returns registered export");
 
-    // 3b. Context export (context 0)
-    auto contextImpl = std::make_shared<RegisteredContextServiceImpl>();
+    // 3b. One contextual export per registry: context 0, context 1, context 2
+    auto contextImpl = std::make_shared<RegisteredContextServiceImpl>(100);
+    auto ctx1Impl = std::make_shared<RegisteredContextServiceImpl>(7);
+    auto ctx2Impl = std::make_shared<RegisteredContextServiceImpl>(8);
     c0Ioc->registerExport<IRegisteredContextService>("contract_test", contextImpl);
+    ioc1->registerExport<IRegisteredContextService>("contract_test", ctx1Impl);
+    ioc2->registerExport<IRegisteredContextService>("contract_test", ctx2Impl);
 
-    ContextInject<IRegisteredContextService> ctxInj(globalCtx);
-    expect(ctxInj() == contextImpl, "ContextInject(globalCtx) resolves registered export");
-    expect(ctxInj()->contextValue() == 100, "Context export is functional");
+    expect(c0Ioc->resolve<IRegisteredContextService>("contract_test") == contextImpl,
+           "context 0 resolves its own export");
+    expect(ioc1->resolve<IRegisteredContextService>("contract_test") == ctx1Impl,
+           "context 1 resolves its own export");
+    expect(ioc2->resolve<IRegisteredContextService>("contract_test") == ctx2Impl,
+           "context 2 resolves its own export");
+    expect(contextImpl != ctx1Impl && contextImpl != ctx2Impl && ctx1Impl != ctx2Impl,
+           "the three contexts hold distinct instances");
 
-    ContextInject<IRegisteredContextService> ctx0Inj(customCtx0);
-    expect(ctx0Inj() == contextImpl, "ContextInject(customCtx0) resolves same instance as globalCtx");
+    ContextInject<IRegisteredContextService> ctx0Inj(globalCtx);
+    ContextInject<IRegisteredContextService> ctx1Inj(ctx1);
+    ContextInject<IRegisteredContextService> ctx2Inj(ctx2);
+    expect(ctx0Inj() == contextImpl, "ContextInject(globalCtx) resolves the context-0 export");
+    expect(ctx0Inj()->contextValue() == 100, "context-0 export is functional");
+    expect(ctx1Inj() == ctx1Impl, "ContextInject(ctx1) resolves the context-1 export");
+    expect(ctx1Inj()->contextValue() == 7, "context-1 export is functional");
+    expect(ctx2Inj() == ctx2Impl, "ContextInject(ctx2) resolves the context-2 export");
+    expect(ctx2Inj()->contextValue() == 8, "context-2 export is functional");
+
+    ContextInject<IRegisteredContextService> ctx0AliasInj(customCtx0);
+    expect(ctx0AliasInj() == contextImpl, "ContextInject(customCtx0) resolves same instance as globalCtx");
 
     // 4. An injection whose interface is NOT registered yields null
     //    Caller-visible behavior: doResolve returns silently without throwing or asserting,
@@ -186,13 +230,6 @@ void test_ioc_contract()
     expect(unregGlobal() == nullptr, "unregistered GlobalInject yields nullptr");
     expect(unregGlobal.get() == nullptr, "unregistered GlobalInject get() is nullptr");
 
-    // Caller can detect missing registration (e.g. to log error or fail cleanly)
-    bool detectedMissingGlobal = false;
-    if (!unregGlobal()) {
-        detectedMissingGlobal = true; // Caller detected missing service
-    }
-    expect(detectedMissingGlobal, "missing global service is detectable by caller");
-
     ContextInject<IUnregisteredContextService> unregCtx(globalCtx);
     expect(unregCtx() == nullptr, "unregistered ContextInject(globalCtx) yields nullptr");
 
@@ -200,15 +237,62 @@ void test_ioc_contract()
     ContextInject<IUnregisteredContextService> unregNull(ContextPtr{});
     expect(unregNull() == nullptr, "unregistered ContextInject(nullptr) yields nullptr safely");
 
-    // Clean up registered exports
-    gIoc->unregister<IRegisteredGlobalService>("contract_test");
-    c0Ioc->unregister<IRegisteredContextService>("contract_test");
-    resetAll();
+    // 5. removeIoC drops one non-zero registry and leaves the others registered
+    removeIoC(ctx1);
+    ModulesContextIoC* ioc1Again = ioc(ctx1);
+    expect(ioc1Again != nullptr, "a removed context id can be used again");
+    expect(ioc1Again->resolve<IRegisteredContextService>("contract_test") == nullptr,
+           "removeIoC makes the context-1 export unresolvable");
+    expect(ctx1Inj() == nullptr, "an already-resolved context-1 injection reports null after removeIoC");
 
+    expect(ioc(ctx2)->resolve<IRegisteredContextService>("contract_test") == ctx2Impl,
+           "removeIoC(ctx1) leaves the context-2 export registered");
+    expect(ctx2Inj() == ctx2Impl, "a context-2 injection still resolves after removeIoC(ctx1)");
+    expect(ioc(globalCtx)->resolve<IRegisteredContextService>("contract_test") == contextImpl,
+           "removeIoC(ctx1) leaves the context-0 export registered");
+    expect(gIoc->resolve<IRegisteredGlobalService>("contract_test") == globalImpl,
+           "removeIoC(ctx1) leaves the global export registered");
+
+    // 6. resetAll clears services that are still registered: nothing below is
+    //    unregistered first, so a no-op reset cannot pass these assertions.
+    resetAll();
     expect(gIoc->resolve<IRegisteredGlobalService>("contract_test") == nullptr,
-           "unregistered global export resolves to nullptr");
+           "resetAll clears a registered global export");
+    expect(globalInj() == nullptr, "an already-resolved GlobalInject reports null after resetAll");
     expect(c0Ioc->resolve<IRegisteredContextService>("contract_test") == nullptr,
-           "unregistered context export resolves to nullptr");
+           "resetAll clears a registered context-0 export");
+    expect(ioc(ctx2)->resolve<IRegisteredContextService>("contract_test") == nullptr,
+           "resetAll clears a registered non-zero context export");
+    expect(ctx0Inj() == nullptr && ctx2Inj() == nullptr,
+           "already-resolved context injections report null after resetAll");
+    expect(globalImpl.use_count() == 1 && contextImpl.use_count() == 1 && ctx2Impl.use_count() == 1,
+           "resetAll releases the registered service instances");
+
+    // 7. A required dependency that is gone fails instead of serving a stale
+    //    adapter. The host registers its native filesystem exactly like this
+    //    (native/noqt_runtime.cpp) and guards later use of it with
+    //    native/engine_audio.cpp:464-466; the guard itself is not linked here.
+    auto runtimeFileSystem = std::make_shared<music::NativeFileSystem>(assetsRoot);
+    gIoc->registerExport<muse::io::IFileSystem>("contract_test", runtimeFileSystem);
+    expect(gIoc->resolve<muse::io::IFileSystem>("contract_test") == runtimeFileSystem,
+           "the required IFileSystem export resolves");
+    expect(bool(gIoc->resolve<muse::io::IFileSystem>("contract_test")->exists(":/test.txt")),
+           "the resolved required adapter is functional");
+
+    GlobalInject<muse::io::IFileSystem> requiredInj;
+    expect(requiredInj() == runtimeFileSystem, "a required injection resolves the host adapter");
+
+    resetAll();
+    expect(gIoc->resolve<muse::io::IFileSystem>("contract_test") == nullptr,
+           "a required global export is unresolvable after resetAll");
+    expect(requiredInj() == nullptr,
+           "a resolved required injection reports null after resetAll, so the host guard "
+           "takes its failure path instead of reusing a cleared adapter");
+    expect(runtimeFileSystem.use_count() == 1, "resetAll releases the required export");
+
+    // Leave no registry registrations behind for any later use of the process IoC.
+    removeIoC(ctx2);
+    resetAll();
 
     std::cout << "IoC modularity contract checks passed\n";
 }
@@ -262,7 +346,7 @@ int main(int argc, char** argv) {
         expect(settings->value(key).toInt() == 2, "Rollback");
         settings->reset();
         expect(settings->value(key).toInt() == 1, "Reset defaults");
-        test_ioc_contract();
+        test_ioc_contract(root / "assets");
         std::cout << "native filesystem/settings checks passed\n";
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }
