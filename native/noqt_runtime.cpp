@@ -48,23 +48,6 @@ public:
     void write(const logger::LogMsg& message) override { std::cerr << m_layout.output(message) << '\n'; }
 };
 
-// FreeType's upstream text provider assumes 360 DPI; engraving uses 1200.
-class EngravingFontProvider final : public draw::FontProvider {
-    static draw::Font scaled(draw::Font f) { f.setPointSizeF(f.pointSizeF() * (1200.0 / 360.0)); return f; }
-public:
-    EngravingFontProvider() : FontProvider(nullptr) {}
-    double lineSpacing(const draw::Font& f) const override { return FontProvider::lineSpacing(scaled(f)); }
-    double xHeight(const draw::Font& f) const override { return FontProvider::xHeight(scaled(f)); }
-    double height(const draw::Font& f) const override { return FontProvider::height(scaled(f)); }
-    double capHeight(const draw::Font& f) const override { return FontProvider::capHeight(scaled(f)); }
-    double ascent(const draw::Font& f) const override { return FontProvider::ascent(scaled(f)); }
-    double descent(const draw::Font& f) const override { return FontProvider::descent(scaled(f)); }
-    double horizontalAdvance(const draw::Font& f, const String& s) const override { return FontProvider::horizontalAdvance(scaled(f), s); }
-    double horizontalAdvance(const draw::Font& f, char32_t c) const override { return FontProvider::horizontalAdvance(scaled(f), c); }
-    RectF boundingRect(const draw::Font& f, const String& s) const override { return FontProvider::boundingRect(scaled(f), s); }
-    RectF boundingRect(const draw::Font& f, char32_t c) const override { return FontProvider::boundingRect(scaled(f), c); }
-    RectF tightBoundingRect(const draw::Font& f, const String& s) const override { return FontProvider::tightBoundingRect(scaled(f), s); }
-};
 
 void check(const Ret& result) { if (!result) throw std::runtime_error(result.toString()); }
 std::string bytes(const ByteArray& data) { return {reinterpret_cast<const char*>(data.constData()), data.size()}; }
@@ -157,7 +140,7 @@ void initialize_native_runtime(const std::string& assets) {
     // IApplication before any module's exports.
     modularity::globalIoc()->registerExport<io::IFileSystem>("native", new NativeFileSystem(root));
     install_runtime_font_services();
-    modularity::globalIoc()->registerExport<draw::IFontProvider>("native", new EngravingFontProvider());
+    modularity::globalIoc()->registerExport<draw::IFontProvider>("native", std::make_shared<draw::FontProvider>(modularity::globalCtx()));
     // Writer, MusicXML export, and the $v header macro resolve IApplication
     // through the project IoC; without it application() is null and export crashes.
     auto application = std::make_shared<NoQtApplication>();
