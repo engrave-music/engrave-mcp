@@ -584,6 +584,7 @@ target("noqt_support_test")
     set_kind("binary")
     add_deps("muse_generated", "noqt_support")
     add_manifest_target("noqt_support_test")
+    add_files(path.join(project_root, "native", "tests", "ioc_tu2.cpp"))
     add_links("z")
     if is_plat("windows") then
         add_files(path.join(project_root, "native", "utf8.manifest"))
