@@ -1,4 +1,4 @@
-﻿"""Runner for upstream MuseScore unit tests built with GoogleTest.
+"""Runner for upstream MuseScore unit tests built with GoogleTest.
 
 Executes Qt-free upstream test suites:
   - engraving_playback_tests: tests playback event rendering, playback model,
@@ -13,6 +13,7 @@ an explicit ``--filter`` the subset size is unknown but zero tests, skips and
 disabled tests still fail.
 """
 from __future__ import annotations
+import tempfile
 
 import argparse
 import json
@@ -201,24 +202,26 @@ def run_suite(
         cmd.append(f"--gtest_filter={gtest_filter}")
 
     start_time = time.perf_counter()
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-        )
-        elapsed = time.perf_counter() - start_time
-        stdout = proc.stdout
-        stderr = proc.stderr
-        rc = proc.returncode
-    except subprocess.TimeoutExpired as exc:
-        elapsed = time.perf_counter() - start_time
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
-        rc = -1
+    with tempfile.TemporaryDirectory(prefix="gtest_") as tmp_cwd:
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                cwd=tmp_cwd,
+            )
+            elapsed = time.perf_counter() - start_time
+            stdout = proc.stdout
+            stderr = proc.stderr
+            rc = proc.returncode
+        except subprocess.TimeoutExpired as exc:
+            elapsed = time.perf_counter() - start_time
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            rc = -1
 
     stats = parse_gtest_output(stdout)
 
