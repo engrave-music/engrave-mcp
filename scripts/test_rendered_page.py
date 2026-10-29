@@ -13,6 +13,8 @@ import unittest
 from unittest import mock
 import xml.etree.ElementTree as ET
 
+from PIL import Image, ImageDraw
+
 import check_rendered_page as page
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -168,6 +170,19 @@ class TestRenderedPageControls(unittest.TestCase):
         issues = page.page_issues(self.stats(), self.reference)
         self.assertTrue(any("glyph minimum scale" in issue for issue in issues), issues)
 
+    def test_scale_inside_a_glyph_definition_is_rejected(self):
+        definitions = {el.get("id"): el for el in self.root.iter() if el.get("id")}
+        for use in self.root.iter(page.SVG + "use"):
+            name = (use.get("href") or use.get(page.XLINK + "href"))[1:]
+            path = definitions[name].find(".//" + page.SVG + "path")
+            if path is not None:
+                path.set("transform", "scale(0.000001)")
+                break
+        else:
+            self.fail("fixture has no painted glyph definition")
+        issues = page.page_issues(self.stats(), self.reference)
+        self.assertTrue(any("glyph minimum scale" in issue for issue in issues), issues)
+
     def test_reviewer_root_opacity_zero(self):
         self.root.set("opacity", "0")
         issues = page.page_issues(self.stats(), self.reference)
@@ -183,6 +198,12 @@ class TestRenderedPageControls(unittest.TestCase):
                 self.assertTrue(any("hidden by" in issue for issue in issues), issues)
                 del group.attrib[attribute]
 
+    def test_hidden_definition_ancestor_is_rejected(self):
+        group = self.root.find(page.SVG + "defs").find(page.SVG + "g")
+        group.set("visibility", "hidden")
+        issues = page.page_issues(self.stats(), self.reference)
+        self.assertTrue(any("glyph " in issue and "visibility hidden" in issue for issue in issues), issues)
+
     def test_unpainted_path_and_glyph_ancestor_are_rejected(self):
         defs = {el for d in self.root.iter(page.SVG + "defs") for el in d.iter()}
         path = next(p for p in self.root.iter(page.SVG + "path")
@@ -194,6 +215,12 @@ class TestRenderedPageControls(unittest.TestCase):
         path.set("stroke", original)
         group = next(g for g in self.root.iter(page.SVG + "g") if g.find(page.SVG + "use") is not None)
         group.set("style", "fill:none; stroke:none")
+        issues = page.page_issues(self.stats(), self.reference)
+        self.assertTrue(any("glyph " in issue and "no visible fill or stroke" in issue for issue in issues), issues)
+
+    def test_zero_fill_and_stroke_opacity_are_rejected(self):
+        group = next(g for g in self.root.iter(page.SVG + "g") if g.find(page.SVG + "use") is not None)
+        group.set("style", "fill-opacity:0; stroke-opacity:0")
         issues = page.page_issues(self.stats(), self.reference)
         self.assertTrue(any("glyph " in issue and "no visible fill or stroke" in issue for issue in issues), issues)
 
@@ -214,7 +241,7 @@ class TestRenderedPageControls(unittest.TestCase):
             target = temp / "pedal.mscx/page-0.svg"
             target.parent.mkdir()
             target.write_text(self.source, encoding="utf-8")
-            payload = {"version": 3, "pages": {"pedal.mscx/page-0.svg": {"stats": self.reference}}}
+            payload = {"version": 3, "pages": {"pedal.mscx/page-0.svg": {"stats": self.reference, "png": None}}}
             reference = temp / "reference.json"
             reference.write_text(json.dumps(payload), encoding="utf-8")
             args = ["check_rendered_page.py", "--golden", str(temp),
@@ -242,7 +269,7 @@ class TestRenderedPageControls(unittest.TestCase):
             target.write_text(source, encoding="utf-8", newline="\n")
             entry = {"page": "pedal.mscx/page-0.svg", "counts": counts,
                      "svg_sha256": hashlib.sha256(target.read_bytes()).hexdigest(), "reason": "control"}
-            payload = {"version": 3, "pages": {entry["page"]: {"stats": self.reference}},
+            payload = {"version": 3, "pages": {entry["page"]: {"stats": self.reference, "png": None}},
                        "count_exceptions": [entry]}
             reference = temp / "reference.json"
             args = ["check_rendered_page.py", "--golden", str(temp), "--reference", str(reference)]
@@ -254,6 +281,88 @@ class TestRenderedPageControls(unittest.TestCase):
             with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
                 self.assertEqual(page.main(), 1)
             self.assertIn("SHA-256 does not match", output.getvalue())
+
+
+class TestPngInkControls(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="rendered-png-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.reference_path = self.root / "reference.png"
+        image = Image.new("RGBA", (128, 128), "white")
+        draw = ImageDraw.Draw(image)
+        for box in ((14, 18, 114, 20), (14, 62, 114, 64), (14, 108, 114, 110),
+                    (24, 12, 27, 116), (96, 12, 99, 116)):
+            draw.rectangle(box, fill="black")
+        image.save(self.reference_path)
+        self.reference = page.png_stats(self.reference_path)
+
+    def issues_for(self, image):
+        path = self.root / "actual.png"
+        image.save(path)
+        return page.png_issues(page.png_stats(path), self.reference)
+
+    def test_blank_png_is_rejected(self):
+        issues = self.issues_for(Image.new("RGBA", (128, 128), "white"))
+        self.assertTrue(any("ink share" in issue for issue in issues), issues)
+        self.assertTrue(any("no ink bounding box" in issue for issue in issues), issues)
+        self.assertTrue(any("grid L1" in issue for issue in issues), issues)
+
+    def test_fully_transparent_black_png_is_blank(self):
+        issues = self.issues_for(Image.new("RGBA", (128, 128), (0, 0, 0, 0)))
+        self.assertTrue(any("no ink bounding box" in issue for issue in issues), issues)
+
+    def test_content_shrunk_to_one_corner_is_rejected(self):
+        with Image.open(self.reference_path) as original:
+            small = original.resize((32, 32), Image.Resampling.NEAREST)
+        canvas = Image.new("RGBA", (128, 128), "white")
+        canvas.paste(small, (0, 0))
+        issues = self.issues_for(canvas)
+        for message in ("ink share", "bbox edge", "grid L1"):
+            self.assertTrue(any(message in issue for issue in issues), issues)
+
+    def test_png_stats_composite_alpha_and_measure_grid(self):
+        image = Image.new("RGBA", (16, 16), "white")
+        image.putpixel((0, 0), (0, 0, 0, 255))
+        image.putpixel((15, 15), (0, 0, 0, 255))
+        image.putpixel((3, 3), (0, 0, 0, 0))
+        path = self.root / "points.png"
+        image.save(path)
+        stats = page.png_stats(path)
+        self.assertEqual(stats["ink_share"], 2 / 256)
+        self.assertEqual(stats["bbox"], [0, 0, 16, 16])
+        self.assertEqual(stats["grid_density"][0][0], 0.25)
+        self.assertEqual(stats["grid_density"][7][7], 0.25)
+
+    def test_cli_requires_every_expected_png_and_rejects_extras(self):
+        target = self.root / "pedal.mscx/page-0.svg"
+        target.parent.mkdir()
+        target.write_text(PEDAL.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+        reference = json.loads(REFERENCE.read_text(encoding="utf-8"))["pages"]["pedal.mscx/page-0.svg"]
+        payload = {"version": 3, "pages": {"pedal.mscx/page-0.svg": {
+            "stats": reference["stats"], "png": {"stats": self.reference}}}}
+        refpath = self.root / "reference.json"
+        refpath.write_text(json.dumps(payload), encoding="utf-8")
+        args = ["check_rendered_page.py", "--golden", str(self.root), "--reference", str(refpath)]
+        # Keep synthetic source PNGs outside the captured tree's inventory.
+        self.reference_path.unlink()
+        output = io.StringIO()
+        with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
+            self.assertEqual(page.main(), 1)
+        self.assertIn("reference PNG missing", output.getvalue())
+        image = Image.new("RGBA", (128, 128), "white")
+        draw = ImageDraw.Draw(image)
+        for box in ((14, 18, 114, 20), (14, 62, 114, 64), (14, 108, 114, 110),
+                    (24, 12, 27, 116), (96, 12, 99, 116)):
+            draw.rectangle(box, fill="black")
+        image.save(target.with_suffix(".png"))
+        with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(page.main(), 0)
+        image.save(self.root / "unexpected.png")
+        output = io.StringIO()
+        with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
+            self.assertEqual(page.main(), 1)
+        self.assertIn("PNG has no reference", output.getvalue())
 
 
 if __name__ == "__main__":

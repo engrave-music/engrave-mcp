@@ -1,4 +1,4 @@
-"""Compare rendered SVG page geometry with immutable 4.7.6 statistics.
+"""Compare exported SVG and PNG pages with immutable 4.7.6 statistics.
 
 This is a geometry/content spot check, not a visual proof of legibility. Path
 bounds are centerline/fill geometry (stroke width and clipping are not modeled).
@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import statistics
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +30,14 @@ NUMBER = re.compile(r"[-+]?(?:(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)")
 # added collisions. Element counts are exact, except for a SHA-pinned exception.
 OVERLAP_DELTA = 0.10
 MIN_GLYPH_SCALE_RATIO = 0.5
+# Measured across the 22 paired 4.7.6/5.0 master PNGs: ink ratios are
+# 0.9665..1.0272, the largest normalized bbox edge movement is 0.0714, and
+# the largest grid L1 distance is 0.1909. These bounds leave room for reflow.
+INK_RATIO_DELTA = 0.10
+BBOX_EDGE_DELTA = 0.09
+GRID_L1_LIMIT = 0.25
+INK_THRESHOLD = 250  # composite over white; RGB below this is visible ink
+GRID_SIZE = 8
 VIEWBOX_EPSILON = 0.01  # points, for SVG coordinate rounding
 OVERLAP_EPSILON = 0.05  # points in each axis, excluding incidental box contact
 
@@ -408,6 +417,7 @@ def parse_svg_page(svg_text):
     limits = (vx, vy, vx+vw, vy+vh)
 
     definitions = {}
+    parents = {child: parent for parent in root.iter() for child in parent}
     for defs in root.iter(SVG + "defs"):
         for el in defs.iter():
             if "id" in el.attrib:
@@ -433,6 +443,27 @@ def parse_svg_page(svg_text):
             return ref_bounds(definitions[name], placed, seen | {name})
         return union_bounds(ref_bounds(child, mat, seen) for child in el)
 
+    def ref_scales(el, parent, seen):
+        mat = compose(parent, parse_transform(el.get("transform")))
+        if el.tag == SVG + "path":
+            return [min_scale(mat)] if path_bounds(el.get("d", "")) is not None else []
+        if el.tag == SVG + "use":
+            name = href(el)
+            if name in seen:
+                raise ValueError(f"cyclic SVG use reference {name!r}")
+            return ref_scales(definitions[name], compose(mat, use_position(el)), seen | {name})
+        return [scale for child in el for scale in ref_scales(child, mat, seen)]
+
+    def definition_state(name, state, hidden):
+        ancestors = []
+        node = definitions[name]
+        while node in parents and parents[node] is not root:
+            node = parents[node]
+            ancestors.append(node)
+        for ancestor in reversed(ancestors):
+            state, hidden = visibility_state(ancestor, state, hidden)
+        return state, hidden
+
     glyph_local = {}
     paths = []
     glyphs = []
@@ -453,6 +484,7 @@ def parse_svg_page(svg_text):
             name = href(el)
             if name in seen:
                 raise ValueError(f"cyclic SVG use reference {name!r}")
+            state, hidden = definition_state(name, state, hidden)
             check_reference_paint(definitions[name], state, hidden, seen | {name}, label)
         for child in el:
             check_reference_paint(child, state, hidden, seen, label)
@@ -477,10 +509,12 @@ def parse_svg_page(svg_text):
             if local:
                 w, h = local[2]-local[0], local[3]-local[1]
                 notehead = 4.0 <= w <= 9.0 and 2.5 <= h <= 7.5 and local[1] < 0 < local[3]
-                check_reference_paint(definitions[name], state, hidden, {name}, f"glyph {name}")
+                ref_state, ref_hidden = definition_state(name, state, hidden)
+                check_reference_paint(definitions[name], ref_state, ref_hidden, {name}, f"glyph {name}")
             placed = compose(mat, use_position(el))
+            scales = ref_scales(definitions[name], placed, {name}) if local else []
             glyphs.append((name, ref_bounds(definitions[name], placed, {name}), notehead,
-                           min_scale(mat) if local else None))
+                           min(scales) if scales else None))
         if el.tag == SVG + "g" and len(el.findall(SVG + "use")) > 1:
             text_runs += 1
         for child in el:
@@ -566,6 +600,73 @@ def count_exceptions(payload):
     return result
 
 
+def png_stats(path):
+    """Measure visible ink after compositing RGBA over white, in page coordinates."""
+    import numpy as np
+    from PIL import Image
+
+    with Image.open(path) as image:
+        rgba = np.asarray(image.convert("RGBA"), dtype=np.uint16)
+    height, width, _ = rgba.shape
+    if not width or not height:
+        raise ValueError("PNG has empty dimensions")
+    alpha = rgba[:, :, 3, None]
+    rgb = (rgba[:, :, :3] * alpha + 255 * (255 - alpha) + 127) // 255
+    ink = np.min(rgb, axis=2) < INK_THRESHOLD
+    count = int(ink.sum())
+    ys, xs = np.nonzero(ink)
+    bbox = [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1] if count else None
+    grid = []
+    for row in range(GRID_SIZE):
+        line = []
+        for col in range(GRID_SIZE):
+            cell = ink[row*height//GRID_SIZE:(row+1)*height//GRID_SIZE,
+                       col*width//GRID_SIZE:(col+1)*width//GRID_SIZE]
+            if not cell.size:
+                raise ValueError("PNG is smaller than the ink grid")
+            line.append(round(float(cell.mean()), 10))
+        grid.append(line)
+    return {"size": [width, height], "ink_share": count / (width * height),
+            "bbox": bbox, "grid_density": grid}
+
+
+def png_metrics(actual, reference):
+    width, height = reference["size"]
+    if reference["ink_share"] <= 0 or reference["bbox"] is None:
+        raise ValueError("PNG reference has no ink")
+    edge_delta = (max(abs(a - b) / dim for a, b, dim in
+                      zip(actual["bbox"], reference["bbox"], (width, height, width, height)))
+                  if actual["bbox"] is not None else None)
+    if (len(actual["grid_density"]) != GRID_SIZE or len(reference["grid_density"]) != GRID_SIZE
+            or any(len(row) != GRID_SIZE for row in actual["grid_density"] + reference["grid_density"])):
+        raise ValueError("invalid PNG ink grid")
+    weighted_difference = 0.0
+    for row in range(GRID_SIZE):
+        for col in range(GRID_SIZE):
+            cell_area = ((row+1)*height//GRID_SIZE - row*height//GRID_SIZE) * (
+                (col+1)*width//GRID_SIZE - col*width//GRID_SIZE)
+            weighted_difference += abs(actual["grid_density"][row][col] -
+                                       reference["grid_density"][row][col]) * cell_area
+    return (actual["ink_share"] / reference["ink_share"], edge_delta,
+            weighted_difference / (reference["ink_share"] * width * height))
+
+
+def png_issues(actual, reference):
+    issues = []
+    if actual["size"] != reference["size"]:
+        return [f"PNG size {actual['size']} differs from reference {reference['size']}"]
+    ratio, edge_delta, grid_l1 = png_metrics(actual, reference)
+    if abs(ratio - 1) > INK_RATIO_DELTA + 1e-12:
+        issues.append(f"PNG ink share ratio {ratio:.4f} outside ±{INK_RATIO_DELTA:.0%}")
+    if edge_delta is None:
+        issues.append("PNG has no ink bounding box")
+    elif edge_delta > BBOX_EDGE_DELTA:
+        issues.append(f"PNG bbox edge delta {edge_delta:.4f} exceeds {BBOX_EDGE_DELTA:.4f}")
+    if grid_l1 > GRID_L1_LIMIT:
+        issues.append(f"PNG grid L1 {grid_l1:.4f} exceeds {GRID_L1_LIMIT:.4f}")
+    return issues
+
+
 async def capture_pages(binary, resources, soundfont, output):
     """Capture the golden harness's SVGs and master page-0 PNGs through MCP."""
     from golden import (ClientSession, GENERATE_EXCERPTS, StdioServerParameters,
@@ -640,14 +741,14 @@ async def capture_pages(binary, resources, soundfont, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--golden", type=Path, default=ROOT / "tests/golden/windows",
-                        help="directory of SVG pages to check")
+                        help="directory of already captured SVG and PNG pages to check")
     parser.add_argument("--reference", type=Path, default=ROOT / "tests/golden/page_reference.json",
                         help="checked-in 4.7.6 statistics")
     parser.add_argument("--capture-only", action="store_true", help="capture exports without comparing them")
     parser.add_argument("--binary", type=Path, help="MCP host used for page capture")
     parser.add_argument("--resources", type=Path, help="host resources for page capture")
     parser.add_argument("--soundfont", type=Path, help="host soundfont for page capture")
-    parser.add_argument("--output", type=Path, help="empty directory for captured pages")
+    parser.add_argument("--output", type=Path, help="directory for captured pages")
     args = parser.parse_args()
     if args.capture_only:
         if not all((args.binary, args.resources, args.soundfont, args.output)):
@@ -659,6 +760,18 @@ def main():
             print(f"error: {exc}", file=sys.stderr)
             return 1
         return 0
+    if any((args.binary, args.resources, args.soundfont, args.output)):
+        if not all((args.binary, args.resources, args.soundfont, args.output)):
+            parser.error("page capture requires --binary, --resources, --soundfont and --output")
+        try:
+            args.output.mkdir(parents=True, exist_ok=True)
+            args.golden = Path(tempfile.mkdtemp(prefix="capture-", dir=args.output))
+            asyncio.run(asyncio.wait_for(capture_pages(args.binary, args.resources, args.soundfont,
+                                                      args.golden), timeout=1800))
+        except (ValueError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"Captured pages: {args.golden}")
     if not args.golden.is_dir() or not args.reference.is_file():
         print("error: missing golden directory or reference file", file=sys.stderr)
         return 2
@@ -667,6 +780,9 @@ def main():
         print("error: invalid page reference format", file=sys.stderr)
         return 2
     pages = payload["pages"]
+    if any(not isinstance(entry, dict) or "png" not in entry for entry in pages.values()):
+        print("error: each SVG reference must declare its PNG reference or null", file=sys.stderr)
+        return 2
     try:
         exceptions = count_exceptions(payload)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
@@ -714,7 +830,39 @@ def main():
     for name in missing:
         print(f"{name}: FAIL: reference page missing from golden directory")
     failed += len(missing)
-    print(f"Total: {len(files)} pages checked, {failed} failure(s)")
+    expected_png = {str(Path(name).with_suffix(".png").as_posix()): entry["png"]
+                    for name, entry in pages.items() if entry["png"] is not None}
+    svg_only = [name for name, entry in pages.items() if entry["png"] is None]
+    actual_png = {path.relative_to(args.golden).as_posix(): path
+                  for path in args.golden.rglob("*.png")}
+    for name in sorted(set(expected_png) | set(actual_png)):
+        issues = []
+        detail = ""
+        if name not in expected_png:
+            issues.append("PNG has no reference")
+        elif name not in actual_png:
+            issues.append("reference PNG missing from capture")
+        else:
+            try:
+                actual = png_stats(actual_png[name])
+                reference = expected_png[name]["stats"]
+                issues = png_issues(actual, reference)
+                if actual["size"] == reference["size"]:
+                    ratio, edge, grid = png_metrics(actual, reference)
+                    detail = (f" (ink {reference['ink_share']:.6f}->{actual['ink_share']:.6f}, "
+                              f"ratio {ratio:.4f}, bbox edge {edge:.4f}, grid L1 {grid:.4f})"
+                              if edge is not None else " (no ink bbox)")
+            except (ValueError, KeyError, OSError, TypeError) as exc:
+                issues = [f"invalid PNG or reference: {exc}"]
+        print(f"{name}: {'FAIL' if issues else 'PASS'}{detail}")
+        if issues:
+            failed += 1
+            for issue in issues:
+                print(f"    {issue}")
+    for name in svg_only:
+        print(f"{name}: SVG only (golden harness exports PNG for master page 0 only)")
+    print(f"Total: {len(files)} SVG pages, {len(actual_png)} PNG pages, "
+          f"{len(svg_only)} SVG-only pages, {failed} failure(s)")
     return 0 if failed == 0 else 1
 
 
