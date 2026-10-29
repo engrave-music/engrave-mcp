@@ -618,10 +618,37 @@ Tolerances for A2, fixed before the port starts:
   (`tests/golden/allow.json`) that also names the upstream commit causing it.
 - `audio.json`: the existing per-platform tolerances of `scripts/golden.py` (peak and rms
   1e-4, spectral centroid 1 Hz, centroid envelope 2 Hz; frames, sample rate and channels
-  exact). The engine_audio lane keeps the step-5 criteria (onset 1.95 ms, pitch 0.80 cent,
+  exact). Tolerance revision (A0/A2 review fix): spectral centroid envelope differences
+  were previously bypassed whenever RMS <= 1e-4, which erroneously ignored centroid divergence
+  in quiet nonzero signals (e.g. RMS 0.00010, -80 dBFS). The rule is tightened so that
+  centroid differences are ignored strictly when the centroid is numerically meaningless: only
+  when signal amplitude on both sides is at or below the 16-bit PCM quantization noise floor
+  (< 5e-6 / -106 dBFS, rounding to 0.0 in the stored 5-decimal RMS envelope). Any window with
+  nonzero RMS on either side is strictly compared against the 2.0 Hz tolerance. Regression unit
+  tests with synthetic windows (exact silence, quiet tones within tolerance, diverging quiet tones,
+  and asymmetric silence) enforce this contract in `scripts/test_oracle_harness.py`. All golden
+  audio fixtures pass under this strict criterion without widening tolerances.
+  The engine_audio lane keeps the step-5 criteria (onset 1.95 ms, pitch 0.80 cent,
   level within 2%, MIDI events exact).
 - MSCX, raw MusicXML, SVG, PNG, PDF, positions and metadata are re-baselined in A2 with a diff
   report sorted by cause, plus a spot check of rendered pages. They are not an oracle across
   the port.
 
 Full suite (executed 2026-10-28, tag `a0`): Windows 26/26 lanes and Linux 26/26 lanes pass, including the new `semantic_check` lane and `golden` against the recaptured trees (348 outputs per platform).
+
+
+## Roadmap-engrave A2: Oracle harness hardening and review fixes (2026-10-29)
+
+Review finding fixes and oracle hardening:
+1. **Semantic checker spanner validation (`scripts/check_semantic_dump.py`)**:
+   Replaced the blind-spot intersection of observed types with an explicit, documented set of supported spanner types (`HairPin`, `Ottava`, `Pedal`, `Slur`, `Volta`). A missing or unexpected spanner type on either side is immediately flagged as a mismatch. Added a mutation test suite in `scripts/test_oracle_harness.py` that mutates dumps (dropping all spanners of a type, shifting an endpoint, dropping a tie, and altering note pitch) and proves each mutation is detected.
+2. **Audio near-silence centroid tolerance revision (`scripts/golden.py`)**:
+   Tightened the near-silence centroid bypass from RMS <= 1e-4 to strictly zero RMS in the 5-decimal envelope (below 16-bit PCM quantization floor < 5e-6 / -106 dBFS). Quiet nonzero tones (e.g. RMS 0.00010) are strictly compared against the 2.0 Hz envelope tolerance. Unit tests with synthetic windows verify silence skipping and quiet tone comparison. All golden audio comparisons pass under this revised tolerance.
+3. **Complete EID token normalization (`scripts/golden.py`)**:
+   Expanded EID normalization to cover all 9 writer/reader EID-valued tags: `eid`, `linkedTo`, `startElement`, `endElement`, `NoteEID`, `mmRestLast`, `startMeasure`, `endMeasure`, and `sharedPart`. Ensures 5.0 `<PageLocks>`, `<SystemLocks>`, and `SharedPart` references map to consistent `e1, e2, ...` tokens preserving element identity while detecting modified targets. Added fallback support for blanked EIDs (`<eid/>`) to maintain backwards compatibility with the 4.7.6 golden baseline (348/348 identical).
+4. **Rendered-page spot check without screenshots (`scripts/check_rendered_page.py`)**:
+   Automated vector graphic verification across all 25 golden SVG pages:
+   - Validates that every glyph and path bounding box lies strictly within the page's viewBox (0 violations across all 25 pages).
+   - Extracts and compares per-page element counts by kind (rendered paths, text glyph runs, notehead-like glyphs with SMuFL Leland geometry) against the 4.7.6 render in git (`git show codex/xmake-parity:tests/golden/windows/<f>/page-N.svg`).
+   - Reports exact ratios (1.00 across all 25 golden pages) and enforces documented 5% delta thresholds.
+   - Added `oracle_harness` and `rendered_page` test lanes to `notes/a2/verify/run_all_a2.ps1`.
