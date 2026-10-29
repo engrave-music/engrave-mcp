@@ -590,7 +590,10 @@ target("musescore_mcp_test")
 
 target("noqt_support_test")
     set_kind("binary")
-    add_deps("muse_generated", "noqt_support")
+    -- engine_audio is linked so the IoC contract test can call a real host entry
+    -- point that requires the file-system service (initialize_engine_audio, which
+    -- guards on it in engine_audio.cpp); the adapter itself lives in noqt_support.
+    add_deps("muse_generated", "noqt_support", "engine_audio")
     add_manifest_target("noqt_support_test")
     add_files(path.join(project_root, "native", "tests", "ioc_tu2.cpp"))
     add_links("z")
