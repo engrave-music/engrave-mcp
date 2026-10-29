@@ -11,11 +11,13 @@ also pin the actual file's normalized sha256 for the current platform, so an
 entry cannot silently cover future changes. ``pin`` prints skeleton entries for
 the un-allowed differences in an existing compare report.
 
-Volatile fields removed by normalization (observed by running twice):
+Volatile fields normalized (observed by running twice):
   * Every MSCX/MSCZ inner ``<eid>`` and EID-reference value (``linkedTo``,
-    ``startElement``, ``endElement``, ``NoteEID``, ``mmRestLast``) is replaced
-    with a self-closing empty tag (e.g. ``<eid/>``); the values are random per
-    created document and non-deterministic across runs.
+    ``startElement``, ``endElement``, ``NoteEID``, ``mmRestLast``) is mapped
+    to a stable token (``e1``, ``e2``, ...) in order of first appearance per
+    document (per file, after the whole file is read), preserving element
+    identity and endpoint relationships across non-deterministic runtime EID
+    allocations.
   * MSCX ``programVersion``/``programRevision`` and metaTag ``creationDate``/
     ``platform``; MusicXML ``encoding-date``/``software`` and the mirrored
     ``miscellaneous-field`` creationDate/platform values.
@@ -99,8 +101,19 @@ def write_json(path: Path, value, indent: int = 1) -> None:
 
 
 def normalize_mscx(text: str) -> str:
-    for tag in ("eid", "linkedTo", "startElement", "endElement", "NoteEID", "mmRestLast"):
-        text = re.sub(rf"<{tag}>[^<]*</{tag}>", rf"<{tag}/>", text)
+    eid_map: dict[str, str] = {}
+
+    def replace_eid(match: re.Match) -> str:
+        tag = match.group(1)
+        val = match.group(2).strip()
+        if not val:
+            return f"<{tag}/>"
+        if val not in eid_map:
+            eid_map[val] = f"e{len(eid_map) + 1}"
+        return f"<{tag}>{eid_map[val]}</{tag}>"
+
+    tag_pattern = rf"<({'|'.join(('eid', 'linkedTo', 'startElement', 'endElement', 'NoteEID', 'mmRestLast'))})>([^<]+)</\1>"
+    text = re.sub(tag_pattern, replace_eid, text)
     for tag in ("programVersion", "programRevision"):
         text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", rf"\1\2", text)
     for name in ("creationDate", "platform"):

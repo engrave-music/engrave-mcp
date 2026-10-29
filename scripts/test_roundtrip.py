@@ -201,7 +201,7 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
             m_start, mlen, _ = meas_ticks[m_idx] if m_idx < len(meas_ticks) else (0, 1920, (4, 4))
             m_eid = m.findtext("eid")
             if m_eid:
-                eid_to_info[m_eid] = ("measure", staff_id, m_idx, m_start, mlen)
+                eid_to_info[m_eid.strip()] = ("measure", staff_id, m_idx, m_start, mlen)
 
             ts = m.find(".//TimeSig")
             ts_str = f"{ts.findtext('sigN')}/{ts.findtext('sigD')}" if ts is not None else None
@@ -281,7 +281,7 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                             order_rank = 1
 
                         if c_eid:
-                            eid_to_info[c_eid] = ("chord", staff_id, event_tick, dur, child)
+                            eid_to_info[c_eid.strip()] = ("chord", staff_id, event_tick, dur, child)
 
                         stem_dir = (child.findtext("StemDirection") or child.findtext("stemDirection") or "").strip()
                         notes_list = []
@@ -296,13 +296,15 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                             notes_list.append(note_obj)
 
                             if n_eid:
-                                eid_to_info[n_eid] = ("note", staff_id, event_tick, dur, note_obj)
+                                eid_to_info[n_eid.strip()] = ("note", staff_id, event_tick, dur, note_obj)
 
                             for f in n.findall("Fingering"):
                                 fingering_list.append(f.findtext("text", "").strip())
                             
                             tie = n.find("Tie")
                             if tie is not None:
+                                s_el = tie.findtext("startElement")
+                                e_el = tie.findtext("endElement")
                                 ties_to_resolve.append({
                                     "end_note": note_obj,
                                     "end_tick": event_tick,
@@ -310,8 +312,8 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                                     "voice_idx": v_idx,
                                     "pitch": pitch,
                                     "is_grace_after": is_grace_after,
-                                    "start_eid": tie.findtext("startElement"),
-                                    "end_eid": tie.findtext("endElement"),
+                                    "start_eid": s_el.strip() if s_el else None,
+                                    "end_eid": e_el.strip() if e_el else None,
                                     "raw_index": len(raw_events),
                                     "raw_events": raw_events,
                                     "m_idx": m_idx,
@@ -345,7 +347,10 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                         event_tick = v_tick
                         last_main_tick = v_tick
                         order_rank = 1
+                        r_eid = child.findtext("eid")
                         evt_container = ["rest", event_tick, dur, (), "none", ""]
+                        if r_eid:
+                            eid_to_info[r_eid.strip()] = ("rest", staff_id, event_tick, dur, child)
                         raw_events.append((event_tick, order_rank, seq, evt_container))
                         seq += 1
 
@@ -393,6 +398,7 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
 
         start_found = False
         start_tick = 0
+        info = None
         if start_eid and start_eid in eid_to_info:
             info = eid_to_info[start_eid]
             if info[0] == "note":
@@ -474,8 +480,10 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                 if staff_id in staff_spanners:
                     staff_spanners[staff_id].append((stype, staff_id, start_tick, end_tick, props))
             else:
-                start_eid = sp.findtext("startElement")
-                end_eid = sp.findtext("endElement")
+                s_el = sp.findtext("startElement")
+                e_el = sp.findtext("endElement")
+                start_eid = s_el.strip() if s_el else None
+                end_eid = e_el.strip() if e_el else None
                 if start_eid and end_eid:
                     start_info = eid_to_info.get(start_eid)
                     end_info = eid_to_info.get(end_eid)
