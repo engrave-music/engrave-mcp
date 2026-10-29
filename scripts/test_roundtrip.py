@@ -261,7 +261,7 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
 
                         if is_grace:
                             dur = 0
-                            event_tick = last_main_tick if is_grace_after else v_tick
+                            event_tick = v_tick
                             order_rank = 2 if is_grace_after else 0
                         elif child.findtext("duration"):
                             dur = frac_to_ticks(child.findtext("duration"), div)
@@ -367,11 +367,6 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                         mk_sub = (mk.findtext("markerType") or mk.findtext("subtype") or mk.findtext("label") or mk.findtext("text") or "").strip()
                         markers_list.append((m_idx, mk_sub))
 
-                # After voice children are processed, update any grace8after event_tick to match last_main_tick
-                for item in raw_events:
-                    evt = item[3]
-                    if evt[0] == "chord" and evt[4].endswith("after"):
-                        evt[1] = last_main_tick
 
                 raw_events.sort(key=lambda item: (item[0], item[1], item[2]))
                 events_by_voice[v_idx].extend(item[3] for item in raw_events)
@@ -445,8 +440,9 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                         if start_found:
                             break
 
+        tie_staff = info[1] if (start_found and start_eid and start_eid in eid_to_info) else staff_id
         if start_found:
-            staff_spanners[staff_id].append(("Tie", staff_id, start_tick, end_tick, ()))
+            staff_spanners.setdefault(tie_staff, []).append(("Tie", tie_staff, start_tick, end_tick, ()))
 
     # Convert notes_list to tuple(sorted(notes)) and evt_container to tuple
     for staff_id, vmap in staff_events.items():
