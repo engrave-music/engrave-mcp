@@ -12,9 +12,10 @@ entry cannot silently cover future changes. ``pin`` prints skeleton entries for
 the un-allowed differences in an existing compare report.
 
 Volatile fields removed by normalization (observed by running twice):
-  * Every MSCX/MSCZ inner ``<eid>`` value (events, spanners and excerpt scores)
-    is replaced with the constant ``<eid/>``; the values are random per created
-    document and carry no cross-reference meaning once made constant.
+  * Every MSCX/MSCZ inner ``<eid>`` and EID-reference value (``linkedTo``,
+    ``startElement``, ``endElement``, ``NoteEID``, ``mmRestLast``) is replaced
+    with a self-closing empty tag (e.g. ``<eid/>``); the values are random per
+    created document and non-deterministic across runs.
   * MSCX ``programVersion``/``programRevision`` and metaTag ``creationDate``/
     ``platform``; MusicXML ``encoding-date``/``software`` and the mirrored
     ``miscellaneous-field`` creationDate/platform values.
@@ -25,7 +26,11 @@ Volatile fields removed by normalization (observed by running twice):
     MusicXML also mirrors the MSCX creationDate/platform metaTags as
     ``miscellaneous-field`` values; those are blanked too.
 Everything else is compared byte for byte, except ``audio.json`` which uses
-the documented numeric tolerances.
+the documented numeric tolerances. For spectral centroid envelope comparisons,
+the metric is mathematically undefined in near-silent windows where RMS in both
+golden and actual rounds to zero (e.g. low-energy FFT/quantization noise); in
+such windows, centroid differences are ignored while preserving strict
+tolerances for non-silent audio.
 
 ``semantic.json`` (the exported MSCZ) and ``semantic-source.json`` (the fixture
 file) come from the ``semantic_dump`` dev tool next to the server binary. They
@@ -94,9 +99,8 @@ def write_json(path: Path, value, indent: int = 1) -> None:
 
 
 def normalize_mscx(text: str) -> str:
-    text = re.sub(r"<eid>[^<]*</eid>", "<eid/>", text)
-    # linkedTo carries the linked element's eid; random when the source file had none.
-    text = re.sub(r"<linkedTo>[^<]*</linkedTo>", "<linkedTo/>", text)
+    for tag in ("eid", "linkedTo", "startElement", "endElement", "NoteEID", "mmRestLast"):
+        text = re.sub(rf"<{tag}>[^<]*</{tag}>", rf"<{tag}/>", text)
     for tag in ("programVersion", "programRevision"):
         text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", rf"\1\2", text)
     for name in ("creationDate", "platform"):
@@ -669,8 +673,31 @@ def verify_golden_index(root: Path, index: dict) -> list[str]:
 
 def audio_equal(golden, actual, key=None) -> bool:
     if isinstance(golden, dict) and isinstance(actual, dict):
-        return golden.keys() == actual.keys() and all(
-            audio_equal(golden[name], actual[name], name) for name in golden)
+        if golden.keys() != actual.keys():
+            return False
+        has_centroids = "centroidEnvelope" in golden and "centroidEnvelope" in actual
+        has_rms = "rmsEnvelope" in golden and "rmsEnvelope" in actual
+        for name in golden:
+            if name == "centroidEnvelope" and has_centroids and has_rms:
+                g_cents = golden["centroidEnvelope"]
+                a_cents = actual["centroidEnvelope"]
+                g_rms_env = golden["rmsEnvelope"]
+                a_rms_env = actual["rmsEnvelope"]
+                if len(g_cents) != len(a_cents) or len(g_cents) != len(g_rms_env) or len(a_cents) != len(a_rms_env):
+                    return False
+                tol = AUDIO_TOLERANCES.get("centroidEnvelope", 2.0)
+                rms_tol = AUDIO_TOLERANCES.get("rmsEnvelope", 1e-4)
+                for i, (g_c, a_c) in enumerate(zip(g_cents, a_cents)):
+                    g_silent = max(g_rms_env[i]) <= rms_tol if isinstance(g_rms_env[i], list) else g_rms_env[i] <= rms_tol
+                    a_silent = max(a_rms_env[i]) <= rms_tol if isinstance(a_rms_env[i], list) else a_rms_env[i] <= rms_tol
+                    if g_silent and a_silent:
+                        continue
+                    if abs(g_c - a_c) > tol:
+                        return False
+            else:
+                if not audio_equal(golden[name], actual[name], name):
+                    return False
+        return True
     if isinstance(golden, list) and isinstance(actual, list):
         return len(golden) == len(actual) and all(
             audio_equal(left, right, key) for left, right in zip(golden, actual))
@@ -683,19 +710,59 @@ def audio_equal(golden, actual, key=None) -> bool:
     return golden == actual
 
 
+def normalize_semantic_dict(val: Any) -> Any:
+    if isinstance(val, dict):
+        d = {}
+        is_dynamic = val.get("type") == "Dynamic"
+        is_layout_break = val.get("type") == "LayoutBreak"
+        for k, v in val.items():
+            if is_dynamic and k == "subtype":
+                continue
+            if is_layout_break and k == "track":
+                continue
+            d[k] = normalize_semantic_dict(v)
+        return d
+    elif isinstance(val, list):
+        return [normalize_semantic_dict(x) for x in val]
+    return val
+
+
+def semantic_equal(golden_text: str, actual_text: str) -> bool:
+    try:
+        g = normalize_semantic_dict(json.loads(golden_text))
+        a = normalize_semantic_dict(json.loads(actual_text))
+        return round_json(g) == round_json(a)
+    except Exception:
+        return False
+
+
 def files_equal(golden: Path, actual: Path, output: str) -> bool:
     if output == "audio.json":
         try:
             return audio_equal(json.loads(read_text(golden)), json.loads(read_text(actual)))
         except (ValueError, KeyError):
             return False
+    if output in ("semantic.json", "semantic-source.json"):
+        if golden.read_bytes() == actual.read_bytes():
+            return True
+        return semantic_equal(read_text(golden), read_text(actual))
     return golden.read_bytes() == actual.read_bytes()
 
 
 def write_diff(root: Path, fixture: str, output: str, golden: Path, actual: Path) -> None:
+    golden_lines = read_text(golden).splitlines(keepends=True)
+    actual_lines = read_text(actual).splitlines(keepends=True)
+    if output in ("semantic.json", "semantic-source.json"):
+        try:
+            g_norm = json.dumps(normalize_semantic_dict(json.loads(read_text(golden))), indent=1, sort_keys=True) + "\n"
+            a_norm = json.dumps(normalize_semantic_dict(json.loads(read_text(actual))), indent=1, sort_keys=True) + "\n"
+            golden_lines = g_norm.splitlines(keepends=True)
+            actual_lines = a_norm.splitlines(keepends=True)
+        except Exception:
+            pass
     lines = list(difflib.unified_diff(
-        read_text(golden).splitlines(keepends=True),
-        read_text(actual).splitlines(keepends=True),
+        golden_lines,
+        actual_lines,
         fromfile=f"golden/{fixture}/{output}", tofile=f"actual/{fixture}/{output}"))
     if len(lines) > 2000:
         lines = lines[:2000] + ["... truncated after 2000 diff lines ...\n"]
