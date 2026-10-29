@@ -30,10 +30,10 @@ ROOT = Path(__file__).resolve().parents[1]
 # A different difference list fails with its new digest; an entry whose phase no longer differs is reported stale.
 KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
     "bend.gp": {
-        "musicxml": ("9bb3db5215477217", "GP bend grace-after notes re-imported as grace-before (appoggiatura) on following chord"),
+        "musicxml": ("f386eae23b9c8cb7", "The same GP grace-after notes become grace-before on the following chord; the corrected 5.00 parser changes the digest representation."),
     },
     "drums_import.musicxml": {
-        "mscz_text": ("4fbcfbaf8ebf0f31", "MSCZ round-trip synthesizes title <size>24</size> element from font size attribute"),
+        "mscz_text": ("3a759cb7769875f9", "The only content change is the same synthesized title size element; hunk context and line numbers differ in 5.00 serialization."),
     },
     "hairpins_and_repeats.mscx": {
         "musicxml": ("05dd75d215fedcc1", "invisible fff dynamic is not exported"),
@@ -43,19 +43,18 @@ KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
         "idempotence": ("aeab1d528f30d872", "unrendered MusicXML harmony dropped on second export"),
     },
     "linked_parts.mscx": {
-        "musicxml": ("565be437be792c3f", "grace8after with ties converted to appoggiatura in MusicXML"),
+        "musicxml": ("fb3d4f6354501cb7", "The same grace conversion and backward cross-staff tie occur in historical 4.7.6 A/C files; the corrected 5.00 parser describes them differently."),
         "idempotence": ("efa1ff9698e4b076", "the tie re-attached to moved grace note is dropped on second import"),
     },
     "linked_parts.mscx:excerpt:0": {
-        "mscz_text": ("de7e328d6843c80a", "MSCZ round-trip drops excerpt <name>, <Style><spatium>, and all <linkedTo> tags"),
-        "musicxml": ("565be437be792c3f", "grace8after with ties converted to appoggiatura in MusicXML"),
+        "mscz_text": ("77d073cac18ac443", "Same dropped excerpt name, style block and links as 4.7.6; the dropped 5.00 style block contains additional upstream style fields. Both current runs produced the same digest."),
+        "musicxml": ("fb3d4f6354501cb7", "Same grace conversion and backward cross-staff tie as the linked master; parser representation changed."),
         "idempotence": ("efa1ff9698e4b076", "the tie re-attached to moved grace note is dropped on second import"),
     },
     "slurs.mscz": {
         "musicxml": ("02ce304f5126a1fd", "grace16after slurs: grace-after notes converted to grace-before in MusicXML"),
     },
     "ghost_note.mscx": {
-        "mscz_text": ("eca5346553661549", "4.10 ghost notes: the first save after the legacy read writes one NoteParenGroup twice; the reloaded score writes it once"),
         "musicxml": ("7872bae4c4cf03e9", "linked tab staff gains an explicit 4/4 time signature after MusicXML import"),
     },
     "tab_grace_prebend.mscx": {
