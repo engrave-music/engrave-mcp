@@ -1,3 +1,4 @@
+#include "engine_audio.h"
 #include "noqt_filesystem.h"
 #include "settings.h"
 #include <fstream>
@@ -6,6 +7,11 @@
 
 static void expect(bool value, const char* what) {
     if (!value) throw std::runtime_error(what);
+}
+
+static std::string utf8String(const std::filesystem::path& path) {
+    const auto value = path.u8string();
+    return std::string(value.begin(), value.end());
 }
 
 
@@ -128,9 +134,21 @@ public:
  *      native/score_render.cpp:38-39     IScoreRenderer -> "Score renderer unavailable"
  *      native/cairo_painter.cpp:390-392  IFontsDatabase -> "CairoPainter: IFontsDatabase is not registered"
  *    Those call sites live in translation units this test binary does not link,
- *    so what is pinned here is the condition they guard on: after resetAll() a
- *    required lookup is null and an injection that resolved earlier reports null
- *    as well, so a host guard cannot keep using a cleared required service.
+ *    except the first: engine_audio is linked here, and section 8 executes it.
+ *    What the other two guards rely on is pinned as a condition: after
+ *    resetAll() a required lookup is null and an injection that resolved
+ *    earlier reports null as well, so a host guard cannot keep using a cleared
+ *    required service.
+ *
+ * 8. Host Failure Without the File-System Service:
+ *    initialize_engine_audio() (native/engine_audio.cpp:438) is a real host
+ *    entry point that requires IFileSystem - it turns the SoundFont path into
+ *    an absolute Uri. With no such export registered it must return false, fill
+ *    `error` with its documented message, leave no engine behind, and not
+ *    crash; the next engine entry point must report the same not-initialised
+ *    state instead of half-working. The successful path is not driven here: it
+ *    needs a real SoundFont and leaves process-wide engine state that cannot be
+ *    re-initialised, so only the guard and the state it leaves are exercised.
  * =========================================================================
  */
 void test_ioc_contract(const std::filesystem::path& assetsRoot)
@@ -271,7 +289,7 @@ void test_ioc_contract(const std::filesystem::path& assetsRoot)
     // 7. A required dependency that is gone fails instead of serving a stale
     //    adapter. The host registers its native filesystem exactly like this
     //    (native/noqt_runtime.cpp) and guards later use of it with
-    //    native/engine_audio.cpp:464-466; the guard itself is not linked here.
+    //    native/engine_audio.cpp:464-466 (that guard itself runs in section 8).
     auto runtimeFileSystem = std::make_shared<music::NativeFileSystem>(assetsRoot);
     gIoc->registerExport<muse::io::IFileSystem>("contract_test", runtimeFileSystem);
     expect(gIoc->resolve<muse::io::IFileSystem>("contract_test") == runtimeFileSystem,
@@ -295,6 +313,52 @@ void test_ioc_contract(const std::filesystem::path& assetsRoot)
     resetAll();
 
     std::cout << "IoC modularity contract checks passed\n";
+}
+
+/*
+ * 8. Host failure path. initialize_engine_audio() resolves IFileSystem itself
+ *    (native/engine_audio.cpp:464-466) because it turns the SoundFont path into
+ *    an absolute Uri, and that path ends in FileInfo's own GlobalInject, which
+ *    would be a null dereference (muse/framework/global/io/fileinfo.h:33,
+ *    fileinfo.cpp:71). With the service gone the call must report that clearly
+ *    instead, and the process must stay in the documented "no engine" state
+ *    instead of a half-built one.
+ */
+void test_required_service_host_failure(const std::filesystem::path& root)
+{
+    using namespace kors::modularity;
+
+    resetAll();
+    expect(globalIoc()->resolve<muse::io::IFileSystem>("engine_audio") == nullptr,
+           "no file-system service is registered before the host call");
+
+    // Control: the entry point is live and its own argument checks run first, so
+    // the failure below is the service guard and not a dead or no-op call.
+    const std::string notASoundFont = utf8String(root / "missing.wav");
+    std::string error;
+    expect(!music::initialize_engine_audio(notASoundFont, &error),
+           "engine audio rejects a non-SoundFont path");
+    expect(error == "SoundFont must be an existing .sf2 or .sf3 file: " + notASoundFont,
+           "the rejected path reports the documented SoundFont argument error");
+
+    // The guard: the required file-system service is not registered.
+    error.clear();
+    const std::string soundfontPath = utf8String(root / "missing.sf2");
+    expect(!music::initialize_engine_audio(soundfontPath, &error),
+           "engine audio fails instead of using a missing file-system service");
+    expect(error == "native runtime (IFileSystem) is not initialised; "
+                    "call initialize_native_runtime() first",
+           "the missing service reports the documented IFileSystem error");
+    expect(!music::engine_audio_initialized(), "the failed call leaves no engine behind");
+
+    // The next required entry point sees the same state, so a refused
+    // initialisation is not mistaken for a usable engine.
+    const music::AudioRenderResult result = music::export_score_audio(nullptr, music::AudioRenderRequest{});
+    expect(!result.ok, "audio export fails without an initialised engine");
+    expect(result.error == "audio engine is not initialised",
+           "audio export reports the documented not-initialised error");
+
+    std::cout << "required-service host failure checks passed\n";
 }
 
 } // namespace
@@ -347,6 +411,7 @@ int main(int argc, char** argv) {
         settings->reset();
         expect(settings->value(key).toInt() == 1, "Reset defaults");
         test_ioc_contract(root / "assets");
+        test_required_service_host_failure(root);
         std::cout << "native filesystem/settings checks passed\n";
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }
