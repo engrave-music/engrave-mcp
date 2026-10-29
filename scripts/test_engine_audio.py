@@ -51,7 +51,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import hashlib
+import io
 import json
 import math
 import os
@@ -61,7 +63,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Any
+import traceback
+from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -225,23 +228,32 @@ DECODED_DURATION_TOLERANCE = {"wav": 0.001, "flac": 0.001, "ogg": 0.05,
                               "mp3": 0.15, "aac": 0.15}
 
 
-def test_cross_platform_audio_features(evidence: dict[str, Any]) -> None:
-    print("[1/6] Comparing Windows and Linux golden audio features with explicit tolerances...")
-    trees = {platform: ROOT / "tests" / "golden" / platform for platform in ("windows", "linux")}
+class AudioCheckPending(Exception):
+    """A required check cannot yet be completed."""
+
+
+def test_cross_platform_audio_features(
+    evidence: dict[str, Any], golden_dir: Path | None = None,
+) -> None:
+    print("[cross-platform] Comparing Windows and Linux golden audio features...")
+    golden_dir = golden_dir or ROOT / "tests" / "golden"
+    trees = {platform: golden_dir / platform for platform in ("windows", "linux")}
     for platform, tree in trees.items():
-        assert tree.is_dir(), f"Golden tree missing for {platform}: {tree}"
+        if not tree.is_dir():
+            raise AudioCheckPending(f"Golden tree missing for {platform}: {tree}")
 
     def fixtures(tree: Path) -> dict[str, Path]:
         return {path.parent.name: path for path in sorted(tree.glob("*/audio.json"))}
 
     windows = fixtures(trees["windows"])
     linux = fixtures(trees["linux"])
-    assert windows, "tests/golden/windows contains no audio.json files"
-    assert linux, "tests/golden/linux contains no audio.json files"
-    assert set(windows) == set(linux), (
-        f"Golden fixture sets differ: windows-only {sorted(set(windows) - set(linux))}, "
-        f"linux-only {sorted(set(linux) - set(windows))}"
-    )
+    if not windows or not linux:
+        raise AudioCheckPending("Windows or Linux golden tree contains no audio.json files")
+    if set(windows) != set(linux):
+        raise AudioCheckPending(
+            f"Golden fixture sets differ: windows-only {sorted(set(windows) - set(linux))}, "
+            f"linux-only {sorted(set(linux) - set(windows))}"
+        )
 
     maxima = {key: 0.0 for key in CROSS_PLATFORM_TOLERANCES}
     worst = {key: "" for key in CROSS_PLATFORM_TOLERANCES}
@@ -282,6 +294,87 @@ def test_cross_platform_audio_features(evidence: dict[str, Any]) -> None:
     }
     summary = ", ".join(f"{key} {value:.6g}" for key, value in maxima.items())
     print(f"  {len(windows)} fixtures agree across Windows/Linux (max deltas: {summary})")
+
+
+def run_audio_checks(
+    checks: list[tuple[str, Callable[[], None]]], evidence: dict[str, Any],
+) -> int:
+    results: dict[str, dict[str, str]] = {}
+    for name, check in checks:
+        try:
+            check()
+        except AudioCheckPending as err:
+            results[name] = {"status": "pending", "reason": str(err)}
+            print(f"  {name}: PENDING: {err}")
+        except Exception as err:
+            results[name] = {"status": "failed", "reason": f"{type(err).__name__}: {err}"}
+            print(f"  {name}: FAILED: {type(err).__name__}: {err}")
+            traceback.print_exc(file=sys.stdout)
+        else:
+            results[name] = {"status": "passed"}
+
+    statuses = {item["status"] for item in results.values()}
+    status = "failed" if "failed" in statuses else "pending" if "pending" in statuses else "passed"
+    evidence["checks"] = results
+    evidence["status"] = status
+    print("\nengine_audio check summary:")
+    for name, result in results.items():
+        detail = f": {result['reason']}" if "reason" in result else ""
+        print(f"  {name}: {result['status'].upper()}{detail}")
+    print(f"  overall: {status.upper()}")
+    return {"passed": 0, "failed": 1, "pending": 2}[status]
+
+
+def test_audio_check_reporting() -> None:
+    """A missing or differing other-platform golden must not suppress local checks."""
+    feature = {
+        "sampleRate": 44100, "channels": 2, "frames": 1,
+        "peak": 0.0, "rms": 0.0, "spectralCentroidHz": 0.0,
+        "rmsEnvelope": [[0.0, 0.0]], "centroidEnvelope": [0.0],
+    }
+    with tempfile.TemporaryDirectory(prefix="musescore-audio-check-") as temp_dir:
+        golden = Path(temp_dir)
+        for platform in ("windows", "linux"):
+            (golden / platform).mkdir()
+        windows = golden / "windows" / "fixture" / "audio.json"
+        linux = golden / "linux" / "fixture" / "audio.json"
+        windows.parent.mkdir()
+        windows.write_text(json.dumps(feature), encoding="utf-8")
+        linux.parent.mkdir()
+        linux.write_text(json.dumps(feature), encoding="utf-8")
+        windows_extra = golden / "windows" / "extra" / "audio.json"
+        windows_extra.parent.mkdir()
+        windows_extra.write_text(json.dumps(feature), encoding="utf-8")
+        calls: list[str] = []
+
+        def run() -> tuple[int, dict[str, Any]]:
+            evidence: dict[str, Any] = {}
+            checks = [
+                ("cross_platform", lambda: test_cross_platform_audio_features(evidence, golden)),
+                ("local", lambda: calls.append("local")),
+            ]
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = run_audio_checks(checks, evidence)
+            return code, evidence
+
+        code, evidence = run()
+        assert code == 2 and evidence["checks"]["cross_platform"]["status"] == "pending", evidence
+        assert "windows-only ['extra']" in evidence["checks"]["cross_platform"]["reason"], evidence
+        assert calls == ["local"], calls
+
+        linux_extra = golden / "linux" / "extra" / "audio.json"
+        linux_extra.parent.mkdir()
+        linux_extra.write_text(json.dumps(feature), encoding="utf-8")
+        linux.write_text(json.dumps({**feature, "peak": 0.1}), encoding="utf-8")
+        code, evidence = run()
+        assert code == 1 and evidence["checks"]["cross_platform"]["status"] == "failed", evidence
+        assert calls == ["local", "local"], calls
+
+        linux.write_text(json.dumps(feature), encoding="utf-8")
+        code, evidence = run()
+        assert code == 0 and evidence["checks"]["cross_platform"]["status"] == "passed", evidence
+        assert calls == ["local", "local", "local"], calls
+    print("  Audio check reporting regression tests PASSED")
 
 
 def test_pitch_onset_and_level(
@@ -1259,7 +1352,7 @@ async def test_mcp_level_integration(
     print("  MCP-level integration tests PASSED")
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description="Acceptance test suite for MuseScore 4 audio engine")
     parser.add_argument("--bin-dir", type=Path, default=None, help="Directory containing build executables")
     parser.add_argument("--binary", type=Path, default=None, help="Path to musescore-mcp executable")
@@ -1272,6 +1365,8 @@ def main() -> None:
                         help="Directory for --write-midi-goldens")
     parser.add_argument("--platform-subdir", action="store_true",
                         help="Write MIDI goldens under <dir>/<platform>/ when hosts differ")
+    parser.add_argument("--defer-dense-performance", action="store_true",
+                        help="Leave the dense performance check pending and exit nonzero")
     args = parser.parse_args()
 
     out_dir = args.output.resolve()
@@ -1282,29 +1377,37 @@ def main() -> None:
     if args.write_midi_goldens:
         write_midi_goldens(probe_bin, args.resources, args.soundfont, out_dir,
                            args.midi_golden_dir, args.platform_subdir)
-        return
+        return 0
 
-    evidence: dict[str, Any] = {"status": "passed"}
+    evidence: dict[str, Any] = {}
 
-    test_cross_platform_audio_features(evidence)
-    test_pitch_onset_and_level(probe_bin, args.resources, out_dir, evidence)
-    test_midi_event_goldens(probe_bin, args.resources, args.soundfont, out_dir, evidence)
-    test_determinism_and_decoding(probe_bin, args.resources, args.soundfont, out_dir, evidence)
-    test_performance_and_memory(probe_bin, args.resources, args.soundfont, out_dir, evidence)
-    test_excerpt_rendering_parity(probe_bin, args.resources, args.soundfont, out_dir, evidence)
+    def dense_performance() -> None:
+        if args.defer_dense_performance:
+            raise AudioCheckPending("dense performance must be measured separately")
+        test_performance_and_memory(probe_bin, args.resources, args.soundfont, out_dir, evidence)
 
-    # Check if MCP integration is available
-    integrate_marker = ROOT / "notes" / "claude-workers" / "engine-integrate-dsh.md"
-    mcp_ready = (integrate_marker.is_file() and integrate_marker.stat().st_size > 0) or (args.binary and args.binary.is_file())
-    if mcp_ready and args.binary and args.binary.is_file():
+    def mcp_integration() -> None:
+        if not args.binary or not args.binary.is_file():
+            raise AudioCheckPending("MCP binary not supplied or missing")
         asyncio.run(test_mcp_level_integration(args.binary, args.resources, args.soundfont, out_dir, evidence))
-    else:
-        print("[MCP] Skipping MCP-level tests (engine-integrate-dsh.md empty or pending)")
+
+    checks = [
+        ("reporting_regressions", test_audio_check_reporting),
+        ("pitch_onset_level", lambda: test_pitch_onset_and_level(probe_bin, args.resources, out_dir, evidence)),
+        ("midi_goldens", lambda: test_midi_event_goldens(probe_bin, args.resources, args.soundfont, out_dir, evidence)),
+        ("determinism_codecs", lambda: test_determinism_and_decoding(probe_bin, args.resources, args.soundfont, out_dir, evidence)),
+        ("dense_performance", dense_performance),
+        ("excerpt_parity", lambda: test_excerpt_rendering_parity(probe_bin, args.resources, args.soundfont, out_dir, evidence)),
+        ("mcp_integration", mcp_integration),
+        ("cross_platform", lambda: test_cross_platform_audio_features(evidence)),
+    ]
+    code = run_audio_checks(checks, evidence)
 
     evidence_path = out_dir / "evidence.json"
     evidence_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
-    print(f"\nAll engine_audio tests completed successfully. Evidence saved to {evidence_path}")
+    print(f"\nEvidence saved to {evidence_path}")
+    return code
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
