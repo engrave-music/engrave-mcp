@@ -67,6 +67,7 @@ import sys
 import tempfile
 import traceback
 from typing import Any, Callable
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -259,6 +260,14 @@ def audio_fixture_sources() -> dict[str, Path]:
     fixtures = {path.name: path for path in sources}
     assert sources and len(fixtures) == len(sources), "empty or duplicate golden fixture inventory"
     assert all(path.is_file() for path in golden.EXTRA_FIXTURES), "extra golden fixture missing"
+    edits = set(golden.EDIT_SCENARIOS)
+    assert not edits.intersection(fixtures), "fixture and edit scenario names overlap"
+    indexed = set(json.loads((ROOT / "tests" / "golden" / "windows" / "index.json").read_text(
+        encoding="utf-8")))
+    expected = set(fixtures) | edits
+    assert expected == indexed, (
+        f"golden source inventory differs: missing {sorted(indexed - expected)}, "
+        f"unindexed {sorted(expected - indexed)}")
     return fixtures
 
 
@@ -529,7 +538,8 @@ def test_audio_check_reporting() -> None:
             else:
                 raise AssertionError(f"Unsafe capture destination accepted: {forbidden}")
 
-        def prepare(platform: str, version: str = "5.0.0") -> None:
+        def prepare(platform: str, version: str = "5.0.0",
+                    inputs: dict[str, Path] = fixtures) -> None:
             tree = captures / platform
             tree.mkdir(exist_ok=True)
             host_platform = "Microsoft Windows" if platform == "windows" else "Linux"
@@ -538,10 +548,10 @@ def test_audio_check_reporting() -> None:
                 f'<programRevision>{engine_commit[:7]}</programRevision>'
                 f'<Score><metaTag name="platform">{host_platform}</metaTag></Score></museScore>',
                 encoding="utf-8")
-            for name in fixtures:
+            for name in inputs:
                 golden.write_json(tree / name / "audio.json", feature)
             write_capture_manifest(tree, platform, source_commit, engine_commit,
-                                   "d" * 64, soundfont_sha, fixtures)
+                                   "d" * 64, soundfont_sha, inputs)
 
         prepare("windows")
         calls: list[str] = []
@@ -550,7 +560,8 @@ def test_audio_check_reporting() -> None:
             evidence: dict[str, Any] = {}
             checks = [
                 ("cross_platform", lambda: test_cross_platform_audio_features(
-                    evidence, captures, source_commit, engine_commit, fixtures, soundfont_sha)),
+                    evidence, captures, source_commit, engine_commit,
+                    audio_fixture_sources(), soundfont_sha)),
                 ("local", lambda: calls.append("local")),
             ]
             with contextlib.redirect_stdout(io.StringIO()):
@@ -569,6 +580,21 @@ def test_audio_check_reporting() -> None:
         code, evidence = run()
         assert code == 1 and evidence["checks"]["cross_platform"]["status"] == "failed", evidence
         assert "inventory" in evidence["checks"]["cross_platform"]["reason"], evidence
+
+        # Both captures and their manifests omit the same fixture. Neither a
+        # matching pair nor an incomplete source enumeration may hide it.
+        omitted = "custom_part_name.mscx"
+        incomplete = {name: path for name, path in fixtures.items() if name != omitted}
+        for platform in ("windows", "linux"):
+            shutil.rmtree(captures / platform / omitted)
+            prepare(platform, inputs=incomplete)
+        code, evidence = run()
+        assert code == 1 and "fixture inputs differ" in evidence["checks"]["cross_platform"]["reason"], evidence
+        sources = [path for path in golden.fixture_files() if path.name != omitted]
+        with patch.object(golden, "fixture_files", return_value=sources):
+            code, evidence = run()
+        assert code == 1 and "golden source inventory differs" in evidence["checks"]["cross_platform"]["reason"], evidence
+        assert omitted in evidence["checks"]["cross_platform"]["reason"], evidence
 
         prepare("windows", version="4.7.6")
         prepare("linux", version="4.7.6")
@@ -599,8 +625,8 @@ def test_audio_check_reporting() -> None:
         code, evidence = run()
         assert code == 0 and evidence["checks"]["cross_platform"]["status"] == "passed", evidence
         assert evidence["cross_platform_audio"]["fixtures"] == len(fixtures), evidence
-        assert len(calls) == 6, calls
-    print(f"  Audio capture regressions PASSED: missing, incomplete, 4.7.6, tampered, "
+        assert len(calls) == 8, calls
+    print(f"  Audio capture regressions PASSED: missing, incomplete, missing source, 4.7.6, tampered, "
           f"mismatching and {len(fixtures)}-fixture matching captures")
 
 
