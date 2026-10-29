@@ -2,8 +2,8 @@
 """Acceptance test suite for MuseScore 4 audio engine (roadmap step 5, part C2).
 
 Tests both probe-level engine capabilities and MCP server integration:
-1. Cross-platform golden features:
-   - Compares tests/golden/windows/*/audio.json with tests/golden/linux/*/audio.json
+1. Cross-platform current audio features:
+   - Captures the current host and compares it to the other host's A2 capture,
      using explicit per-feature tolerances (frames/sample rate/channels exact)
 2. Pure sine wave SoundFont generation and pitch/onset/level accuracy:
    - Renders known scores with tests/engine_audio/sine.sf2
@@ -57,6 +57,8 @@ import io
 import json
 import math
 import os
+import re
+import socket
 from collections import Counter
 from pathlib import Path
 import shutil
@@ -65,6 +67,7 @@ import sys
 import tempfile
 import traceback
 from typing import Any, Callable
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -72,6 +75,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import numpy as np
 import soundfile as sf
 from make_sine_soundfont import generate_sine_soundfont
+import golden
 from golden import describe_midi
 
 
@@ -184,14 +188,15 @@ def decode_with_ffmpeg(source: Path, destination: Path) -> tuple[np.ndarray, int
     return decode_audio(destination)
 
 
-# --- Cross-platform golden feature tolerances --------------------------------
-# Maximum absolute differences measured across the 21 fixture audio.json files
-# (2026-10-28, Windows vs Linux): peak 0.019408, rms 0.001524,
+# --- Cross-platform audio feature tolerances ---------------------------------
+# Maximum absolute differences measured across the 21 retained 4.7.6 fixture
+# pairs (2026-10-28, Windows vs Linux): peak 0.019408, rms 0.001524,
 # spectralCentroidHz 44.5, rmsEnvelope 0.02438, centroidEnvelope 982.5. The
 # largest values all come from slurs.mscz, a bend-heavy GP import whose
 # per-0.25 s centroid is sensitive at low levels; the total centroid is stable
 # within 44.5 Hz. Frames/sampleRate/channels must match exactly because they
-# are structural. Tolerances sit just above the measured maxima.
+# are structural. Tolerances sit just above the measured maxima; the 5.0
+# captures must be checked against them independently.
 CROSS_PLATFORM_TOLERANCES = {
     "peak": 0.025,
     "rms": 0.002,
@@ -239,34 +244,206 @@ class AudioCheckPending(Exception):
     """A required check cannot yet be completed."""
 
 
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def git_revision(repo: Path) -> str:
+    return subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+
+
+def audio_fixture_sources() -> dict[str, Path]:
+    # The edit scenarios in golden.EDIT_SCENARIOS do not export audio.
+    sources = golden.fixture_files()
+    fixtures = {path.name: path for path in sources}
+    assert sources and len(fixtures) == len(sources), "empty or duplicate golden fixture inventory"
+    assert all(path.is_file() for path in golden.EXTRA_FIXTURES), "extra golden fixture missing"
+    return fixtures
+
+
+def validate_version_proof(path: Path, platform: str, engine_commit: str) -> None:
+    root = ET.parse(path).getroot()
+    version = root.findtext("programVersion") or ""
+    revision = root.findtext("programRevision") or ""
+    written_platform = next((tag.text for tag in root.iter("metaTag")
+                             if tag.get("name") == "platform"), None)
+    assert re.fullmatch(r"5\.0\.\d+", version), f"capture is not 5.0: {version!r}"
+    assert revision.lower() == engine_commit[:7].lower(), (
+        f"capture engine revision {revision!r} != {engine_commit[:7]!r}")
+    expected_platform = {"windows": "Microsoft Windows", "linux": "Linux"}[platform]
+    assert written_platform == expected_platform, (written_platform, expected_platform)
+
+
+async def capture_current_audio(binary: Path, resources: Path, soundfont: Path,
+                                target: Path, engine_commit: str) -> None:
+    """Render the golden fixture inventory and preserve the server's version stamp."""
+    fixtures = audio_fixture_sources()
+    with tempfile.TemporaryDirectory(prefix="musescore-audio-capture-") as temporary:
+        raw = Path(temporary)
+        params = golden.StdioServerParameters(
+            command=str(binary.resolve()),
+            args=["--resources", str(resources.resolve()), "--soundfont", str(soundfont.resolve())],
+            cwd=str(raw))
+        with (target / "server-stderr.log").open("w", encoding="utf-8") as log:
+            async with golden.stdio_client(params, errlog=log) as (read, write):
+                async with golden.ClientSession(read, write) as session:
+                    await session.initialize()
+                    created, error = await golden.call_tool(session, "score_create", {"score": {
+                        "title": "Audio capture provenance", "tempo": 120, "parts": [{
+                            "name": "Piano", "midiProgram": 1, "measures": [{
+                                "notes": [{"pitches": [60], "ticks": 1920}]}]}]}})
+                    assert not error, f"create version proof: {error}"
+                    proof_document = {"documentId": created["documentId"]}
+                    proof = target / "version.mscx"
+                    error = await golden.export(session, proof_document, "mscx", proof)
+                    assert not error, f"export version proof: {error}"
+                    await golden.call_tool(session, "score_close", proof_document)
+                    validate_version_proof(proof, golden_platform(), engine_commit)
+                    for name, source in fixtures.items():
+                        if name == "created.json":
+                            payload, error = await golden.call_tool(session, "score_create", {
+                                "score": json.loads(source.read_text(encoding="utf-8"))})
+                        else:
+                            payload, error = await golden.call_tool(session, "score_open", {
+                                "path": str(source.resolve())})
+                        assert not error, f"{name}: open failed: {error}"
+                        document = {"documentId": payload["documentId"]}
+                        try:
+                            wav = raw / "capture.wav"
+                            error = await golden.export(session, document, "wav", wav)
+                            assert not error, f"{name}: audio export failed: {error}"
+                            golden.write_json(target / name / "audio.json", golden.describe_audio(wav))
+                            wav.unlink()
+                        finally:
+                            await golden.call_tool(session, "score_close", document)
+
+
+def write_capture_manifest(target: Path, platform: str, source_commit: str, engine_commit: str,
+                           binary_sha: str, soundfont_sha: str, fixtures: dict[str, Path]) -> None:
+    manifest = {
+        "schema": 1, "platform": platform, "host": socket.gethostname(),
+        "superproject_commit": source_commit, "engine_commit": engine_commit,
+        "binary_sha256": binary_sha, "soundfont_sha256": soundfont_sha,
+        "extractor_sha256": file_sha256(ROOT / "scripts" / "golden.py"),
+        "capture_script_sha256": file_sha256(Path(__file__)),
+        "version_proof_sha256": file_sha256(target / "version.mscx"),
+        "fixture_sha256": {name: file_sha256(path) for name, path in fixtures.items()},
+        "audio_sha256": {name: file_sha256(target / name / "audio.json") for name in fixtures},
+    }
+    golden.write_json(target / "manifest.json", manifest)
+
+
+def capture_destination(capture_root: Path, platform: str) -> Path:
+    root = capture_root.resolve()
+    golden_root = (ROOT / "tests" / "golden").resolve()
+    assert root != golden_root and golden_root not in root.parents, (
+        "capture directory must not be inside tests/golden")
+    destination = root / platform
+    assert not destination.is_symlink(), f"capture destination is a symlink: {destination}"
+    if destination.exists():
+        manifest = destination / "manifest.json"
+        assert manifest.is_file(), f"refusing to replace a directory without a capture manifest: {destination}"
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+        assert value.get("schema") == 1 and value.get("platform") == platform, (
+            f"refusing to replace an unrelated capture: {destination}")
+    return destination
+
+
+def make_current_audio_capture(binary: Path, resources: Path, soundfont: Path,
+                               engine_source: Path, capture_root: Path) -> tuple[str, str]:
+    platform = golden_platform()
+    destination = capture_destination(capture_root, platform)
+    source_commit = git_revision(ROOT)
+    engine_commit = git_revision(engine_source)
+    binary_sha, soundfont_sha = file_sha256(binary), file_sha256(soundfont)
+    fixtures = audio_fixture_sources()
+    fixture_hashes = {name: file_sha256(path) for name, path in fixtures.items()}
+    extractor_sha = file_sha256(ROOT / "scripts" / "golden.py")
+    script_sha = file_sha256(Path(__file__))
+    capture_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"{platform}-capture-", dir=capture_root) as temporary:
+        target = Path(temporary)
+        asyncio.run(asyncio.wait_for(capture_current_audio(
+            binary, resources, soundfont, target, engine_commit), timeout=1800))
+        assert git_revision(ROOT) == source_commit, "superproject commit changed during capture"
+        assert git_revision(engine_source) == engine_commit, "engine commit changed during capture"
+        assert file_sha256(binary) == binary_sha, "binary changed during capture"
+        assert file_sha256(soundfont) == soundfont_sha, "soundfont changed during capture"
+        assert {name: file_sha256(path) for name, path in audio_fixture_sources().items()} == fixture_hashes, (
+            "fixture inventory or inputs changed during capture")
+        assert file_sha256(ROOT / "scripts" / "golden.py") == extractor_sha, "extractor changed during capture"
+        assert file_sha256(Path(__file__)) == script_sha, "capture script changed during capture"
+        write_capture_manifest(target, platform, source_commit, engine_commit,
+                               binary_sha, soundfont_sha, fixtures)
+        destination = capture_destination(capture_root, platform)
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(target, destination)
+    print(f"  Captured {len(fixtures)} fixtures to {destination} "
+          f"(host {socket.gethostname()}, commit {source_commit}, binary sha256 {binary_sha})")
+    return source_commit, engine_commit
+
+
+def read_audio_capture(tree: Path, platform: str, source_commit: str, engine_commit: str,
+                       fixtures: dict[str, Path], soundfont_sha: str) -> dict[str, Path]:
+    if not tree.is_dir():
+        raise AudioCheckPending(f"{platform} 5.0 capture missing: {tree}")
+    manifest_path = tree / "manifest.json"
+    assert manifest_path.is_file(), f"{platform} capture lacks provenance: {manifest_path}"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest.get("schema") == 1 and manifest.get("platform") == platform, manifest_path
+    assert isinstance(manifest.get("host"), str) and manifest["host"].strip(), manifest_path
+    assert manifest.get("superproject_commit") == source_commit, f"{platform} capture commit is stale"
+    assert manifest.get("engine_commit") == engine_commit, f"{platform} capture engine is stale"
+    assert re.fullmatch(r"[0-9a-f]{64}", manifest.get("binary_sha256", "")), manifest_path
+    assert manifest.get("soundfont_sha256") == soundfont_sha, f"{platform} soundfont differs"
+    assert manifest.get("extractor_sha256") == file_sha256(ROOT / "scripts" / "golden.py"), (
+        f"{platform} feature extractor is stale")
+    assert manifest.get("capture_script_sha256") == file_sha256(Path(__file__)), (
+        f"{platform} capture script is stale")
+    proof = tree / "version.mscx"
+    assert proof.is_file() and manifest.get("version_proof_sha256") == file_sha256(proof), (
+        f"{platform} version proof missing or changed")
+    validate_version_proof(proof, platform, engine_commit)
+    expected_sources = {name: file_sha256(path) for name, path in fixtures.items()}
+    assert manifest.get("fixture_sha256") == expected_sources, f"{platform} fixture inputs differ"
+    paths = {path.parent.name: path for path in tree.glob("*/audio.json")}
+    expected = set(fixtures)
+    assert set(paths) == expected, (
+        f"{platform} audio inventory: missing {sorted(expected - set(paths))}, "
+        f"extra {sorted(set(paths) - expected)}")
+    hashes = manifest.get("audio_sha256")
+    assert isinstance(hashes, dict) and set(hashes) == expected, f"{platform} manifest inventory differs"
+    for name, path in paths.items():
+        assert hashes[name] == file_sha256(path), f"{platform} capture changed: {name}/audio.json"
+    return paths
+
+
 def test_cross_platform_audio_features(
-    evidence: dict[str, Any], golden_dir: Path | None = None,
+    evidence: dict[str, Any], capture_root: Path, source_commit: str, engine_commit: str,
+    fixtures: dict[str, Path], soundfont_sha: str,
 ) -> None:
-    print("[cross-platform] Comparing Windows and Linux golden audio features...")
-    golden_dir = golden_dir or ROOT / "tests" / "golden"
-    trees = {platform: golden_dir / platform for platform in ("windows", "linux")}
-    for platform, tree in trees.items():
-        if not tree.is_dir():
-            raise AudioCheckPending(f"Golden tree missing for {platform}: {tree}")
-
-    def fixtures(tree: Path) -> dict[str, Path]:
-        return {path.parent.name: path for path in sorted(tree.glob("*/audio.json"))}
-
-    windows = fixtures(trees["windows"])
-    linux = fixtures(trees["linux"])
-    if not windows or not linux:
-        raise AudioCheckPending("Windows or Linux golden tree contains no audio.json files")
-    if set(windows) != set(linux):
-        raise AudioCheckPending(
-            f"Golden fixture sets differ: windows-only {sorted(set(windows) - set(linux))}, "
-            f"linux-only {sorted(set(linux) - set(windows))}"
-        )
+    print("[cross-platform] Comparing current Windows and Linux 5.0 audio captures...")
+    captures = {platform: read_audio_capture(capture_root / platform, platform, source_commit,
+                                             engine_commit, fixtures, soundfont_sha)
+                for platform in ("windows", "linux")}
+    windows, linux = captures["windows"], captures["linux"]
 
     maxima = {key: 0.0 for key in CROSS_PLATFORM_TOLERANCES}
     worst = {key: "" for key in CROSS_PLATFORM_TOLERANCES}
     for name in sorted(windows):
         left = json.loads(windows[name].read_text(encoding="utf-8"))
         right = json.loads(linux[name].read_text(encoding="utf-8"))
+        for data in (left, right):
+            assert data["channels"] == 2 and data["sampleRate"] in (44100, 48000), name
+            assert data["frames"] > 0, name
+            assert len(data["peak"]) == len(data["rms"]) == 2, name
+            assert len(data["rmsEnvelope"]) == len(data["centroidEnvelope"]) == len(data["nonzeroSamples"]), name
+            window_frames = round(data["sampleRate"] * 0.25)
+            assert len(data["centroidEnvelope"]) == (data["frames"] + window_frames - 1) // window_frames, name
+            assert all(len(window) == 2 for window in data["rmsEnvelope"]), name
+            assert all(len(window) == 2 for window in data["nonzeroSamples"]), name
         for key in CROSS_PLATFORM_EXACT:
             assert left[key] == right[key], (
                 f"{name}: {key} differs ({left[key]} vs {right[key]})")
@@ -277,24 +454,23 @@ def test_cross_platform_audio_features(
         for key, tolerance in CROSS_PLATFORM_TOLERANCES.items():
             left_values = left[key]
             right_values = right[key]
-            if isinstance(left_values, list):
-                delta = max(
-                    (abs(a - b) for a, b in zip(numeric_values(left_values),
-                                                numeric_values(right_values))),
-                    default=0.0,
-                )
-            else:
-                delta = abs(left_values - right_values)
+            left_numbers = numeric_values(left_values) if isinstance(left_values, list) else [float(left_values)]
+            right_numbers = numeric_values(right_values) if isinstance(right_values, list) else [float(right_values)]
+            assert len(left_numbers) == len(right_numbers) and left_numbers, f"{name}: invalid {key}"
+            assert all(math.isfinite(value) for value in left_numbers + right_numbers), (
+                f"{name}: non-finite {key}")
+            delta = max(abs(a - b) for a, b in zip(left_numbers, right_numbers))
             if delta > maxima[key]:
                 maxima[key] = delta
                 worst[key] = name
             assert delta <= tolerance, (
                 f"{name}: {key} differs by {delta:.6g} (tolerance {tolerance})")
-        assert left["channels"] == 2 and left["sampleRate"] in (44100, 48000), name
-
     evidence["cross_platform_audio"] = {
         "status": "passed",
         "fixtures": len(windows),
+        "superproject_commit": source_commit,
+        "engine_commit": engine_commit,
+        "captures": {platform: str(capture_root / platform) for platform in captures},
         "tolerances": CROSS_PLATFORM_TOLERANCES,
         "max_abs_diff": {key: round(value, 6) for key, value in maxima.items()},
         "worst_fixture": worst,
@@ -333,31 +509,48 @@ def run_audio_checks(
 
 
 def test_audio_check_reporting() -> None:
-    """A missing or differing other-platform golden must not suppress local checks."""
+    """Exercise missing, incomplete, stale, mismatching and complete captures."""
     feature = {
         "sampleRate": 44100, "channels": 2, "frames": 1,
-        "peak": 0.0, "rms": 0.0, "spectralCentroidHz": 0.0,
-        "rmsEnvelope": [[0.0, 0.0]], "centroidEnvelope": [0.0],
+        "peak": [0.0, 0.0], "rms": [0.0, 0.0], "spectralCentroidHz": 0.0,
+        "rmsEnvelope": [[0.0, 0.0]], "centroidEnvelope": [0.0], "nonzeroSamples": [[0, 0]],
     }
+    fixtures = audio_fixture_sources()
+    source_commit, engine_commit, soundfont_sha = "a" * 40, "b" * 40, "c" * 64
     with tempfile.TemporaryDirectory(prefix="musescore-audio-check-") as temp_dir:
-        golden = Path(temp_dir)
-        for platform in ("windows", "linux"):
-            (golden / platform).mkdir()
-        windows = golden / "windows" / "fixture" / "audio.json"
-        linux = golden / "linux" / "fixture" / "audio.json"
-        windows.parent.mkdir()
-        windows.write_text(json.dumps(feature), encoding="utf-8")
-        linux.parent.mkdir()
-        linux.write_text(json.dumps(feature), encoding="utf-8")
-        windows_extra = golden / "windows" / "extra" / "audio.json"
-        windows_extra.parent.mkdir()
-        windows_extra.write_text(json.dumps(feature), encoding="utf-8")
+        captures = Path(temp_dir)
+        for forbidden in (ROOT / "tests" / "golden", captures / "unrelated"):
+            if forbidden == captures / "unrelated":
+                (forbidden / "windows").mkdir(parents=True)
+            try:
+                capture_destination(forbidden, "windows")
+            except AssertionError:
+                pass
+            else:
+                raise AssertionError(f"Unsafe capture destination accepted: {forbidden}")
+
+        def prepare(platform: str, version: str = "5.0.0") -> None:
+            tree = captures / platform
+            tree.mkdir(exist_ok=True)
+            host_platform = "Microsoft Windows" if platform == "windows" else "Linux"
+            (tree / "version.mscx").write_text(
+                f'<museScore><programVersion>{version}</programVersion>'
+                f'<programRevision>{engine_commit[:7]}</programRevision>'
+                f'<Score><metaTag name="platform">{host_platform}</metaTag></Score></museScore>',
+                encoding="utf-8")
+            for name in fixtures:
+                golden.write_json(tree / name / "audio.json", feature)
+            write_capture_manifest(tree, platform, source_commit, engine_commit,
+                                   "d" * 64, soundfont_sha, fixtures)
+
+        prepare("windows")
         calls: list[str] = []
 
         def run() -> tuple[int, dict[str, Any]]:
             evidence: dict[str, Any] = {}
             checks = [
-                ("cross_platform", lambda: test_cross_platform_audio_features(evidence, golden)),
+                ("cross_platform", lambda: test_cross_platform_audio_features(
+                    evidence, captures, source_commit, engine_commit, fixtures, soundfont_sha)),
                 ("local", lambda: calls.append("local")),
             ]
             with contextlib.redirect_stdout(io.StringIO()):
@@ -366,22 +559,49 @@ def test_audio_check_reporting() -> None:
 
         code, evidence = run()
         assert code == 2 and evidence["checks"]["cross_platform"]["status"] == "pending", evidence
-        assert "windows-only ['extra']" in evidence["checks"]["cross_platform"]["reason"], evidence
+        assert "linux 5.0 capture missing" in evidence["checks"]["cross_platform"]["reason"], evidence
         assert calls == ["local"], calls
 
-        linux_extra = golden / "linux" / "extra" / "audio.json"
-        linux_extra.parent.mkdir()
-        linux_extra.write_text(json.dumps(feature), encoding="utf-8")
-        linux.write_text(json.dumps({**feature, "peak": 0.1}), encoding="utf-8")
+        prepare("linux")
+        omitted = next(iter(fixtures))
+        for platform in ("windows", "linux"):
+            (captures / platform / omitted / "audio.json").unlink()
         code, evidence = run()
         assert code == 1 and evidence["checks"]["cross_platform"]["status"] == "failed", evidence
-        assert calls == ["local", "local"], calls
+        assert "inventory" in evidence["checks"]["cross_platform"]["reason"], evidence
 
-        linux.write_text(json.dumps(feature), encoding="utf-8")
+        prepare("windows", version="4.7.6")
+        prepare("linux", version="4.7.6")
+        # Even a complete matching pair of the retained 4.7.6 data, with newly
+        # hashed manifests and its version proof, is not a current capture.
+        for platform in ("windows", "linux"):
+            for name in fixtures:
+                shutil.copyfile(ROOT / "tests" / "golden" / "windows" / name / "audio.json",
+                                captures / platform / name / "audio.json")
+            write_capture_manifest(captures / platform, platform, source_commit, engine_commit,
+                                   "d" * 64, soundfont_sha, fixtures)
+        code, evidence = run()
+        assert code == 1 and "not 5.0" in evidence["checks"]["cross_platform"]["reason"], evidence
+
+        prepare("windows")
+        prepare("linux")
+        changed = captures / "linux" / "coverage.musicxml" / "audio.json"
+        golden.write_json(changed, {**feature, "peak": [0.1, 0.1]})
+        code, evidence = run()
+        assert code == 1 and "capture changed" in evidence["checks"]["cross_platform"]["reason"], evidence
+
+        write_capture_manifest(captures / "linux", "linux", source_commit, engine_commit,
+                               "d" * 64, soundfont_sha, fixtures)
+        code, evidence = run()
+        assert code == 1 and "peak differs" in evidence["checks"]["cross_platform"]["reason"], evidence
+
+        prepare("linux")
         code, evidence = run()
         assert code == 0 and evidence["checks"]["cross_platform"]["status"] == "passed", evidence
-        assert calls == ["local", "local", "local"], calls
-    print("  Audio check reporting regression tests PASSED")
+        assert evidence["cross_platform_audio"]["fixtures"] == len(fixtures), evidence
+        assert len(calls) == 6, calls
+    print(f"  Audio capture regressions PASSED: missing, incomplete, 4.7.6, tampered, "
+          f"mismatching and {len(fixtures)}-fixture matching captures")
 
 
 def check_sine_onset(onset_idx: int, expected_t: float, sr: int, midi_pitch: int) -> float:
@@ -1410,10 +1630,25 @@ def main() -> int:
                         help="Write MIDI goldens under <dir>/<platform>/ when hosts differ")
     parser.add_argument("--defer-dense-performance", action="store_true",
                         help="Leave the dense performance check pending and exit nonzero")
+    parser.add_argument("--engine-source", type=Path,
+                        default=Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor" / "musescore")),
+                        help="Git checkout used to build the engine")
+    parser.add_argument("--cross-platform-captures", type=Path,
+                        default=ROOT / "artifacts" / "a2" / "audio-cross-platform",
+                        help="Directory containing windows/ and linux/ current captures")
+    parser.add_argument("--capture-cross-platform-only", action="store_true",
+                        help="Capture this host without running or comparing the other checks")
     args = parser.parse_args()
 
     out_dir = args.output.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    if args.capture_cross_platform_only:
+        if not args.binary or not args.binary.is_file():
+            parser.error("--capture-cross-platform-only requires an existing --binary")
+        make_current_audio_capture(args.binary, args.resources, args.soundfont,
+                                   args.engine_source, args.cross_platform_captures.resolve())
+        return 0
+
     probe_bin = find_probe_binary(args.bin_dir)
     print(f"Using probe binary: {probe_bin}")
 
@@ -1434,6 +1669,15 @@ def main() -> int:
             raise AudioCheckPending("MCP binary not supplied or missing")
         asyncio.run(test_mcp_level_integration(args.binary, args.resources, args.soundfont, out_dir, evidence))
 
+    def cross_platform() -> None:
+        if not args.binary or not args.binary.is_file():
+            raise AudioCheckPending("MCP binary not supplied or missing for current capture")
+        captures = args.cross_platform_captures.resolve()
+        source_commit, engine_commit = make_current_audio_capture(
+            args.binary, args.resources, args.soundfont, args.engine_source, captures)
+        test_cross_platform_audio_features(evidence, captures, source_commit, engine_commit,
+                                           audio_fixture_sources(), file_sha256(args.soundfont))
+
     checks = [
         ("reporting_regressions", test_audio_check_reporting),
         ("sine_threshold_mutations", test_sine_threshold_mutations),
@@ -1443,7 +1687,7 @@ def main() -> int:
         ("dense_performance", dense_performance),
         ("excerpt_parity", lambda: test_excerpt_rendering_parity(probe_bin, args.resources, args.soundfont, out_dir, evidence)),
         ("mcp_integration", mcp_integration),
-        ("cross_platform", lambda: test_cross_platform_audio_features(evidence)),
+        ("cross_platform", cross_platform),
     ]
     code = run_audio_checks(checks, evidence)
 
