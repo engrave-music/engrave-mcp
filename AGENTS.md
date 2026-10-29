@@ -19,7 +19,8 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
 - Worker models authorized by the user (2026-10-29 allocation): DeepSeek Flash via Pi
-  (`opencode-go/deepseek-v4.1-flash`, thinking max) for hard implementation; GPT-6.1 Terra
+  (`opencode-go/deepseek-v4.1-flash`, thinking max; fall back to the paid official API
+  `deepseek/deepseek-flash` only while the opencode-go provider is down) for hard implementation; GPT-6.1 Terra
   via Codex at reasoning effort max for tests and verification (on par with DeepSeek max for
   implementation; never use Terra below max, xhigh is far weaker); Gemini 3.8 Flash for
   general coding and documentation (fast, and its code reads closest to human style; a good
