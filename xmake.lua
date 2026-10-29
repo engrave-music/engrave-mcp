@@ -34,13 +34,16 @@ set_policy("package.install_locally", true)
 set_policy("package.precompiled", false)
 
 includes("xmake/packages/asio.lua")
+includes("xmake/packages/freetype.lua")
 includes("xmake/packages/harfbuzz.lua")
 includes("xmake/packages/flac.lua")
+includes("xmake/packages/lame.lua")
 includes("xmake/packages/opus.lua")
 includes("xmake/packages/opusenc.lua")
 includes("xmake/packages/picojson.lua")
 includes("xmake/packages/pugixml.lua")
 includes("xmake/packages/fdk-aac.lua")
+includes("xmake/packages/utfcpp.lua")
 
 add_requires("asio 1.36.0", {system = false})
 
@@ -49,8 +52,13 @@ add_requires("asio 1.36.0", {system = false})
 --   freetype 2.14.1, harfbuzz 12.3.0, flac 1.4.3, lame 3.100, opus 1.5.2,
 --   opusenc 0.2.1, fdk-aac 2.0.3, pugixml 1.15, utfcpp 4.1.1, picojson 111c9be.
 -- freetype: muse_deps builds it static with PNG/bzip2/zlib/harfbuzz disabled.
--- pugixml/opus/opusenc/picojson carry local recipes because xmake-repo's
--- versions or layouts differ (see the recipe headers).
+-- Every library package here is a local recipe with a pinned archive and
+-- SHA-256, so no build input depends on the xmake-repo revision a machine has:
+-- pugixml/opus/opusenc/picojson because xmake-repo's versions or layouts
+-- differ, freetype/lame/utfcpp because xmake-repo carried no version pin of
+-- its own (see the recipe headers for the copied upstream pins).  Only build
+-- tools (cmake, nasm, pkgconf) and the dev-only gtest still come from
+-- xmake-repo.
 add_requires("freetype 2.14.1", {system = false, configs = {
     zlib = false, png = false, bzip2 = false, woff2 = false, harfbuzz = false}})
 add_requires("muse-harfbuzz 12.3.0", {system = false})
