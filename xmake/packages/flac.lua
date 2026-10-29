@@ -20,7 +20,8 @@ package("muse-flac")
 
     add_deps("cmake")
 
-    add_links("FLAC", "FLAC++")
+    -- FLAC++ depends on FLAC; GNU ld resolves static archives left to right.
+    add_links("FLAC++", "FLAC")
     add_linkdirs("lib")
     add_includedirs("include")
     -- Static FLAC on Windows: the headers switch to dllexport/dllimport
