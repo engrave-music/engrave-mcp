@@ -634,11 +634,12 @@ Tolerances for A2, fixed before the port starts:
   pre-existing field and all 102 other oracle files are byte-identical. Under the old rule 337
   centroid windows were skipped; under the exact rule only 1 window is skipped, and 289 windows
   in 15 fixtures exceed 2.0 Hz. All 289 are the 5.0 reverb-tail class: both stored window RMS
-  are 0.0, i.e. below -106 dBFS. For the 13 tail-only fixtures, the non-centroid fields are
-  unchanged; evening and layout_elements also carry the previously accepted velocity and fermata
+  are 0.0, i.e. below -106 dBFS. For the 13 tail-only fixtures, peak, rms, global centroid,
+  rms envelope, frame count, sample rate and channels are unchanged; `nonzeroSamples` can
+  differ. Evening and layout_elements also carry the previously accepted velocity and fermata
   changes, respectively. 4.7.6 truncated the tail at Mixer's `RealIsNull` gate (peak
   <= 1e-6), while the 5.0 node graph processes the aux chain until `SignalNode::isSilent`
-  (peak > 0 exactly), so the identical decay continues to denormal levels. Executed control:
+  (peak > 0 exactly), so the aux chain can continue decaying below that threshold. Executed control:
   chordline_path 4.7.6 and 5.0 are sample-identical up to the 4096-frame block after 4.7.6's
   peak falls below 1e-6 (5.294150 s), then 4.7.6 writes exact zeros while 5.0 continues the
   same tail (5.3e-07 down to 5.6e-42). The 13 newly differing `audio.json` files are pinned in
