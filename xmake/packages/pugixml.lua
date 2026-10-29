@@ -17,7 +17,9 @@ package("muse-pugixml")
     add_includedirs("include/pugixml")
 
     on_install(function (package)
+        -- The mode rules map the package's release mode to optimization flags.
         io.writefile("xmake.lua", [[
+add_rules("mode.debug", "mode.release")
 target("pugixml")
     set_kind("static")
     add_files("src/pugixml.cpp")

@@ -44,7 +44,10 @@ package("muse-opusenc")
 #define PACKAGE_NAME "libopusenc"
 #define PACKAGE_VERSION "0.2.1"
 ]])
+        -- The mode rules map the package's release mode to optimization flags;
+        -- without them the library builds unoptimized (about 4x slower encoding).
         io.writefile("xmake.lua", ([[
+add_rules("mode.debug", "mode.release")
 target("opusenc")
     set_kind("static")
     add_files(

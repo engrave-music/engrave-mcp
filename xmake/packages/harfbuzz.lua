@@ -31,7 +31,9 @@ package("muse-harfbuzz")
         if not os.isdir(freetype_dir) then
             raise("freetype headers not found at " .. freetype_dir)
         end
+        -- The mode rules map the package's release mode to optimization flags.
         io.writefile("xmake.lua", ([[
+add_rules("mode.debug", "mode.release")
 target("harfbuzz")
     set_kind("static")
     set_languages("c++17")
