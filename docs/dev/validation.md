@@ -633,9 +633,10 @@ Tolerances for A2, fixed before the port starts:
   all 22 `audio.json` files differ from their stored version by exactly the new field, every
   pre-existing field and all 102 other oracle files are byte-identical. Under the old rule 337
   centroid windows were skipped; under the exact rule only 1 window is skipped, and 289 windows
-  in 16 fixtures exceed 2.0 Hz. All 289 are the 5.0 reverb-tail class (both stored window RMS
-  are 0.0, i.e. below -106 dBFS, and peak/rms/spectralCentroidHz/rmsEnvelope of those fixtures
-  are unchanged at delta 0.0): 4.7.6 truncated the tail at Mixer's `RealIsNull` gate (peak
+  in 15 fixtures exceed 2.0 Hz. All 289 are the 5.0 reverb-tail class: both stored window RMS
+  are 0.0, i.e. below -106 dBFS. For the 13 tail-only fixtures, the non-centroid fields are
+  unchanged; evening and layout_elements also carry the previously accepted velocity and fermata
+  changes, respectively. 4.7.6 truncated the tail at Mixer's `RealIsNull` gate (peak
   <= 1e-6), while the 5.0 node graph processes the aux chain until `SignalNode::isSilent`
   (peak > 0 exactly), so the identical decay continues to denormal levels. Executed control:
   chordline_path 4.7.6 and 5.0 are sample-identical up to the 4096-frame block after 4.7.6's
@@ -674,7 +675,7 @@ Review finding fixes and oracle hardening:
    The first fix bypassed the centroid whenever the stored 5-decimal RMS rounded to 0.0, which
 the re-review showed is not silence: 341 of 1283 windows store 0.0 RMS while 71 of them still
 hold nonzero PCM samples, and the review measured 280 skipped windows in 13 fixtures whose
-centroid moved by more than 2.0 Hz (re-measured here: 289 windows in 16 fixtures).
+centroid moved by more than 2.0 Hz (re-measured here: 289 windows in 15 fixtures).
 `audio.json` now records `nonzeroSamples` per 0.25 s window (exact per-channel count of samples
 that are not zero), the centroid is compared (2.0 Hz) in every window except those with zero
 counts on both sides, and a baseline without the field is a golden error rather than a weaker
