@@ -97,7 +97,7 @@
           <top-system-distance>170</top-system-distance>
           </system-layout>
         <staff-layout number="2">
-          <staff-distance>154</staff-distance>
+          <staff-distance>153.84</staff-distance>
           </staff-layout>
         </print>
       <attributes>
@@ -159,7 +159,7 @@
         </attributes>
       <direction placement="below">
         <direction-type>
-          <dynamics default-x="-1.23" default-y="-44.46" relative-y="-20">
+          <dynamics default-x="-1.17" default-y="-64.34">
             <mf/>
             </dynamics>
           </direction-type>
@@ -168,7 +168,7 @@
         </direction>
       <direction placement="above" system="only-top">
         <direction-type>
-          <metronome parentheses="no" default-x="-55.63" relative-y="20">
+          <metronome parentheses="no" default-x="-55.56" default-y="20">
             <beat-unit>quarter</beat-unit>
             <per-minute>120</per-minute>
             </metronome>
@@ -176,7 +176,7 @@
         <staff>1</staff>
         <sound tempo="120"/>
         </direction>
-      <note default-x="80.48" default-y="-15">
+      <note default-x="80.33" default-y="-15">
         <grace/>
         <pitch>
           <step>C</step>
@@ -188,7 +188,7 @@
         <notehead parentheses="yes">normal</notehead>
         <staff>1</staff>
         </note>
-      <note default-x="100.08" default-y="-10">
+      <note default-x="99.93" default-y="-10">
         <pitch>
           <step>D</step>
           <octave>5</octave>
@@ -212,7 +212,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="174.19" default-y="-5">
+      <note default-x="174.05" default-y="-5">
         <pitch>
           <step>E</step>
           <alter>-1</alter>
@@ -221,13 +221,13 @@
         <duration>3</duration>
         <voice>1</voice>
         <type>eighth</type>
-        <dot default-x="192.17" default-y="-5"/>
+        <dot default-x="192.06" default-y="-5"/>
         <accidental cautionary="yes" parentheses="no">flat</accidental>
         <stem>down</stem>
         <staff>1</staff>
         <beam number="1">end</beam>
         </note>
-      <note default-x="286.12" default-y="-15">
+      <note default-x="286.03" default-y="-15">
         <grace/>
         <pitch>
           <step>C</step>
@@ -239,9 +239,10 @@
         <notehead parentheses="yes">normal</notehead>
         <staff>1</staff>
         </note>
-      <note default-x="315.13" default-y="-10">
+      <note default-x="315.01" default-y="-10">
         <pitch>
           <step>D</step>
+          <alter>0.5</alter>
           <octave>5</octave>
           </pitch>
         <duration>2</duration>
@@ -263,9 +264,10 @@
             </technical>
           </notations>
         </note>
-      <note default-x="426.3" default-y="-5">
+      <note default-x="426.21" default-y="-5">
         <pitch>
           <step>E</step>
+          <alter>0.5</alter>
           <octave>5</octave>
           </pitch>
         <duration>2</duration>
@@ -276,7 +278,7 @@
         <staff>1</staff>
         <beam number="1">end</beam>
         </note>
-      <note default-x="508.47" default-y="-15">
+      <note default-x="508.42" default-y="-15">
         <grace/>
         <pitch>
           <step>C</step>
@@ -288,15 +290,16 @@
         <notehead parentheses="yes">normal</notehead>
         <staff>1</staff>
         </note>
-      <note default-x="537.47" default-y="-10">
+      <note default-x="537.4" default-y="-10">
         <pitch>
           <step>D</step>
+          <alter>0.5</alter>
           <octave>5</octave>
           </pitch>
         <duration>3</duration>
         <voice>1</voice>
         <type>eighth</type>
-        <dot default-x="555.45" default-y="-5"/>
+        <dot default-x="555.41" default-y="-5"/>
         <accidental cautionary="yes" parentheses="no">sharp-down</accidental>
         <stem>down</stem>
         <staff>1</staff>
@@ -313,9 +316,10 @@
             </technical>
           </notations>
         </note>
-      <note default-x="678.41" default-y="-15">
+      <note default-x="678.36" default-y="-15">
         <pitch>
           <step>C</step>
+          <alter>0.5</alter>
           <octave>5</octave>
           </pitch>
         <duration>1</duration>
@@ -327,7 +331,7 @@
         <beam number="1">end</beam>
         <beam number="2">backward hook</beam>
         </note>
-      <note default-x="726.72" default-y="-15">
+      <note default-x="726.66" default-y="-15">
         <grace/>
         <pitch>
           <step>C</step>
@@ -339,7 +343,7 @@
         <notehead parentheses="yes">normal</notehead>
         <staff>1</staff>
         </note>
-      <note default-x="752.52" default-y="0">
+      <note default-x="752.49" default-y="0">
         <pitch>
           <step>F</step>
           <alter>1</alter>
@@ -365,7 +369,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="826.64" default-y="-5">
+      <note default-x="826.61" default-y="-5">
         <pitch>
           <step>E</step>
           <alter>-1</alter>
@@ -374,7 +378,7 @@
         <duration>3</duration>
         <voice>1</voice>
         <type>eighth</type>
-        <dot default-x="844.61" default-y="-5"/>
+        <dot default-x="844.62" default-y="-5"/>
         <accidental cautionary="yes" parentheses="no">flat</accidental>
         <stem>down</stem>
         <staff>1</staff>
@@ -383,7 +387,7 @@
       <backup>
         <duration>16</duration>
         </backup>
-      <note default-x="81.92" default-y="-209">
+      <note default-x="81.79" default-y="-208.84">
         <grace/>
         <pitch>
           <step>C</step>
@@ -400,7 +404,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="101.52" default-y="-209">
+      <note default-x="101.39" default-y="-208.84">
         <pitch>
           <step>D</step>
           <octave>5</octave>
@@ -424,7 +428,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="175.64" default-y="-209">
+      <note default-x="175.52" default-y="-208.84">
         <pitch>
           <step>E</step>
           <alter>-1</alter>
@@ -434,7 +438,6 @@
         <voice>5</voice>
         <type>eighth</type>
         <dot/>
-        <accidental cautionary="yes" parentheses="no">flat</accidental>
         <stem>none</stem>
         <staff>2</staff>
         <notations print-object="no">
@@ -444,7 +447,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="287.57" default-y="-209">
+      <note default-x="287.49" default-y="-208.84">
         <grace/>
         <pitch>
           <step>C</step>
@@ -461,15 +464,15 @@
             </technical>
           </notations>
         </note>
-      <note default-x="316.57" default-y="-209">
+      <note default-x="316.47" default-y="-208.84">
         <pitch>
           <step>D</step>
+          <alter>0.5</alter>
           <octave>5</octave>
           </pitch>
         <duration>2</duration>
         <voice>5</voice>
         <type>eighth</type>
-        <accidental cautionary="yes" parentheses="no">sharp-down</accidental>
         <stem>none</stem>
         <staff>2</staff>
         <notations>
@@ -486,15 +489,15 @@
             </technical>
           </notations>
         </note>
-      <note default-x="427.74" default-y="-209">
+      <note default-x="427.67" default-y="-208.84">
         <pitch>
           <step>E</step>
+          <alter>0.5</alter>
           <octave>5</octave>
           </pitch>
         <duration>2</duration>
         <voice>5</voice>
         <type>eighth</type>
-        <accidental cautionary="yes" parentheses="no">sharp-down</accidental>
         <stem>none</stem>
         <staff>2</staff>
         <notations print-object="no">
@@ -504,7 +507,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="509.91" default-y="-209">
+      <note default-x="509.88" default-y="-208.84">
         <grace/>
         <pitch>
           <step>C</step>
@@ -521,16 +524,16 @@
             </technical>
           </notations>
         </note>
-      <note default-x="538.92" default-y="-209">
+      <note default-x="538.86" default-y="-208.84">
         <pitch>
           <step>D</step>
+          <alter>0.5</alter>
           <octave>5</octave>
           </pitch>
         <duration>3</duration>
         <voice>5</voice>
         <type>eighth</type>
         <dot/>
-        <accidental cautionary="yes" parentheses="no">sharp-down</accidental>
         <stem>none</stem>
         <staff>2</staff>
         <notations>
@@ -547,15 +550,15 @@
             </technical>
           </notations>
         </note>
-      <note default-x="679.85" default-y="-209">
+      <note default-x="679.82" default-y="-208.84">
         <pitch>
           <step>C</step>
+          <alter>0.5</alter>
           <octave>5</octave>
           </pitch>
         <duration>1</duration>
         <voice>5</voice>
         <type>16th</type>
-        <accidental cautionary="yes" parentheses="no">sharp-down</accidental>
         <stem>none</stem>
         <notehead parentheses="yes">normal</notehead>
         <staff>2</staff>
@@ -566,7 +569,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="728.16" default-y="-209">
+      <note default-x="728.13" default-y="-208.84">
         <grace/>
         <pitch>
           <step>C</step>
@@ -583,7 +586,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="753.97" default-y="-209">
+      <note default-x="753.95" default-y="-208.84">
         <pitch>
           <step>F</step>
           <alter>1</alter>
@@ -592,7 +595,6 @@
         <duration>1</duration>
         <voice>5</voice>
         <type>16th</type>
-        <accidental cautionary="yes" parentheses="no">sharp</accidental>
         <stem>none</stem>
         <staff>2</staff>
         <notations>
@@ -609,7 +611,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="828.08" default-y="-209">
+      <note default-x="828.08" default-y="-208.84">
         <pitch>
           <step>E</step>
           <alter>-1</alter>
@@ -619,7 +621,6 @@
         <voice>5</voice>
         <type>eighth</type>
         <dot/>
-        <accidental cautionary="yes" parentheses="no">flat</accidental>
         <stem>none</stem>
         <notehead parentheses="yes">normal</notehead>
         <staff>2</staff>
