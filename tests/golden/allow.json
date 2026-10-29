@@ -1,12 +1,32 @@
 {
   "entries": [
     {
+      "fixture": "bends.mid",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 1 centroidEnvelope window(s) 59..59 (14.75-15.00 s) are the 5.0 reverb-tail class, first 956.8 Hz -> 1692.3 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "0b5bb0019c49862933c3588d5a1176f753e78a862f94c82621a06285c7cf2181"
+      },
+      "step": "A2"
+    },
+    {
+      "fixture": "chordline_path.mscx",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 247 centroidEnvelope window(s) 21..267 (5.25-67.00 s) are the 5.0 reverb-tail class, first 1414.5 Hz -> 1593.9 Hz; 246 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: 5.3e-07 (-125 dBFS) down to 5.6e-42 at 31 s). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "aac227f932262e62849d5f067f4310d34a6f74cfc91f576794ac9dacb5aec6aa"
+      },
+      "step": "A2"
+    },
+    {
       "fixture": "coverage.musicxml",
       "kind": "different",
       "output": "audio.json",
       "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d enables the written D.C. al Fine repeat (352800 to 507150 frames); cabd23667d6923faf5a5e951c7dd60ceee873915 and 362f33d08f7b2a3e09cd0bc30a2055fa785daacd account for the velocity mapping; framework 2a68e47ad03265ee4da43ebb5169bbadf06cd7bd allocates SND channels per staff/voice and narrows sostenuto across staves. Those changes were accepted in the A2 decisions; the pedal scope is an upstream report candidate. See notes/a2/audio-parity-roots.md for prior executed isolation.",
       "sha256": {
-        "windows": "4710bd78711992ae6b1ea7630a91ce8cb96a6c4862a19cf52ba63d1cb6ae6d85"
+        "windows": "16f7a697daf8452e3fda5b635588a7abfe8a6a0b82078d8af2f47974074f6be1"
       },
       "step": "A2"
     },
@@ -53,6 +73,16 @@
     {
       "fixture": "custom_part_name.mscx",
       "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 1 centroidEnvelope window(s) 43..43 (10.75-11.00 s) are the 5.0 reverb-tail class, first 1561.4 Hz -> 1814.5 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "16339fae3048d07263c0de81c155aaf649c4b3b86aa0bd24e6a8314000df1f9c"
+      },
+      "step": "A2"
+    },
+    {
+      "fixture": "custom_part_name.mscx",
+      "kind": "different",
       "output": "metadata.json",
       "reason": "5.0 has no Part-level name field (upstream 8bba2d2823 Group naming); a 4.x custom part name that differs from the instrument long name is not preserved",
       "sha256": {
@@ -91,6 +121,16 @@
       "step": "A2"
     },
     {
+      "fixture": "drums_import.musicxml",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 16 centroidEnvelope window(s) 28..43 (7.00-11.00 s) are the 5.0 reverb-tail class, first 3273.8 Hz -> 3120.6 Hz; 15 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 1.5e-06 (-116 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "230a305d0528076721483662d5d4b5a31d7847c22a2e7c433e7f82c557118e50"
+      },
+      "step": "A2"
+    },
+    {
       "fixture": "edit-set-pitches-coverage",
       "kind": "different",
       "output": "midi.json",
@@ -124,9 +164,19 @@
       "fixture": "evening.musicxml",
       "kind": "different",
       "output": "audio.json",
-      "reason": "Upstream cabd23667d6923faf5a5e951c7dd60ceee873915 removes default expression patterns and 362f33d08f7b2a3e09cd0bc30a2055fa785daacd handles empty dynamic maps. For 76 single-note-dynamics notes velocity changes to 64; the decisions accept this. Earlier executed profile restoration reproduced the 4.7.6 events and bit-identical audio. Frames stay equal; peak 0.315535 to 0.309523.",
+      "reason": "Upstream cabd23667d6923faf5a5e951c7dd60ceee873915 removes default expression patterns and 362f33d08f7b2a3e09cd0bc30a2055fa785daacd handles empty dynamic maps. For 76 single-note-dynamics notes velocity changes to 64; the decisions accept this. Earlier executed profile restoration reproduced the 4.7.6 events and bit-identical audio. Frames stay equal; peak 0.315535 to 0.309523. Also 3 centroidEnvelope window(s) 180..182 (45.00-45.75 s) are the 5.0 reverb-tail class, first 977.4 Hz -> 961.3 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
       "sha256": {
-        "windows": "ea61c167e9eb5a99edb1cdc1772977c5a5afb0dfffa00a9a2d660050f32f9a8a"
+        "windows": "5b9d90fba803166482c9714fc621f994d7a1489c94595fd00ba1d1e46be91c21"
+      },
+      "step": "A2"
+    },
+    {
+      "fixture": "hairpins_and_repeats.mscx",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 1 centroidEnvelope window(s) 43..43 (10.75-11.00 s) are the 5.0 reverb-tail class, first 1561.4 Hz -> 1814.5 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "16339fae3048d07263c0de81c155aaf649c4b3b86aa0bd24e6a8314000df1f9c"
       },
       "step": "A2"
     },
@@ -134,9 +184,9 @@
       "fixture": "layout_elements.mscx",
       "kind": "different",
       "output": "audio.json",
-      "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 restores the fermata tempo at the next segment rather than one MIDI tick early. The accepted shift yields 867226 to 867270 frames and 38 samples displacement after the fermata. Earlier executed fermata-removal control reduced the render difference to at most 9.6e-07; see notes/a2/audio-parity-roots.md.",
+      "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 restores the fermata tempo at the next segment rather than one MIDI tick early. The accepted shift yields 867226 to 867270 frames and 38 samples displacement after the fermata. Earlier executed fermata-removal control reduced the render difference to at most 9.6e-07; see notes/a2/audio-parity-roots.md. Also 6 centroidEnvelope window(s) 73..78 (18.25-19.75 s) are the 5.0 reverb-tail class, first 1005.0 Hz -> 1494.8 Hz; 2 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
       "sha256": {
-        "windows": "1d0fa9dd2daf20f76bbcba24edd411ed79b37ad918d12e6cfaf4ca3c698732e2"
+        "windows": "5dc42ab010c8061d9ad3dcff10dd860755dba5bd5f7a01f42453f7e48bc294d7"
       },
       "step": "A2"
     },
@@ -171,6 +221,36 @@
       "step": "A2"
     },
     {
+      "fixture": "linked_parts.mscx",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 1 centroidEnvelope window(s) 27..27 (6.75-7.00 s) are the 5.0 reverb-tail class, first 1136.1 Hz -> 1172.7 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "80cda997d27601f03a8050d4484e613e1406b27317b447cb15084f8914d1f976"
+      },
+      "step": "A2"
+    },
+    {
+      "fixture": "lyrics.mscx",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 2 centroidEnvelope window(s) 26..27 (6.50-7.00 s) are the 5.0 reverb-tail class, first 3976.4 Hz -> 1892.6 Hz; 1 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 9.4e-07 (-121 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "8afd0496ffdc114d4d24b5c54c6ba425f12f2205da0eada964e80de3e8111834"
+      },
+      "step": "A2"
+    },
+    {
+      "fixture": "named_noteheads_perc.musicxml",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 3 centroidEnvelope window(s) 17..19 (4.25-5.00 s) are the 5.0 reverb-tail class, first 868.4 Hz -> 636.7 Hz; 2 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "5c9a0d4aae56e06c66d6670074f7366f6ebd8434dcd1d2a1a5c8573854f267c3"
+      },
+      "step": "A2"
+    },
+    {
       "fixture": "pedal.mscx",
       "kind": "different",
       "output": "midi.json",
@@ -201,6 +281,26 @@
       "step": "A2"
     },
     {
+      "fixture": "perc_stem_dir.musicxml",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 3 centroidEnvelope window(s) 33..35 (8.25-9.00 s) are the 5.0 reverb-tail class, first 969.0 Hz -> 1334.7 Hz; 2 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "0cd3953f51b9972b48a1d672d97a55ad21e94174ea49d6173bf307778d98fea8"
+      },
+      "step": "A2"
+    },
+    {
+      "fixture": "repeat70.mscx",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 1 centroidEnvelope window(s) 26..26 (6.50-6.75 s) are the 5.0 reverb-tail class, first 1508.0 Hz -> 1079.8 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 6.7e-07 (-123 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "a2081e8364825ce7fe45253025ffe67b609612824e97edf706cf5d81fcf32c08"
+      },
+      "step": "A2"
+    },
+    {
       "fixture": "repeat70.mscx",
       "kind": "different",
       "output": "midi.json",
@@ -233,6 +333,16 @@
     {
       "fixture": "repeat71.mscx",
       "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 1 centroidEnvelope window(s) 26..26 (6.50-6.75 s) are the 5.0 reverb-tail class, first 1508.0 Hz -> 1079.8 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 6.7e-07 (-123 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "a2081e8364825ce7fe45253025ffe67b609612824e97edf706cf5d81fcf32c08"
+      },
+      "step": "A2"
+    },
+    {
+      "fixture": "repeat71.mscx",
+      "kind": "different",
       "output": "midi.json",
       "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
       "sha256": {
@@ -257,6 +367,16 @@
       "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
       "sha256": {
         "windows": "119b068a9227f19c2720c164a839f27ab473f04f25d53e221808f21e1ea61233"
+      },
+      "step": "A2"
+    },
+    {
+      "fixture": "repeat72.mscx",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 1 centroidEnvelope window(s) 26..26 (6.50-6.75 s) are the 5.0 reverb-tail class, first 1508.0 Hz -> 1079.8 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 6.7e-07 (-123 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "a2081e8364825ce7fe45253025ffe67b609612824e97edf706cf5d81fcf32c08"
       },
       "step": "A2"
     },
@@ -317,6 +437,16 @@
       "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
       "sha256": {
         "windows": "c5ca121ca4d0eec7e99055b5f512d8ff04be36adda34af115a8a073fbc8ec18d"
+      },
+      "step": "A2"
+    },
+    {
+      "fixture": "slurs.mscz",
+      "kind": "different",
+      "output": "audio.json",
+      "reason": "Also 2 centroidEnvelope window(s) 82..83 (20.50-21.00 s) are the 5.0 reverb-tail class, first 1461.7 Hz -> 1004.8 Hz; 1 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+      "sha256": {
+        "windows": "93764d72464cc0b1693505c9551a940890c695775ed5637bf57422a69d949dc5"
       },
       "step": "A2"
     },
