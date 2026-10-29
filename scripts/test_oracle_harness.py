@@ -17,6 +17,7 @@ Tests:
      - Identity renaming preservation
      - Deliberate target modification detected
      - Legacy blanked tree rejected unless the explicit migration flag is given
+  4. Rendered-page geometry and mutation controls (test_rendered_page.py).
 """
 from __future__ import annotations
 
@@ -34,6 +35,7 @@ if str(SCRIPTS) not in sys.path:
 
 import check_semantic_dump as csd
 import golden
+from test_rendered_page import TestRenderedPageControls, TestSvgGeometry
 from test_roundtrip import parse_mscx
 
 
