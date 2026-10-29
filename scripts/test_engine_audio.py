@@ -284,7 +284,7 @@ async def capture_current_audio(binary: Path, resources: Path, soundfont: Path,
         params = golden.StdioServerParameters(
             command=str(binary.resolve()),
             args=["--resources", str(resources.resolve()), "--soundfont", str(soundfont.resolve())],
-            cwd=str(raw))
+            cwd=str(raw), env=probe_env())
         with (target / "server-stderr.log").open("w", encoding="utf-8") as log:
             async with golden.stdio_client(params, errlog=log) as (read, write):
                 async with golden.ClientSession(read, write) as session:
