@@ -3,7 +3,7 @@
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
-    <eid/>
+    <eid>e1</eid>
     <Division>480</Division>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
@@ -26,14 +26,14 @@
     <metaTag name="workTitle"></metaTag>
     <Part id="1">
       <Staff>
-        <eid/>
+        <eid>e2</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
         </Staff>
       <Staff>
-        <eid/>
-        <linkedTo/>
+        <eid>e3</eid>
+        <linkedTo>e2</linkedTo>
         <StaffType group="tablature">
           <name>tab6StrSimple</name>
           <lines>6</lines>
@@ -117,45 +117,45 @@
       <VBox>
         <height>10</height>
         <sizeIsSpatiumDependent>1</sizeIsSpatiumDependent>
-        <eid/>
+        <eid>e4</eid>
         <Text>
-          <eid/>
+          <eid>e5</eid>
           <style>composer</style>
           <text>Music by Muse</text>
           </Text>
         <Text>
-          <eid/>
+          <eid>e6</eid>
           <style>poet</style>
           <text>Words by Matt Bellamy</text>
           </Text>
         </VBox>
       <Measure>
-        <eid/>
+        <eid>e7</eid>
         <voice>
           <KeySig>
-            <eid/>
+            <eid>e8</eid>
             <concertKey>0</concertKey>
             </KeySig>
           <TimeSig>
-            <eid/>
+            <eid>e9</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Dynamic>
             <subtype>f</subtype>
             <velocity>96</velocity>
-            <eid/>
+            <eid>e10</eid>
             </Dynamic>
           <Tempo>
             <tempo>2.25</tempo>
-            <eid/>
+            <eid>e11</eid>
             <text><sym>metNoteQuarterUp</sym> = 135</text>
             </Tempo>
           <Chord>
-            <eid/>
+            <eid>e12</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e13</eid>
               <pitch>59</pitch>
               <tpc>19</tpc>
               <fret>19</fret>
@@ -163,10 +163,10 @@
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e14</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e15</eid>
               <parentheses>both</parentheses>
               <pitch>57</pitch>
               <tpc>17</tpc>
@@ -186,12 +186,12 @@
               </NoteParenGroup>
             </Chord>
           <Rest>
-            <eid/>
+            <eid>e16</eid>
             <durationType>half</durationType>
             </Rest>
           <BarLine>
             <subtype>end</subtype>
-            <eid/>
+            <eid>e17</eid>
             </BarLine>
           </voice>
         </Measure>
@@ -200,12 +200,12 @@
       <Measure>
         <voice>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e18</eid>
+            <linkedTo>e12</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
+              <eid>e19</eid>
+              <linkedTo>e13</linkedTo>
               <pitch>59</pitch>
               <tpc>19</tpc>
               <fret>19</fret>
@@ -213,12 +213,12 @@
               </Note>
             </Chord>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e20</eid>
+            <linkedTo>e14</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
+              <eid>e21</eid>
+              <linkedTo>e15</linkedTo>
               <parentheses>both</parentheses>
               <pitch>57</pitch>
               <tpc>17</tpc>
@@ -233,14 +233,14 @@
               </NoteParenGroup>
             </Chord>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e22</eid>
+            <linkedTo>e16</linkedTo>
             <durationType>half</durationType>
             </Rest>
           <BarLine>
             <subtype>end</subtype>
-            <eid/>
-            <linkedTo/>
+            <eid>e23</eid>
+            <linkedTo>e17</linkedTo>
             </BarLine>
           </voice>
         </Measure>

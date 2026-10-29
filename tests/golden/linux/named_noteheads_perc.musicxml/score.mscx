@@ -3,7 +3,7 @@
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
-    <eid/>
+    <eid>e1</eid>
     <Division>480</Division>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
@@ -23,7 +23,7 @@
     <metaTag name="workTitle">Named noteheads percussion</metaTag>
     <Part id="1">
       <Staff>
-        <eid/>
+        <eid>e2</eid>
         <StaffType group="percussion">
           <name>perc5Line</name>
           <keysig>0</keysig>
@@ -98,64 +98,64 @@
     <Staff id="1">
       <VBox>
         <height>10</height>
-        <eid/>
+        <eid>e3</eid>
         <Text>
-          <eid/>
+          <eid>e4</eid>
           <style>title</style>
           <text>Named noteheads percussion</text>
           </Text>
         <Text>
-          <eid/>
+          <eid>e5</eid>
           <style>composer</style>
           <text>James M</text>
           </Text>
         </VBox>
       <Measure>
-        <eid/>
+        <eid>e6</eid>
         <voice>
           <Clef>
             <concertClefType>PERC</concertClefType>
             <transposingClefType>PERC</transposingClefType>
             <isHeader>1</isHeader>
-            <eid/>
+            <eid>e7</eid>
             </Clef>
           <TimeSig>
-            <eid/>
+            <eid>e8</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Chord>
-            <eid/>
+            <eid>e9</eid>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e10</eid>
               <pitch>45</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e11</eid>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e12</eid>
               <pitch>45</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e13</eid>
             <durationType>half</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e14</eid>
               <pitch>45</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <BarLine>
-            <eid/>
+            <eid>e15</eid>
             </BarLine>
           </voice>
         </Measure>

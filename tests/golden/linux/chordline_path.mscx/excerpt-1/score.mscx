@@ -3,7 +3,7 @@
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
-    <eid/>
+    <eid>e1</eid>
     <name>Tenor</name>
     <initialPartId>2</initialPartId>
     <Division>480</Division>
@@ -42,8 +42,8 @@
     <metaTag name="workTitle">testpart1</metaTag>
     <Part id="2">
       <Staff>
-        <eid/>
-        <linkedTo/>
+        <eid>e2</eid>
+        <linkedTo>e3</linkedTo>
         <StaffType group="pitched">
           <name>Standard</name>
           </StaffType>
@@ -84,76 +84,76 @@
       <VBox>
         <height>10</height>
         <sizeIsSpatiumDependent>1</sizeIsSpatiumDependent>
-        <eid/>
-        <linkedTo/>
+        <eid>e4</eid>
+        <linkedTo>e5</linkedTo>
         <Text>
-          <eid/>
-          <linkedTo/>
+          <eid>e6</eid>
+          <linkedTo>e7</linkedTo>
           <style>title</style>
           <text>testpart1</text>
           </Text>
         <Text>
-          <eid/>
+          <eid>e8</eid>
           <style>instrument_excerpt</style>
           <text>Tenor</text>
           </Text>
         </VBox>
       <Measure>
-        <eid/>
+        <eid>e9</eid>
         <voice>
           <Clef>
             <concertClefType>G8vb</concertClefType>
             <transposingClefType>G8vb</transposingClefType>
             <isHeader>1</isHeader>
-            <eid/>
-            <linkedTo/>
+            <eid>e10</eid>
+            <linkedTo>e11</linkedTo>
             </Clef>
           <TimeSig>
-            <eid/>
-            <linkedTo/>
+            <eid>e12</eid>
+            <linkedTo>e13</linkedTo>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e14</eid>
+            <linkedTo>e15</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
+              <eid>e16</eid>
+              <linkedTo>e17</linkedTo>
               <pitch>55</pitch>
               <tpc>15</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e18</eid>
+            <linkedTo>e19</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
+              <eid>e20</eid>
+              <linkedTo>e21</linkedTo>
               <pitch>57</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e22</eid>
+            <linkedTo>e23</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
+              <eid>e24</eid>
+              <linkedTo>e25</linkedTo>
               <pitch>59</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e26</eid>
+            <linkedTo>e27</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
+              <eid>e28</eid>
+              <linkedTo>e29</linkedTo>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
@@ -161,11 +161,11 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e30</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e31</eid>
+            <linkedTo>e32</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
@@ -173,10 +173,10 @@
         </Measure>
       <Measure len="124/4">
         <multiMeasureRest>31</multiMeasureRest>
-        <eid/>
+        <eid>e33</eid>
         <voice>
           <Rest>
-            <eid/>
+            <eid>e34</eid>
             <placement>above</placement>
             <durationType>measure</durationType>
             <duration>124/4</duration>
@@ -184,330 +184,330 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e35</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e36</eid>
+            <linkedTo>e37</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e38</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e39</eid>
+            <linkedTo>e40</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e41</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e42</eid>
+            <linkedTo>e43</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e44</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e45</eid>
+            <linkedTo>e46</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e47</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e48</eid>
+            <linkedTo>e49</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e50</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e51</eid>
+            <linkedTo>e52</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e53</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e54</eid>
+            <linkedTo>e55</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e56</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e57</eid>
+            <linkedTo>e58</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e59</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e60</eid>
+            <linkedTo>e61</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e62</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e63</eid>
+            <linkedTo>e64</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e65</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e66</eid>
+            <linkedTo>e67</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e68</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e69</eid>
+            <linkedTo>e70</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e71</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e72</eid>
+            <linkedTo>e73</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e74</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e75</eid>
+            <linkedTo>e76</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e77</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e78</eid>
+            <linkedTo>e79</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e80</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e81</eid>
+            <linkedTo>e82</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e83</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e84</eid>
+            <linkedTo>e85</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e86</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e87</eid>
+            <linkedTo>e88</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e89</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e90</eid>
+            <linkedTo>e91</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e92</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e93</eid>
+            <linkedTo>e94</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e95</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e96</eid>
+            <linkedTo>e97</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e98</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e99</eid>
+            <linkedTo>e100</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e101</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e102</eid>
+            <linkedTo>e103</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e104</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e105</eid>
+            <linkedTo>e106</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e107</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e108</eid>
+            <linkedTo>e109</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e110</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e111</eid>
+            <linkedTo>e112</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e113</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e114</eid>
+            <linkedTo>e115</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e116</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e117</eid>
+            <linkedTo>e118</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e119</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e120</eid>
+            <linkedTo>e121</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e122</eid>
         <voice>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e123</eid>
+            <linkedTo>e124</linkedTo>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>

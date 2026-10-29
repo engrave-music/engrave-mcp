@@ -3,7 +3,7 @@
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
-    <eid/>
+    <eid>e1</eid>
     <Division>480</Division>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
@@ -28,7 +28,7 @@
     <metaTag name="workTitle">Idee in Noten no.8</metaTag>
     <Part id="1">
       <Staff>
-        <eid/>
+        <eid>e2</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
@@ -95,29 +95,29 @@
       </Part>
     <Staff id="1">
       <Measure>
-        <eid/>
+        <eid>e3</eid>
         <voice>
           <TimeSig>
-            <eid/>
+            <eid>e4</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Dynamic>
             <subtype>p</subtype>
             <velocity>49</velocity>
-            <eid/>
+            <eid>e5</eid>
             </Dynamic>
           <Spanner type="HairPin">
             <HairPin>
               <subtype>0</subtype>
               <beginHookHeight>-1.9</beginHookHeight>
               <endHookHeight>-1.9</endHookHeight>
-              <eid/>
+              <eid>e6</eid>
               <Segment>
                 <subtype>0</subtype>
                 <offset x="0" y="1.75"/>
                 <off2 x="1.16325" y="0"/>
-                <eid/>
+                <eid>e7</eid>
                 </Segment>
               </HairPin>
             <next>
@@ -127,37 +127,37 @@
               </next>
             </Spanner>
           <Chord>
-            <eid/>
+            <eid>e8</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e9</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e10</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e11</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e12</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e13</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e14</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e15</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
@@ -165,14 +165,14 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e16</eid>
         <startRepeat/>
         <endRepeat>2</endRepeat>
         <voice>
           <Dynamic>
             <subtype>f</subtype>
             <velocity>96</velocity>
-            <eid/>
+            <eid>e17</eid>
             </Dynamic>
           <Spanner type="HairPin">
             <prev>
@@ -187,12 +187,12 @@
               <direction>down</direction>
               <beginHookHeight>-1.9</beginHookHeight>
               <endHookHeight>-1.9</endHookHeight>
-              <eid/>
+              <eid>e18</eid>
               <Segment>
                 <subtype>0</subtype>
                 <offset x="0" y="3.5"/>
                 <off2 x="-0.3776" y="0"/>
-                <eid/>
+                <eid>e19</eid>
                 </Segment>
               </HairPin>
             <next>
@@ -202,28 +202,28 @@
               </next>
             </Spanner>
           <Chord>
-            <eid/>
+            <eid>e20</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e21</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e22</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e23</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e24</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e25</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
@@ -231,7 +231,7 @@
           <Dynamic>
             <subtype>fff</subtype>
             <velocity>126</velocity>
-            <eid/>
+            <eid>e26</eid>
             <visible>0</visible>
             </Dynamic>
           <Spanner type="HairPin">
@@ -242,10 +242,10 @@
               </prev>
             </Spanner>
           <Chord>
-            <eid/>
+            <eid>e27</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e28</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
@@ -253,12 +253,12 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e29</eid>
         <voice>
           <Dynamic>
             <subtype>ppp</subtype>
             <velocity>16</velocity>
-            <eid/>
+            <eid>e30</eid>
             </Dynamic>
           <Spanner type="HairPin">
             <HairPin>
@@ -266,12 +266,12 @@
               <direction>down</direction>
               <beginHookHeight>-1.9</beginHookHeight>
               <endHookHeight>-1.9</endHookHeight>
-              <eid/>
+              <eid>e31</eid>
               <Segment>
                 <subtype>0</subtype>
                 <offset x="0" y="2"/>
                 <off2 x="10.0585" y="0"/>
-                <eid/>
+                <eid>e32</eid>
                 </Segment>
               </HairPin>
             <next>
@@ -281,28 +281,28 @@
               </next>
             </Spanner>
           <Chord>
-            <eid/>
+            <eid>e33</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e34</eid>
               <pitch>67</pitch>
               <tpc>15</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e35</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e36</eid>
               <pitch>67</pitch>
               <tpc>15</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e37</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e38</eid>
               <pitch>67</pitch>
               <tpc>15</tpc>
               </Note>
@@ -310,7 +310,7 @@
           <Dynamic>
             <subtype>p</subtype>
             <velocity>49</velocity>
-            <eid/>
+            <eid>e39</eid>
             </Dynamic>
           <Spanner type="HairPin">
             <prev>
@@ -320,10 +320,10 @@
               </prev>
             </Spanner>
           <Chord>
-            <eid/>
+            <eid>e40</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e41</eid>
               <pitch>67</pitch>
               <tpc>15</tpc>
               </Note>

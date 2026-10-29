@@ -3,7 +3,7 @@
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
-    <eid/>
+    <eid>e1</eid>
     <Division>480</Division>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
@@ -23,7 +23,7 @@
     <metaTag name="workTitle"></metaTag>
     <Part id="1">
       <Staff>
-        <eid/>
+        <eid>e2</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           <lines>1</lines>
@@ -489,60 +489,60 @@
     <Staff id="1">
       <VBox>
         <height>10</height>
-        <eid/>
+        <eid>e3</eid>
         </VBox>
       <Measure>
-        <eid/>
+        <eid>e4</eid>
         <voice>
           <Clef>
             <concertClefType>PERC</concertClefType>
             <transposingClefType>PERC</transposingClefType>
             <isHeader>1</isHeader>
-            <eid/>
+            <eid>e5</eid>
             </Clef>
           <TimeSig>
-            <eid/>
+            <eid>e6</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <StaffText>
-            <eid/>
+            <eid>e7</eid>
             <text>InstrLow</text>
             </StaffText>
           <Rest>
-            <eid/>
+            <eid>e8</eid>
             <durationType>quarter</durationType>
             </Rest>
           <StaffText>
-            <eid/>
+            <eid>e9</eid>
             <text>InstrHigh</text>
             </StaffText>
           <Chord>
-            <eid/>
+            <eid>e10</eid>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e11</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e12</eid>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e13</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e14</eid>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e15</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
@@ -550,29 +550,29 @@
           </voice>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e16</eid>
             <durationType>quarter</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid/>
+              <eid>e17</eid>
               <pitch>63</pitch>
               <tpc>11</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
+            <eid>e18</eid>
             <durationType>quarter</durationType>
             </Rest>
           <Rest>
-            <eid/>
+            <eid>e19</eid>
             <durationType>quarter</durationType>
             </Rest>
           <Chord>
-            <eid/>
+            <eid>e20</eid>
             <durationType>quarter</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid/>
+              <eid>e21</eid>
               <pitch>63</pitch>
               <tpc>11</tpc>
               </Note>
@@ -580,98 +580,98 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e22</eid>
         <voice>
           <StaffText>
-            <eid/>
+            <eid>e23</eid>
             <text>InstrHigh</text>
             </StaffText>
           <StaffText>
-            <eid/>
+            <eid>e24</eid>
             <text>InstrLow</text>
             </StaffText>
           <Beam>
-            <eid/>
+            <eid>e25</eid>
             <StemDirection>up</StemDirection>
             </Beam>
           <Chord>
-            <eid/>
+            <eid>e26</eid>
             <BeamMode>begin</BeamMode>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e27</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e28</eid>
             <BeamMode>mid</BeamMode>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e29</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e30</eid>
             <BeamMode>mid</BeamMode>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e31</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e32</eid>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e33</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Beam>
-            <eid/>
+            <eid>e34</eid>
             <StemDirection>up</StemDirection>
             </Beam>
           <Chord>
-            <eid/>
+            <eid>e35</eid>
             <BeamMode>begin</BeamMode>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e36</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e37</eid>
             <BeamMode>mid</BeamMode>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e38</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e39</eid>
             <BeamMode>mid</BeamMode>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e40</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e41</eid>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e42</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
@@ -679,141 +679,141 @@
           </voice>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e43</eid>
             <dots>1</dots>
             <durationType>quarter</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid/>
+              <eid>e44</eid>
               <pitch>63</pitch>
               <tpc>11</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e45</eid>
             <BeamMode>no</BeamMode>
             <durationType>eighth</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid/>
+              <eid>e46</eid>
               <pitch>63</pitch>
               <tpc>11</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e47</eid>
             <durationType>quarter</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid/>
+              <eid>e48</eid>
               <pitch>63</pitch>
               <tpc>11</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
+            <eid>e49</eid>
             <durationType>quarter</durationType>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e50</eid>
         <voice>
           <StaffText>
-            <eid/>
+            <eid>e51</eid>
             <text>Claves</text>
             </StaffText>
           <StaffText>
-            <eid/>
+            <eid>e52</eid>
             <text>Maracas</text>
             </StaffText>
           <Beam>
-            <eid/>
+            <eid>e53</eid>
             <StemDirection>up</StemDirection>
             </Beam>
           <Chord>
-            <eid/>
+            <eid>e54</eid>
             <BeamMode>begin</BeamMode>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e55</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e56</eid>
             <durationType>eighth</durationType>
             <Note>
-              <eid/>
+              <eid>e57</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e58</eid>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e59</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e60</eid>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e61</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
+            <eid>e62</eid>
             <visible>0</visible>
             <durationType>quarter</durationType>
             </Rest>
           <BarLine>
-            <eid/>
+            <eid>e63</eid>
             </BarLine>
           </voice>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e64</eid>
             <dots>1</dots>
             <durationType>quarter</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid/>
+              <eid>e65</eid>
               <pitch>61</pitch>
               <tpc>21</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e66</eid>
             <BeamMode>no</BeamMode>
             <durationType>eighth</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid/>
+              <eid>e67</eid>
               <pitch>61</pitch>
               <tpc>21</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e68</eid>
             <durationType>quarter</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid/>
+              <eid>e69</eid>
               <pitch>61</pitch>
               <tpc>21</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
+            <eid>e70</eid>
             <durationType>quarter</durationType>
             </Rest>
           </voice>
