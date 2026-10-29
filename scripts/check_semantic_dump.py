@@ -12,7 +12,7 @@ Only the fields both representations expose are compared:
   parts       count, long name, staff count, staff type groups
   measures    count (first staff), time signature, start/end repeat
   events      per staff and voice: kind, tick, duration, grace kind, notes, tie
-  spanners    (type, start tick, end tick) per staff, for types both know
+  spanners    (type, start tick, end tick) per staff, for fixed supported types
   clefs       (tick, type) per staff
   lyrics      (verse, text) per staff
   dynamics    counts per dynamic subtype, per staff
@@ -50,6 +50,10 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from test_roundtrip import parse_mscx
+
+# Fixed, documented set of spanner types supported across both native semantic dump
+# and independent MSCX parser. Ties are compared in check_events via note "tieTo".
+SUPPORTED_SPANNERS = frozenset({"HairPin", "Ottava", "Pedal", "Slur", "Volta"})
 
 GRACE_AFTER = {"grace8after", "grace16after", "grace32after"}
 
@@ -285,11 +289,23 @@ def check_spanners(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> 
         # (note "tieTo"), which the events check already compares.
         parse_spanners = Counter((item[0], item[2], item[3]) for item in parse_items
                                  if item[0] != "Tie")
-        shared = {item[0] for item in dump_spanners} & {item[0] for item in parse_spanners}
-        dump_shared = Counter({item: count for item, count in dump_spanners.items() if item[0] in shared})
-        parse_shared = Counter({item: count for item, count in parse_spanners.items() if item[0] in shared})
-        details = multiset_details(f"staff {staff_index}", dump_shared, parse_shared, limit)
-        results.append(FieldResult(f"spanners[staff {staff_index}]", details))
+        details: list[str] = []
+        dump_unsupported = sorted({item[0] for item in dump_spanners if item[0] not in SUPPORTED_SPANNERS})
+        parse_unsupported = sorted({item[0] for item in parse_spanners if item[0] not in SUPPORTED_SPANNERS})
+        for u in dump_unsupported:
+            if len(details) < limit:
+                details.append(f"staff {staff_index}: unsupported dump spanner type {u!r}")
+        for u in parse_unsupported:
+            if len(details) < limit:
+                details.append(f"staff {staff_index}: unsupported parse spanner type {u!r}")
+        dump_supported = Counter({item: count for item, count in dump_spanners.items()
+                                  if item[0] in SUPPORTED_SPANNERS})
+        parse_supported = Counter({item: count for item, count in parse_spanners.items()
+                                   if item[0] in SUPPORTED_SPANNERS})
+        if len(details) < limit:
+            details.extend(multiset_details(f"staff {staff_index}", dump_supported, parse_supported,
+                                            limit - len(details)))
+        results.append(FieldResult(f"spanners[staff {staff_index}]", details[:limit]))
     return results
 
 
