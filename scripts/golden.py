@@ -710,59 +710,19 @@ def audio_equal(golden, actual, key=None) -> bool:
     return golden == actual
 
 
-def normalize_semantic_dict(val: Any) -> Any:
-    if isinstance(val, dict):
-        d = {}
-        is_dynamic = val.get("type") == "Dynamic"
-        is_layout_break = val.get("type") == "LayoutBreak"
-        for k, v in val.items():
-            if is_dynamic and k == "subtype":
-                continue
-            if is_layout_break and k == "track":
-                continue
-            d[k] = normalize_semantic_dict(v)
-        return d
-    elif isinstance(val, list):
-        return [normalize_semantic_dict(x) for x in val]
-    return val
-
-
-def semantic_equal(golden_text: str, actual_text: str) -> bool:
-    try:
-        g = normalize_semantic_dict(json.loads(golden_text))
-        a = normalize_semantic_dict(json.loads(actual_text))
-        return round_json(g) == round_json(a)
-    except Exception:
-        return False
-
-
 def files_equal(golden: Path, actual: Path, output: str) -> bool:
     if output == "audio.json":
         try:
             return audio_equal(json.loads(read_text(golden)), json.loads(read_text(actual)))
         except (ValueError, KeyError):
             return False
-    if output in ("semantic.json", "semantic-source.json"):
-        if golden.read_bytes() == actual.read_bytes():
-            return True
-        return semantic_equal(read_text(golden), read_text(actual))
     return golden.read_bytes() == actual.read_bytes()
 
 
 def write_diff(root: Path, fixture: str, output: str, golden: Path, actual: Path) -> None:
-    golden_lines = read_text(golden).splitlines(keepends=True)
-    actual_lines = read_text(actual).splitlines(keepends=True)
-    if output in ("semantic.json", "semantic-source.json"):
-        try:
-            g_norm = json.dumps(normalize_semantic_dict(json.loads(read_text(golden))), indent=1, sort_keys=True) + "\n"
-            a_norm = json.dumps(normalize_semantic_dict(json.loads(read_text(actual))), indent=1, sort_keys=True) + "\n"
-            golden_lines = g_norm.splitlines(keepends=True)
-            actual_lines = a_norm.splitlines(keepends=True)
-        except Exception:
-            pass
     lines = list(difflib.unified_diff(
-        golden_lines,
-        actual_lines,
+        read_text(golden).splitlines(keepends=True),
+        read_text(actual).splitlines(keepends=True),
         fromfile=f"golden/{fixture}/{output}", tofile=f"actual/{fixture}/{output}"))
     if len(lines) > 2000:
         lines = lines[:2000] + ["... truncated after 2000 diff lines ...\n"]
