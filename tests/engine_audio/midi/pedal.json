@@ -1,7 +1,7 @@
 {
  "fixture": "pedal",
  "platform": "shared",
- "eventTotal": 47,
+ "eventTotal": 55,
  "events": [
   {
    "channel": 1,
@@ -35,6 +35,62 @@
    "data": 127,
    "frame": 0,
    "index": 64,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 1,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 1,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 1,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 1,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 1,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 1,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 1,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 1,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
    "opcode": "Opcode::ControlChange"
   },
   {

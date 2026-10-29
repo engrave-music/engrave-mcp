@@ -11,11 +11,15 @@ Tests both probe-level engine capabilities and MCP server integration:
    - Asserts fundamental frequencies are within 1 cent of equal temperament (A4 = 440 Hz)
    - Asserts the explicit mf dynamic (velocity 80) produces an RMS within 2% of
      the measured 0.1751
-3. MIDI event goldens:
+3. MIDI event oracle (4.7.6 reference plus accepted 5.0 differences):
    - Captures handleEvent MIDI events (NoteOn/Off, CC, PitchBend) via --midi-events,
      including each event's render-frame offset
-   - Compares events including offsets exactly against
-     tests/engine_audio/midi/<fixture>.json and asserts the exact event total
+   - tests/engine_audio/midi/<fixture>.json are the exact 4.7.6 reference streams
+     (commit 9a74eb1), not 5.0 re-baselines. The 5.0 stream must equal the reference
+     after applying ONLY the two accepted upstream differences documented in
+     MIDI_ACCEPTED_RULES (deduplicated/out-of-band CC11 and the SND velocity
+     fallback), with every accepted count pinned per fixture. All other fields and
+     per-class totals stay exact, and deliberate mutations must fail.
 4. Determinism and codec decoding across formats:
    - Repeated exports produce byte-identical files per format (wav, flac, ogg, mp3, aac)
    - Decoded durations (not the probe's own duration field) equal
@@ -51,6 +55,7 @@ import hashlib
 import json
 import math
 import os
+from collections import Counter
 from pathlib import Path
 import shutil
 import subprocess
@@ -467,6 +472,322 @@ def write_midi_goldens(
         print(f"  wrote {display}: {total} events")
 
 
+
+# --- MIDI event oracle: the 4.7.6 reference plus the accepted 5.0 differences ----
+#
+# tests/engine_audio/midi/<fixture>.json are the exact 4.7.6 event streams (restored
+# from 9a74eb1, byte-identical to codex/xmake-parity). A0/A2 requires the step-5 MIDI
+# oracle to stay exact, so those files are NOT re-baselined on 5.0 playback. Only the
+# two upstream 5.0 changes below are accepted (notes/a2/decisions.md 2026-10-29 and
+# notes/a2/audio-parity-roots.md sections 1 and 5). The 5.0 stream must equal the
+# reference after exactly these transformations; every accepted difference is counted
+# and pinned per fixture, and anything else fails. Reference SHA-256 values pin a
+# canonical JSON encoding of eventTotal and events, independent of JSON formatting or
+# the platform metadata in an optional platform-specific capture.
+#
+# (a) 5.0 moves part of the CC11 expression handling outside captured MIDI events
+#     FluidSynth::updateExpressionLevels() (5.0 fluidsynth.cpp:470-505) applies the
+#     main-stream dynamics expression per chunk out of band.
+#     (a1) Duplicate collapse: 4.7.6 FluidSequencer::addDynamicEvents() emitted one
+#          CC11 per dynamic layer without deduplication; 5.0 emits a level only when
+#          it changes. Rule: keep only the first CC11 event for each
+#          (frame, channel, data) triple in reference order.
+#     (a2) Natural level on a track with no dynamics curve: 4.7.6 emitted
+#          CC11 = expressionLevel(natural) = 64 at frame 0; in 5.0 addDynamicEvents()
+#          iterates the empty dynamics map and emits nothing, while
+#          updateExpressionLevels() writes the same level out of band. Rule: on the
+#          channels pinned in no_dynamics_curve_channels (the fixture's track has no
+#          dynamic automation), drop every CC11 event, which the reference must store
+#          only as the initial natural level (frame 0, data 64).
+#     Every other CC11 event must survive unchanged and no new CC11 may appear.
+#     evening's frame-0 natural-level events stay because those tracks do have
+#     dynamics curves (mp/f/p); pedal's channel 1 (piano) has none.
+#
+# (b) NoteOn velocity no longer encodes the dynamic on SND instruments
+#     Upstream cabd23667d removed the default expressionPattern and 362f33d08f makes
+#     FluidSequencer::noteVelocity() fall back to 0.5 for SND notes without a velocity
+#     override and with an empty expression curve. For the affected evening notes this
+#     gives round(0.5 * 65535) >> 9 = 64. Rule: only NoteOns on the fixture's pinned
+#     SND channels may change, and only to 64, with the old velocities and counts
+#     pinned below. Violin (channel 0) and cello (channel 2) are SND; piano (channel 1)
+#     is not and keeps 48/64/80. No velocity changes are accepted for other fixtures.
+#
+# Everything else - NoteOn/NoteOff note, channel and frame, NoteOff velocity, pitch
+# bend, CC64/CC123, event order, per-class totals and the total - is exact.
+CC_EXPRESSION = 11
+NATURAL_EXPRESSION_LEVEL = 64  # FluidSequencer::expressionLevel(DynamicType::Natural)
+SND_FALLBACK_VELOCITY = 64     # round(0.5 * 65535) >> 9 when expressionCurve is empty
+
+MIDI_ACCEPTED_RULES: dict[str, dict[str, Any]] = {
+    "evening": {
+        "reference_sha256": "1e81e3a06b59c6505be90e4003dea2eaa92bd5c42248d6990985a8cc60dc2088",
+        # 4.7.6: 313 events (140 NoteOn, 140 NoteOff, 3 PitchBend, 24 CC11, 3 CC64,
+        # 3 CC123); 5.0: 295 (24 -> 6 CC11, 76 SND NoteOn velocities -> 64).
+        "reference_event_total": 313,
+        "expected_event_total": 295,
+        "expected_class_totals": {
+            "NoteOn": 140, "NoteOff": 140, "PitchBend": 3, "CC11": 6, "CC64": 3, "CC123": 3,
+        },
+        "snd_channels": (0, 2),
+        "no_dynamics_curve_channels": (),
+        "cc11_duplicate_collapse": 18,
+        "cc11_natural_no_curve": 0,
+        "noteon_velocity_changes": 76,
+        "noteon_velocity_remap": {(59, 64): 2, (62, 64): 37, (65, 64): 37},
+    },
+    "hairpins_and_repeats": {
+        "reference_sha256": "ad51523b9ed0b349bb86fe9809bae17be6e9e588124d920d85c851ad53941001",
+        "reference_event_total": 35,
+        "expected_event_total": 35,
+        "expected_class_totals": {
+            "NoteOn": 16, "NoteOff": 16, "PitchBend": 1, "CC64": 1, "CC123": 1,
+        },
+        "snd_channels": (),
+        "no_dynamics_curve_channels": (),
+        "cc11_duplicate_collapse": 0,
+        "cc11_natural_no_curve": 0,
+        "noteon_velocity_changes": 0,
+        "noteon_velocity_remap": {},
+    },
+    "pedal": {
+        "reference_sha256": "cd932ed9f7b909d8eb404d48d8eee338df76cb247871cb6b29ccdbea4d40bbd4",
+        # 4.7.6: 55 events (18 NoteOn, 18 NoteOff, 1 PitchBend, 8 CC11, 9 CC64,
+        # 1 CC123); 5.0: 47 (the 8 natural-level CC11 events of the no-curve piano
+        # track are out of band). Velocities and every other event are unchanged.
+        "reference_event_total": 55,
+        "expected_event_total": 47,
+        "expected_class_totals": {
+            "NoteOn": 18, "NoteOff": 18, "PitchBend": 1, "CC64": 9, "CC123": 1,
+        },
+        "snd_channels": (),
+        "no_dynamics_curve_channels": (1,),
+        "cc11_duplicate_collapse": 0,
+        "cc11_natural_no_curve": 8,
+        "noteon_velocity_changes": 0,
+        "noteon_velocity_remap": {},
+    },
+    "bend.gp": {
+        "reference_sha256": "12eb4328d9941b9fe04ab265b6ca351dab147fa27abbf279561e1b1c7cfa43d8",
+        "reference_event_total": 373,
+        "expected_event_total": 373,
+        "expected_class_totals": {
+            "NoteOn": 6, "NoteOff": 6, "PitchBend": 359, "CC64": 1, "CC123": 1,
+        },
+        "snd_channels": (),
+        "no_dynamics_curve_channels": (),
+        "cc11_duplicate_collapse": 0,
+        "cc11_natural_no_curve": 0,
+        "noteon_velocity_changes": 0,
+        "noteon_velocity_remap": {},
+    },
+    "repeat70": {
+        "reference_sha256": "20e63965d78db755fff65e1683c7306e81ae9f801e0d307f44bdfd8ded2f1447",
+        "reference_event_total": 15,
+        "expected_event_total": 15,
+        "expected_class_totals": {
+            "NoteOn": 6, "NoteOff": 6, "PitchBend": 1, "CC64": 1, "CC123": 1,
+        },
+        "snd_channels": (),
+        "no_dynamics_curve_channels": (),
+        "cc11_duplicate_collapse": 0,
+        "cc11_natural_no_curve": 0,
+        "noteon_velocity_changes": 0,
+        "noteon_velocity_remap": {},
+    },
+}
+
+
+def midi_event_class(event: dict[str, Any]) -> str:
+    opcode = str(event["opcode"]).rsplit("::", 1)[-1]
+    if opcode == "ControlChange":
+        return f"CC{event['index']}"
+    return opcode
+
+
+def midi_class_totals(events: list[dict[str, Any]]) -> dict[str, int]:
+    return dict(sorted(Counter(midi_event_class(event) for event in events).items()))
+
+
+def predict_50_midi_events(
+    name: str, reference_events: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Derive the expected 5.0 stream from the 4.7.6 reference (rules above)."""
+    rule = MIDI_ACCEPTED_RULES[name]
+    seen_cc11: dict[tuple[Any, Any, Any], dict[str, Any]] = {}
+    predicted: list[dict[str, Any]] = []
+    duplicates = 0
+    natural_level = 0
+    velocity_remap: Counter[tuple[Any, Any]] = Counter()
+
+    for reference_event in reference_events:
+        event = dict(reference_event)
+        event_class = midi_event_class(event)
+        if event_class == f"CC{CC_EXPRESSION}":
+            if event["channel"] in rule["no_dynamics_curve_channels"]:
+                assert event["frame"] == 0 and event["data"] == NATURAL_EXPRESSION_LEVEL, (
+                    f"{name}: pinned no-dynamics channel {event['channel']} has a non-natural "
+                    f"CC11 event {reference_event}; the accepted rule only covers the initial "
+                    "natural level, so this fixture needs a new reviewed rule")
+                natural_level += 1
+                continue
+            key = (event["frame"], event["channel"], event["data"])
+            if key in seen_cc11:
+                assert event == seen_cc11[key], (
+                    f"{name}: CC11 events at {key} differ in other fields; only exact "
+                    "duplicates may be collapsed")
+                duplicates += 1
+                continue
+            seen_cc11[key] = event
+        elif event_class == "NoteOn" and event["channel"] in rule["snd_channels"]:
+            if event["velocity"] != SND_FALLBACK_VELOCITY:
+                velocity_remap[(event["velocity"], SND_FALLBACK_VELOCITY)] += 1
+                event["velocity"] = SND_FALLBACK_VELOCITY
+        predicted.append(event)
+
+    stats = {
+        "cc11_duplicate_collapse": duplicates,
+        "cc11_natural_no_curve": natural_level,
+        "noteon_velocity_changes": sum(velocity_remap.values()),
+        "noteon_velocity_remap": dict(velocity_remap),
+    }
+    return predicted, stats
+
+
+def describe_event_difference(
+    actual: list[dict[str, Any]], expected: list[dict[str, Any]]
+) -> str:
+    for index, (actual_event, expected_event) in enumerate(zip(actual, expected)):
+        if actual_event != expected_event:
+            return f"event {index} is {actual_event}, expected {expected_event}"
+    if len(actual) > len(expected):
+        return f"unexpected extra event {len(expected)}: {actual[len(expected)]}"
+    if len(actual) < len(expected):
+        return f"missing event {len(actual)}: {expected[len(actual)]}"
+    return "no difference"
+
+
+def check_midi_stream_against_reference(
+    name: str,
+    golden: dict[str, Any],
+    actual_events: list[dict[str, Any]],
+    actual_total: Any,
+    truncated: Any,
+) -> dict[str, Any]:
+    """Assert the 5.0 stream is the 4.7.6 reference plus only the pinned differences."""
+    rule = MIDI_ACCEPTED_RULES.get(name)
+    assert rule is not None, (
+        f"No documented 5.0 accepted-difference rule for MIDI fixture {name}; add a reviewed "
+        "entry to MIDI_ACCEPTED_RULES instead of re-baselining the 4.7.6 reference")
+    reference_events = golden["events"]
+    assert golden["eventTotal"] == len(reference_events) == rule["reference_event_total"], (
+        f"MIDI golden for {name} has eventTotal {golden['eventTotal']} and "
+        f"{len(reference_events)} stored events, but A0/A2 pins the 4.7.6 reference at "
+        f"{rule['reference_event_total']}. Do not re-baseline this file on 5.0 output; "
+        "document accepted 5.0 changes in MIDI_ACCEPTED_RULES with an upstream cause")
+
+    predicted_events, stats = predict_50_midi_events(name, reference_events)
+    for key in ("cc11_duplicate_collapse", "cc11_natural_no_curve", "noteon_velocity_changes"):
+        assert stats[key] == rule[key], (
+            f"{name}: accepted-difference count {key} is {stats[key]}, pinned {rule[key]}; "
+            "an unexpected playback difference must be reviewed against its upstream cause "
+            "before the pin is changed")
+    assert stats["noteon_velocity_remap"] == rule["noteon_velocity_remap"], (
+        f"{name}: SND velocity remap is {stats['noteon_velocity_remap']}, pinned "
+        f"{rule['noteon_velocity_remap']}")
+
+    expected_total = len(predicted_events)
+    assert expected_total == rule["expected_event_total"], (
+        f"{name}: accepted rules predict {expected_total} events, pinned "
+        f"{rule['expected_event_total']}")
+    class_totals = midi_class_totals(predicted_events)
+    assert class_totals == rule["expected_class_totals"], (
+        f"{name}: expected per-class totals {class_totals}, pinned "
+        f"{rule['expected_class_totals']}")
+
+    assert isinstance(actual_total, int), f"Probe did not report midiEventTotal for {name}"
+    assert actual_total > 0, f"MIDI golden for {name} has no events"
+    assert actual_total == expected_total, (
+        f"MIDI event total mismatch for {name}: got {actual_total}, expected {expected_total} "
+        f"(4.7.6 reference {len(reference_events)} minus the pinned accepted differences)")
+    assert truncated is False, f"Probe truncated {name} events"
+    assert actual_total == len(actual_events), (
+        f"MIDI event count mismatch for {name}: total {actual_total}, "
+        f"printed {len(actual_events)}")
+    if actual_events != predicted_events:
+        raise AssertionError(
+            f"MIDI events (including render-frame offsets) mismatch for {name}: "
+            f"{describe_event_difference(actual_events, predicted_events)}. Only the documented "
+            "5.0 CC11 and SND-velocity differences are accepted; every other field must match "
+            "the 4.7.6 reference exactly")
+
+    return {
+        "event_total": actual_total,
+        "reference_event_total": len(reference_events),
+        "class_totals": class_totals,
+        "accepted_differences": {
+            "cc11_duplicate_collapse": stats["cc11_duplicate_collapse"],
+            "cc11_natural_no_curve": stats["cc11_natural_no_curve"],
+            "noteon_velocity_changes": stats["noteon_velocity_changes"],
+            "noteon_velocity_remap": {
+                f"{old}->{new}": count
+                for (old, new), count in sorted(stats["noteon_velocity_remap"].items())
+            },
+        },
+        "matches_reference_with_accepted_differences": True,
+    }
+
+
+def midi_oracle_negative_controls(
+    name: str, golden: dict[str, Any], actual_events: list[dict[str, Any]]
+) -> list[str]:
+    """Exercise the same comparison used by the lane with deliberately bad streams."""
+    rejected = []
+
+    def reject(label: str, mutated: list[dict[str, Any]]) -> None:
+        try:
+            check_midi_stream_against_reference(name, golden, mutated, len(mutated), False)
+        except AssertionError:
+            rejected.append(label)
+        else:
+            raise AssertionError(f"MIDI oracle for {name} accepted mutation {label}")
+
+    for event_class, field in (
+        ("NoteOn", "frame"),
+        ("NoteOn", "note"),
+        ("NoteOn", "velocity"),
+        ("NoteOff", "frame"),
+        ("PitchBend", "pitchBend"),
+        ("CC64", "data"),
+    ):
+        index = next(
+            (i for i, event in enumerate(actual_events) if midi_event_class(event) == event_class),
+            None,
+        )
+        if index is None:
+            continue
+        mutated = [dict(event) for event in actual_events]
+        mutated[index][field] += 1
+        reject(f"{event_class}.{field}+1", mutated)
+
+    # In evening the oracle allows exactly 18 duplicate CC11 removals. Remove one
+    # further surviving CC11 from a formerly duplicated triple (19 removals), even
+    # though it is in the accepted event class: the pinned count must reject it.
+    if MIDI_ACCEPTED_RULES[name]["cc11_duplicate_collapse"]:
+        reference_cc11 = Counter(
+            (event["frame"], event["channel"], event["data"])
+            for event in golden["events"] if midi_event_class(event) == "CC11"
+        )
+        index = next(
+            i for i, event in enumerate(actual_events)
+            if midi_event_class(event) == "CC11"
+            and reference_cc11[(event["frame"], event["channel"], event["data"])] > 1
+        )
+        mutated = [dict(event) for event in actual_events]
+        mutated.pop(index)
+        reject("CC11.extra_removal_beyond_pinned_count", mutated)
+    return rejected
+
+
 def test_midi_event_goldens(
     probe_bin: Path,
     assets: Path,
@@ -474,7 +795,7 @@ def test_midi_event_goldens(
     out_dir: Path,
     evidence: dict[str, Any],
 ) -> None:
-    print("[3/6] Testing MIDI event goldens (events plus render-frame offsets and totals)...")
+    print("[3/6] Testing the 4.7.6 MIDI event reference plus the accepted 5.0 differences...")
     fixtures = midi_fixtures()
     golden_dir = ROOT / "tests" / "engine_audio" / "midi"
     golden_results = {}
@@ -492,46 +813,54 @@ def test_midi_event_goldens(
         if tmp_wav.exists():
             tmp_wav.unlink()
 
-        events = res.get("midiEvents", [])
-        total = res.get("midiEventTotal")
         golden = json.loads(golden_file.read_text(encoding="utf-8"))
+        assert res.get("ok") is True, f"Probe failed for {name}: {res}"
         assert isinstance(golden, dict) and "events" in golden and "eventTotal" in golden, (
-            f"{golden_file} is not a regenerated MIDI golden with an exact total; "
-            "run --write-midi-goldens against the current probe"
-        )
-        expected_events = golden["events"]
-        expected_total = golden["eventTotal"]
-
-        assert isinstance(total, int), f"Probe did not report midiEventTotal for {name}: {res}"
-        assert total == expected_total, (
-            f"MIDI event total mismatch for {name}: got {total}, expected {expected_total}"
-        )
-        assert total > 0, f"MIDI golden for {name} has no events"
-        assert res.get("midiEventsTruncated") is False, f"Probe truncated {name} events"
-        assert total == len(events), (
-            f"MIDI event count mismatch for {name}: total {total}, printed {len(events)}")
-        assert len(expected_events) == expected_total, (
-            f"Golden for {name} stores {len(expected_events)} events but total {expected_total}")
-        assert len(events) == len(expected_events), (
-            f"MIDI event count mismatch for {name}: got {len(events)}, "
-            f"expected {len(expected_events)}"
-        )
-        assert events == expected_events, (
-            f"MIDI events (including render-frame offsets) mismatch for {name}")
-        golden_results[name] = {
-            "event_total": total,
-            "printed_events": len(events),
-            "matches_golden": True,
-            "golden": str(golden_file.relative_to(ROOT)),
-            "platform": golden.get("platform", "shared"),
-        }
+            f"{golden_file} is not a 4.7.6 reference MIDI golden with an exact total")
+        assert golden.get("fixture") == name, (
+            f"MIDI golden {golden_file} is for fixture {golden.get('fixture')!r}, not {name!r}")
+        reference = json.dumps(
+            {"eventTotal": golden["eventTotal"], "events": golden["events"]},
+            sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
+        reference_sha256 = hashlib.sha256(reference).hexdigest()
+        assert reference_sha256 == MIDI_ACCEPTED_RULES[name]["reference_sha256"], (
+            f"MIDI reference {golden_file} has event SHA-256 {reference_sha256}; expected "
+            f"the pinned 4.7.6 events {MIDI_ACCEPTED_RULES[name]['reference_sha256']}")
+        events = res.get("midiEvents", [])
+        result = check_midi_stream_against_reference(
+            name, golden, events, res.get("midiEventTotal"), res.get("midiEventsTruncated"))
+        result["golden"] = str(golden_file.relative_to(ROOT))
+        result["reference_sha256"] = reference_sha256
+        result["negative_controls_rejected"] = midi_oracle_negative_controls(
+            name, golden, events)
+        golden_results[name] = result
 
     evidence["midi_goldens"] = {
         "status": "passed",
+        "reference": "4.7.6 events (commit 9a74eb1), not re-baselined for 5.0",
+        "accepted_classes": [
+            "CC11 duplicates collapsed (a1)",
+            "natural-level CC11 on tracks without a dynamics curve removed (a2)",
+            "SND NoteOn velocity fallback 64 (b)",
+        ],
         "fixtures": golden_results,
     }
-    print(f"  MIDI event goldens PASSED across {len(fixtures)} fixtures "
-          f"({sum(item['event_total'] for item in golden_results.values())} total events)")
+    reference_total = sum(item["reference_event_total"] for item in golden_results.values())
+    total = sum(item["event_total"] for item in golden_results.values())
+    accepted = {
+        key: sum(item["accepted_differences"][key] for item in golden_results.values())
+        for key in ("cc11_duplicate_collapse", "cc11_natural_no_curve", "noteon_velocity_changes")
+    }
+    controls = sum(len(item["negative_controls_rejected"]) for item in golden_results.values())
+    print(f"  MIDI reference PASSED across {len(fixtures)} fixtures: 4.7.6 {reference_total} "
+          f"events -> 5.0 {total} events, accepted differences exactly "
+          f"{accepted['cc11_duplicate_collapse']} duplicate CC11 + "
+          f"{accepted['cc11_natural_no_curve']} natural-level CC11 + "
+          f"{accepted['noteon_velocity_changes']} SND velocities; all other fields exact; "
+          f"{controls} deliberately mutated events rejected")
+    print("  evening negative controls rejected: " + ", ".join(
+        golden_results["evening"]["negative_controls_rejected"]))
 
 
 def test_determinism_and_decoding(

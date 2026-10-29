@@ -1,7 +1,7 @@
 {
  "fixture": "evening",
  "platform": "shared",
- "eventTotal": 295,
+ "eventTotal": 313,
  "events": [
   {
    "channel": 0,
@@ -28,7 +28,28 @@
    "frame": 0,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
+  },
+  {
+   "channel": 0,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 0,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 0,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
   },
   {
    "channel": 0,
@@ -89,7 +110,28 @@
    "frame": 0,
    "note": 50,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
+  },
+  {
+   "channel": 2,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 2,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 2,
+   "data": 64,
+   "frame": 0,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
   },
   {
    "channel": 2,
@@ -117,7 +159,7 @@
    "frame": 28672,
    "note": 77,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -138,7 +180,7 @@
    "frame": 40960,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -159,7 +201,7 @@
    "frame": 57344,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -180,7 +222,7 @@
    "frame": 86016,
    "note": 69,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -208,7 +250,7 @@
    "frame": 114688,
    "note": 70,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -236,7 +278,7 @@
    "frame": 114688,
    "note": 46,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -264,7 +306,7 @@
    "frame": 159744,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -285,7 +327,7 @@
    "frame": 176128,
    "note": 77,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -313,7 +355,7 @@
    "frame": 204800,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -334,7 +376,7 @@
    "frame": 233472,
    "note": 72,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -362,7 +404,7 @@
    "frame": 233472,
    "note": 53,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 0,
@@ -376,7 +418,7 @@
    "frame": 262144,
    "note": 69,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -404,7 +446,7 @@
    "frame": 290816,
    "note": 67,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -432,7 +474,7 @@
    "frame": 319488,
    "note": 69,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -474,7 +516,7 @@
    "frame": 352256,
    "note": 73,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -488,7 +530,7 @@
    "frame": 352256,
    "note": 45,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -516,7 +558,7 @@
    "frame": 409600,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -558,7 +600,7 @@
    "frame": 466944,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -586,7 +628,7 @@
    "frame": 466944,
    "note": 50,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 0,
@@ -607,7 +649,7 @@
    "frame": 499712,
    "note": 77,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -628,7 +670,7 @@
    "frame": 512000,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -649,7 +691,7 @@
    "frame": 528384,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -670,7 +712,7 @@
    "frame": 557056,
    "note": 72,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -698,7 +740,7 @@
    "frame": 585728,
    "note": 70,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -726,7 +768,7 @@
    "frame": 585728,
    "note": 43,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 0,
@@ -740,7 +782,7 @@
    "frame": 614400,
    "note": 69,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -768,7 +810,7 @@
    "frame": 643072,
    "note": 67,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -824,7 +866,7 @@
    "frame": 704512,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -838,7 +880,7 @@
    "frame": 704512,
    "note": 45,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 0,
@@ -852,7 +894,7 @@
    "frame": 733184,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -880,7 +922,7 @@
    "frame": 749568,
    "note": 73,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 0,
@@ -894,7 +936,7 @@
    "frame": 761856,
    "note": 70,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -922,7 +964,7 @@
    "frame": 790528,
    "note": 73,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -950,7 +992,7 @@
    "frame": 819200,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -978,7 +1020,7 @@
    "frame": 819200,
    "note": 50,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 62
   },
   {
    "channel": 1,
@@ -1034,7 +1076,28 @@
    "frame": 937984,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
+  },
+  {
+   "channel": 0,
+   "data": 80,
+   "frame": 937984,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 0,
+   "data": 80,
+   "frame": 937984,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 0,
+   "data": 80,
+   "frame": 937984,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
   },
   {
    "channel": 0,
@@ -1069,7 +1132,28 @@
    "frame": 937984,
    "note": 50,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
+  },
+  {
+   "channel": 2,
+   "data": 80,
+   "frame": 937984,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 2,
+   "data": 80,
+   "frame": 937984,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 2,
+   "data": 80,
+   "frame": 937984,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
   },
   {
    "channel": 2,
@@ -1090,7 +1174,7 @@
    "frame": 954368,
    "note": 77,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 0,
@@ -1104,7 +1188,7 @@
    "frame": 966656,
    "note": 81,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1139,7 +1223,7 @@
    "frame": 999424,
    "note": 79,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1167,7 +1251,7 @@
    "frame": 1028096,
    "note": 77,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1188,7 +1272,7 @@
    "frame": 1056768,
    "note": 79,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1216,7 +1300,7 @@
    "frame": 1056768,
    "note": 46,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1244,7 +1328,7 @@
    "frame": 1101824,
    "note": 77,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 0,
@@ -1258,7 +1342,7 @@
    "frame": 1114112,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1286,7 +1370,7 @@
    "frame": 1142784,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1328,7 +1412,7 @@
    "frame": 1175552,
    "note": 77,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1342,7 +1426,7 @@
    "frame": 1175552,
    "note": 53,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1363,7 +1447,7 @@
    "frame": 1204224,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1384,7 +1468,7 @@
    "frame": 1216512,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 0,
@@ -1398,7 +1482,7 @@
    "frame": 1232896,
    "note": 72,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1426,7 +1510,7 @@
    "frame": 1261568,
    "note": 69,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1454,7 +1538,7 @@
    "frame": 1290240,
    "note": 73,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1482,7 +1566,7 @@
    "frame": 1290240,
    "note": 45,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 0,
@@ -1503,7 +1587,7 @@
    "frame": 1323008,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1531,7 +1615,7 @@
    "frame": 1351680,
    "note": 79,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1566,7 +1650,7 @@
    "frame": 1409024,
    "note": 77,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1594,7 +1678,7 @@
    "frame": 1409024,
    "note": 43,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 0,
@@ -1608,7 +1692,7 @@
    "frame": 1437696,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1636,7 +1720,7 @@
    "frame": 1454080,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 0,
@@ -1650,7 +1734,7 @@
    "frame": 1466368,
    "note": 70,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1685,7 +1769,7 @@
    "frame": 1499136,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1720,7 +1804,7 @@
    "frame": 1527808,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1734,7 +1818,7 @@
    "frame": 1527808,
    "note": 52,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 0,
@@ -1748,7 +1832,7 @@
    "frame": 1556480,
    "note": 79,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1776,7 +1860,7 @@
    "frame": 1585152,
    "note": 77,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1804,7 +1888,7 @@
    "frame": 1613824,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1832,7 +1916,7 @@
    "frame": 1642496,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1860,7 +1944,7 @@
    "frame": 1642496,
    "note": 45,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1881,7 +1965,7 @@
    "frame": 1675264,
    "note": 73,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1909,7 +1993,7 @@
    "frame": 1703936,
    "note": 76,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1930,7 +2014,7 @@
    "frame": 1732608,
    "note": 73,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 65
   },
   {
    "channel": 1,
@@ -1958,7 +2042,28 @@
    "frame": 1761280,
    "note": 74,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 59
+  },
+  {
+   "channel": 0,
+   "data": 48,
+   "frame": 1761280,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 0,
+   "data": 48,
+   "frame": 1761280,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 0,
+   "data": 48,
+   "frame": 1761280,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
   },
   {
    "channel": 0,
@@ -1993,7 +2098,28 @@
    "frame": 1761280,
    "note": 50,
    "opcode": "Opcode::NoteOn",
-   "velocity": 64
+   "velocity": 59
+  },
+  {
+   "channel": 2,
+   "data": 48,
+   "frame": 1761280,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 2,
+   "data": 48,
+   "frame": 1761280,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
+  },
+  {
+   "channel": 2,
+   "data": 48,
+   "frame": 1761280,
+   "index": 11,
+   "opcode": "Opcode::ControlChange"
   },
   {
    "channel": 2,
