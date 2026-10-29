@@ -13,11 +13,11 @@ the un-allowed differences in an existing compare report.
 
 Volatile fields normalized (observed by running twice):
   * Every MSCX/MSCZ inner ``<eid>`` and EID-reference value (``linkedTo``,
-    ``startElement``, ``endElement``, ``NoteEID``, ``mmRestLast``) is mapped
-    to a stable token (``e1``, ``e2``, ...) in order of first appearance per
-    document (per file, after the whole file is read), preserving element
-    identity and endpoint relationships across non-deterministic runtime EID
-    allocations.
+    ``startElement``, ``endElement``, ``NoteEID``, ``mmRestLast``,
+    ``startMeasure``, ``endMeasure``, ``sharedPart``) is mapped to a stable
+    token (``e1``, ``e2``, ...) in order of first appearance per document (per
+    file, after the whole file is read), preserving element identity and
+    endpoint relationships across non-deterministic runtime EID allocations.
   * MSCX ``programVersion``/``programRevision`` and metaTag ``creationDate``/
     ``platform``; MusicXML ``encoding-date``/``software`` and the mirrored
     ``miscellaneous-field`` creationDate/platform values.
@@ -29,10 +29,11 @@ Volatile fields normalized (observed by running twice):
     ``miscellaneous-field`` values; those are blanked too.
 Everything else is compared byte for byte, except ``audio.json`` which uses
 the documented numeric tolerances. For spectral centroid envelope comparisons,
-the metric is mathematically undefined in near-silent windows where RMS in both
-golden and actual rounds to zero (e.g. low-energy FFT/quantization noise); in
-such windows, centroid differences are ignored while preserving strict
-tolerances for non-silent audio.
+the metric is mathematically undefined only in windows where signal amplitude
+is strictly below the 16-bit PCM quantization floor (rounds to 0.0 in the
+5-decimal RMS envelope, < 5e-6 / -106 dBFS) in both golden and actual; in such
+windows, residual noise centroid differences are ignored while preserving strict
+tolerances (2.0 Hz) for all non-silent windows including quiet nonzero tones.
 
 ``semantic.json`` (the exported MSCZ) and ``semantic-source.json`` (the fixture
 file) come from the ``semantic_dump`` dev tool next to the server binary. They
@@ -100,20 +101,52 @@ def write_json(path: Path, value, indent: int = 1) -> None:
                                 allow_nan=False) + "\n")
 
 
-def normalize_mscx(text: str) -> str:
-    eid_map: dict[str, str] = {}
+EID_TAGS = (
+    "eid", "linkedTo", "startElement", "endElement", "NoteEID",
+    "mmRestLast", "startMeasure", "endMeasure", "sharedPart",
+)
 
-    def replace_eid(match: re.Match) -> str:
-        tag = match.group(1)
-        val = match.group(2).strip()
-        if not val:
-            return f"<{tag}/>"
-        if val not in eid_map:
-            eid_map[val] = f"e{len(eid_map) + 1}"
-        return f"<{tag}>{eid_map[val]}</{tag}>"
+BLANK_EIDS: bool = False
 
-    tag_pattern = rf"<({'|'.join(('eid', 'linkedTo', 'startElement', 'endElement', 'NoteEID', 'mmRestLast'))})>([^<]+)</\1>"
-    text = re.sub(tag_pattern, replace_eid, text)
+
+def uses_blanked_eids(golden_root: Path | None) -> bool:
+    """Detect whether a golden tree uses 4.7.6-style blanked EID tags (<eid/>)."""
+    if golden_root is None or not golden_root.exists():
+        return False
+    for path in golden_root.glob("*/score.mscx"):
+        try:
+            head = path.read_text(encoding="utf-8")[:4000]
+            if "<eid/>" in head:
+                return True
+            if "<eid>e" in head:
+                return False
+        except Exception:
+            continue
+    return False
+
+
+def normalize_mscx(text: str, blank_eids: bool | None = None) -> str:
+    if blank_eids is None:
+        blank_eids = BLANK_EIDS
+
+    if blank_eids:
+        for tag in EID_TAGS:
+            text = re.sub(rf"<{tag}>[^<]*</{tag}>", rf"<{tag}/>", text)
+    else:
+        eid_map: dict[str, str] = {}
+
+        def replace_eid(match: re.Match) -> str:
+            tag = match.group(1)
+            val = match.group(2).strip()
+            if not val:
+                return f"<{tag}/>"
+            if val not in eid_map:
+                eid_map[val] = f"e{len(eid_map) + 1}"
+            return f"<{tag}>{eid_map[val]}</{tag}>"
+
+        tag_pattern = rf"<({'|'.join(EID_TAGS)})>([^<]+)</\1>"
+        text = re.sub(tag_pattern, replace_eid, text)
+
     for tag in ("programVersion", "programRevision"):
         text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", rf"\1\2", text)
     for name in ("creationDate", "platform"):
@@ -602,7 +635,10 @@ def build_index(root: Path) -> dict:
     return index
 
 
-async def capture_tree(binary, resources, soundfont, target, log_path):
+async def capture_tree(binary, resources, soundfont, target, log_path, golden_root: Path | None = None):
+    global BLANK_EIDS
+    if golden_root is not None:
+        BLANK_EIDS = uses_blanked_eids(golden_root)
     dump = binary.parent / ("semantic_dump.exe" if sys.platform.startswith("win") else "semantic_dump")
     if not dump.is_file():
         raise SystemExit(f"semantic_dump not found next to the server binary: {dump}")
@@ -699,11 +735,14 @@ def audio_equal(golden, actual, key=None) -> bool:
                 if len(g_cents) != len(a_cents) or len(g_cents) != len(g_rms_env) or len(a_cents) != len(a_rms_env):
                     return False
                 tol = AUDIO_TOLERANCES.get("centroidEnvelope", 2.0)
-                rms_tol = AUDIO_TOLERANCES.get("rmsEnvelope", 1e-4)
                 for i, (g_c, a_c) in enumerate(zip(g_cents, a_cents)):
-                    g_silent = max(g_rms_env[i]) <= rms_tol if isinstance(g_rms_env[i], list) else g_rms_env[i] <= rms_tol
-                    a_silent = max(a_rms_env[i]) <= rms_tol if isinstance(a_rms_env[i], list) else a_rms_env[i] <= rms_tol
-                    if g_silent and a_silent:
+                    # Spectral centroid is numerically meaningless only when the signal
+                    # is strictly below the 16-bit PCM quantization floor (< 5e-6 / -106 dBFS,
+                    # rounding to 0.0 in the 5-decimal RMS envelope) in BOTH windows.
+                    # Quiet nonzero signals (e.g. RMS 0.00010) must still be compared.
+                    g_val = max(g_rms_env[i]) if isinstance(g_rms_env[i], (list, tuple)) else g_rms_env[i]
+                    a_val = max(a_rms_env[i]) if isinstance(a_rms_env[i], (list, tuple)) else a_rms_env[i]
+                    if float(g_val) <= 0.0 and float(a_val) <= 0.0:
                         continue
                     if abs(g_c - a_c) > tol:
                         return False
@@ -834,7 +873,7 @@ def command_capture(args) -> int:
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
         index = asyncio.run(asyncio.wait_for(capture_tree(
             args.binary, args.resources, args.soundfont, args.golden,
-            Path(temporary) / "server-stderr.log"), timeout=1800))
+            Path(temporary) / "server-stderr.log", golden_root=args.golden), timeout=1800))
     count = sum(len(files) for files in index.values())
     size = sum(path.stat().st_size for path in args.golden.rglob("*") if path.is_file())
     print(f"captured {len(index)} fixtures, {count} outputs, {size} bytes into {args.golden}")
@@ -854,7 +893,7 @@ def command_compare(args) -> int:
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
         asyncio.run(asyncio.wait_for(capture_tree(
             args.binary, args.resources, args.soundfont, actual,
-            Path(temporary) / "server-stderr.log"), timeout=1800))
+            Path(temporary) / "server-stderr.log", golden_root=args.golden), timeout=1800))
         # Keep a copy of the server log for debugging (outside the compared tree).
         shutil.copyfile(Path(temporary) / "server-stderr.log", args.output / "server-stderr.log")
     return compare_trees(args.golden, actual, allow, args.output, args.platform)
