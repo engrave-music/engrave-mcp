@@ -628,8 +628,18 @@ Tolerances for A2, fixed before the port starts:
   tests with synthetic windows (exact silence, quiet tones within tolerance, diverging quiet tones,
   and asymmetric silence) enforce this contract in `scripts/test_oracle_harness.py`. All golden
   audio fixtures pass under this strict criterion without widening tolerances.
-  The engine_audio lane keeps the step-5 criteria (onset 1.95 ms, pitch 0.80 cent,
-  level within 2%, MIDI events exact).
+  The engine_audio lane enforces pitch error <= 0.80 cent and onset error <= 86/44100 s
+  (1.950113379 ms), along with level within 2% and exact MIDI events. Step 5 (`ed60118`)
+  reported the rounded measured maxima as 1.95 ms and 0.80 cent, while its executable
+  assertions were < 5 ms and < 1 cent; A0 (`6df5fef`) then recorded the rounded figures
+  as the A2 criteria. The retained Windows A0 pitch WAV (SHA-256
+  `eea0de33784bef98d5fbc7643d22f0ee69c7bbaf48926526671594d24f34a9d6`)
+  measures 86 samples at 44.1 kHz and 0.797233368 cent. The onset limit above is
+  0.000113379 ms beyond the written 1.95 ms: it is the smallest duration that admits the
+  recorded A0 onset, and the next 44.1 kHz sample fails. Ten fresh Windows A2 renders
+  produced the same maxima, with no observed measurement variation in those runs. The
+  lane also rejects mutated 88-sample onset and 0.90-cent pitch errors that the old
+  executable bounds accepted; this repetition does not establish Linux results.
 - MSCX, raw MusicXML, SVG, PNG, PDF, positions and metadata are re-baselined in A2 with a diff
   report sorted by cause, plus a spot check of rendered pages. They are not an oracle across
   the port.
