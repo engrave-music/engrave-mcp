@@ -7,8 +7,8 @@ Tests both probe-level engine capabilities and MCP server integration:
      using explicit per-feature tolerances (frames/sample rate/channels exact)
 2. Pure sine wave SoundFont generation and pitch/onset/level accuracy:
    - Renders known scores with tests/engine_audio/sine.sf2
-   - Asserts note onset times are within 5 ms of tempo-derived times
-   - Asserts fundamental frequencies are within 1 cent of equal temperament (A4 = 440 Hz)
+   - Asserts onset errors are at most 86 frames at 44.1 kHz (1.950113379 ms)
+   - Asserts fundamental frequencies are within 0.80 cent of equal temperament (A4 = 440 Hz)
    - Asserts the explicit mf dynamic (velocity 80) produces an RMS within 2% of
      the measured 0.1751
 3. MIDI event oracle (4.7.6 reference plus accepted 5.0 differences):
@@ -201,6 +201,13 @@ CROSS_PLATFORM_TOLERANCES = {
 }
 CROSS_PLATFORM_EXACT = ("sampleRate", "channels", "frames")
 
+# A0 reported the maximum onset rounded to 1.95 ms. Its retained WAV actually
+# places that onset 86 samples late at 44.1 kHz; compare the duration exactly
+# in sample units so the original measurement is included without rounding.
+SINE_ONSET_MAX_FRAMES = 86
+SINE_ONSET_REFERENCE_RATE = 44100
+SINE_PITCH_MAX_CENTS = 0.80
+
 # Sine SoundFont level check: explicit mf in tests/engine_audio/level_test.musicxml.
 # The MusicXML importer maps mf (with <sound dynamics="80"/>) to note velocity 80
 # for this instrument; the measured steady-state RMS is the reference below.
@@ -377,6 +384,44 @@ def test_audio_check_reporting() -> None:
     print("  Audio check reporting regression tests PASSED")
 
 
+def check_sine_onset(onset_idx: int, expected_t: float, sr: int, midi_pitch: int) -> float:
+    offset_frames = abs(onset_idx - expected_t * sr)
+    diff_ms = offset_frames * 1000.0 / sr
+    assert offset_frames * SINE_ONSET_REFERENCE_RATE <= SINE_ONSET_MAX_FRAMES * sr, (
+        f"Pitch {midi_pitch} onset error {diff_ms:.9f} ms exceeds "
+        f"{SINE_ONSET_MAX_FRAMES}/{SINE_ONSET_REFERENCE_RATE} s "
+        f"(detected {onset_idx / sr:.6f}s, expected {expected_t:.6f}s)"
+    )
+    return diff_ms
+
+
+def check_sine_pitch(cents_diff: float, midi_pitch: int, detected_freq: float, expected_freq: float) -> None:
+    assert cents_diff <= SINE_PITCH_MAX_CENTS, (
+        f"Pitch {midi_pitch} frequency error {cents_diff:.9f} cents exceeds "
+        f"{SINE_PITCH_MAX_CENTS:.2f} cent tolerance "
+        f"(detected {detected_freq:.3f} Hz, expected {expected_freq:.3f} Hz)"
+    )
+
+
+def test_sine_threshold_mutations() -> None:
+    # The A0 onset and the exact pitch limit must pass; the old 5 ms / 1 cent
+    # limits would also have accepted the two mutations, which must now fail.
+    check_sine_onset(86, 0.0, 44100, 64)
+    check_sine_pitch(0.80, 60, 261.5, 261.6)
+    mutations = (
+        ("88-sample onset", lambda: check_sine_onset(88, 0.0, 44100, 64)),
+        ("0.90-cent pitch", lambda: check_sine_pitch(0.90, 60, 261.5, 261.6)),
+    )
+    for name, mutation in mutations:
+        try:
+            mutation()
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(f"Sine threshold mutation was not rejected: {name}")
+    print("  Sine threshold mutations PASSED: 88-sample onset and 0.90-cent pitch rejected")
+
+
 def test_pitch_onset_and_level(
     probe_bin: Path,
     assets: Path,
@@ -423,16 +468,14 @@ def test_pitch_onset_and_level(
                 break
         assert onset_idx is not None, f"Onset not detected for pitch {midi_pitch} around t={expected_t}s"
         detected_t = onset_idx / sr
-        diff_ms = abs(detected_t - expected_t) * 1000.0
-        assert diff_ms < 5.0, (
-            f"Pitch {midi_pitch} onset error {diff_ms:.2f} ms exceeds 5 ms tolerance "
-            f"(detected {detected_t:.4f}s, expected {expected_t:.4f}s)"
-        )
+        diff_ms = check_sine_onset(onset_idx, expected_t, sr, midi_pitch)
         onset_results.append({
             "pitch": midi_pitch,
             "expected_sec": expected_t,
-            "detected_sec": round(detected_t, 4),
-            "diff_ms": round(diff_ms, 2),
+            "detected_sec": detected_t,
+            "onset_frame": onset_idx,
+            "sample_rate": sr,
+            "diff_ms": diff_ms,
         })
 
         # Frequency analysis in steady state [expected_t + 0.1, expected_t + 0.4]
@@ -453,16 +496,13 @@ def test_pitch_onset_and_level(
             detected_freq = freqs[k]
 
         expected_freq = 440.0 * (2.0 ** ((midi_pitch - 69) / 12.0))
-        cents_diff = abs(1200.0 * np.log2(detected_freq / expected_freq))
-        assert cents_diff < 1.0, (
-            f"Pitch {midi_pitch} frequency error {cents_diff:.3f} cents exceeds 1 cent tolerance "
-            f"(detected {detected_freq:.3f} Hz, expected {expected_freq:.3f} Hz)"
-        )
+        cents_diff = float(abs(1200.0 * np.log2(detected_freq / expected_freq)))
+        check_sine_pitch(cents_diff, midi_pitch, detected_freq, expected_freq)
         pitch_results.append({
             "pitch": midi_pitch,
-            "expected_hz": round(expected_freq, 3),
-            "detected_hz": round(float(detected_freq), 3),
-            "cents_diff": round(float(cents_diff), 3),
+            "expected_hz": expected_freq,
+            "detected_hz": float(detected_freq),
+            "cents_diff": cents_diff,
         })
 
     # Output level: one explicit mf note at C4. The captured events must show
@@ -493,6 +533,8 @@ def test_pitch_onset_and_level(
 
     evidence["pitch_and_onset"] = {
         "status": "passed",
+        "onset_limit_ms": SINE_ONSET_MAX_FRAMES * 1000.0 / SINE_ONSET_REFERENCE_RATE,
+        "pitch_limit_cents": SINE_PITCH_MAX_CENTS,
         "onsets": onset_results,
         "pitches": pitch_results,
     }
@@ -505,8 +547,9 @@ def test_pitch_onset_and_level(
         "relative_tolerance": SINE_LEVEL_RMS_RELATIVE_TOLERANCE,
     }
     print(f"  Pitch and onset tests PASSED: max onset diff = "
-          f"{max(r['diff_ms'] for r in onset_results):.2f} ms (< 5 ms), max pitch diff = "
-          f"{max(r['cents_diff'] for r in pitch_results):.3f} cents (< 1 cent)")
+          f"{max(r['diff_ms'] for r in onset_results):.9f} ms "
+          f"(<= {SINE_ONSET_MAX_FRAMES}/{SINE_ONSET_REFERENCE_RATE} s), max pitch diff = "
+          f"{max(r['cents_diff'] for r in pitch_results):.9f} cents (<= {SINE_PITCH_MAX_CENTS:.2f} cent)")
     print(f"  Sine level PASSED: mf RMS {level_rms:.5f} vs {SINE_LEVEL_RMS:.5f} "
           f"({level_relative * 100:.2f}% <= {SINE_LEVEL_RMS_RELATIVE_TOLERANCE * 100:.1f}%)")
 
@@ -1393,6 +1436,7 @@ def main() -> int:
 
     checks = [
         ("reporting_regressions", test_audio_check_reporting),
+        ("sine_threshold_mutations", test_sine_threshold_mutations),
         ("pitch_onset_level", lambda: test_pitch_onset_and_level(probe_bin, args.resources, out_dir, evidence)),
         ("midi_goldens", lambda: test_midi_event_goldens(probe_bin, args.resources, args.soundfont, out_dir, evidence)),
         ("determinism_codecs", lambda: test_determinism_and_decoding(probe_bin, args.resources, args.soundfont, out_dir, evidence)),
