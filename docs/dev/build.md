@@ -37,12 +37,17 @@
 ### 3.1 检出引擎子模块与下载音色库
 引擎源码采用 Git 子模块 `vendor/musescore` 形式引入（锁定至 Fork 仓库 https://github.com/Locietta/engrave ，分支 `mcp/v4.7.6`，Tag `mcp-4.7.6-4`，Commit `6cd717f2`，提交台账参见 `docs/dev/fork.md`）。旧版 webmscore、`.upstream/webmscore`、`patches/*.patch` 以及 Brotli 依赖均已废弃移除。
 
-全新克隆的项目可执行 `git submodule update --init --depth 1` 初始化子模块，或直接运行 `bootstrap.py`。``scripts/bootstrap.py` 会自动执行浅子模块更新（`git submodule update --init --depth 1 -- vendor/musescore`），并按需下载经哈希验证的基础 SF3 音色库；第三方 C/C++ 依赖由 xmake 包管理器按 `xmake/packages/` 中固定的版本与校验和获取：
+全新克隆的项目可执行 `git submodule update --init --depth 1` 初始化子模块，或直接运行 `bootstrap.py`。`scripts/bootstrap.py` 会自动执行浅子模块更新（`git submodule update --init --depth 1 -- vendor/musescore`），并按需下载经哈希验证的基础 SF3 音色库；`scripts/prepare.py` 会校验子模块提交与工作区清洁，并从 Git blob 同步运行时资源，**子模块尚未初始化时它会直接拒绝运行**（见 `scripts/prepare.py` 的 `verify_submodule()`）。因此构建脚本必须 bootstrap 在 prepare 之前，`scripts/build-native.ps1` 已按此顺序执行：
 
 ```powershell
 pixi install -e native --locked
-pixi run -e native python scripts/bootstrap.py --soundfont
+python scripts/bootstrap.py --soundfont   # 先初始化子模块
+python scripts/prepare.py                 # 再校验并分发资源
 ```
+
+第三方**库**依赖全部由仓库内的本地 xmake recipe 固定，`xmake/packages/` 下的每个 recipe 都写明版本与归档 SHA-256：freetype 2.14.1（`174d9e53…`）、harfbuzz 12.3.0、flac 1.4.3、lame 3.100（`ddfe36ca…`）、opus 1.5.2、opusenc 0.2.1、fdk-aac 2.0.3、pugixml 1.15、utfcpp v4.1.1（`1ca68016…`）、picojson 111c9be 与 asio 1.36.0。freetype/lame/utfcpp 的 recipe 是从 xmake-repo（修订 `e96d4103633e161d259aa307e02a4d0842207651`）同名 recipe 逐行复制并裁剪到单一版本，版本、归档 URL 与 SHA-256 均未改动，因此依赖解析不再取决于某台机器上的 xmake-repo 修订。
+
+注意区分：只有上述库依赖由本仓库固定版本与校验和；xmake-repo 仍提供构建工具包（cmake、nasm、pkgconf）与仅用于开发测试道的 gtest，它们的 recipe 修订记录在每个已安装包的 `manifest.txt`（`repo.commit`）中，不进入发布产物（freetype 的可选 zlib/libpng/woff2 支持在 `add_requires()` 中全部关闭，因此不会额外引入 xmake-repo 的库依赖）。因此“所有输入都已固定校验和”的说法仅对这些库依赖成立，工具包不在此列。
 
 ### 3.2 资源清单生成与资产分发 (Runtime Asset Staging)
 运行时资源清单 `resources.json` 由 `scripts/generate_resources.py` 从引擎的 Qt 资源清单（`src/engraving/engraving.qrc`、`src/engraving/data/fonts/*.qrc` 以及 MPE 的 `qt_add_resources` 配置块）外加一项显式历史回退样式（`legacy-style-defaults-v450.mss`）自动解析生成。对于 5.0 引擎，脚本支持 `--source-root` 参数以读取新的 MPE 路径（`muse/framework/mpe`）与 11 种制表谱字体（`fonts_Tabulature.qrc` 中的 `MuseScoreTab*.ttf`）：
