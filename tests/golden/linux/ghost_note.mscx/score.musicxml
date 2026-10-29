@@ -95,7 +95,7 @@
     <part-group type="stop" number="1"/>
     </part-list>
   <part id="P1">
-    <measure number="1" width="215.71">
+    <measure number="1" width="215.56">
       <print>
         <system-layout>
           <system-margins>
@@ -105,7 +105,7 @@
           <top-system-distance>170</top-system-distance>
           </system-layout>
         <staff-layout number="2">
-          <staff-distance>105.3</staff-distance>
+          <staff-distance>105.14</staff-distance>
           </staff-layout>
         </print>
       <attributes>
@@ -162,7 +162,7 @@
         </attributes>
       <direction placement="below">
         <direction-type>
-          <dynamics default-x="-4.23" default-y="-51.96" relative-y="-20">
+          <dynamics default-x="-4.18" default-y="-71.84">
             <f/>
             </dynamics>
           </direction-type>
@@ -171,7 +171,7 @@
         </direction>
       <direction placement="above" system="only-top">
         <direction-type>
-          <metronome parentheses="no" default-x="-37.76" relative-y="20">
+          <metronome parentheses="no" default-x="-37.69" default-y="20">
             <beat-unit>quarter</beat-unit>
             <per-minute>135</per-minute>
             </metronome>
@@ -179,7 +179,7 @@
         <staff>1</staff>
         <sound tempo="135"/>
         </direction>
-      <note default-x="82.21" default-y="-20">
+      <note default-x="82.06" default-y="-20">
         <pitch>
           <step>B</step>
           <octave>4</octave>
@@ -190,7 +190,7 @@
         <stem>down</stem>
         <staff>1</staff>
         </note>
-      <note default-x="117.21" default-y="-25">
+      <note default-x="117.06" default-y="-25">
         <pitch>
           <step>A</step>
           <octave>4</octave>
@@ -202,7 +202,7 @@
         <notehead parentheses="yes">normal</notehead>
         <staff>1</staff>
         </note>
-      <note default-x="152.21" default-y="-20">
+      <note default-x="152.06" default-y="-20">
         <rest/>
         <duration>2</duration>
         <voice>1</voice>
@@ -212,7 +212,7 @@
       <backup>
         <duration>4</duration>
         </backup>
-      <note default-x="78.61" default-y="-220.3">
+      <note default-x="78.48" default-y="-220.14">
         <pitch>
           <step>B</step>
           <octave>4</octave>
@@ -229,7 +229,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="113.61" default-y="-220.3">
+      <note default-x="113.48" default-y="-220.14">
         <pitch>
           <step>A</step>
           <octave>4</octave>
@@ -247,7 +247,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="152.21" default-y="-190.3" print-object="no">
+      <note default-x="152.06" default-y="-190.14" print-object="no">
         <rest/>
         <duration>2</duration>
         <voice>5</voice>

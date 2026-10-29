@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.70">
+<museScore version="5.00">
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
@@ -22,16 +22,18 @@
     <metaTag name="workNumber"></metaTag>
     <metaTag name="workTitle">Repeat Test</metaTag>
     <Part id="1">
+      <eid>e2</eid>
       <Staff>
-        <eid>e2</eid>
+        <eid>e3</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
         </Staff>
-      <trackName>Piano</trackName>
       <Instrument id="piano">
-        <longName>Piano</longName>
-        <shortName>Pno.</shortName>
+        <InstrumentLabel>
+          <longName>Piano</longName>
+          <shortName>Pno.</shortName>
+          </InstrumentLabel>
         <trackName>Piano</trackName>
         <minPitchP>21</minPitchP>
         <maxPitchP>108</maxPitchP>
@@ -79,15 +81,15 @@
         <bottomGap>1</bottomGap>
         <boxAutoSize>0</boxAutoSize>
         <sizeIsSpatiumDependent>1</sizeIsSpatiumDependent>
-        <eid>e3</eid>
+        <eid>e4</eid>
         <Text>
-          <eid>e4</eid>
           <style>title</style>
+          <eid>e5</eid>
           <text>repeat70</text>
           </Text>
         <Text>
-          <eid>e5</eid>
           <style>subtitle</style>
+          <eid>e6</eid>
           <text>An open Volta beyond the exhausted repeats<br/>is played after them</text>
           </Text>
         </VBox>
@@ -97,34 +99,34 @@
         <rightMargin>1</rightMargin>
         <topMargin>1</topMargin>
         <bottomMargin>1</bottomMargin>
-        <eid>e6</eid>
+        <eid>e7</eid>
         <Text>
-          <eid>e7</eid>
           <style>frame</style>
+          <eid>e8</eid>
           <text>1,2   1   3,4,5<br/></text>
           </Text>
         </TBox>
       <Measure>
-        <eid>e8</eid>
+        <eid>e9</eid>
         <startRepeat/>
         <voice>
           <TimeSig>
-            <eid>e9</eid>
+            <eid>e10</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Tempo>
             <tempo>6.66667</tempo>
             <followText>1</followText>
-            <eid>e10</eid>
+            <eid>e11</eid>
             <family>FreeSerif</family>
             <text><b/><font face="ScoreText"/><b><font face="FreeSerif"/> = 400</b></text>
             </Tempo>
           <Chord>
-            <eid>e11</eid>
+            <eid>e12</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e12</eid>
+              <eid>e13</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
@@ -132,22 +134,9 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e13</eid>
+        <eid>e14</eid>
         <endRepeat>2</endRepeat>
         <voice>
-          <Spanner type="Volta">
-            <Volta>
-              <endHookType>1</endHookType>
-              <beginText>1.</beginText>
-              <eid>e14</eid>
-              <endings>1</endings>
-              </Volta>
-            <next>
-              <location>
-                <measures>1</measures>
-                </location>
-              </next>
-            </Spanner>
           <Chord>
             <eid>e15</eid>
             <durationType>whole</durationType>
@@ -162,30 +151,11 @@
       <Measure>
         <eid>e17</eid>
         <voice>
-          <Spanner type="Volta">
-            <prev>
-              <location>
-                <measures>-1</measures>
-                </location>
-              </prev>
-            </Spanner>
-          <Spanner type="Volta">
-            <Volta>
-              <beginText>3.</beginText>
-              <eid>e18</eid>
-              <endings>3</endings>
-              </Volta>
-            <next>
-              <location>
-                <measures>1</measures>
-                </location>
-              </next>
-            </Spanner>
           <Chord>
-            <eid>e19</eid>
+            <eid>e18</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e20</eid>
+              <eid>e19</eid>
               <pitch>64</pitch>
               <tpc>18</tpc>
               </Note>
@@ -193,20 +163,13 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e21</eid>
+        <eid>e20</eid>
         <voice>
-          <Spanner type="Volta">
-            <prev>
-              <location>
-                <measures>-1</measures>
-                </location>
-              </prev>
-            </Spanner>
           <Chord>
-            <eid>e22</eid>
+            <eid>e21</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e23</eid>
+              <eid>e22</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
@@ -214,13 +177,13 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e24</eid>
+        <eid>e23</eid>
         <voice>
           <Chord>
-            <eid>e25</eid>
+            <eid>e24</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e26</eid>
+              <eid>e25</eid>
               <pitch>67</pitch>
               <tpc>15</tpc>
               </Note>
@@ -228,5 +191,24 @@
           </voice>
         </Measure>
       </Staff>
+    <SpannerMap>
+      <Volta>
+        <endHookType>1</endHookType>
+        <beginText>1.</beginText>
+        <startElement>e14</startElement>
+        <endElement>e14</endElement>
+        <eid>e26</eid>
+        <track>0</track>
+        <endings>1</endings>
+        </Volta>
+      <Volta>
+        <beginText>3.</beginText>
+        <startElement>e17</startElement>
+        <endElement>e17</endElement>
+        <eid>e27</eid>
+        <track>0</track>
+        <endings>3</endings>
+        </Volta>
+      </SpannerMap>
     </Score>
   </museScore>

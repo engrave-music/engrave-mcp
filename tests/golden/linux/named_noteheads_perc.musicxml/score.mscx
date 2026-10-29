@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.70">
+<museScore version="5.00">
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
@@ -22,17 +22,19 @@
     <metaTag name="workNumber"></metaTag>
     <metaTag name="workTitle">Named noteheads percussion</metaTag>
     <Part id="1">
+      <eid>e2</eid>
       <Staff>
-        <eid>e2</eid>
+        <eid>e3</eid>
         <StaffType group="percussion">
           <name>perc5Line</name>
           <keysig>0</keysig>
           </StaffType>
         </Staff>
-      <trackName>Percussion</trackName>
       <Instrument id="percussion-synthesizer">
-        <longName>Percussion</longName>
-        <shortName>Perc.</shortName>
+        <InstrumentLabel>
+          <longName>Percussion</longName>
+          <shortName>Perc.</shortName>
+          </InstrumentLabel>
         <trackName>Percussion</trackName>
         <instrumentId>drum.group</instrumentId>
         <useDrumset>1</useDrumset>
@@ -98,64 +100,64 @@
     <Staff id="1">
       <VBox>
         <height>10</height>
-        <eid>e3</eid>
+        <eid>e4</eid>
         <Text>
-          <eid>e4</eid>
           <style>title</style>
+          <eid>e5</eid>
           <text>Named noteheads percussion</text>
           </Text>
         <Text>
-          <eid>e5</eid>
           <style>composer</style>
+          <eid>e6</eid>
           <text>James M</text>
           </Text>
         </VBox>
       <Measure>
-        <eid>e6</eid>
+        <eid>e7</eid>
         <voice>
           <Clef>
             <concertClefType>PERC</concertClefType>
             <transposingClefType>PERC</transposingClefType>
             <isHeader>1</isHeader>
-            <eid>e7</eid>
+            <eid>e8</eid>
             </Clef>
           <TimeSig>
-            <eid>e8</eid>
+            <eid>e9</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Chord>
-            <eid>e9</eid>
+            <eid>e10</eid>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>e10</eid>
+              <eid>e11</eid>
               <pitch>45</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e11</eid>
+            <eid>e12</eid>
             <durationType>quarter</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>e12</eid>
+              <eid>e13</eid>
               <pitch>45</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e13</eid>
+            <eid>e14</eid>
             <durationType>half</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>e14</eid>
+              <eid>e15</eid>
               <pitch>45</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <BarLine>
-            <eid>e15</eid>
+            <eid>e16</eid>
             </BarLine>
           </voice>
         </Measure>

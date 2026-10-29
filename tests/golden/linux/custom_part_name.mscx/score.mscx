@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.70">
+<museScore version="5.00">
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
@@ -27,18 +27,24 @@
     <metaTag name="workNumber"></metaTag>
     <metaTag name="workTitle">Idee in Noten no.8</metaTag>
     <Part id="1">
+      <eid>e2</eid>
       <Staff>
-        <eid>e2</eid>
+        <eid>e3</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
-        <bracket type="1" span="1" col="0" visible="1"/>
+        <BracketItem>
+          <type>Brace</type>
+          <bracketSpan>1</bracketSpan>
+          <level>0</level>
+          </BracketItem>
         <barLineSpan>1</barLineSpan>
         </Staff>
-      <trackName>Solo Klavier</trackName>
       <Instrument id="piano">
-        <longName>Klavier</longName>
-        <shortName>Flgl.</shortName>
+        <InstrumentLabel>
+          <longName>Klavier</longName>
+          <shortName>Flgl.</shortName>
+          </InstrumentLabel>
         <trackName>Klavier</trackName>
         <minPitchP>21</minPitchP>
         <maxPitchP>108</maxPitchP>
@@ -95,69 +101,50 @@
       </Part>
     <Staff id="1">
       <Measure>
-        <eid>e3</eid>
+        <eid>e4</eid>
         <voice>
           <TimeSig>
-            <eid>e4</eid>
+            <eid>e5</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Dynamic>
             <subtype>p</subtype>
             <velocity>49</velocity>
-            <eid>e5</eid>
+            <eid>e6</eid>
             </Dynamic>
-          <Spanner type="HairPin">
-            <HairPin>
-              <subtype>0</subtype>
-              <beginHookHeight>-1.9</beginHookHeight>
-              <endHookHeight>-1.9</endHookHeight>
-              <eid>e6</eid>
-              <Segment>
-                <subtype>0</subtype>
-                <offset x="0" y="1.75"/>
-                <off2 x="1.16325" y="0"/>
-                <eid>e7</eid>
-                </Segment>
-              </HairPin>
-            <next>
-              <location>
-                <measures>1</measures>
-                </location>
-              </next>
-            </Spanner>
           <Chord>
-            <eid>e8</eid>
+            <eid>e7</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e9</eid>
+              <eid>e8</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e10</eid>
+            <eid>e9</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e11</eid>
+              <eid>e10</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e12</eid>
+            <eid>e11</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e13</eid>
+              <eid>e12</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e14</eid>
+            <eid>e13</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e15</eid>
+              <eid>e14</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
@@ -165,60 +152,48 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e16</eid>
+        <eid>e15</eid>
         <startRepeat/>
         <endRepeat>2</endRepeat>
         <voice>
           <Dynamic>
             <subtype>f</subtype>
             <velocity>96</velocity>
-            <eid>e17</eid>
+            <eid>e16</eid>
             </Dynamic>
-          <Spanner type="HairPin">
-            <prev>
-              <location>
-                <measures>-1</measures>
-                </location>
-              </prev>
-            </Spanner>
-          <Spanner type="HairPin">
-            <HairPin>
-              <subtype>0</subtype>
-              <direction>down</direction>
-              <beginHookHeight>-1.9</beginHookHeight>
-              <endHookHeight>-1.9</endHookHeight>
+          <Chord>
+            <eid>e17</eid>
+            <durationType>quarter</durationType>
+            <Note>
               <eid>e18</eid>
-              <Segment>
-                <subtype>0</subtype>
-                <offset x="0" y="3.5"/>
-                <off2 x="-0.3776" y="0"/>
-                <eid>e19</eid>
-                </Segment>
-              </HairPin>
-            <next>
-              <location>
-                <fractions>3/4</fractions>
-                </location>
-              </next>
-            </Spanner>
-          <Chord>
-            <eid>e20</eid>
-            <durationType>quarter</durationType>
-            <Note>
-              <eid>e21</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e22</eid>
+            <eid>e19</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e23</eid>
+              <eid>e20</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
+          <Chord>
+            <eid>e21</eid>
+            <durationType>quarter</durationType>
+            <Note>
+              <eid>e22</eid>
+              <pitch>65</pitch>
+              <tpc>13</tpc>
+              </Note>
+            </Chord>
+          <Dynamic>
+            <subtype>fff</subtype>
+            <velocity>126</velocity>
+            <eid>e23</eid>
+            <visible>0</visible>
+            </Dynamic>
           <Chord>
             <eid>e24</eid>
             <durationType>quarter</durationType>
@@ -228,67 +203,48 @@
               <tpc>13</tpc>
               </Note>
             </Chord>
-          <Dynamic>
-            <subtype>fff</subtype>
-            <velocity>126</velocity>
-            <eid>e26</eid>
-            <visible>0</visible>
-            </Dynamic>
-          <Spanner type="HairPin">
-            <prev>
-              <location>
-                <fractions>-3/4</fractions>
-                </location>
-              </prev>
-            </Spanner>
-          <Chord>
-            <eid>e27</eid>
-            <durationType>quarter</durationType>
-            <Note>
-              <eid>e28</eid>
-              <pitch>65</pitch>
-              <tpc>13</tpc>
-              </Note>
-            </Chord>
           </voice>
         </Measure>
       <Measure>
-        <eid>e29</eid>
+        <eid>e26</eid>
         <voice>
           <Dynamic>
             <subtype>ppp</subtype>
             <velocity>16</velocity>
-            <eid>e30</eid>
+            <eid>e27</eid>
             </Dynamic>
-          <Spanner type="HairPin">
-            <HairPin>
-              <subtype>0</subtype>
-              <direction>down</direction>
-              <beginHookHeight>-1.9</beginHookHeight>
-              <endHookHeight>-1.9</endHookHeight>
-              <eid>e31</eid>
-              <Segment>
-                <subtype>0</subtype>
-                <offset x="0" y="2"/>
-                <off2 x="10.0585" y="0"/>
-                <eid>e32</eid>
-                </Segment>
-              </HairPin>
-            <next>
-              <location>
-                <fractions>3/4</fractions>
-                </location>
-              </next>
-            </Spanner>
           <Chord>
-            <eid>e33</eid>
+            <eid>e28</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e34</eid>
+              <eid>e29</eid>
               <pitch>67</pitch>
               <tpc>15</tpc>
               </Note>
             </Chord>
+          <Chord>
+            <eid>e30</eid>
+            <durationType>quarter</durationType>
+            <Note>
+              <eid>e31</eid>
+              <pitch>67</pitch>
+              <tpc>15</tpc>
+              </Note>
+            </Chord>
+          <Chord>
+            <eid>e32</eid>
+            <durationType>quarter</durationType>
+            <Note>
+              <eid>e33</eid>
+              <pitch>67</pitch>
+              <tpc>15</tpc>
+              </Note>
+            </Chord>
+          <Dynamic>
+            <subtype>p</subtype>
+            <velocity>49</velocity>
+            <eid>e34</eid>
+            </Dynamic>
           <Chord>
             <eid>e35</eid>
             <durationType>quarter</durationType>
@@ -298,38 +254,66 @@
               <tpc>15</tpc>
               </Note>
             </Chord>
-          <Chord>
-            <eid>e37</eid>
-            <durationType>quarter</durationType>
-            <Note>
-              <eid>e38</eid>
-              <pitch>67</pitch>
-              <tpc>15</tpc>
-              </Note>
-            </Chord>
-          <Dynamic>
-            <subtype>p</subtype>
-            <velocity>49</velocity>
-            <eid>e39</eid>
-            </Dynamic>
-          <Spanner type="HairPin">
-            <prev>
-              <location>
-                <fractions>-3/4</fractions>
-                </location>
-              </prev>
-            </Spanner>
-          <Chord>
-            <eid>e40</eid>
-            <durationType>quarter</durationType>
-            <Note>
-              <eid>e41</eid>
-              <pitch>67</pitch>
-              <tpc>15</tpc>
-              </Note>
-            </Chord>
           </voice>
         </Measure>
       </Staff>
+    <SpannerMap>
+      <HairPin>
+        <subtype>0</subtype>
+        <beginHookHeight>-1.9</beginHookHeight>
+        <endHookHeight>-1.9</endHookHeight>
+        <track2>0</track2>
+        <startTick>0/1</startTick>
+        <ticks>1/1</ticks>
+        <eid>e37</eid>
+        <track>0</track>
+        <Segment>
+          <subtype>0</subtype>
+          <offset x="0" y="1.75"/>
+          <off2 x="1.16325" y="0"/>
+          <eid>e38</eid>
+          <track>0</track>
+          <offset x="0" y="1.75"/>
+          </Segment>
+        </HairPin>
+      <HairPin>
+        <subtype>0</subtype>
+        <direction>down</direction>
+        <beginHookHeight>-1.9</beginHookHeight>
+        <endHookHeight>-1.9</endHookHeight>
+        <track2>0</track2>
+        <startTick>1/1</startTick>
+        <ticks>3/4</ticks>
+        <eid>e39</eid>
+        <track>0</track>
+        <Segment>
+          <subtype>0</subtype>
+          <offset x="0" y="3.5"/>
+          <off2 x="-0.3776" y="0"/>
+          <eid>e40</eid>
+          <track>0</track>
+          <offset x="0" y="3.5"/>
+          </Segment>
+        </HairPin>
+      <HairPin>
+        <subtype>0</subtype>
+        <direction>down</direction>
+        <beginHookHeight>-1.9</beginHookHeight>
+        <endHookHeight>-1.9</endHookHeight>
+        <track2>0</track2>
+        <startTick>2/1</startTick>
+        <ticks>3/4</ticks>
+        <eid>e41</eid>
+        <track>0</track>
+        <Segment>
+          <subtype>0</subtype>
+          <offset x="0" y="2"/>
+          <off2 x="10.0585" y="0"/>
+          <eid>e42</eid>
+          <track>0</track>
+          <offset x="0" y="2"/>
+          </Segment>
+        </HairPin>
+      </SpannerMap>
     </Score>
   </museScore>

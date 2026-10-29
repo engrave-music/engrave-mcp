@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.70">
+<museScore version="5.00">
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
@@ -22,21 +22,29 @@
     <metaTag name="workNumber"></metaTag>
     <metaTag name="workTitle"></metaTag>
     <Part id="1">
-      <Staff>
-        <eid>e2</eid>
-        <StaffType group="pitched">
-          </StaffType>
-        <bracket type="1" span="2" col="0" visible="1"/>
-        <barLineSpan>1</barLineSpan>
-        </Staff>
+      <eid>e2</eid>
       <Staff>
         <eid>e3</eid>
         <StaffType group="pitched">
+          <name>stdNormal</name>
+          </StaffType>
+        <BracketItem>
+          <type>Brace</type>
+          <bracketSpan>2</bracketSpan>
+          <level>0</level>
+          </BracketItem>
+        <barLineSpan>1</barLineSpan>
+        </Staff>
+      <Staff>
+        <eid>e4</eid>
+        <StaffType group="pitched">
+          <name>stdNormal</name>
           </StaffType>
         </Staff>
-      <trackName>Piano</trackName>
       <Instrument id="piano">
-        <longName><font size="12.4059"/><font face="Times New Roman"/>Piano</longName>
+        <InstrumentLabel>
+          <longName><font size="12.4059"/><font face="Times New Roman"/>Piano</longName>
+          </InstrumentLabel>
         <trackName>Piano</trackName>
         <minPitchP>21</minPitchP>
         <maxPitchP>108</maxPitchP>
@@ -83,30 +91,30 @@
         <bottomMargin>5</bottomMargin>
         <boxAutoSize>0</boxAutoSize>
         <sizeIsSpatiumDependent>1</sizeIsSpatiumDependent>
-        <eid>e4</eid>
+        <eid>e5</eid>
         <Text>
-          <eid>e5</eid>
           <style>title</style>
+          <eid>e6</eid>
           <text>Layout test</text>
           </Text>
         <Text>
-          <eid>e6</eid>
           <style>subtitle</style>
+          <eid>e7</eid>
           <text>Just an artificial score to test whether all elements are laid out</text>
           </Text>
         <Text>
-          <eid>e7</eid>
           <style>composer</style>
+          <eid>e8</eid>
           <text>Composer</text>
           </Text>
         <Text>
-          <eid>e8</eid>
           <style>poet</style>
+          <eid>e9</eid>
           <text>Lyricist</text>
           </Text>
         <Text>
-          <eid>e9</eid>
           <style>instrument_excerpt</style>
+          <eid>e10</eid>
           <text>The only part</text>
           </Text>
         </VBox>
@@ -117,103 +125,69 @@
         <topMargin>5</topMargin>
         <bottomMargin>5</bottomMargin>
         <boxAutoSize>0</boxAutoSize>
-        <eid>e10</eid>
+        <eid>e11</eid>
         </HBox>
       <Measure>
-        <eid>e11</eid>
+        <eid>e12</eid>
         <voice>
           <KeySig>
-            <eid>e12</eid>
+            <eid>e13</eid>
             <concertKey>4</concertKey>
             </KeySig>
           <TimeSig>
             <subtype>2</subtype>
-            <eid>e13</eid>
+            <eid>e14</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <SystemText>
-            <eid>e14</eid>
+            <eid>e15</eid>
             <text>System Text</text>
             </SystemText>
           <Tempo>
             <tempo>2.4</tempo>
-            <eid>e15</eid>
+            <eid>e16</eid>
             <text>Allegro</text>
             </Tempo>
-          <Spanner type="HairPin">
-            <HairPin>
-              <subtype>0</subtype>
-              <beginHookHeight>-1.9</beginHookHeight>
-              <endHookHeight>-1.9</endHookHeight>
-              <eid>e16</eid>
-              </HairPin>
-            <next>
-              <location>
-                <measures>1</measures>
-                </location>
-              </next>
-            </Spanner>
           <Chord>
             <eid>e17</eid>
             <durationType>quarter</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid>e18</eid>
-                </Slur>
-              <next>
-                <location>
-                  <measures>1</measures>
-                  </location>
-                </next>
-              </Spanner>
             <Note>
-              <eid>e19</eid>
+              <eid>e18</eid>
               <pitch>61</pitch>
               <tpc>21</tpc>
-              <Spanner type="Glissando">
-                <Glissando>
-                  <eid>e20</eid>
-                  <diagonal>1</diagonal>
-                  </Glissando>
-                <next>
-                  <location>
-                    <fractions>1/4</fractions>
-                    </location>
-                  </next>
-                </Spanner>
               </Note>
             </Chord>
           <Chord>
-            <eid>e21</eid>
+            <eid>e19</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e22</eid>
+              <eid>e20</eid>
               <pitch>63</pitch>
               <tpc>23</tpc>
-              <Spanner type="Glissando">
-                <prev>
-                  <location>
-                    <fractions>-1/4</fractions>
-                    </location>
-                  </prev>
-                </Spanner>
+              <Glissando>
+                <startElement>e18</startElement>
+                <endElement>e20</endElement>
+                <eid>e21</eid>
+                <track>0</track>
+                <diagonal>1</diagonal>
+                </Glissando>
               </Note>
             </Chord>
           <Chord>
-            <eid>e23</eid>
+            <eid>e22</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e24</eid>
+              <eid>e23</eid>
               <pitch>64</pitch>
               <tpc>18</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e25</eid>
+            <eid>e24</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e26</eid>
+              <eid>e25</eid>
               <pitch>66</pitch>
               <tpc>20</tpc>
               </Note>
@@ -221,26 +195,19 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e27</eid>
+        <eid>e26</eid>
         <voice>
           <StaffText>
-            <eid>e28</eid>
+            <eid>e27</eid>
             <text>Staff Text</text>
             </StaffText>
           <Dynamic>
             <subtype>f</subtype>
             <velocity>96</velocity>
-            <eid>e29</eid>
+            <eid>e28</eid>
             </Dynamic>
-          <Spanner type="HairPin">
-            <prev>
-              <location>
-                <measures>-1</measures>
-                </location>
-              </prev>
-            </Spanner>
           <Tuplet>
-            <eid>e30</eid>
+            <eid>e29</eid>
             <normalNotes>2</normalNotes>
             <actualNotes>3</actualNotes>
             <baseNote>eighth</baseNote>
@@ -250,60 +217,42 @@
               </Number>
             </Tuplet>
           <Beam>
-            <eid>e31</eid>
+            <eid>e30</eid>
             </Beam>
           <Chord>
-            <eid>e32</eid>
+            <eid>e31</eid>
             <durationType>eighth</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <measures>-1</measures>
-                  </location>
-                </prev>
-              </Spanner>
             <Note>
-              <eid>e33</eid>
+              <eid>e32</eid>
               <pitch>61</pitch>
               <tpc>21</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e34</eid>
+            <eid>e33</eid>
             <durationType>eighth</durationType>
             <Note>
-              <eid>e35</eid>
+              <eid>e34</eid>
               <pitch>63</pitch>
               <tpc>23</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e36</eid>
+            <eid>e35</eid>
             <durationType>eighth</durationType>
             <Note>
-              <eid>e37</eid>
+              <eid>e36</eid>
               <pitch>64</pitch>
               <tpc>18</tpc>
               </Note>
             </Chord>
           <endTuplet/>
           <Chord>
-            <eid>e38</eid>
+            <eid>e37</eid>
             <dots>1</dots>
             <durationType>half</durationType>
             <Note>
-              <eid>e39</eid>
-              <Spanner type="Tie">
-                <Tie>
-                  <eid>e40</eid>
-                  </Tie>
-                <next>
-                  <location>
-                    <measures>1</measures>
-                    <fractions>-1/4</fractions>
-                    </location>
-                  </next>
-                </Spanner>
+              <eid>e38</eid>
               <pitch>68</pitch>
               <tpc>22</tpc>
               </Note>
@@ -311,72 +260,53 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e41</eid>
+        <eid>e39</eid>
         <voice>
           <Expression>
-            <eid>e42</eid>
-            <snapToDynamics>0</snapToDynamics>
-            <offset x="0" y="3.5"/>
+            <eid>e40</eid>
             <text>Expression</text>
             </Expression>
-          <Spanner type="HairPin">
-            <HairPin>
-              <subtype>0</subtype>
-              <beginHookHeight>-1.9</beginHookHeight>
-              <endHookHeight>-1.9</endHookHeight>
-              <beginText>&lt;sym&gt;dynamicMezzo&lt;/sym&gt;&lt;sym&gt;dynamicForte&lt;/sym&gt;</beginText>
-              <beginTextAlign>left,center</beginTextAlign>
-              <eid>e43</eid>
-              </HairPin>
-            <next>
-              <location>
-                <measures>1</measures>
-                </location>
-              </next>
-            </Spanner>
           <Chord>
-            <eid>e44</eid>
+            <eid>e41</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e45</eid>
-              <Spanner type="Tie">
-                <prev>
-                  <location>
-                    <measures>-1</measures>
-                    <fractions>1/4</fractions>
-                    </location>
-                  </prev>
-                </Spanner>
+              <eid>e42</eid>
+              <Tie>
+                <startElement>e38</startElement>
+                <endElement>e42</endElement>
+                <eid>e43</eid>
+                <track>0</track>
+                </Tie>
               <pitch>68</pitch>
               <tpc>22</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e46</eid>
+            <eid>e44</eid>
             <durationType>half</durationType>
             <Note>
-              <eid>e47</eid>
+              <eid>e45</eid>
               <pitch>68</pitch>
               <tpc>22</tpc>
               </Note>
             </Chord>
           <Beam>
-            <eid>e48</eid>
+            <eid>e46</eid>
             </Beam>
           <Chord>
-            <eid>e49</eid>
+            <eid>e47</eid>
             <durationType>eighth</durationType>
             <Note>
-              <eid>e50</eid>
+              <eid>e48</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e51</eid>
+            <eid>e49</eid>
             <durationType>eighth</durationType>
             <Note>
-              <eid>e52</eid>
+              <eid>e50</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
@@ -384,11 +314,13 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e53</eid>
+        <eid>e51</eid>
         <voice>
           <InstrumentChange>
             <Instrument id="piano">
-              <longName><font size="12.4059"/><font face="Times New Roman"/>Piano</longName>
+              <InstrumentLabel>
+                <longName><font size="12.4059"/><font face="Times New Roman"/>Piano</longName>
+                </InstrumentLabel>
               <trackName>Piano</trackName>
               <minPitchP>21</minPitchP>
               <maxPitchP>108</maxPitchP>
@@ -418,42 +350,35 @@
                 <synti>Fluid</synti>
                 </Channel>
               </Instrument>
-            <eid>e54</eid>
+            <eid>e52</eid>
             <text>Change Instr.</text>
             </InstrumentChange>
           <Fermata>
             <subtype>fermataAbove</subtype>
-            <eid>e55</eid>
+            <eid>e53</eid>
             </Fermata>
-          <Spanner type="HairPin">
-            <prev>
-              <location>
-                <measures>-1</measures>
-                </location>
-              </prev>
-            </Spanner>
           <Chord>
-            <eid>e56</eid>
+            <eid>e54</eid>
             <durationType>eighth</durationType>
             <acciaccatura/>
             <Note>
-              <eid>e57</eid>
+              <eid>e55</eid>
               <Accidental>
                 <subtype>accidentalNatural</subtype>
-                <eid>e58</eid>
+                <eid>e56</eid>
                 </Accidental>
               <pitch>67</pitch>
               <tpc>15</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e59</eid>
+            <eid>e57</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e60</eid>
+              <eid>e58</eid>
               <Accidental>
                 <subtype>accidentalDoubleSharp</subtype>
-                <eid>e61</eid>
+                <eid>e59</eid>
                 </Accidental>
               <pitch>67</pitch>
               <tpc>27</tpc>
@@ -462,34 +387,42 @@
           <Clef>
             <concertClefType>C2</concertClefType>
             <transposingClefType>C2</transposingClefType>
-            <eid>e62</eid>
+            <eid>e60</eid>
             </Clef>
           <BarLine>
             <subtype>double</subtype>
-            <eid>e63</eid>
+            <eid>e61</eid>
             </BarLine>
           </voice>
         </Measure>
       <Measure>
-        <eid>e64</eid>
+        <eid>e62</eid>
         <StaffTypeChange>
           <StaffType group="pitched">
+            <name>stdNormal</name>
             </StaffType>
-          <eid>e65</eid>
+          <eid>e63</eid>
           </StaffTypeChange>
         <voice>
           <Chord>
-            <eid>e66</eid>
+            <eid>e64</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e67</eid>
+              <eid>e65</eid>
               <parentheses>both</parentheses>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             <NoteParenGroup>
+              <Parenthesis>
+                <eid>e66</eid>
+                </Parenthesis>
+              <Parenthesis>
+                <horizontalDirection>right</horizontalDirection>
+                <eid>e67</eid>
+                </Parenthesis>
               <Notes>
-                <NoteIdx>0</NoteIdx>
+                <NoteEID>e65</NoteEID>
                 </Notes>
               </NoteParenGroup>
             </Chord>
@@ -608,17 +541,6 @@
               <eid>e93</eid>
               <pitch>48</pitch>
               <tpc>14</tpc>
-              <Spanner type="Glissando">
-                <Glissando>
-                  <eid>e94</eid>
-                  <diagonal>1</diagonal>
-                  </Glissando>
-                <next>
-                  <location>
-                    <fractions>1/4</fractions>
-                    </location>
-                  </next>
-                </Spanner>
               </Note>
             </Chord>
           <FiguredBass>
@@ -631,22 +553,22 @@
               <brackets b0="0" b1="0" b2="0" b3="0" b4="0"/>
               <digit>3</digit>
               </FiguredBassItem>
-            <eid>e95</eid>
+            <eid>e94</eid>
             </FiguredBass>
           <Chord>
-            <eid>e96</eid>
+            <eid>e95</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e97</eid>
+              <eid>e96</eid>
               <pitch>55</pitch>
               <tpc>15</tpc>
-              <Spanner type="Glissando">
-                <prev>
-                  <location>
-                    <fractions>-1/4</fractions>
-                    </location>
-                  </prev>
-                </Spanner>
+              <Glissando>
+                <startElement>e93</startElement>
+                <endElement>e96</endElement>
+                <eid>e97</eid>
+                <track>0</track>
+                <diagonal>1</diagonal>
+                </Glissando>
               </Note>
             </Chord>
           <FiguredBass>
@@ -721,106 +643,85 @@
                 </string>
               </fretDiagram>
             </FretDiagram>
-          <Spanner type="Pedal">
-            <Pedal>
-              <endHookType>1</endHookType>
-              <continueText></continueText>
-              <continueTextPlace>auto</continueTextPlace>
-              <endTextPlace>auto</endTextPlace>
-              <eid>e107</eid>
-              </Pedal>
-            <next>
-              <location>
-                <measures>1</measures>
-                </location>
-              </next>
-            </Spanner>
           <Chord>
-            <eid>e108</eid>
+            <eid>e107</eid>
             <durationType>32nd</durationType>
             <grace32/>
             <Note>
-              <eid>e109</eid>
+              <eid>e108</eid>
               <pitch>66</pitch>
               <tpc>20</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e110</eid>
+            <eid>e109</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e111</eid>
+              <eid>e110</eid>
               <pitch>64</pitch>
               <tpc>18</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid>e112</eid>
+            <eid>e111</eid>
             <durationType>quarter</durationType>
             </Rest>
           <Rest>
-            <eid>e113</eid>
+            <eid>e112</eid>
             <durationType>half</durationType>
             </Rest>
           </voice>
         </Measure>
       <Measure>
         <voice>
-          <Spanner type="Pedal">
-            <prev>
-              <location>
-                <measures>-1</measures>
-                </location>
-              </prev>
-            </Spanner>
           <Chord>
-            <eid>e114</eid>
+            <eid>e113</eid>
             <durationType>quarter</durationType>
             <Lyrics>
               <syllabic>begin</syllabic>
-              <eid>e115</eid>
+              <eid>e114</eid>
               <text>Ly</text>
               </Lyrics>
             <Note>
-              <eid>e116</eid>
+              <eid>e115</eid>
               <pitch>73</pitch>
               <tpc>21</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e117</eid>
+            <eid>e116</eid>
             <durationType>quarter</durationType>
             <Lyrics>
               <syllabic>end</syllabic>
               <ticks_f>1/4</ticks_f>
-              <eid>e118</eid>
+              <eid>e117</eid>
               <text>rics</text>
               </Lyrics>
             <Note>
-              <eid>e119</eid>
+              <eid>e118</eid>
               <pitch>76</pitch>
               <tpc>18</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e120</eid>
+            <eid>e119</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e121</eid>
+              <eid>e120</eid>
               <pitch>78</pitch>
               <tpc>20</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e122</eid>
+            <eid>e121</eid>
             <durationType>quarter</durationType>
             <Lyrics>
               <syllabic>begin</syllabic>
-              <eid>e123</eid>
+              <eid>e122</eid>
               <text>ly</text>
               </Lyrics>
             <Note>
-              <eid>e124</eid>
+              <eid>e123</eid>
               <pitch>76</pitch>
               <tpc>18</tpc>
               </Note>
@@ -830,40 +731,40 @@
       <Measure>
         <voice>
           <Chord>
-            <eid>e125</eid>
+            <eid>e124</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e126</eid>
+              <eid>e125</eid>
               <pitch>73</pitch>
               <tpc>21</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e127</eid>
+            <eid>e126</eid>
             <durationType>quarter</durationType>
             <Lyrics>
               <syllabic>middle</syllabic>
-              <eid>e128</eid>
+              <eid>e127</eid>
               <align>left,baseline</align>
               <position>left</position>
               <text>rics</text>
               </Lyrics>
             <Note>
-              <eid>e129</eid>
+              <eid>e128</eid>
               <pitch>76</pitch>
               <tpc>18</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid>e130</eid>
+            <eid>e129</eid>
             <durationType>half</durationType>
             <Lyrics>
               <syllabic>end</syllabic>
-              <eid>e131</eid>
+              <eid>e130</eid>
               <text>ly</text>
               </Lyrics>
             <Note>
-              <eid>e132</eid>
+              <eid>e131</eid>
               <pitch>64</pitch>
               <tpc>18</tpc>
               </Note>
@@ -873,14 +774,23 @@
       <Measure>
         <voice>
           <Rest>
-            <eid>e133</eid>
+            <eid>e132</eid>
             <durationType>measure</durationType>
             <duration>4/4</duration>
             </Rest>
           <BarLine>
             <subtype>double</subtype>
-            <eid>e134</eid>
+            <eid>e133</eid>
             </BarLine>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Rest>
+            <eid>e134</eid>
+            <durationType>measure</durationType>
+            <duration>4/4</duration>
+            </Rest>
           </voice>
         </Measure>
       <Measure>
@@ -894,58 +804,40 @@
         </Measure>
       <Measure>
         <voice>
-          <Rest>
-            <eid>e136</eid>
-            <durationType>measure</durationType>
-            <duration>4/4</duration>
-            </Rest>
-          </voice>
-        </Measure>
-      <Measure>
-        <voice>
           <KeySig>
-            <eid>e137</eid>
+            <eid>e136</eid>
             <concertKey>-1</concertKey>
             </KeySig>
           <TimeSig>
-            <eid>e138</eid>
+            <eid>e137</eid>
             <sigN>12</sigN>
             <sigD>8</sigD>
             </TimeSig>
-          <Spanner type="Ottava">
-            <Ottava>
-              <subtype>8va</subtype>
+          <Chord>
+            <eid>e138</eid>
+            <durationType>quarter</durationType>
+            <Note>
               <eid>e139</eid>
-              </Ottava>
-            <next>
-              <location>
-                <fractions>1/4</fractions>
-                </location>
-              </next>
-            </Spanner>
+              <pitch>69</pitch>
+              <tpc>17</tpc>
+              </Note>
+            </Chord>
           <Chord>
             <eid>e140</eid>
             <durationType>quarter</durationType>
             <Note>
               <eid>e141</eid>
-              <pitch>69</pitch>
-              <tpc>17</tpc>
+              <pitch>70</pitch>
+              <tpc>12</tpc>
               </Note>
             </Chord>
-          <Spanner type="Ottava">
-            <prev>
-              <location>
-                <fractions>-1/4</fractions>
-                </location>
-              </prev>
-            </Spanner>
           <Chord>
             <eid>e142</eid>
             <durationType>quarter</durationType>
             <Note>
               <eid>e143</eid>
-              <pitch>70</pitch>
-              <tpc>12</tpc>
+              <pitch>72</pitch>
+              <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
@@ -953,8 +845,8 @@
             <durationType>quarter</durationType>
             <Note>
               <eid>e145</eid>
-              <pitch>72</pitch>
-              <tpc>14</tpc>
+              <pitch>74</pitch>
+              <tpc>16</tpc>
               </Note>
             </Chord>
           <Chord>
@@ -962,15 +854,6 @@
             <durationType>quarter</durationType>
             <Note>
               <eid>e147</eid>
-              <pitch>74</pitch>
-              <tpc>16</tpc>
-              </Note>
-            </Chord>
-          <Chord>
-            <eid>e148</eid>
-            <durationType>quarter</durationType>
-            <Note>
-              <eid>e149</eid>
               <pitch>76</pitch>
               <tpc>18</tpc>
               </Note>
@@ -979,13 +862,13 @@
             <point time="0" pitch="0" vibrato="0"/>
             <point time="30" pitch="-100" vibrato="0"/>
             <point time="60" pitch="0" vibrato="0"/>
-            <eid>e150</eid>
+            <eid>e148</eid>
             </TremoloBar>
           <Chord>
-            <eid>e151</eid>
+            <eid>e149</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e152</eid>
+              <eid>e150</eid>
               <pitch>77</pitch>
               <tpc>13</tpc>
               </Note>
@@ -998,23 +881,23 @@
             <harmonyInfo>
               <root>14</root>
               </harmonyInfo>
-            <eid>e153</eid>
+            <eid>e151</eid>
             </Harmony>
           <Chord>
-            <eid>e154</eid>
+            <eid>e152</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e155</eid>
+              <eid>e153</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             <Note>
-              <eid>e156</eid>
+              <eid>e154</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             <Note>
-              <eid>e157</eid>
+              <eid>e155</eid>
               <pitch>76</pitch>
               <tpc>18</tpc>
               </Note>
@@ -1026,17 +909,66 @@
             <harmonyInfo>
               <root>16</root>
               </harmonyInfo>
-            <eid>e158</eid>
+            <eid>e156</eid>
             </Harmony>
           <location>
             <fractions>5/8</fractions>
             </location>
           <Rest>
-            <eid>e159</eid>
+            <eid>e157</eid>
             <durationType>half</durationType>
             </Rest>
           </voice>
         </Measure>
       </Staff>
+    <SpannerMap>
+      <HairPin>
+        <subtype>0</subtype>
+        <beginHookHeight>-1.9</beginHookHeight>
+        <endHookHeight>-1.9</endHookHeight>
+        <track2>0</track2>
+        <startTick>0/1</startTick>
+        <ticks>1/1</ticks>
+        <eid>e158</eid>
+        <track>0</track>
+        </HairPin>
+      <Slur>
+        <startElement>e17</startElement>
+        <endElement>e31</endElement>
+        <eid>e159</eid>
+        <track>0</track>
+        </Slur>
+      <Pedal>
+        <endHookType>1</endHookType>
+        <continueTextPlace>auto</continueTextPlace>
+        <endTextPlace>auto</endTextPlace>
+        <track2>4</track2>
+        <startTick>0/1</startTick>
+        <ticks>1/1</ticks>
+        <eid>e160</eid>
+        <track>4</track>
+        <continueText></continueText>
+        </Pedal>
+      <HairPin>
+        <subtype>0</subtype>
+        <beginHookHeight>-1.9</beginHookHeight>
+        <endHookHeight>-1.9</endHookHeight>
+        <track2>0</track2>
+        <startTick>2/1</startTick>
+        <ticks>1/1</ticks>
+        <eid>e161</eid>
+        <track>0</track>
+        <beginText>&lt;sym&gt;dynamicMezzo&lt;/sym&gt;&lt;sym&gt;dynamicForte&lt;/sym&gt;</beginText>
+        <beginTextAlign>left,center</beginTextAlign>
+        </HairPin>
+      <Ottava>
+        <subtype>8va</subtype>
+        <track2>4</track2>
+        <startTick>6/1</startTick>
+        <ticks>1/4</ticks>
+        <eid>e162</eid>
+        <track>4</track>
+        </Ottava>
+      </SpannerMap>
     </Score>
   </museScore>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.70">
+<museScore version="5.00">
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
@@ -22,17 +22,19 @@
     <metaTag name="workNumber"></metaTag>
     <metaTag name="workTitle"></metaTag>
     <Part id="1">
+      <eid>e2</eid>
       <Staff>
-        <eid>e2</eid>
+        <eid>e3</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
         <defaultClef>G8vb</defaultClef>
         </Staff>
-      <trackName>Electric Guitar, Electric Guitar</trackName>
       <Instrument id="electric-guitar">
-        <longName>Electric Guitar, Electric Guitar</longName>
-        <shortName>El. Guit.</shortName>
+        <InstrumentLabel>
+          <longName>Electric Guitar, Electric Guitar</longName>
+          <shortName>El. Guit.</shortName>
+          </InstrumentLabel>
         <trackName>Electric Guitar</trackName>
         <minPitchP>40</minPitchP>
         <maxPitchP>88</maxPitchP>
@@ -118,23 +120,23 @@
       </Part>
     <Staff id="1">
       <Measure>
-        <eid>e3</eid>
+        <eid>e4</eid>
         <voice>
           <TimeSig>
-            <eid>e4</eid>
+            <eid>e5</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Tempo>
             <tempo>2</tempo>
-            <eid>e5</eid>
+            <eid>e6</eid>
             <text><sym>metNoteQuarterUp</sym> = 120</text>
             </Tempo>
           <Chord>
-            <eid>e6</eid>
+            <eid>e7</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e7</eid>
+              <eid>e8</eid>
               <pitch>62</pitch>
               <tpc>16</tpc>
               <velocity>80</velocity>
@@ -143,13 +145,13 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e8</eid>
+        <eid>e9</eid>
         <voice>
           <Chord>
-            <eid>e9</eid>
+            <eid>e10</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e10</eid>
+              <eid>e11</eid>
               <pitch>62</pitch>
               <tpc>16</tpc>
               <velocity>80</velocity>
@@ -158,13 +160,13 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e11</eid>
+        <eid>e12</eid>
         <voice>
           <Chord>
-            <eid>e12</eid>
+            <eid>e13</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e13</eid>
+              <eid>e14</eid>
               <pitch>62</pitch>
               <tpc>16</tpc>
               <velocity>80</velocity>
@@ -173,13 +175,13 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e14</eid>
+        <eid>e15</eid>
         <voice>
           <Chord>
-            <eid>e15</eid>
+            <eid>e16</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e16</eid>
+              <eid>e17</eid>
               <pitch>62</pitch>
               <tpc>16</tpc>
               <velocity>80</velocity>
@@ -188,13 +190,13 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e17</eid>
+        <eid>e18</eid>
         <voice>
           <Chord>
-            <eid>e18</eid>
+            <eid>e19</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e19</eid>
+              <eid>e20</eid>
               <pitch>62</pitch>
               <tpc>16</tpc>
               <velocity>80</velocity>
@@ -203,13 +205,13 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e20</eid>
+        <eid>e21</eid>
         <voice>
           <Chord>
-            <eid>e21</eid>
+            <eid>e22</eid>
             <durationType>whole</durationType>
             <Note>
-              <eid>e22</eid>
+              <eid>e23</eid>
               <pitch>62</pitch>
               <tpc>16</tpc>
               <velocity>80</velocity>

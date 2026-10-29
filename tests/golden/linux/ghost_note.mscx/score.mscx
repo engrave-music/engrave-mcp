@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.70">
+<museScore version="5.00">
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
@@ -25,15 +25,16 @@
     <metaTag name="workNumber"></metaTag>
     <metaTag name="workTitle"></metaTag>
     <Part id="1">
+      <eid>e2</eid>
       <Staff>
-        <eid>e2</eid>
+        <eid>e3</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
         </Staff>
       <Staff>
-        <eid>e3</eid>
-        <linkedTo>e2</linkedTo>
+        <eid>e4</eid>
+        <linkedTo>e3</linkedTo>
         <StaffType group="tablature">
           <name>tab6StrSimple</name>
           <lines>6</lines>
@@ -58,10 +59,11 @@
           <useNumbers>1</useNumbers>
           </StaffType>
         </Staff>
-      <trackName>Guitar</trackName>
       <Instrument id="guitar-steel">
-        <longName>Guitar</longName>
-        <shortName>dist.guit.</shortName>
+        <InstrumentLabel>
+          <longName>Guitar</longName>
+          <shortName>dist.guit.</shortName>
+          </InstrumentLabel>
         <trackName></trackName>
         <transposeDiatonic>-7</transposeDiatonic>
         <transposeChromatic>-12</transposeChromatic>
@@ -117,45 +119,45 @@
       <VBox>
         <height>10</height>
         <sizeIsSpatiumDependent>1</sizeIsSpatiumDependent>
-        <eid>e4</eid>
+        <eid>e5</eid>
         <Text>
-          <eid>e5</eid>
           <style>composer</style>
+          <eid>e6</eid>
           <text>Music by Muse</text>
           </Text>
         <Text>
-          <eid>e6</eid>
           <style>poet</style>
+          <eid>e7</eid>
           <text>Words by Matt Bellamy</text>
           </Text>
         </VBox>
       <Measure>
-        <eid>e7</eid>
+        <eid>e8</eid>
         <voice>
           <KeySig>
-            <eid>e8</eid>
+            <eid>e9</eid>
             <concertKey>0</concertKey>
             </KeySig>
           <TimeSig>
-            <eid>e9</eid>
+            <eid>e10</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Dynamic>
             <subtype>f</subtype>
             <velocity>96</velocity>
-            <eid>e10</eid>
+            <eid>e11</eid>
             </Dynamic>
           <Tempo>
             <tempo>2.25</tempo>
-            <eid>e11</eid>
+            <eid>e12</eid>
             <text><sym>metNoteQuarterUp</sym> = 135</text>
             </Tempo>
           <Chord>
-            <eid>e12</eid>
+            <eid>e13</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e13</eid>
+              <eid>e14</eid>
               <pitch>59</pitch>
               <tpc>19</tpc>
               <fret>19</fret>
@@ -163,10 +165,10 @@
               </Note>
             </Chord>
           <Chord>
-            <eid>e14</eid>
+            <eid>e15</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e15</eid>
+              <eid>e16</eid>
               <parentheses>both</parentheses>
               <pitch>57</pitch>
               <tpc>17</tpc>
@@ -175,23 +177,37 @@
               <ghost>1</ghost>
               </Note>
             <NoteParenGroup>
+              <Parenthesis>
+                <eid>e17</eid>
+                </Parenthesis>
+              <Parenthesis>
+                <horizontalDirection>right</horizontalDirection>
+                <eid>e18</eid>
+                </Parenthesis>
               <Notes>
-                <NoteIdx>0</NoteIdx>
+                <NoteEID>e16</NoteEID>
                 </Notes>
               </NoteParenGroup>
             <NoteParenGroup>
+              <Parenthesis>
+                <eid>e19</eid>
+                </Parenthesis>
+              <Parenthesis>
+                <horizontalDirection>right</horizontalDirection>
+                <eid>e20</eid>
+                </Parenthesis>
               <Notes>
-                <NoteIdx>0</NoteIdx>
+                <NoteEID>e16</NoteEID>
                 </Notes>
               </NoteParenGroup>
             </Chord>
           <Rest>
-            <eid>e16</eid>
+            <eid>e21</eid>
             <durationType>half</durationType>
             </Rest>
           <BarLine>
             <subtype>end</subtype>
-            <eid>e17</eid>
+            <eid>e22</eid>
             </BarLine>
           </voice>
         </Measure>
@@ -200,12 +216,12 @@
       <Measure>
         <voice>
           <Chord>
-            <eid>e18</eid>
-            <linkedTo>e12</linkedTo>
+            <eid>e23</eid>
+            <linkedTo>e13</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e19</eid>
-              <linkedTo>e13</linkedTo>
+              <eid>e24</eid>
+              <linkedTo>e14</linkedTo>
               <pitch>59</pitch>
               <tpc>19</tpc>
               <fret>19</fret>
@@ -213,12 +229,12 @@
               </Note>
             </Chord>
           <Chord>
-            <eid>e20</eid>
-            <linkedTo>e14</linkedTo>
+            <eid>e25</eid>
+            <linkedTo>e15</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid>e21</eid>
-              <linkedTo>e15</linkedTo>
+              <eid>e26</eid>
+              <linkedTo>e16</linkedTo>
               <parentheses>both</parentheses>
               <pitch>57</pitch>
               <tpc>17</tpc>
@@ -227,20 +243,29 @@
               <ghost>1</ghost>
               </Note>
             <NoteParenGroup>
+              <Parenthesis>
+                <eid>e27</eid>
+                <linkedTo>e19</linkedTo>
+                </Parenthesis>
+              <Parenthesis>
+                <horizontalDirection>right</horizontalDirection>
+                <eid>e28</eid>
+                <linkedTo>e20</linkedTo>
+                </Parenthesis>
               <Notes>
-                <NoteIdx>0</NoteIdx>
+                <NoteEID>e26</NoteEID>
                 </Notes>
               </NoteParenGroup>
             </Chord>
           <Rest>
-            <eid>e22</eid>
-            <linkedTo>e16</linkedTo>
+            <eid>e29</eid>
+            <linkedTo>e21</linkedTo>
             <durationType>half</durationType>
             </Rest>
           <BarLine>
             <subtype>end</subtype>
-            <eid>e23</eid>
-            <linkedTo>e17</linkedTo>
+            <eid>e30</eid>
+            <linkedTo>e22</linkedTo>
             </BarLine>
           </voice>
         </Measure>

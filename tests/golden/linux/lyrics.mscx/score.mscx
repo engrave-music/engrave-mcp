@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.70">
+<museScore version="5.00">
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
@@ -22,22 +22,24 @@
     <metaTag name="workNumber"></metaTag>
     <metaTag name="workTitle"></metaTag>
     <Part id="1">
-      <Staff>
-        <eid>e2</eid>
-        <StaffType group="pitched">
-          <name>stdNormal</name>
-          </StaffType>
-        </Staff>
+      <eid>e2</eid>
       <Staff>
         <eid>e3</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
+        </Staff>
+      <Staff>
+        <eid>e4</eid>
+        <StaffType group="pitched">
+          <name>stdNormal</name>
+          </StaffType>
         <defaultClef>F</defaultClef>
         </Staff>
-      <trackName>Piano</trackName>
       <Instrument id="piano">
-        <shortName>Pno.</shortName>
+        <InstrumentLabel>
+          <shortName>Pno.</shortName>
+          </InstrumentLabel>
         <trackName>Piano</trackName>
         <minPitchP>21</minPitchP>
         <maxPitchP>108</maxPitchP>
@@ -68,22 +70,22 @@
       </Part>
     <Staff id="1">
       <Measure>
-        <eid>e4</eid>
+        <eid>e5</eid>
         <voice>
           <TimeSig>
-            <eid>e5</eid>
+            <eid>e6</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Chord>
-            <eid>e6</eid>
+            <eid>e7</eid>
             <durationType>whole</durationType>
             <Lyrics>
-              <eid>e7</eid>
+              <eid>e8</eid>
               <text>12321</text>
               </Lyrics>
             <Note>
-              <eid>e8</eid>
+              <eid>e9</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
@@ -91,25 +93,25 @@
           </voice>
         </Measure>
       <Measure>
-        <eid>e9</eid>
+        <eid>e10</eid>
         <voice>
           <Chord>
-            <eid>e10</eid>
+            <eid>e11</eid>
             <durationType>whole</durationType>
             <Lyrics>
-              <eid>e11</eid>
+              <eid>e12</eid>
               <text>12321</text>
               </Lyrics>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid>e12</eid>
+              <eid>e13</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <BarLine>
             <subtype>end</subtype>
-            <eid>e13</eid>
+            <eid>e14</eid>
             </BarLine>
           </voice>
         </Measure>
@@ -118,19 +120,19 @@
       <Measure>
         <voice>
           <TimeSig>
-            <eid>e14</eid>
+            <eid>e15</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Chord>
-            <eid>e15</eid>
+            <eid>e16</eid>
             <durationType>whole</durationType>
             <Lyrics>
-              <eid>e16</eid>
+              <eid>e17</eid>
               <text>12321</text>
               </Lyrics>
             <Note>
-              <eid>e17</eid>
+              <eid>e18</eid>
               <pitch>48</pitch>
               <tpc>14</tpc>
               </Note>
@@ -140,22 +142,22 @@
       <Measure>
         <voice>
           <Chord>
-            <eid>e18</eid>
+            <eid>e19</eid>
             <durationType>whole</durationType>
             <Lyrics>
-              <eid>e19</eid>
+              <eid>e20</eid>
               <text>12321</text>
               </Lyrics>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid>e20</eid>
+              <eid>e21</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <BarLine>
             <subtype>end</subtype>
-            <eid>e21</eid>
+            <eid>e22</eid>
             </BarLine>
           </voice>
         </Measure>

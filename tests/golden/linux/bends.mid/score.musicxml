@@ -83,7 +83,7 @@
       </score-part>
     </part-list>
   <part id="P1">
-    <measure number="1" width="217.32">
+    <measure number="1" width="217.22">
       <print>
         <system-layout>
           <system-margins>
@@ -110,14 +110,14 @@
         </attributes>
       <direction placement="above" system="only-top">
         <direction-type>
-          <metronome parentheses="no" default-x="-37.76" relative-y="20">
+          <metronome parentheses="no" default-x="-37.69" default-y="20">
             <beat-unit>quarter</beat-unit>
             <per-minute>120</per-minute>
             </metronome>
           </direction-type>
         <sound tempo="120"/>
         </direction>
-      <note default-x="79.41" default-y="-10" dynamics="88.89">
+      <note default-x="79.3" default-y="-10" dynamics="88.89">
         <pitch>
           <step>D</step>
           <octave>4</octave>
@@ -127,7 +127,7 @@
         <type>whole</type>
         </note>
       </measure>
-    <measure number="2" width="150.41">
+    <measure number="2" width="150.43">
       <note default-x="12.5" default-y="-10" dynamics="88.89">
         <pitch>
           <step>D</step>
@@ -138,7 +138,7 @@
         <type>whole</type>
         </note>
       </measure>
-    <measure number="3" width="150.41">
+    <measure number="3" width="150.43">
       <note default-x="12.5" default-y="-10" dynamics="88.89">
         <pitch>
           <step>D</step>
@@ -149,7 +149,7 @@
         <type>whole</type>
         </note>
       </measure>
-    <measure number="4" width="150.41">
+    <measure number="4" width="150.43">
       <note default-x="12.5" default-y="-10" dynamics="88.89">
         <pitch>
           <step>D</step>
@@ -160,7 +160,7 @@
         <type>whole</type>
         </note>
       </measure>
-    <measure number="5" width="150.41">
+    <measure number="5" width="150.43">
       <note default-x="12.5" default-y="-10" dynamics="88.89">
         <pitch>
           <step>D</step>
@@ -171,7 +171,7 @@
         <type>whole</type>
         </note>
       </measure>
-    <measure number="6" width="159.61">
+    <measure number="6" width="159.63">
       <note default-x="12.5" default-y="-10" dynamics="88.89">
         <pitch>
           <step>D</step>
