@@ -348,6 +348,7 @@ MUSESCORE_XMAKE_MANIFEST = {
                 "${SOURCE_ROOT}/src/engraving/editing/edittie.cpp",
                 "${SOURCE_ROOT}/src/engraving/editing/edittimesig.cpp",
                 "${SOURCE_ROOT}/src/engraving/editing/edittremolo.cpp",
+                "${SOURCE_ROOT}/src/engraving/editing/edittuplet.cpp",
                 "${SOURCE_ROOT}/src/engraving/editing/editvisibility.cpp",
                 "${SOURCE_ROOT}/src/engraving/editing/editvoice.cpp",
                 "${SOURCE_ROOT}/src/engraving/editing/exchangevoices.cpp",

@@ -4,3 +4,4 @@ fixtures/**/*.mid binary
 fixtures/**/*.gp binary
 fixtures/**/*.mscz binary
 *.sf2 binary
+licenses/FluidR3Mono_License.md -text

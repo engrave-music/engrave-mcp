@@ -44,7 +44,7 @@ The old branches `mcp/v4.7.5`, `mcp/v4.7.6` and their `mcp-*` tags are frozen hi
 - **Sync script**: Synchronization is automated with `tools/sync-upstream.py`:
   - Subcommands: `absorb` (initial one-time absorption), `sync [--target SHA]`, `continue`,
     and `abort`.
-  - Stage machine: state lives in `.git/sync-upstream.json` (version 3), written atomically
+  - Stage machine: state lives in `.git/sync-upstream.json` (version 4), written atomically
     (temporary file plus `os.replace`) before each mutation:
     `start -> temp-branch -> upstream-merge -> upstream-commit`
     `-> framework-merge -> check -> fast-forward -> cleanup`.
@@ -54,15 +54,18 @@ The old branches `mcp/v4.7.5`, `mcp/v4.7.6` and their `mcp-*` tags are frozen hi
     the sync started (including resolution work staged or committed) and restores the branch.
     Rerunning `sync` automatically aborts any leftover temporary sync branch first.
   - Persisted removal plan: planned removals of trimmed paths and their report entries are
-    written to state before anything is removed from index or worktree. Resuming replays the
-    plan; `abort` deletes planned paths untracked by the restored branch so the worktree
-    is left completely clean.
-  - Report sections: summary output, commit messages, and final report record:
-    1. Upstream changes discarded on trimmed paths (`discardedChanges`).
-    2. New upstream files dropped under trimmed prefixes (`droppedAdditions`).
-    3. Conflict resolutions that differ from the merge sides (`resolutions`).
+    written to state before anything is removed from index or worktree, for both merges.
+    Resuming replays the plan; `abort` deletes planned paths untracked by the restored branch
+    so the worktree is left completely clean.
+  - Report sections: each merge commit message carries its own merge's sections; the
+    summary and final report combine both:
+    1. Changes discarded on trimmed paths (`discardedChanges`).
+    2. New files dropped under trimmed prefixes (`droppedAdditions`).
+    3. Conflict resolutions (`resolutions`), each classified against the base/ours/theirs
+       sides recorded while the conflict was open: `ours`, `theirs`, `neither` or `deleted`.
 - **Tool-made merge commits only**:
-  - All merge commits are created by the tool with provenance trailers: `Sync-Upstream: <sha>`
+  - Both merges run with `--no-commit`; the tool applies `TRIM`, checks the tree, then
+    commits. All merge commits are created by the tool with provenance trailers: `Sync-Upstream: <sha>`
     on the upstream merge, and `Framework-Commit: <sha>` on the framework merge.
   - Foreign merge commits (missing trailers, wrong trailers, or unexpected parents) are
     refused with instructions.
@@ -79,8 +82,9 @@ The old branches `mcp/v4.7.5`, `mcp/v4.7.6` and their `mcp-*` tags are frozen hi
   - Framework reachable only via a side parent is refused: the sync merge base must match
     the recorded first-parent framework commit to prevent dropping framework history.
   - The framework commit must never move backwards.
-  - If the framework gitlink moved, the second merge runs `Merge upstream/muse-framework <F>
-    into muse/` using `-s ort -Xsubtree=muse`. If unchanged, the second merge is skipped.
+  - If the framework gitlink moved, the second merge runs `-s ort -Xsubtree=muse` and the
+    tool commits it as `Merge upstream/muse-framework <F> into muse/`. If unchanged, the
+    second merge is skipped.
 - **Rename detection disabled (`-Xno-renames`)**:
   - Upstream merge runs `-s ort -Xno-renames`. Relative to the merge base, our side deletes
     all trimmed paths and adds `muse/`, which caused `ort` rename detection to match a trimmed
@@ -102,14 +106,18 @@ The old branches `mcp/v4.7.5`, `mcp/v4.7.6` and their `mcp-*` tags are frozen hi
     Any other collision is treated as a real conflict for human inspection.
   - Modify/delete conflicts on `TRIM` paths keep the deletion and are reported.
   - New upstream files added under trimmed prefixes are deleted and reported.
+  - The same rules apply to the framework subtree merge. Its paths are fork-root paths
+    (`muse/framework/...`), so `TRIM` entries apply unchanged.
   - All other conflicts stop the script for human intervention.
 - **Tree integrity checks**: Before fast-forwarding, verifies no gitlink in index, no path
   in `TRIM` exists, `muse/` is non-empty, and `muse/` equals framework tree when there is no
-  local framework delta.
+  local framework delta. The no-gitlink/no-trimmed-path check also runs before the
+  framework merge commit.
 - **Documented limits**:
   - No proof that a human resolution preserved other content: the tool does not prove
-    resolution correctness, but prints all paths whose resolution differs from both merge
-    sides in the final report for reviewer inspection.
+    resolution correctness, but classifies every manual resolution (`ours`, `theirs`,
+    `neither`, `deleted`) in the merge commit and final report, so taking our side and
+    discarding an incoming change is visible for review.
   - Fast-forwardable upstream targets not supported: upstream never contains our commits;
     every sync produces a merge commit.
   - Side-parent framework reachability refused: cannot determine if content reached `muse/`.
@@ -132,6 +140,7 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 | absorb (A1 baseline) | `7150f2b05e` | `0ea613f` | `ecdc6e7` | Not a pin. Absorbed muse_framework into `muse/` via subtree. Base for A1/A2. |
 | main tip (A1 accepted) | `0adbf67ed7` | `0ea613f` | `ecdc6e7` | Not a pin. Hardened sync tool and 29-step test suite; accepted by Terra. |
 | `engrave-1` | `3a0fff5731` | `0ea613f` | `ecdc6e7` | First pin. Merges `a2/port` (`2c6b77282f`, the 5.0 port at parity) into `main`; the tree differs from `2c6b77282f` only in `tools/`. Validated on Windows and linux-host (superproject `engrave/a2` `c090d81`); superproject pins it at `abc13ca`. |
+| `engrave-2` | `e9136ee340` | `2abc2de` | `ecdc6e7` | A3 hard trim: 8 deletion commits `9857df5da2..251cf4662c` (9621 files removed, each built cold on linux-host with all lanes passing), sync tool fixes (framework `TRIM`, classified resolutions; merge `5e30174935`), then sync of upstream `0ea613f..2abc2de` (15 trimmed changes discarded, 0 additions dropped; `parts_tests.cpp` keeps the A2 Qt-free topic). Validated on Windows and linux-host (superproject `engrave/a3` `d950834`). Kept on purpose: `src/importexport/mnx/` (uncompiled, future build option), `share/templates/` (A4 create-from-template), the CMake files the manifest generator reads, and test fixtures used by the lanes. |
 
 The superproject's `.gitmodules` now tracks `branch = main`.
 
