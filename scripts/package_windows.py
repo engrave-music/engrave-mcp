@@ -34,18 +34,7 @@ STAGED_FONT_DIRS = (
 
 
 def resolve_engine_root(root: Path, override: Path | None = None) -> Path:
-    if override:
-        return override.resolve()
-    candidates = [
-        root / "vendor/musescore",
-        root / ".upstream/engrave-wt/a3",
-        root.parent / "musescore-mcp/.upstream/engrave-wt/a3",
-        root.parent / "musescore-mcp/vendor/musescore",
-    ]
-    for c in candidates:
-        if (c / "muse/framework").is_dir() or (c / "version.cmake").is_file():
-            return c.resolve()
-    return (root / "vendor/musescore").resolve()
+    return (override or root / "vendor/musescore").resolve()
 
 
 def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Path, str]]:
