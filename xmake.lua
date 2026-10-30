@@ -695,6 +695,7 @@ target("engraving_playback_tests")
         path.join(source_root, "src/engraving/tests/playback/bendsrenderer_tests.cpp"),
         path.join(source_root, "src/engraving/tests/repeat_tests.cpp"),
         path.join(source_root, "src/engraving/tests/parts_tests.cpp"),
+        path.join(source_root, "src/engraving/tests/savehiddenparts_tests.cpp"),
         path.join(source_root, "src/engraving/tests/utils/scorecomp.cpp"),
         path.join(source_root, "src/engraving/tests/utils/scorerw.cpp"),
         path.join(source_root, "src/engraving/tests/utils/testutils.cpp"),
