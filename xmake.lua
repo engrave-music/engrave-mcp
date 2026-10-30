@@ -19,10 +19,12 @@
 -- the included engine build and are not repeated here.
 --
 -- Host code still includes engine headers directly, through engrave's internal
--- headers (score/score_edit.h, score/score_query.h, audio/engine_audio.h,
--- runtime/noqt_runtime.h), so the engine's include directories and its feature
--- defines stay project-wide for now: they change class layouts and interfaces
--- that the host translation units see.  S2 makes both private to the library.
+-- headers (engrave/src/score/score_edit.h, engrave/src/audio/engine_audio.h,
+-- engrave/src/runtime/noqt_runtime.h, ...), so the engine's include directories
+-- and its feature defines stay project-wide until A5 moves the host onto the
+-- public API: they change class layouts and interfaces that the host
+-- translation units see.  The engine build's example_embedder proves that the
+-- public API itself needs neither.
 
 set_project("musescore-mcp")
 set_xmakever("3.1.1")

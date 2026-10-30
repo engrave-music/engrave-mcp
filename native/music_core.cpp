@@ -1,10 +1,10 @@
 #include "music_core.h"
 
 #include "composition.h"
-#include "audio/engine_audio.h"
-#include "runtime/noqt_runtime.h"
-#include "audio/score_audio.h"
-#include "score/score_metadata.h"
+#include "engrave/src/audio/engine_audio.h"
+#include "engrave/src/runtime/noqt_runtime.h"
+#include "engrave/src/audio/score_audio.h"
+#include "engrave/src/score/score_metadata.h"
 
 #include "engraving/dom/excerpt.h"
 #include "engraving/dom/masterscore.h"
