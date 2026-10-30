@@ -105,16 +105,15 @@ def check_preflight_eol(repo_root: Path) -> None:
         if len(tokens) < 2:
             continue
         w_eol = tokens[1]
-        if w_eol in ("w/crlf", "w/mixed"):
-            attrs = tokens[2:]
-            has_crlf_attr = any("eol=crlf" in a for a in attrs)
-            has_minus_text = any("-text" in a for a in attrs)
-            if not (has_crlf_attr or has_minus_text):
-                violations.append((path, w_eol, " ".join(attrs)))
+        attrs = tokens[2:]
+        binary = any("-text" in a for a in attrs)
+        crlf_allowed = binary or any("eol=crlf" in a for a in attrs)
+        if (w_eol == "w/mixed" and not binary) or (w_eol == "w/crlf" and not crlf_allowed):
+            violations.append((path, w_eol, " ".join(attrs)))
 
     if violations:
         sys.stderr.write(
-            f"Error: git ls-files --eol shows unexpected CRLF/mixed line endings in {len(violations)} file(s):\n"
+            f"Error: git ls-files --eol in {repo_root} shows unexpected CRLF/mixed line endings in {len(violations)} file(s):\n"
             + "\n".join(f"  - {p}: {w} ({a})" for p, w, a in violations[:25])
             + "\n"
         )
@@ -527,13 +526,17 @@ def main() -> None:
     # Pre-flight check 1: expected binaries in build dir
     check_preflight_binaries(build_dir, exe_suffix)
 
-    # Pre-flight check 2: git line endings
+    # Pre-flight check 2: git line endings in both checkouts
     check_preflight_eol(repo_root)
+    check_preflight_eol(engine_source)
 
     # Validate --only lanes if requested
     selected_lanes = LANE_NAMES
-    if args.only:
+    if args.only is not None:
         requested = [item.strip() for item in args.only.split(",") if item.strip()]
+        if not requested:
+            sys.stderr.write("Error: --only selects no lanes\n")
+            sys.exit(1)
         for name in requested:
             if name not in LANE_NAMES:
                 sys.stderr.write(f"Error: Unknown lane: {name}\n")
