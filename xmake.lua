@@ -1,4 +1,4 @@
-﻿-- Qt-free xmake build for the pinned MuseScore native engine (5.0 layout).
+-- Qt-free xmake build for the pinned MuseScore native engine (5.0 layout).
 --
 -- This is the primary build. CMake is not invoked. The checked-in manifest
 -- (xmake/manifest.lua) is generated from the engine's own CMake source lists by
