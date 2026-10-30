@@ -1,6 +1,6 @@
 """Cross-check the native semantic dump against the independent Python MSCX parser.
 
-``native/score_semantic.cpp`` dumps a score's musical content from the in-memory
+``the engine's engrave/src/score/score_semantic.cpp`` dumps a score's musical content from the in-memory
 engraving DOM.  The golden tree stores that dump next to the MSCX the same score
 produced (``tests/golden/<platform>/<fixture>/semantic.json`` and ``score.mscx``).
 This script re-parses the MSCX with ``parse_mscx()`` from ``test_roundtrip.py``
@@ -376,7 +376,7 @@ def check_excerpts(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> 
     dump_names = [excerpt.get("name", "") for excerpt in dump.get("excerpts", [])]
     parse_names = [excerpt.get("title", "") for excerpt in parsed.get("excerpts", [])]
     if not parse_names:
-        # The MSCX export holds the master score only (native/noqt_runtime.cpp); the
+        # The MSCX export holds the master score only (engrave/src/runtime/noqt_runtime.cpp); the
         # dump comes from the MSCZ, which also stores the excerpts. Count the captured
         # excerpt-N folders instead; without any, the field has no MSCX reference.
         folders = parsed.get("excerptFolders")
