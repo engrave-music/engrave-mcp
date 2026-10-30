@@ -8,7 +8,10 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
   tag every pinned SHA). webmscore and `patches/` are retired.
   Native compilation is the target; do not introduce Node.js or WASM as runtime dependencies.
 - No computer use, screenshots, simulated input, or dependence on a desktop MuseScore install.
-- The build is Qt-free xmake (`xmake.lua`, `xmake/manifest.lua`); validate Windows and Linux.
+- The build is Qt-free xmake: the engine's build lives in the fork (`xmake/engrave.lua`,
+  `xmake/manifest.lua`, pinned engine package recipes), the host's in this repository's
+  `xmake.lua`, which includes the engine build from `vendor/musescore`; validate Windows
+  and Linux.
   Work natively on Windows (PowerShell, `.pixi/envs/native/python.exe`). Linux means the
   physical host `ssh <linux-host>` (repo `~/OSS/musescore-mcp`); never use WSL for this project.
   The plan of record is `docs/dev/roadmap-engrave.md` (`roadmap-4.7.6.md` is done/superseded).
