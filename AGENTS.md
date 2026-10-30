@@ -1,6 +1,8 @@
-# musescore-mcp
+# engrave-mcp
 
-Native C++ MCP host backed by a pinned, trimmed MuseScore engine. This is a
+Native C++ MCP host for the engrave engine, a pinned, trimmed fork of MuseScore
+core. Renamed from musescore-mcp on 2026-10-30; the binary, the MCP server name
+and the `MUSIC_MCP_*` env vars keep their old names until A5. This is a
 separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 
 - The engine is the fork github.com/Locietta/engrave (renamed from Locietta/MuseScore on 2026-10-28), consumed as the shallow submodule

@@ -1,6 +1,6 @@
-# musescore-mcp
+# engrave-mcp
 
-`musescore-mcp` 是基于 MuseScore 裁剪引擎构建的原生 C++ 语言模型上下文协议（MCP）服务，采用 `stdio` 通信，协议版本锁定为 `2025-11-25`。
+`engrave-mcp` 是基于 engrave 引擎（MuseScore 核心的裁剪分支）构建的原生 C++ 语言模型上下文协议（MCP）服务，采用 `stdio` 通信，协议版本锁定为 `2025-11-25`。
 
 项目旨在为大语言模型提供精确可控的乐谱符号生成与排版导出能力。完全脱离 Node.js、WASM、桌面版安装与 GUI 自动化交互。
 
