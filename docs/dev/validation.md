@@ -741,3 +741,31 @@ passed all 25 entries and the six corruption, inventory, read and semantic
 negative controls; their semantic JSON files were byte-identical. EIDs and
 multi-measure-rest references occur in the saved files, but the A0 dump does
 not directly record their identities. No seed fixture has a hidden instrument.
+
+## Unified acceptance runner (`scripts/run_lanes.py`)
+
+The standalone lane runners in `notes/a2/verify/run_all_a2.ps1` (Windows) and `notes/a2/linux/run_all_a2_linux.sh` (Linux) are superseded by `scripts/run_lanes.py`, which is tracked, cross-platform, and validates line endings and binary completeness before starting. The `notes/` runners remain in place for reference.
+
+### Usage
+
+```bash
+# Windows
+python scripts/run_lanes.py \
+  --build-dir <build-dir> \
+  --engine-source <engine-source-dir> \
+  --assets <assets-dir> \
+  --soundfont <soundfont-path> \
+  --output <output-dir> \
+  [--only lane1,lane2] \
+  [--tag <tag>]
+
+# Linux
+python scripts/run_lanes.py \
+  --build-dir build/xmake-linux \
+  --engine-source $HOME/OSS/engrave \
+  --assets build/assets-50 \
+  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 \
+  --output artifacts/verify/run
+```
+
+All 29 acceptance lanes run in order. Pre-flight checks refuse execution (exit 2) if required binaries are missing or if uncommitted files contain unexpected CRLF/mixed line endings.
