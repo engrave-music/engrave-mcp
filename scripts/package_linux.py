@@ -19,22 +19,114 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE_ENV = ROOT / ".pixi/envs/native"
 SOUNDFONT = ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
-AUDIO_THIRDPARTY = ROOT / "vendor/musescore/src/framework/audio/thirdparty"
-# License texts of the codecs and synthesizer bundled into the binary. Paths are
-# relative to AUDIO_THIRDPARTY and are copied with a thirdparty-<name>- prefix so
-# same-named COPYING files cannot overwrite each other.
-THIRDPARTY_LICENSES = (
-    ("fdk-aac", "fdk-aac-2.0.3/NOTICE"),
-    ("flac", "flac-1.4.3/COPYING.FDL"),
-    ("flac", "flac-1.4.3/COPYING.GPL"),
-    ("flac", "flac-1.4.3/COPYING.LGPL"),
-    ("flac", "flac-1.4.3/COPYING.Xiph"),
-    ("fluidsynth", "fluidsynth-2.3.3/LICENSE"),
-    ("lame", "COPYING"),
-    ("lame", "LICENSE"),
-    ("opus", "opus-1.5.2/COPYING"),
-    ("opusenc", "libopusenc-0.2.1/COPYING"),
+CODEC_NOTICES = (
+    ("fdk-aac", "codecs/fdk-aac/NOTICE"),
+    ("flac", "codecs/flac/COPYING.FDL"),
+    ("flac", "codecs/flac/COPYING.GPL"),
+    ("flac", "codecs/flac/COPYING.LGPL"),
+    ("flac", "codecs/flac/COPYING.Xiph"),
+    ("lame", "codecs/lame/COPYING"),
+    ("lame", "codecs/lame/LICENSE"),
+    ("opus", "codecs/opus/COPYING"),
+    ("opusenc", "codecs/opusenc/COPYING"),
 )
+
+ENGINE_THIRDPARTY_NOTICES = (
+    ("fluidsynth", "muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/LICENSE", "thirdparty-fluidsynth-LICENSE"),
+    ("dtl", "src/engraving/thirdparty/dtl/COPYING", "thirdparty-dtl-COPYING"),
+    ("beatroot", "src/importexport/midi/thirdparty/beatroot/COPYING", "thirdparty-beatroot-COPYING"),
+)
+
+STAGED_FONT_DIRS = (
+    "bravura", "campania", "edwin", "finalebroadway",
+    "finalemaestro", "gootville", "leland", "mscore", "musejazz", "petaluma",
+)
+
+
+def resolve_engine_root(root: Path, override: Path | None = None) -> Path:
+    if override:
+        return override.resolve()
+    candidates = [
+        root / "vendor/musescore",
+        root / ".upstream/engrave-wt/a3",
+        root.parent / "musescore-mcp/.upstream/engrave-wt/a3",
+        root.parent / "musescore-mcp/vendor/musescore",
+    ]
+    for c in candidates:
+        if (c / "muse/framework").is_dir() or (c / "version.cmake").is_file():
+            return c.resolve()
+    return (root / "vendor/musescore").resolve()
+
+
+def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Path, str]]:
+    """Collect all required package notices.
+    Returns list of (category, source_path, dest_relative_to_licenses).
+    Fails if any expected notice is missing.
+    """
+    notices: list[tuple[str, Path, str]] = []
+
+    # 1. Superproject LICENSE
+    super_license = root / "LICENSE"
+    if not super_license.is_file():
+        raise RuntimeError(f"Missing superproject LICENSE: {super_license}")
+    notices.append(("superproject", super_license, "LICENSE"))
+
+    # 2. Entire licenses/ directory in superproject (including FluidR3Mono_License.md)
+    licenses_dir = root / "licenses"
+    if not licenses_dir.is_dir():
+        raise RuntimeError(f"Missing licenses/ directory: {licenses_dir}")
+    soundfont_license = licenses_dir / "FluidR3Mono_License.md"
+    if not soundfont_license.is_file():
+        raise RuntimeError(f"Missing SoundFont notice: {soundfont_license}")
+    for p in sorted(licenses_dir.rglob("*")):
+        if p.is_file():
+            rel = p.relative_to(licenses_dir).as_posix()
+            notices.append(("superproject-licenses", p, rel))
+
+    # 3. Upstream engine license(s)
+    upstream_licenses = sorted(engine_root.glob("LICENSE*"))
+    if not upstream_licenses:
+        raise RuntimeError(f"No upstream LICENSE file found under {engine_root}")
+    for p in upstream_licenses:
+        if p.is_file():
+            notices.append(("upstream", p, p.name))
+
+    # 4. Engine third-party notices
+    for name, rel, dst_name in ENGINE_THIRDPARTY_NOTICES:
+        src = engine_root / rel
+        if not src.is_file():
+            if name == "fluidsynth":
+                raise RuntimeError(f"Missing bundled FluidSynth license: {src}")
+            continue
+        notices.append((f"thirdparty-{name}", src, dst_name))
+
+    # 5. Codec notices
+    for name, rel in CODEC_NOTICES:
+        src = licenses_dir / rel
+        if not src.is_file():
+            raise RuntimeError(f"Missing bundled codec notice: {src}")
+        notices.append((f"codec-{name}", src, f"thirdparty-{name}-{src.name}"))
+
+    # 6. Font directory notices
+    fonts_root = engine_root / "fonts"
+    if not fonts_root.is_dir():
+        raise RuntimeError(f"Missing fonts directory: {fonts_root}")
+    fonts_readme = fonts_root / "README.md"
+    if fonts_readme.is_file():
+        notices.append(("font-root", fonts_readme, "font-README.md"))
+
+    for font_name in STAGED_FONT_DIRS:
+        fdir = fonts_root / font_name
+        found = [p for p in sorted(fdir.glob("*")) if any(k in p.name.upper() for k in ["OFL", "LICENSE", "COPYING", "README"])]
+        if not found:
+            if font_name == "mscore" and fonts_readme.is_file():
+                pass
+            else:
+                raise RuntimeError(f"Missing font directory notice for staged font: {font_name} under {fdir}")
+        for f in found:
+            notices.append((f"font-{font_name}", f, f"font-{font_name}-{f.name}"))
+
+    return notices
 
 HOST_RUNTIME = (
     re.compile(r"^(?:libc|libm|libmvec|libpthread|libdl|librt|libresolv|libutil|libanl|libBrokenLocale|libthread_db|libc_malloc_debug)\.so(?:\.|$)"),
@@ -237,17 +329,29 @@ def glibc_metadata(ldd, entries):
 
 
 def main():
-    if sys.platform != "linux":
-        raise SystemExit("Linux packaging must run on Linux")
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/linux-package")
     parser.add_argument("--binary", type=Path, help="Override the built executable")
+    parser.add_argument("--source-root", type=Path, help="Override engine root (default: vendor/musescore)")
+    parser.add_argument("--check-notices", action="store_true", help="Validate all required package notices without packaging")
     args = parser.parse_args()
+
+    engine_root = resolve_engine_root(ROOT, args.source_root)
+    notices = collect_package_notices(ROOT, engine_root)
+
+    if args.check_notices:
+        print(f"Validated {len(notices)} package notices across superproject, engine, codecs, and fonts:")
+        for cat, src, dst in notices:
+            print(f"  [{cat}] {src} -> licenses/{dst}")
+        return
+
+    if sys.platform != "linux":
+        raise SystemExit("Linux packaging must run on Linux")
 
     output = args.output.resolve()
     binary = (args.binary or ROOT / "build/native-linux/musescore-mcp").resolve()
     assets = (ROOT / ".runtime/assets").resolve()
-    upstream = ROOT / "vendor/musescore"
+    upstream = engine_root
 
     if output.is_relative_to(assets):
         raise SystemExit("Package output must not be inside .runtime/assets")
@@ -266,15 +370,8 @@ def main():
         if not SOUNDFONT.is_file():
             raise RuntimeError(f"SoundFont is not a regular file: {SOUNDFONT}")
         soundfont = SOUNDFONT
-    licenses = sorted(source for source in upstream.glob("LICENSE*") if source.is_file())
-    if not licenses:
-        raise RuntimeError(f"No upstream LICENSE file found under {upstream}")
-    thirdparty_licenses = []
-    for name, relative in THIRDPARTY_LICENSES:
-        source = AUDIO_THIRDPARTY / name / relative
-        if not source.is_file():
-            raise RuntimeError(f"Missing bundled license text: {source}")
-        thirdparty_licenses.append((source, f"thirdparty-{name}-{source.name}"))
+# Handled by collect_package_notices
+
     conda_meta = NATIVE_ENV / "conda-meta"
     if not conda_meta.is_dir():
         raise RuntimeError(f"Missing active native environment metadata: {conda_meta}")
@@ -316,11 +413,11 @@ def main():
         copy_checked(soundfont, output / "soundfonts/FluidR3Mono_GM.sf3")
 
     license_directory = output / "licenses"
-    license_directory.mkdir()
-    for source in licenses:
-        copy_checked(source, license_directory / source.name)
-    for source, name in thirdparty_licenses:
-        copy_checked(source, license_directory / name)
+    license_directory.mkdir(parents=True, exist_ok=True)
+    for cat, src, dst in notices:
+        target = license_directory / dst
+        target.parent.mkdir(parents=True, exist_ok=True)
+        copy_checked(src, target)
     for source in provenance:
         copy_checked(source, license_directory / source.name)
 
