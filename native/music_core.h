@@ -1,12 +1,12 @@
 #pragma once
 
-#include "audio_mix.h"
-#include "audio_output.h"
-#include "export_options.h"
-#include "score_edit.h"
-#include "score_query.h"
-#include "score_excerpts.h"
-#include "runtime_assets.h"
+#include "audio/audio_mix.h"
+#include "audio/audio_output.h"
+#include "score/export_options.h"
+#include "score/score_edit.h"
+#include "score/score_query.h"
+#include "score/score_excerpts.h"
+#include "runtime/runtime_assets.h"
 
 #include <cstddef>
 #include <cstdint>

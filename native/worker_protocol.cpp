@@ -1,8 +1,8 @@
 #include "worker_protocol.h"
-#include "atomic_file.h"
-#include "audio_output.h"
+#include "runtime/atomic_file.h"
+#include "audio/audio_output.h"
 #include "background_job.h"
-#include "engine_audio.h"
+#include "audio/engine_audio.h"
 #include <cstdint>
 #include <fstream>
 #include <iostream>
