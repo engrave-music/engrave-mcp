@@ -93,9 +93,8 @@ ENGRAVE_TEST_SUPPORT = {
 }
 includes(engine_build)
 
-local engine_manifest = ENGRAVE_MANIFEST
-if not engine_manifest or not engine_manifest.targets then
-    configure_failure("the engine build did not export ENGRAVE_MANIFEST")
+if not ENGRAVE_DEFINES or not ENGRAVE_INCLUDES or not ENGRAVE_NOQT_SUPPORT then
+    configure_failure("the engine build did not export ENGRAVE_DEFINES, ENGRAVE_INCLUDES, or ENGRAVE_NOQT_SUPPORT")
     return
 end
 if not ENGRAVE_SOURCE_ROOT
@@ -103,26 +102,6 @@ if not ENGRAVE_SOURCE_ROOT
     configure_failure("the engine build was pointed at an unexpected source root: "
         .. tostring(ENGRAVE_SOURCE_ROOT) .. " (expected " .. source_root .. ")")
     return
-end
-
--- Resolve the manifest's portable placeholders (the manifest is engine-only, so
--- every placeholder is the engine checkout).
-local function expand(item)
-    return (item:gsub("%${([A-Z_]+)}", function(name)
-        if name == "PROJECT_ROOT" or name == "SOURCE_ROOT" then
-            return source_root
-        end
-        print("error: unknown manifest placeholder: " .. name)
-        return item
-    end))
-end
-
-local function expand_list(items)
-    local result = {}
-    for _, item in ipairs(items or {}) do
-        table.insert(result, expand(item))
-    end
-    return result
 end
 
 -------------------------------------------------------------------------------
@@ -152,13 +131,13 @@ end
 
 -- The engine's include roots.  Kept project-wide: the host adapters include
 -- engine headers (see the file header).
-add_includedirs(ENGRAVE_MANIFEST_INCLUDES)
+add_includedirs(ENGRAVE_INCLUDES)
 
 -- The Qt-free feature selection comes from the engine manifest generator (its
 -- PROJECT_DEFINES list), so there is one place to change what the engine
 -- compiles as.  It must be project-wide: these macros change class layouts and
 -- interfaces that native/ host code includes as well.
-add_defines(table.unpack(engine_manifest.defines))
+add_defines(table.unpack(ENGRAVE_DEFINES))
 
 -- Qt platform macros normally come from <QtGlobal>; the pinned engine and
 -- native/ adapters branch on them under NO_QT_SUPPORT. Define them once,
@@ -203,15 +182,14 @@ local host_includes = {
 }
 -- engine_audio.cpp reaches into FluidSynth (soundfont/synth settings) and the
 -- audio facade includes the engine's audio headers, so the audio targets get
--- the FluidSynth and audio include roots from the engine manifest.
-local audio_includes = expand_list(engine_manifest.targets.native_fluidsynth.includes)
-table.insert(audio_includes, path.join(source_root, "muse", "framework", "audio"))
+-- the FluidSynth and audio include roots from the engine export.
+local audio_includes = ENGRAVE_AUDIO_INCLUDES
 
 -- Every host target gets the engine's global defines (upstream's
 -- add_compile_definitions, e.g. KORS_PROFILER_ENABLED) because it includes
 -- engine headers; the project-wide list above covers the rest.
 local function add_engine_flags(include_audio)
-    add_defines(table.unpack(engine_manifest.global_defines))
+    add_defines(table.unpack(ENGRAVE_GLOBAL_DEFINES))
     add_includedirs(host_includes)
     add_includedirs("$(builddir)/xmake-generated")
     if include_audio then
@@ -292,16 +270,16 @@ target_end()
 
 -- Qt-free adapters and the engine-side sources they compile.  The engine
 -- sources (font faces, MIDI export, MusicXML configuration) come from the
--- engine manifest's noqt_support entry; the host files are this project's.
-local noqt_spec = engine_manifest.targets.noqt_support
+-- engine export ENGRAVE_NOQT_SUPPORT; the host files are this project's.
+local noqt_spec = ENGRAVE_NOQT_SUPPORT
 
 target("noqt_support")
     set_kind("static")
     add_deps("muse_generated", "host_generated", "muse_global", "muse_draw", "muse_mpe",
         "engraving", "iex_musicxml")
-    add_files(expand_list(noqt_spec.sources))
+    add_files(noqt_spec.sources)
     add_defines(noqt_spec.defines)
-    add_includedirs(expand_list(noqt_spec.includes))
+    add_includedirs(noqt_spec.includes)
     -- native filesystem and settings adapters
     add_files(
         path.join(project_root, "native", "noqt_filesystem.cpp"),
@@ -462,8 +440,8 @@ target("audio_engine_link_check")
     set_default(false)
     add_deps("muse_generated", "host_generated", "muse_audio_engine")
     add_files(path.join(project_root, "native", "audio_engine_link_check.cpp"))
-    add_defines(engine_manifest.targets.muse_audio_engine.defines)
-    add_includedirs(expand_list(engine_manifest.targets.muse_audio_engine.includes))
+    add_defines(ENGRAVE_AUDIO_ENGINE.defines)
+    add_includedirs(ENGRAVE_AUDIO_ENGINE.includes)
     add_includedirs("$(builddir)/xmake-generated")
     add_links("z")
     if is_plat("windows") then

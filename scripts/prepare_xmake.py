@@ -3,14 +3,11 @@
 
 The file intentionally does not invoke CMake, Ninja or xmake.  It checks that
 the engine checkout has the MuseScore 5.0 layout the build expects, that the
-engine carries its own xmake build (``xmake/engrave.lua``, the checked-in
-``xmake/manifest.lua`` and the pinned package recipes), that the local native
-package environment provides what native/ needs, and that the host's own
-package recipe is present.  ``--generate-manifest`` runs the engine's manifest
-generator from the engine checkout.
+engine carries its own xmake build (``xmake/engrave.lua`` and the pinned package
+recipes), that the local native package environment provides what native/ needs,
+and that the host's own package recipe is present.
 
 Usage:
-    python scripts/prepare_xmake.py --generate-manifest
     python scripts/prepare_xmake.py --check
 """
 
@@ -55,16 +52,12 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
     # manifest generator's input.
     required_files = {
         "MuseScore submodule": source_root / "version.cmake",
-        "global module": source_root / "muse" / "framework" / "global" / "CMakeLists.txt",
-        "engraving module": source_root / "src" / "engraving" / "CMakeLists.txt",
         "framework config template": source_root
         / "muse"
         / "framework"
         / "cmake"
         / "muse_framework_config.h.in",
         "engine xmake build": source_root / "xmake" / "engrave.lua",
-        "engine source manifest": source_root / "xmake" / "manifest.lua",
-        "engine manifest generator": source_root / "tools" / "capture_xmake_manifest.py",
         "tool schema source": project_root / "native" / "tools.json",
         "host asio recipe": project_root / "xmake" / "packages" / "asio.lua",
         "native env cairo header": native_root / "include" / "cairo" / "cairo.h",
@@ -93,23 +86,8 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
     return errors
 
 
-def generate_manifest(source_root: Path) -> int:
-    generator = source_root / "tools" / "capture_xmake_manifest.py"
-    if not generator.is_file():
-        print(f"error: engine has no manifest generator: {generator}", file=sys.stderr)
-        return 1
-    command = [sys.executable, str(generator), "--source-root", str(source_root)]
-    print("running: " + " ".join(command))
-    return subprocess.run(command).returncode
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--generate-manifest",
-        action="store_true",
-        help="regenerate the engine's xmake/manifest.lua from its CMake source lists",
-    )
     parser.add_argument(
         "--check",
         action="store_true",
@@ -124,11 +102,6 @@ def main(argv: list[str] | None = None) -> int:
 
     project_root = Path(__file__).resolve().parents[1]
     source_root = (args.source_root or _engine_source_root(project_root)).resolve()
-
-    if args.generate_manifest:
-        code = generate_manifest(source_root)
-        if code != 0:
-            return code
 
     errors = validate(project_root, source_root)
     if errors:

@@ -6,7 +6,7 @@
 
 ## 1. 架构设计与约束
 
-- **构建系统**：以 `xmake.lua` 与显式源码清单为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux x86_64 均已验证）。引擎的 xmake 构建（引擎 targets、源码清单、固定版本包 recipe 与清单生成器）自 A4 S0 起位于引擎 Fork 检出内（`xmake/engrave.lua`、`xmake/manifest.lua`、`xmake/packages/`、`tools/capture_xmake_manifest.py`）；本仓库 `xmake.lua` 只保留宿主 targets，并通过 `includes()` 从 `vendor/musescore`（或 `--musescore_source` 指定的检出）引入引擎构建。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块；该检出必须带有 `xmake/engrave.lua`）。
+- **构建系统**：以 `xmake.lua` 与显式源码清单为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux x86_64 均已验证）。引擎的 xmake 构建（引擎 targets、目录通配符与固定版本包 recipe）位于引擎 Fork 检出内（`xmake/engrave.lua`、`xmake/packages/`）；本仓库 `xmake.lua` 只保留宿主 targets，并通过 `includes()` 从 `vendor/musescore`（或 `--musescore_source` 指定的检出）引入引擎构建。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块；该检出必须带有 `xmake/engrave.lua`）。
 - **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件，以及 MuseScore 4 音频引擎（`muse_audio_engine`：FluidSynth 合成、混音、混响与 SoundTrackWriter）及其编码器 LAME（MP3）、libFLAC、Opus/libopusenc（Ogg）、fdk-aac（AAC），全部来自子模块并以 Qt-free 方式编译；音频仅在 `--worker` 子进程中渲染。libsndfile 已从构建依赖和 pixi 环境中移除；测试分析用的 Python `soundfile` wheel 自带其运行时副本，因此解码检查不依赖系统 libsndfile。捆绑的原生依赖包括 FreeType、HarfBuzz、FluidSynth、FLAC、Opus/libopusenc、LAME 与 fdk-aac（Brotli 依赖已移除）。
 - **底层适配**：采用原生文件系统、进程内设置、FreeType/HarfBuzz 字体引擎和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
 
@@ -70,7 +70,7 @@ python scripts/generate_resources.py --check
    build/assets_test.exe build/scratch_assets artifacts/assets_test <test_font_path>
    ```
 
-xmake 的生成目标在各自构建目录写入框架配置与工具定义（引擎的 `muse_generated` 写 `muse_framework_config.h`，宿主的 `host_generated` 写 `tool_schema.inc`）；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。源码清单随引擎提交为引擎检出的 `xmake/manifest.lua`，常规构建不运行生成器：该脚本从引擎自身的 CMake 源清单（`muse/framework/*/CMakeLists.txt`、`src/*/CMakeLists.txt`）生成清单，位于引擎检出的 `tools/capture_xmake_manifest.py`（回归测试 `tools/test_manifest_generator.py`），仅在引擎目录结构变化时重新生成（在引擎检出内运行 `python tools/capture_xmake_manifest.py`，或在本仓库运行 `python scripts/prepare_xmake.py --generate-manifest`）。
+xmake 的生成目标在各自构建目录写入框架配置与工具定义（引擎的 `muse_generated` 写 `muse_framework_config.h`，宿主的 `host_generated` 写 `tool_schema.inc`）；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。引擎各模块源码通过 `xmake/engrave.lua` 中的目录通配符（folder globs）直接按模块目录引入，不再维护静态源码清单与清单生成器；新增源码文件落入对应模块目录即自动参与编译。
 
 Windows 和 Linux 已验证长 UTF-8 schema 的完整传递、修改 schema 只重编译 `noqt_engine.cpp`，以及恢复后的无变化构建不编译/链接。生成器分块编码字符串，避免 MSVC 单个字符串长度限制。验收命令：
 
