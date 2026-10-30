@@ -140,6 +140,7 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 | absorb (A1 baseline) | `7150f2b05e` | `0ea613f` | `ecdc6e7` | Not a pin. Absorbed muse_framework into `muse/` via subtree. Base for A1/A2. |
 | main tip (A1 accepted) | `0adbf67ed7` | `0ea613f` | `ecdc6e7` | Not a pin. Hardened sync tool and 29-step test suite; accepted by Terra. |
 | `engrave-1` | `3a0fff5731` | `0ea613f` | `ecdc6e7` | First pin. Merges `a2/port` (`2c6b77282f`, the 5.0 port at parity) into `main`; the tree differs from `2c6b77282f` only in `tools/`. Validated on Windows and linux-host (superproject `engrave/a2` `c090d81`); superproject pins it at `abc13ca`. |
+| `engrave-2` | `e9136ee340` | `2abc2de` | `ecdc6e7` | A3 hard trim: 8 deletion commits `9857df5da2..251cf4662c` (9621 files removed, each built cold on linux-host with all lanes passing), sync tool fixes (framework `TRIM`, classified resolutions; merge `5e30174935`), then sync of upstream `0ea613f..2abc2de` (15 trimmed changes discarded, 0 additions dropped; `parts_tests.cpp` keeps the A2 Qt-free topic). Validated on Windows and linux-host (superproject `engrave/a3` `d950834`). Kept on purpose: `src/importexport/mnx/` (uncompiled, future build option), `share/templates/` (A4 create-from-template), the CMake files the manifest generator reads, and test fixtures used by the lanes. |
 
 The superproject's `.gitmodules` now tracks `branch = main`.
 
