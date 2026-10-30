@@ -223,6 +223,39 @@
   {
    "fixture": "layout_elements.mscx",
    "kind": "different",
+   "output": "page-0.png.json",
+   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
+   "sha256": {
+    "linux": "f961a94babf2ab0c2108493aebf34ef62d81478f97b6fe1578146abf219857aa",
+    "windows": "88ac57e8d0477dc192435e89023b7209438908f28374efd6c04cb2a6eed68263"
+   },
+   "step": "A3"
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "kind": "different",
+   "output": "page-0.svg",
+   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
+   "sha256": {
+    "linux": "a8f2771064eea0584dc00cf9eb6d0e6f0a98bf233a5f0091e0309e4c61e37416",
+    "windows": "752afe824f8d5822b0f1f5e64ff9ee71bb7b286548c9cd314a133e9d8350d9e6"
+   },
+   "step": "A3"
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "kind": "different",
+   "output": "score.pdf.json",
+   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
+   "sha256": {
+    "linux": "3abc5704ac96fa7dbe5c715c35df39b14548ffe53adcf9777da37459cb1cdb40",
+    "windows": "da06e2a277ca8fd61098f494c8a21ce4912ea9d75ba85592b080c1f3b314107b"
+   },
+   "step": "A3"
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "kind": "different",
    "output": "semantic-source.json",
    "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 moves the fermata tempo restore from tick 7679 to 7680, changing the 72-to-144 BPM transition by one MIDI tick; this timing change is accepted in the A2 decisions.",
    "sha256": {
@@ -285,6 +318,39 @@
     "windows": "1a918a0083795fa128b7481c45d994c59524815ed709d44393c66029ec6a0980"
    },
    "step": "A2"
+  },
+  {
+   "fixture": "pedal.mscx",
+   "kind": "different",
+   "output": "page-0.png.json",
+   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
+   "sha256": {
+    "linux": "04aaed4bc553731610c46477f11465c17de537d3c18f435e7092107074b649dc",
+    "windows": "2545e10f0902517784fdfb2528e239471f6a839483a2de29657ac1d1e4712434"
+   },
+   "step": "A3"
+  },
+  {
+   "fixture": "pedal.mscx",
+   "kind": "different",
+   "output": "page-0.svg",
+   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
+   "sha256": {
+    "linux": "e2126c031c197309d0b82190ba39f7f5d5cab13b2e59145502b7b2f82f953cfe",
+    "windows": "2d45c256c02201f8de452fa6772812f0cb21f9d9355c5230508ba71433d067bf"
+   },
+   "step": "A3"
+  },
+  {
+   "fixture": "pedal.mscx",
+   "kind": "different",
+   "output": "score.pdf.json",
+   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
+   "sha256": {
+    "linux": "e8042d71a60842cb9d86c44bf1030cbd1962f9670c112b1e38f44e31c38e6265",
+    "windows": "62a203f991a81ef0b9c5051f5661cac3b9f67a76eae8c0539b53c1f0bcda728d"
+   },
+   "step": "A3"
   },
   {
    "fixture": "pedal.mscx",
@@ -384,6 +450,39 @@
     "windows": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6"
    },
    "step": "A2"
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "kind": "different",
+   "output": "page-0.png.json",
+   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
+   "sha256": {
+    "linux": "3ce2f6018cf0711689f698df945f81a17ad8202b0c2546409dc126ecba7e11a9",
+    "windows": "5ee4415ff0029396d870c7c3dafe90965fb6f6cc8092d68247242bca8329c53c"
+   },
+   "step": "A3"
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "kind": "different",
+   "output": "page-0.svg",
+   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
+   "sha256": {
+    "linux": "0793087e5338a18fb62e9ecc4b6af317bda20bf061a76e9ae885655558cc4f3a",
+    "windows": "24e6b74f74c16322a5f23120a3bb8b31025c5744c150a971d1d3fca73f5882c5"
+   },
+   "step": "A3"
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "kind": "different",
+   "output": "score.pdf.json",
+   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
+   "sha256": {
+    "linux": "fd0dd764b9af1b698f189ba4ea19e5e33ebb97076244901827ead74edf1b4d6c",
+    "windows": "e8f973e25ec5db519265b12df1c9c649be788c117ceaaee40f0c6ec7287fadb0"
+   },
+   "step": "A3"
   },
   {
    "fixture": "repeat71.mscx",
