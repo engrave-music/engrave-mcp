@@ -131,6 +131,9 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 | --- | --- | --- | --- | --- |
 | absorb (A1 baseline) | `7150f2b05e` | `0ea613f` | `ecdc6e7` | Not a pin. Absorbed muse_framework into `muse/` via subtree. Base for A1/A2. |
 | main tip (A1 accepted) | `0adbf67ed7` | `0ea613f` | `ecdc6e7` | Not a pin. Hardened sync tool and 29-step test suite; accepted by Terra. |
+| `engrave-1` | `3a0fff5731` | `0ea613f` | `ecdc6e7` | First pin. Merges `a2/port` (`2c6b77282f`, the 5.0 port at parity) into `main`; the tree differs from `2c6b77282f` only in `tools/`. Validated on Windows and linux-host (superproject `engrave/a2` `c090d81`); superproject pins it at `abc13ca`. |
+
+The superproject's `.gitmodules` now tracks `branch = main`.
 
 ## History: mcp/v4.7.x (frozen)
 

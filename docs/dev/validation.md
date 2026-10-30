@@ -698,3 +698,24 @@ Linux tree was not recaptured (host down) and will fail clearly until it is.
    - Known limitations: near-transparent content and empty path geometry can pass the SVG checks; the four SVG-only pages have no independent PNG ink check.
    - Negative controls fail: stacked glyphs, a glyph moved off the page by an ancestor transform, a translated path, a removed glyph group, one removed glyph, every use scaled by 1e-6, root opacity 0, and blank, transparent and corner-shrunken PNGs.
    - Lanes `oracle_harness` and `rendered_page` in `notes/a2/verify/run_all_a2.ps1`.
+
+## Roadmap-engrave A2: Linux validation (2026-10-30)
+
+Independent review by GPT-6.1 Terra accepted the Linux verification and cross-platform pair.
+
+- Source-reviewed: commit `d5389f0` fixed the Linux static link failure by placing `FLAC++` before `FLAC` in `xmake/packages/flac.lua`. Commits `088951a` (`test(golden): migrate Linux 4.7.6 references`), `c509044` (`test(golden): rebaseline Linux 5.0 outputs`) and `c090d81` (`test(golden): pin Linux 5.0 allowances`) synchronized Linux golden assets.
+- Executed, Linux (`ssh <linux-host>`, GCC 15.3): `bash notes/a2/linux/run_all_a2_linux.sh a2` passed all 28 lanes (`overall: PASSED (28 lanes; 0 failed, 0 pending)`).
+- Executed, golden classification: initial 5.0 vs 4.7.6 comparison produced A=46 / R=223 / U=0 with no classifier errors. No new allowances were added; 46 existing allow-list entries received Linux SHA-256 hash pins. The Linux golden lane passed with 317 identical + 46 allowed (0 different, missing, extra, or errors).
+- Executed, cross-platform audio: the 22-fixture paired comparison passed on both Linux and Windows (`linux-audio-pair`). Frames, sample rate, and channels matched exactly. All maxima were from `slurs.mscz` and met existing tolerances:
+
+| Feature | Maximum absolute delta | Existing tolerance |
+| --- | ---: | ---: |
+| peak | 0.019408 | 0.025 |
+| rms | 0.001524 | 0.002 |
+| spectralCentroidHz | 44.5 Hz | 50 Hz |
+| rmsEnvelope | 0.02438 | 0.03 |
+| centroidEnvelope | 982.5 Hz | 1100 Hz |
+
+Environment lessons:
+- After a host crash mid-build, do not trust incremental state. Move `build/xmake-linux` and the project-local `.xmake/` aside and build cold.
+- Worker-edited files on Windows can be CRLF while git shows them as clean. Check `git ls-files --eol` before captures.
