@@ -719,3 +719,25 @@ Independent review by GPT-6.1 Terra accepted the Linux verification and cross-pl
 Environment lessons:
 - After a host crash mid-build, do not trust incremental state. Move `build/xmake-linux` and the project-local `.xmake/` aside and build cold.
 - Worker-edited files on Windows can be CRLF while git shows them as clean. Check `git ls-files --eol` before captures.
+
+## Forward-compatibility corpus
+
+`tests/compat-corpus/<pin>/` preserves the original MSCZ exports and their
+expected A0 semantic dumps. Each `manifest.json` entry records the byte hash,
+writer, upstream, framework and superproject commits, source and covered
+features. Every pin adds its own files; `scripts/capture_compat_corpus.py`
+captures the golden fixtures and edit scenarios through the pinned host.
+Round trips and externally produced scores are added when available.
+
+After each sync, the `compat_corpus` lane runs `scripts/test_compat_corpus.py`
+with the current `semantic_dump` and assets on Windows and Linux. It verifies
+the inventory and hashes, reopens every older file, and compares the complete
+semantic JSON. A failure blocks the pin until a compatibility reader or a
+written migration decision resolves it. The corpus covers only its fixtures
+and dump fields; it does not prove compatibility with future releases.
+
+The `engrave-1` seed has 22 golden inputs and three edit scenarios. Both hosts
+passed all 25 entries and the six corruption, inventory, read and semantic
+negative controls; their semantic JSON files were byte-identical. EIDs and
+multi-measure-rest references occur in the saved files, but the A0 dump does
+not directly record their identities. No seed fixture has a hidden instrument.
