@@ -2,4 +2,4 @@
 	path = vendor/musescore
 	url = https://github.com/Locietta/engrave.git
 	shallow = true
-	branch = mcp/v4.7.6
+	branch = main
