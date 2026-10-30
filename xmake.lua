@@ -2,30 +2,27 @@
 --
 -- The engine's build belongs to the engine.  The fork (github.com/Locietta/
 -- engrave, consumed as the pinned vendor/musescore submodule) carries its own
--- xmake build: project settings, the pinned package recipes, the checked-in
--- source manifest (xmake/manifest.lua), the manifest generator and the engine
--- module targets, all in the engine checkout's xmake/ directory.  This file
--- includes that build - from vendor/musescore by default, or from the checkout
--- named by --musescore_source - and keeps what is the host's:
+-- xmake build: project settings, the pinned package recipes, the engine module
+-- targets, the engrave adapter library and their tests, all in the engine
+-- checkout's xmake/ directory.  This file includes that build - from
+-- vendor/musescore by default, or from the checkout named by
+-- --musescore_source - and keeps what is the host's:
 --
 --   host_generated                   MCP tool schema (tool_schema.inc)
---   noqt_support                     native font/settings/MIDI/MusicXML adapters
---   score_engine                     private engraving and format adapters
---   engine_audio / music_core        audio driver and typed document facade
+--   music_core                       typed document facade and composition
 --   musescore_mcp                    stdio JSON-RPC host (musescore-mcp binary)
---   test targets                     core and adapter regression binaries
+--   musescore_mcp_test, music_core_test   host regression binaries
 --
 -- Engine targets (muse_global, muse_draw, muse_mpe, engraving, iex_musicxml,
--- iex_guitarpro, iex_midi_import, native_fluidsynth, muse_audio_engine,
--- muse_generated) are defined by the included engine build and are not repeated
--- here.
+-- iex_guitarpro, iex_midi, native_fluidsynth, muse_audio_engine,
+-- muse_generated), the engrave library and its tests and probes are defined by
+-- the included engine build and are not repeated here.
 --
--- Host code still includes engine headers directly (native/score_edit.h,
--- native/score_query.h, native/engine_audio.h, native/noqt_runtime.h), so the
--- engine's include directories and its feature defines stay project-wide for
--- now: they change class layouts and interfaces that the host translation units
--- see.  S1 moves those adapters into the engine and S2 makes both private to
--- the library.
+-- Host code still includes engine headers directly, through engrave's internal
+-- headers (score/score_edit.h, score/score_query.h, audio/engine_audio.h,
+-- runtime/noqt_runtime.h), so the engine's include directories and its feature
+-- defines stay project-wide for now: they change class layouts and interfaces
+-- that the host translation units see.  S2 makes both private to the library.
 
 set_project("musescore-mcp")
 set_xmakever("3.1.1")
@@ -82,19 +79,11 @@ if not os.isfile(engine_build) then
     return
 end
 
--- The engine build reads the engine sources from this checkout and the host
--- supplies the Qt-free test runtime the upstream gtest suites need (it still
--- lives in native/, see the note in the engine's xmake/tests.lua).
 ENGRAVE_SOURCE_ROOT = source_root
-ENGRAVE_TEST_SUPPORT = {
-    runtime_target = "score_engine",
-    harness_dir = path.join(project_root, "native", "tests"),
-    utf8_manifest = path.join(project_root, "native", "utf8.manifest"),
-}
 includes(engine_build)
 
-if not ENGRAVE_DEFINES or not ENGRAVE_INCLUDES or not ENGRAVE_NOQT_SUPPORT then
-    configure_failure("the engine build did not export ENGRAVE_DEFINES, ENGRAVE_INCLUDES, or ENGRAVE_NOQT_SUPPORT")
+if not ENGRAVE_DEFINES or not ENGRAVE_INCLUDES or not ENGRAVE_INTERNAL_INCLUDES then
+    configure_failure("the engine build did not export ENGRAVE_DEFINES, ENGRAVE_INCLUDES, or ENGRAVE_INTERNAL_INCLUDES")
     return
 end
 if not ENGRAVE_SOURCE_ROOT
@@ -128,6 +117,10 @@ end
 if os.isdir(native_lib) then
     add_linkdirs(native_lib)
 end
+-- zlib comes from the native environment for every binary, the engine's tests
+-- included: the engine's zip container links it but leaves the choice to the
+-- including project.  cairo is linked by engrave itself.
+add_links("z")
 
 -- The engine's include roots.  Kept project-wide: the host adapters include
 -- engine headers (see the file header).
@@ -180,21 +173,19 @@ local host_includes = {
     path.join(source_root, "src", "engraving"),
     path.join(source_root, "muse", "framework", "draw"),
 }
--- engine_audio.cpp reaches into FluidSynth (soundfont/synth settings) and the
--- audio facade includes the engine's audio headers, so the audio targets get
--- the FluidSynth and audio include roots from the engine export.
+-- The host includes engrave's audio headers, which include the engine's, so
+-- host targets get the FluidSynth and audio include roots from the engine export.
 local audio_includes = ENGRAVE_AUDIO_INCLUDES
 
 -- Every host target gets the engine's global defines (upstream's
 -- add_compile_definitions, e.g. KORS_PROFILER_ENABLED) because it includes
 -- engine headers; the project-wide list above covers the rest.
-local function add_engine_flags(include_audio)
+local function add_engine_flags()
     add_defines(table.unpack(ENGRAVE_GLOBAL_DEFINES))
     add_includedirs(host_includes)
     add_includedirs("$(builddir)/xmake-generated")
-    if include_audio then
-        add_includedirs(audio_includes)
-    end
+    add_includedirs(audio_includes)
+    add_includedirs(ENGRAVE_INTERNAL_INCLUDES)
 end
 
 -------------------------------------------------------------------------------
@@ -265,233 +256,52 @@ target("host_generated")
 target_end()
 
 -------------------------------------------------------------------------------
--- Host adapters
+-- Host targets
 -------------------------------------------------------------------------------
+-- The engine adapters (runtime, io, render, audio, score) are the engine's
+-- engrave library, which also defines their tests and probes; the host links
+-- it and includes its internal headers ("score/score_edit.h", ...).
 
--- Qt-free adapters and the engine-side sources they compile.  The engine
--- sources (font faces, MIDI export, MusicXML configuration) come from the
--- engine export ENGRAVE_NOQT_SUPPORT; the host files are this project's.
-local noqt_spec = ENGRAVE_NOQT_SUPPORT
+local native_dir = path.join(project_root, "native")
 
-target("noqt_support")
-    set_kind("static")
-    add_deps("muse_generated", "host_generated", "muse_global", "muse_draw", "muse_mpe",
-        "engraving", "iex_musicxml")
-    add_files(noqt_spec.sources)
-    add_defines(noqt_spec.defines)
-    add_includedirs(noqt_spec.includes)
-    -- native filesystem and settings adapters
-    add_files(
-        path.join(project_root, "native", "noqt_filesystem.cpp"),
-        path.join(project_root, "native", "noqt_settings.cpp")
-    )
-    add_links("z", {public = true})
-
-target("score_engine")
-    set_kind("static")
-    add_deps("muse_generated", "host_generated", "noqt_support", "muse_draw",
-        "engraving", "iex_musicxml")
-    add_deps("iex_guitarpro", "iex_midi_import")
-    add_files(
-        path.join(project_root, "native", "atomic_file.cpp"),
-        path.join(project_root, "native", "cairo_painter.cpp"),
-        path.join(project_root, "native", "composition.cpp"),
-        path.join(project_root, "native", "noqt_application.cpp"),
-        path.join(project_root, "native", "noqt_runtime.cpp"),
-        path.join(project_root, "native", "score_metadata.cpp"),
-        path.join(project_root, "native", "score_positions.cpp"),
-        path.join(project_root, "native", "score_semantic.cpp"),
-        path.join(project_root, "native", "score_render.cpp"),
-        path.join(project_root, "native", "score_excerpts.cpp"),
-        path.join(project_root, "native", "score_imports.cpp"),
-        path.join(project_root, "native", "midi_import_adapter.cpp"),
-        path.join(project_root, "native", "runtime_assets.cpp"),
-        path.join(project_root, "native", "score_query.cpp"),
-        path.join(project_root, "native", "score_edit.cpp"),
-        path.join(project_root, "native", "score_audio.cpp")
-    )
-    add_engine_flags(true)
-    add_links("cairo", "z", {public = true})
-    if not is_plat("windows") then
-        add_links("m", {public = true})
-    end
-
--- Headless audio-engine driver.  It needs both the engraving playback model
--- (score_engine) and the Qt-free engine/encoders (muse_audio_engine); the
--- process-wide engine state lives in engine_audio.cpp.
-target("engine_audio")
-    set_kind("static")
-    add_deps("muse_generated", "host_generated", "score_engine", "muse_audio_engine", "native_fluidsynth")
-    add_files(path.join(project_root, "native", "engine_audio.cpp"))
-    add_engine_flags(true)
-
+-- Typed document facade and the composition model it drives.
 target("music_core")
     set_kind("static")
-    add_deps("muse_generated", "host_generated", "score_engine", "engine_audio")
-    add_files(path.join(project_root, "native", "music_core.cpp"))
-    add_engine_flags(true)
+    add_deps("muse_generated", "host_generated", "engrave")
+    add_files(path.join(native_dir, "music_core.cpp"), path.join(native_dir, "composition.cpp"))
+    add_engine_flags()
 
--- The importers keep their upstream module boundary; the engine build defines
--- them.  They were linked through noqt_support before S0; keep that edge so the
--- link order of the host binaries does not change.
-target("iex_guitarpro")
-    add_deps("noqt_support")
-target_end()
-
-target("iex_midi_import")
-    add_deps("noqt_support")
-target_end()
-
--------------------------------------------------------------------------------
--- Host binaries and dev probes
--------------------------------------------------------------------------------
-
-target("musescore_mcp")
-    set_kind("binary")
-    set_basename("musescore-mcp")
-    add_deps("muse_generated", "host_generated", "music_core", "engine_audio")
-    add_files(
-        path.join(project_root, "native", "main.cpp"),
-        path.join(project_root, "native", "noqt_engine.cpp"),
-        path.join(project_root, "native", "async_session.cpp"),
-        path.join(project_root, "native", "background_job.cpp"),
-        path.join(project_root, "native", "worker_protocol.cpp"),
-        path.join(project_root, "native", "mcp_transport.cpp")
-    )
-    add_engine_flags(true)
-    add_packages("asio")
-    if is_plat("windows") then
-        add_defines("_WIN32_WINNT=0x0A00")
-        add_syslinks("ws2_32", "mswsock")
-    end
-    add_links("cairo", "z")
-    if is_plat("windows") then
-        add_files(path.join(project_root, "native", "utf8.manifest"))
-    else
-        add_links("m")
-    end
-
-target("noqt_probe")
-    set_kind("binary")
-    add_deps("muse_generated", "host_generated", "noqt_support")
-    add_files(
-        path.join(project_root, "native", "noqt_application.cpp"),
-        path.join(project_root, "native", "noqt_probe.cpp")
-    )
-    add_engine_flags(false)
-    add_links("z")
-    if is_plat("windows") then
-        add_files(path.join(project_root, "native", "utf8.manifest"))
-    end
-
-target("musescore_mcp_test")
-    set_kind("binary")
-    set_basename("musescore-mcp-test")
-    add_deps("muse_generated", "host_generated", "music_core", "engine_audio")
-    add_files(
-        path.join(project_root, "native", "main.cpp"),
-        path.join(project_root, "native", "noqt_engine.cpp"),
-        path.join(project_root, "native", "async_session.cpp"),
-        path.join(project_root, "native", "background_job.cpp"),
-        path.join(project_root, "native", "worker_protocol.cpp"),
-        path.join(project_root, "native", "mcp_transport.cpp")
-    )
-    add_engine_flags(true)
-    add_packages("asio")
-    add_defines("MUSIC_ASYNC_TEST_HOOKS")
-    add_links("cairo", "z")
-    if is_plat("windows") then
-        add_defines("_WIN32_WINNT=0x0A00")
-        add_syslinks("ws2_32", "mswsock")
-        add_files(path.join(project_root, "native", "utf8.manifest"))
-    else
-        add_links("m")
-    end
-
-target("noqt_support_test")
-    set_kind("binary")
-    -- engine_audio is linked so the IoC contract test can call a real host entry
-    -- point that requires the file-system service (initialize_engine_audio, which
-    -- guards on it in engine_audio.cpp); the adapter itself lives in noqt_support.
-    add_deps("muse_generated", "host_generated", "noqt_support", "engine_audio")
-    add_files(path.join(project_root, "native", "noqt_support_test.cpp"))
-    add_files(path.join(project_root, "native", "tests", "ioc_tu2.cpp"))
-    add_engine_flags(false)
-    add_links("z")
-    if is_plat("windows") then
-        add_files(path.join(project_root, "native", "utf8.manifest"))
-    end
-
-target("score_positions_test")
-    set_kind("binary")
-    add_deps("muse_generated", "host_generated", "score_engine")
-    add_files(path.join(project_root, "native", "score_positions_test.cpp"))
-    add_engine_flags(true)
-    add_links("cairo", "z")
-    if is_plat("windows") then
-        add_files(path.join(project_root, "native", "utf8.manifest"))
-    else
-        add_links("m")
-    end
-
--- Dev-only closure check for the audio engine; run_all builds it explicitly.
-target("audio_engine_link_check")
-    set_kind("binary")
-    set_default(false)
-    add_deps("muse_generated", "host_generated", "muse_audio_engine")
-    add_files(path.join(project_root, "native", "audio_engine_link_check.cpp"))
-    add_defines(ENGRAVE_AUDIO_ENGINE.defines)
-    add_includedirs(ENGRAVE_AUDIO_ENGINE.includes)
-    add_includedirs("$(builddir)/xmake-generated")
-    add_links("z")
-    if is_plat("windows") then
-        add_files(path.join(project_root, "native", "utf8.manifest"))
-    else
-        add_links("m")
-    end
-
--- Dev-only probe used by the engine_audio lane; built explicitly.
-target("engine_audio_probe")
-    set_kind("binary")
-    set_default(false)
-    add_deps("muse_generated", "host_generated", "engine_audio", "score_engine")
-    add_files(path.join(project_root, "native", "engine_audio_probe.cpp"))
-    add_engine_flags(true)
-    add_links("cairo", "z")
-    if is_plat("windows") then
-        -- PeakWorkingSetSize for the probe's memory report.
-        add_syslinks("psapi")
-        add_files(path.join(project_root, "native", "utf8.manifest"))
-    else
-        add_links("m")
-    end
-
--------------------------------------------------------------------------------
--- Adapter regression binaries
--------------------------------------------------------------------------------
-
-local function add_engine_test(name, file)
+-- The stdio JSON-RPC host: every native/ source except music_core's and the
+-- tests.  musescore-mcp-test is the same host with the async test hooks.
+local function add_host_binary(name, basename)
     target(name)
         set_kind("binary")
-        add_deps("muse_generated", "host_generated", "score_engine")
-        add_files(path.join(project_root, "native", file))
-        add_engine_flags(true)
-        add_links("cairo", "z")
-        if is_plat("windows") then add_files(path.join(project_root, "native", "utf8.manifest"))
-        else add_links("m") end
+        set_basename(basename)
+        add_deps("muse_generated", "host_generated", "music_core")
+        add_files(path.join(native_dir, "*.cpp"))
+        remove_files(path.join(native_dir, "music_core.cpp"), path.join(native_dir, "composition.cpp"),
+            path.join(native_dir, "*_test.cpp"))
+        add_engine_flags()
+        add_packages("asio")
+        if is_plat("windows") then
+            add_defines("_WIN32_WINNT=0x0A00")
+            add_syslinks("ws2_32", "mswsock")
+            add_files(path.join(native_dir, "utf8.manifest"))
+        end
     target_end()
 end
-add_engine_test("excerpts_test", "excerpts_test.cpp")
-add_engine_test("assets_test", "assets_test.cpp")
-add_engine_test("archive_test", "archive_test.cpp")
-add_engine_test("score_audio_test", "score_audio_test.cpp")
-add_engine_test("score_edit_test", "score_edit_test.cpp")
-add_engine_test("semantic_dump", "semantic_dump.cpp")
-target("score_edit_test")
-    add_defines("MUSIC_CORE_TESTING")
-    add_files(path.join(project_root, "native", "score_edit.cpp"))
+add_host_binary("musescore_mcp", "musescore-mcp")
+add_host_binary("musescore_mcp_test", "musescore-mcp-test")
+target("musescore_mcp_test")
+    add_defines("MUSIC_ASYNC_TEST_HOOKS")
 target_end()
-add_engine_test("music_core_test", "music_core_test.cpp")
+
 target("music_core_test")
-    add_deps("music_core")
+    set_kind("binary")
+    add_deps("muse_generated", "host_generated", "music_core")
+    add_files(path.join(native_dir, "music_core_test.cpp"))
+    add_engine_flags()
+    if is_plat("windows") then
+        add_files(path.join(native_dir, "utf8.manifest"))
+    end
 target_end()

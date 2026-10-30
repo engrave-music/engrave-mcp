@@ -72,6 +72,8 @@ python scripts/generate_resources.py --check
 
 xmake 的生成目标在各自构建目录写入框架配置与工具定义（引擎的 `muse_generated` 写 `muse_framework_config.h`，宿主的 `host_generated` 写 `tool_schema.inc`）；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。引擎各模块源码通过 `xmake/engrave.lua` 中的目录通配符（folder globs）直接按模块目录引入，不再维护静态源码清单与清单生成器；新增源码文件落入对应模块目录即自动参与编译。
 
+引擎适配层（原 `native/` 下 `noqt_support`、`score_engine`、`engine_audio` 的源码）自 A4 S1 起位于引擎检出的 `engrave/src/<area>/`（`runtime`、`io`、`render`、`audio`、`score`），由引擎构建中的静态库 target `engrave` 以目录通配符编译；其回归测试、探针（`*_test`、`semantic_dump`、`noqt_probe`、`engine_audio_probe`、`audio_engine_link_check`）与上游 gtest 套件的测试框架位于 `engrave/tests/`，target 定义在引擎的 `xmake/tests.lua`。本仓库 `native/` 只保留 MCP 宿主（`main`、`mcp_transport`、`async_session`、`background_job`、`worker_protocol`、`noqt_engine`、`music_core`、`composition`、`tools.json`）；`music_core` 链接 `engrave`，并以 `"<area>/<file>.h"` 形式包含其内部头文件（A5 之前的特权客户端）。zlib 与 Cairo 由包含方提供：本仓库取自 pixi `native` 环境；引擎单独构建时 zlib 使用固定版本包，Cairo 使用系统包或 `--cairo_prefix=<prefix>`。所有二进制的名称与输出位置（`$(builddir)` 下）不变。
+
 Windows 和 Linux 已验证长 UTF-8 schema 的完整传递、修改 schema 只重编译 `noqt_engine.cpp`，以及恢复后的无变化构建不编译/链接。生成器分块编码字符串，避免 MSVC 单个字符串长度限制。验收命令：
 
 ```powershell
