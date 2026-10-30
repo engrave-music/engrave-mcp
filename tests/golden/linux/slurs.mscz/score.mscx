@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.70">
+<museScore version="5.00">
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
-    <eid/>
+    <eid>e1</eid>
     <Division>480</Division>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
@@ -70,18 +70,24 @@
       <unsorted/>
       </Order>
     <Part id="1">
+      <eid>e2</eid>
       <Staff>
-        <eid/>
+        <eid>e3</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
-        <bracket type="1" span="2" col="2" visible="1"/>
+        <BracketItem>
+          <type>Brace</type>
+          <bracketSpan>2</bracketSpan>
+          <level>2</level>
+          </BracketItem>
         <barLineSpan>1</barLineSpan>
         </Staff>
-      <trackName>Piano</trackName>
       <Instrument id="piano">
-        <longName>Piano</longName>
-        <shortName>Pno.</shortName>
+        <InstrumentLabel>
+          <longName>Piano</longName>
+          <shortName>Pno.</shortName>
+          </InstrumentLabel>
         <trackName>Piano</trackName>
         <minPitchP>21</minPitchP>
         <maxPitchP>108</maxPitchP>
@@ -136,87 +142,70 @@
       </Part>
     <Staff id="1">
       <Measure>
-        <eid/>
+        <eid>e4</eid>
         <voice>
           <TimeSig>
-            <eid/>
+            <eid>e5</eid>
             <sigN>3</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Chord>
-            <eid/>
+            <eid>e6</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <grace>2</grace>
-                  </location>
-                </prev>
-              </Spanner>
             <grace16after/>
             <Note>
-              <eid/>
+              <eid>e7</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e8</eid>
             <durationType>16th</durationType>
             <grace16after/>
             <Note>
-              <eid/>
+              <eid>e9</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e10</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <grace>0</grace>
-                  </location>
-                </next>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e11</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e12</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e13</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e14</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e15</eid>
               <pitch>74</pitch>
               <tpc>16</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e16</eid>
             <dots>1</dots>
             <durationType>half</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e17</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
@@ -224,81 +213,64 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e18</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e19</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <grace>2</grace>
-                  </location>
-                </prev>
-              </Spanner>
             <grace16after/>
             <Note>
-              <eid/>
+              <eid>e20</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e21</eid>
             <durationType>16th</durationType>
             <grace16after/>
             <Note>
-              <eid/>
+              <eid>e22</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e23</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <grace>0</grace>
-                  </location>
-                </next>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e24</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e25</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e26</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e27</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e28</eid>
               <pitch>74</pitch>
               <tpc>16</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e29</eid>
             <dots>1</dots>
             <durationType>half</durationType>
             <Note>
-              <eid/>
+              <eid>e30</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
@@ -306,92 +278,73 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e31</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e32</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <fractions>1/2</fractions>
-                  <grace>1</grace>
-                  </location>
-                </next>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e33</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e34</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e35</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e36</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e37</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e38</eid>
             <durationType>half</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e39</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e40</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e41</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e42</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <fractions>-1/2</fractions>
-                  <grace>0</grace>
-                  </location>
-                </prev>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e43</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e44</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e45</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
@@ -399,91 +352,72 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e46</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e47</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <fractions>1/2</fractions>
-                  <grace>1</grace>
-                  </location>
-                </next>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e48</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e49</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e50</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e51</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e52</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e53</eid>
             <durationType>half</durationType>
             <Note>
-              <eid/>
+              <eid>e54</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e55</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e56</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e57</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <fractions>-1/2</fractions>
-                  <grace>0</grace>
-                  </location>
-                </prev>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e58</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e59</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
+              <eid>e60</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
@@ -491,91 +425,73 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e61</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e62</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <fractions>1/2</fractions>
-                  </location>
-                </next>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e63</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e64</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e65</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e66</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e67</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e68</eid>
             <durationType>half</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e69</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e70</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e71</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e72</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e73</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e74</eid>
             <durationType>quarter</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <fractions>-1/2</fractions>
-                  <grace>0</grace>
-                  </location>
-                </prev>
-              </Spanner>
             <Note>
-              <eid/>
+              <eid>e75</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
@@ -583,94 +499,76 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e76</eid>
         <LayoutBreak>
-          <eid/>
+          <eid>e77</eid>
           <subtype>line</subtype>
           </LayoutBreak>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e78</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <fractions>1/2</fractions>
-                  </location>
-                </next>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e79</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e80</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e81</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e82</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e83</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e84</eid>
             <durationType>half</durationType>
             <Note>
-              <eid/>
+              <eid>e85</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e86</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e87</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e88</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e89</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e90</eid>
             <durationType>quarter</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <fractions>-1/2</fractions>
-                  <grace>0</grace>
-                  </location>
-                </prev>
-              </Spanner>
             <Note>
-              <eid/>
+              <eid>e91</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
@@ -678,82 +576,65 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e92</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e93</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <grace>2</grace>
-                  </location>
-                </prev>
-              </Spanner>
             <grace16after/>
             <Note>
-              <eid/>
+              <eid>e94</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e95</eid>
             <durationType>16th</durationType>
             <grace16after/>
             <Note>
-              <eid/>
+              <eid>e96</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e97</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <grace>0</grace>
-                  </location>
-                </next>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e98</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e99</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e100</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e101</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e102</eid>
               <pitch>74</pitch>
               <tpc>16</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e103</eid>
             <dots>1</dots>
             <durationType>half</durationType>
             <StemDirection>up</StemDirection>
             <Note>
-              <eid/>
+              <eid>e104</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
@@ -761,11 +642,11 @@
           </voice>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e105</eid>
             <dots>1</dots>
             <durationType>half</durationType>
             <Note>
-              <eid/>
+              <eid>e106</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
@@ -773,82 +654,65 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e107</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e108</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <grace>2</grace>
-                  </location>
-                </prev>
-              </Spanner>
             <grace16after/>
             <Note>
-              <eid/>
+              <eid>e109</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e110</eid>
             <durationType>16th</durationType>
             <grace16after/>
             <Note>
-              <eid/>
+              <eid>e111</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e112</eid>
             <durationType>16th</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <grace>0</grace>
-                  </location>
-                </next>
-              </Spanner>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e113</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e114</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e115</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e116</eid>
             <durationType>16th</durationType>
             <grace16/>
             <Note>
-              <eid/>
+              <eid>e117</eid>
               <pitch>74</pitch>
               <tpc>16</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e118</eid>
             <dots>1</dots>
             <durationType>half</durationType>
             <StemDirection>down</StemDirection>
             <Note>
-              <eid/>
+              <eid>e119</eid>
               <pitch>72</pitch>
               <tpc>14</tpc>
               </Note>
@@ -856,11 +720,11 @@
           </voice>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e120</eid>
             <dots>1</dots>
             <durationType>half</durationType>
             <Note>
-              <eid/>
+              <eid>e121</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
@@ -868,34 +732,23 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e122</eid>
         <measureNumberMode>2</measureNumberMode>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e123</eid>
             <durationType>half</durationType>
             <Note>
-              <eid/>
+              <eid>e124</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e125</eid>
             <durationType>quarter</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <measures>1</measures>
-                  <fractions>-1/2</fractions>
-                  </location>
-                </next>
-              </Spanner>
             <Note>
-              <eid/>
+              <eid>e126</eid>
               <pitch>67</pitch>
               <tpc>15</tpc>
               </Note>
@@ -903,22 +756,14 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e127</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e128</eid>
             <dots>1</dots>
             <durationType>half</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <measures>-1</measures>
-                  <fractions>1/2</fractions>
-                  </location>
-                </prev>
-              </Spanner>
             <Note>
-              <eid/>
+              <eid>e129</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
@@ -926,11 +771,11 @@
           </voice>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e130</eid>
             <dots>1</dots>
             <durationType>half</durationType>
             <Note>
-              <eid/>
+              <eid>e131</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
@@ -938,43 +783,22 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e132</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e133</eid>
             <durationType>half</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <measures>1</measures>
-                  </location>
-                </next>
-              </Spanner>
             <Note>
-              <eid/>
+              <eid>e134</eid>
               <pitch>65</pitch>
               <tpc>13</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e135</eid>
             <durationType>quarter</durationType>
-            <Spanner type="Slur">
-              <Slur>
-                <eid/>
-                </Slur>
-              <next>
-                <location>
-                  <measures>1</measures>
-                  <fractions>-1/2</fractions>
-                  </location>
-                </next>
-              </Spanner>
             <Note>
-              <eid/>
+              <eid>e136</eid>
               <pitch>67</pitch>
               <tpc>15</tpc>
               </Note>
@@ -982,29 +806,14 @@
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e137</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e138</eid>
             <dots>1</dots>
             <durationType>half</durationType>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <measures>-1</measures>
-                  </location>
-                </prev>
-              </Spanner>
-            <Spanner type="Slur">
-              <prev>
-                <location>
-                  <measures>-1</measures>
-                  <fractions>1/2</fractions>
-                  </location>
-                </prev>
-              </Spanner>
             <Note>
-              <eid/>
+              <eid>e139</eid>
               <pitch>69</pitch>
               <tpc>17</tpc>
               </Note>
@@ -1012,11 +821,11 @@
           </voice>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e140</eid>
             <dots>1</dots>
             <durationType>half</durationType>
             <Note>
-              <eid/>
+              <eid>e141</eid>
               <pitch>60</pitch>
               <tpc>14</tpc>
               </Note>
@@ -1024,5 +833,73 @@
           </voice>
         </Measure>
       </Staff>
+    <SpannerMap>
+      <Slur>
+        <startElement>e10</startElement>
+        <endElement>e6</endElement>
+        <eid>e142</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e23</startElement>
+        <endElement>e19</endElement>
+        <eid>e143</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e32</startElement>
+        <endElement>e42</endElement>
+        <eid>e144</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e47</startElement>
+        <endElement>e57</endElement>
+        <eid>e145</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e62</startElement>
+        <endElement>e74</endElement>
+        <eid>e146</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e78</startElement>
+        <endElement>e90</endElement>
+        <eid>e147</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e97</startElement>
+        <endElement>e93</endElement>
+        <eid>e148</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e112</startElement>
+        <endElement>e108</endElement>
+        <eid>e149</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e125</startElement>
+        <endElement>e128</endElement>
+        <eid>e150</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e133</startElement>
+        <endElement>e138</endElement>
+        <eid>e151</eid>
+        <track>0</track>
+        </Slur>
+      <Slur>
+        <startElement>e135</startElement>
+        <endElement>e138</endElement>
+        <eid>e152</eid>
+        <track>0</track>
+        </Slur>
+      </SpannerMap>
     </Score>
   </museScore>

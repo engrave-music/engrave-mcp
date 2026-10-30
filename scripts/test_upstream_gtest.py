@@ -13,6 +13,7 @@ an explicit ``--filter`` the subset size is unknown but zero tests, skips and
 disabled tests still fail.
 """
 from __future__ import annotations
+import tempfile
 
 import argparse
 import json
@@ -30,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # or gains a skip/disable, so the numbers in docs/dev/validation.md cannot drift
 # from what is executed. Update this table together with the pinned engine.
 EXPECTED_SUITES = {
-    "engraving_playback_tests": {"total": 87, "test_suites": 4},
+    "engraving_playback_tests": {"total": 216, "test_suites": 6},
     "mpe_tests": {"total": 11, "test_suites": 2},
 }
 # Tests that may legitimately be skipped/disabled without failing the lane. The
@@ -201,24 +202,26 @@ def run_suite(
         cmd.append(f"--gtest_filter={gtest_filter}")
 
     start_time = time.perf_counter()
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-        )
-        elapsed = time.perf_counter() - start_time
-        stdout = proc.stdout
-        stderr = proc.stderr
-        rc = proc.returncode
-    except subprocess.TimeoutExpired as exc:
-        elapsed = time.perf_counter() - start_time
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
-        rc = -1
+    with tempfile.TemporaryDirectory(prefix="gtest_") as tmp_cwd:
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                cwd=tmp_cwd,
+            )
+            elapsed = time.perf_counter() - start_time
+            stdout = proc.stdout
+            stderr = proc.stderr
+            rc = proc.returncode
+        except subprocess.TimeoutExpired as exc:
+            elapsed = time.perf_counter() - start_time
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            rc = -1
 
     stats = parse_gtest_output(stdout)
 

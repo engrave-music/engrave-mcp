@@ -11,6 +11,7 @@ not depend on the vendored source path.
 | `repeat70.mscx` | MuseScore v4.7.6 `src/engraving/tests/repeat_data/repeat70.mscx` (open volta after exhausted repeats) |
 | `pedal.mscx` | webmscore-4.7.5-1 `src/importexport/mei/tests/data/pedal-01.mscx`, first Pedal given user `placement`/`offset`/`textSizeIsSpatiumDependent` overrides (v4.7.6 writes these, PR #34917) |
 | `hairpins_and_repeats.mscx` | webmscore-4.7.5-1 `src/engraving/tests/playback/playbackcontext_data/dynamics/hairpins_and_repeats.mscx` |
+| custom_part_name.mscx | webmscore-4.7.5-1 src/engraving/tests/playback/playbackcontext_data/dynamics/hairpins_and_repeats.mscx with Part <trackName> changed to Solo Klavier (differing from instrument <longName>Klavier</longName>) |
 | `linked_parts.mscx` | webmscore-4.7.5-1 `src/engraving/tests/parts_data/linked-ties-parts.mscx` (excerpts) |
 | `lyrics.mscx` | webmscore-4.7.5-1 `vtest/scores/lyrics-1.mscx` |
 | `slurs.mscz` | webmscore-4.7.5-1 `vtest/scores/slurs-11.mscz` |

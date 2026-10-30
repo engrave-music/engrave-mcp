@@ -33,10 +33,24 @@ def expected_platform():
     raise AssertionError(f"unsupported test platform: {sys.platform}")
 
 
-def engine_revision():
+def read_engine_version(source_root: Path) -> str:
+    version_cmake = source_root / "version.cmake"
+    if version_cmake.is_file():
+        text = version_cmake.read_text(encoding="utf-8")
+        def value(name: str) -> str:
+            m = re.search(r'set\(' + name + r'\s+"([^"]*)"\)', text)
+            return m.group(1) if m else "0"
+        major = value("MUSE_APP_VERSION_MAJOR")
+        minor = value("MUSE_APP_VERSION_MINOR")
+        patch = value("MUSE_APP_VERSION_PATCH")
+        return f"{major}.{minor}.{patch}"
+    return "4.7.6"
+
+
+def engine_revision(source_root: Path):
     """The 7-character engine commit the build reads at configure time."""
     result = subprocess.run(
-        ["git", "-C", str(ROOT / "vendor" / "musescore"), "rev-parse", "HEAD"],
+        ["git", "-C", str(source_root), "rev-parse", "HEAD"],
         capture_output=True, text=True, check=True)
     return result.stdout.strip()[:7]
 
@@ -118,8 +132,10 @@ async def run(args):
             mscx = ET.parse(mscx_path).getroot()
             version = mscx.findtext("programVersion")
             revision = mscx.findtext("programRevision") or ""
-            engine_rev = engine_revision()
-            assert version == "4.7.6", version
+            engine_root = args.upstream.resolve()
+            expected_version = read_engine_version(engine_root)
+            engine_rev = engine_revision(engine_root)
+            assert version == expected_version, version
             assert re.fullmatch(r"[0-9a-fA-F]{7}", revision), revision
             assert revision == engine_rev, (revision, engine_rev)
             platform = next((tag.text for tag in mscx.iter("metaTag")
@@ -140,14 +156,23 @@ async def run(args):
             await call("score_export", {**document, "format": "musicxml", "path": str(musicxml_path)})
             musicxml = ET.parse(musicxml_path).getroot()
             software = musicxml.findtext("identification/encoding/software")
-            assert software == "MuseScore Studio 4.7.6", software
+            assert software == f"MuseScore Studio {expected_version}", software
             report["musicxml"] = {"software": software}
             await call("score_close", document)
 
             # The fixture records programVersion 4.5.0, so the unedited $v header
             # shows the file's version; editing marks the score dirty and the
             # header must switch to the running application version.
-            fixture = await call("score_open", {"path": str(ROOT / "fixtures/version/header.mscx")})
+            fixture_mscx_path = ROOT / "fixtures/version/header.mscx"
+            if expected_version != "4.7.6":
+                fixture_content = fixture_mscx_path.read_text(encoding="utf-8")
+                fixture_content = fixture_content.replace("<oddFooterC>4.7.6</oddFooterC>", f"<oddFooterC>{expected_version}</oddFooterC>")
+                fixture_content = fixture_content.replace("<evenFooterC>4.7.6</evenFooterC>", f"<evenFooterC>{expected_version}</evenFooterC>")
+                patched_fixture = out / "header.mscx"
+                patched_fixture.write_text(fixture_content, encoding="utf-8")
+                fixture_mscx_path = patched_fixture
+
+            fixture = await call("score_open", {"path": str(fixture_mscx_path)})
             fixture_document = {"documentId": fixture["documentId"]}
 
             # Exporting MSCZ stamps the running program's version into the open
@@ -209,7 +234,7 @@ async def run(args):
             assert header_after != footer_after_low, "edited $v still matches the 4.5.0 reference"
             report["svg_header"] = {"encoding": "cairo-glyph-paths",
                                     "unedited_matches": "file programVersion (4.5.0)",
-                                    "edited_matches": "MUSE_APP_VERSION (4.7.6)"}
+                                    "edited_matches": f"MUSE_APP_VERSION ({expected_version})"}
 
             # Excerpt generation serializes and reloads the document as well; the
             # reload must keep the source file's stamps, not the writer's.
@@ -234,4 +259,7 @@ if __name__ == '__main__':
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--resources', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--upstream', '--engine-source', dest='upstream', type=Path,
+                        default=ROOT / 'vendor/musescore',
+                        help='Path to engine source root')
     asyncio.run(asyncio.wait_for(run(parser.parse_args()), timeout=180))

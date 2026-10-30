@@ -92,7 +92,7 @@
       </score-part>
     </part-list>
   <part id="P1">
-    <measure number="1" width="503.96">
+    <measure number="1" width="503.88">
       <print>
         <system-layout>
           <system-margins>
@@ -117,7 +117,7 @@
           <clef-octave-change>-1</clef-octave-change>
           </clef>
         </attributes>
-      <note default-x="80.41" default-y="-30">
+      <note default-x="80.26" default-y="-30">
         <pitch>
           <step>G</step>
           <octave>3</octave>
@@ -127,7 +127,7 @@
         <type>quarter</type>
         <stem>up</stem>
         </note>
-      <note default-x="185.85" default-y="-25">
+      <note default-x="185.71" default-y="-25">
         <pitch>
           <step>A</step>
           <octave>3</octave>
@@ -137,7 +137,7 @@
         <type>quarter</type>
         <stem>up</stem>
         </note>
-      <note default-x="291.29" default-y="-20">
+      <note default-x="291.17" default-y="-20">
         <pitch>
           <step>B</step>
           <octave>3</octave>
@@ -147,7 +147,7 @@
         <type>quarter</type>
         <stem>down</stem>
         </note>
-      <note default-x="396.72" default-y="-15">
+      <note default-x="396.63" default-y="-15">
         <pitch>
           <step>C</step>
           <octave>4</octave>

@@ -72,7 +72,7 @@ std::vector<staff_idx_t> part_staff_indices(Score* score, Part* part)
 
 Measure* enclosed_measure(EngravingItem* item)
 {
-    for (EngravingObject* object = item; object; object = object->explicitParent()) {
+    for (EngravingObject* object = item; object; object = object->ownershipParent()) {
         if (object->isMeasure()) return toMeasure(object);
     }
     return nullptr;

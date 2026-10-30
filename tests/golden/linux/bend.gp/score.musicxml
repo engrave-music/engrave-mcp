@@ -83,7 +83,7 @@
       </score-part>
     </part-list>
   <part id="P1">
-    <measure number="1" width="409.99">
+    <measure number="1" width="409.9">
       <print>
         <system-layout>
           <system-margins>
@@ -115,7 +115,7 @@
         </attributes>
       <direction placement="below">
         <direction-type>
-          <dynamics default-x="-4.23" default-y="-42.51" relative-y="-20">
+          <dynamics default-x="-4.18" default-y="-62.39">
             <f/>
             </dynamics>
           </direction-type>
@@ -123,14 +123,14 @@
         </direction>
       <direction placement="above" system="only-top">
         <direction-type>
-          <metronome parentheses="no" default-x="-37.76" relative-y="20">
+          <metronome parentheses="no" default-x="-37.69" default-y="20">
             <beat-unit>quarter</beat-unit>
             <per-minute>120</per-minute>
             </metronome>
           </direction-type>
         <sound tempo="120"/>
         </direction>
-      <note default-x="80.41" default-y="-30">
+      <note default-x="80.26" default-y="-30">
         <pitch>
           <step>G</step>
           <octave>4</octave>
@@ -140,7 +140,7 @@
         <type>quarter</type>
         <stem>up</stem>
         </note>
-      <note default-x="165.92" default-y="0">
+      <note default-x="165.78" default-y="0">
         <pitch>
           <step>F</step>
           <octave>5</octave>
@@ -158,7 +158,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="222.92" default-y="5">
+      <note default-x="222.8" default-y="5">
         <pitch>
           <step>G</step>
           <octave>5</octave>
@@ -177,7 +177,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="279.93" default-y="0">
+      <note default-x="279.81" default-y="0">
         <pitch>
           <step>F</step>
           <octave>5</octave>
@@ -195,7 +195,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="386.36" default-y="5">
+      <note default-x="386.24" default-y="5">
         <grace/>
         <pitch>
           <step>G</step>
@@ -206,7 +206,7 @@
         <stem>none</stem>
         </note>
       </measure>
-    <measure number="2" width="270.83">
+    <measure number="2" width="270.87">
       <note default-x="12.5" default-y="-25">
         <pitch>
           <step>A</step>
@@ -224,7 +224,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="108.5" default-y="-20">
+      <note default-x="108.49" default-y="-20">
         <grace/>
         <pitch>
           <step>B</step>
@@ -252,7 +252,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="140.76" default-y="-15">
+      <note default-x="140.79" default-y="-15">
         <pitch>
           <step>C</step>
           <octave>5</octave>
@@ -269,7 +269,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="247.2" default-y="-10">
+      <note default-x="247.22" default-y="-10">
         <grace/>
         <pitch>
           <step>D</step>
@@ -280,7 +280,7 @@
         <stem>none</stem>
         </note>
       </measure>
-    <measure number="3" width="297.75">
+    <measure number="3" width="297.8">
       <note default-x="10.62" default-y="-25">
         <grace/>
         <pitch>
@@ -310,7 +310,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="138.89" default-y="-35">
+      <note default-x="138.91" default-y="-35">
         <grace/>
         <pitch>
           <step>F</step>
@@ -321,7 +321,7 @@
         <stem>none</stem>
         <notehead parentheses="yes">normal</notehead>
         </note>
-      <note default-x="158.49" default-y="-30">
+      <note default-x="158.51" default-y="-30">
         <pitch>
           <step>G</step>
           <octave>4</octave>
@@ -342,7 +342,7 @@
             </technical>
           </notations>
         </note>
-      <note default-x="264.92" default-y="-35">
+      <note default-x="264.94" default-y="-35">
         <grace/>
         <pitch>
           <step>F</step>

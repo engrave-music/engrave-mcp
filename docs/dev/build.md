@@ -18,7 +18,12 @@
 - **版本控制与工具**：Git（用于管理工程与拉取 `vendor/musescore` 子模块）。全新克隆需运行 `git submodule update --init --depth 1` 或 `python scripts/bootstrap.py`。
 - **编译器**：Visual Studio x64 MSVC 工具链（推荐 VS 2022 / 18.10+，MSVC 14.51+）；构建脚本自动初始化开发环境，单独打包需在 VS 开发人员终端执行。
 - **包管理器**：Pixi。构建与验证在 `native` 环境（`-e native`，纯原生无 Qt 编译环境）下执行。
-- **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）；首次下载 HarfBuzz 需要 PATH 中的 `7z` 或 `7zz`。
+- **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）。第三方依赖已改为固定版本的 xmake 包（见 `xmake/packages/`），首次配置会下载并本地构建它们，不再需要 `7z` 解压 HarfBuzz。
+  > [!TIP]
+  > **下载器配置（机器级）**：在部分 Windows 宿主上，xmake 内置的 aria2 在下载第三方依赖包时可能遭遇 TLS 握手失败（`SSL/TLS handshake failure`）。若遇到包下载中断，可配置 xmake 全局改用 curl：
+  > ```powershell
+  > xmake g --downloader=curl
+  > ```
 
 ### Linux 构建环境
 - **验证宿主**：Linux x86_64 (`ssh <linux-host>`, kernel 7.3, Pixi GCC 15.3, C++23)。本项目不使用 WSL（早期 Arch WSL2 验证记录仅作历史保留）。
@@ -32,25 +37,40 @@
 ### 3.1 检出引擎子模块与下载音色库
 引擎源码采用 Git 子模块 `vendor/musescore` 形式引入（锁定至 Fork 仓库 https://github.com/Locietta/engrave ，分支 `mcp/v4.7.6`，Tag `mcp-4.7.6-4`，Commit `6cd717f2`，提交台账参见 `docs/dev/fork.md`）。旧版 webmscore、`.upstream/webmscore`、`patches/*.patch` 以及 Brotli 依赖均已废弃移除。
 
-全新克隆的项目可执行 `git submodule update --init --depth 1` 初始化子模块，或直接运行 `bootstrap.py`。`scripts/bootstrap.py` 会自动执行浅子模块更新（`git submodule update --init --depth 1 -- vendor/musescore`），并按需下载经哈希验证的 HarfBuzz 源码（解压至 `.upstream/harfbuzz`）与基础 SF3 音色库：
+全新克隆的项目可执行 `git submodule update --init --depth 1` 初始化子模块，或直接运行 `bootstrap.py`。`scripts/bootstrap.py` 会自动执行浅子模块更新（`git submodule update --init --depth 1 -- vendor/musescore`），并按需下载经哈希验证的基础 SF3 音色库；`scripts/prepare.py` 会校验子模块提交与工作区清洁，并从 Git blob 同步运行时资源，**子模块尚未初始化时它会直接拒绝运行**（见 `scripts/prepare.py` 的 `verify_submodule()`）。因此构建脚本必须 bootstrap 在 prepare 之前，`scripts/build-native.ps1` 已按此顺序执行：
 
 ```powershell
 pixi install -e native --locked
-pixi run -e native python scripts/bootstrap.py --soundfont --harfbuzz
+python scripts/bootstrap.py --soundfont   # 先初始化子模块
+python scripts/prepare.py                 # 再校验并分发资源
 ```
 
-### 3.2 子模块校验与资源准备
-`scripts/prepare.py` 会执行以下幂等操作：
-1. 校验 `vendor/musescore` 子模块已初始化、指向仓库记录的提交，且工作区绝对洁净（无本地修改或未跟踪文件；若状态不符则拒绝执行）。
-2. 根据 `resources.json` 清单（共 69 项资源），直接从已提交的 Git blob 中读取资源文件并同步到 `.runtime/assets`，同时清理其中不再匹配的旧版残留文件。此流程不再应用任何 patch。
+第三方**库**依赖全部由仓库内的本地 xmake recipe 固定，`xmake/packages/` 下的每个 recipe 都写明版本与归档 SHA-256：freetype 2.14.1（`174d9e53…`）、harfbuzz 12.3.0、flac 1.4.3、lame 3.100（`ddfe36ca…`）、opus 1.5.2、opusenc 0.2.1、fdk-aac 2.0.3、pugixml 1.15、utfcpp v4.1.1（`1ca68016…`）、picojson 111c9be 与 asio 1.36.0。freetype/lame/utfcpp 的 recipe 是从 xmake-repo（修订 `e96d4103633e161d259aa307e02a4d0842207651`）同名 recipe 逐行复制并裁剪到单一版本，版本、归档 URL 与 SHA-256 均未改动，因此依赖解析不再取决于某台机器上的 xmake-repo 修订。
 
-运行时资源清单 `resources.json` 由 `scripts/generate_resources.py` 从 `vendor/musescore` 的 Qt 资源清单（`src/engraving/engraving.qrc`、`src/engraving/data/fonts/*.qrc` 以及 MPE 的 `qt_add_resources` 配置块）外加一项显式历史回退样式（`legacy-style-defaults-v450.mss`）自动解析生成。可执行以下命令验证其时效性与一致性：
+注意区分：只有上述库依赖由本仓库固定版本与校验和；xmake-repo 仍提供构建工具包（cmake、nasm、pkgconf）与仅用于开发测试道的 gtest，它们的 recipe 修订记录在每个已安装包的 `manifest.txt`（`repo.commit`）中，不进入发布产物（freetype 的可选 zlib/libpng/woff2 支持在 `add_requires()` 中全部关闭，因此不会额外引入 xmake-repo 的库依赖）。因此“所有输入都已固定校验和”的说法仅对这些库依赖成立，工具包不在此列。
+
+### 3.2 资源清单生成与资产分发 (Runtime Asset Staging)
+运行时资源清单 `resources.json` 由 `scripts/generate_resources.py` 从引擎的 Qt 资源清单（`src/engraving/engraving.qrc`、`src/engraving/data/fonts/*.qrc` 以及 MPE 的 `qt_add_resources` 配置块）外加一项显式历史回退样式（`legacy-style-defaults-v450.mss`）自动解析生成。对于 5.0 引擎，脚本支持 `--source-root` 参数以读取新的 MPE 路径（`muse/framework/mpe`）与 11 种制表谱字体（`fonts_Tabulature.qrc` 中的 `MuseScoreTab*.ttf`）：
 
 ```powershell
+python scripts/generate_resources.py --source-root <path-to-engine>
 python scripts/generate_resources.py --check
 ```
 
-xmake 的生成目标在各自构建目录写入框架配置与工具定义；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。源码清单已提交，常规构建不运行 `capture_xmake_manifest.py`，也不读取已移除的旧版 CMake 目录。
+资产准备与分发：
+1. **主检出（production）**：`scripts/prepare.py` 会校验子模块，根据 `resources.json` 清单将资源从 Git blob 同步到 `.runtime/assets`。
+2. **5.0 / worktree 独立分发**：在多 worktree（如 `engrave/a2`）或测试独立引擎时，`.runtime` 可能是指向主检出的 Junction 或符号链接，**切勿直接修改或覆盖 `.runtime`**。应将资源同步到构建目录下的独立暂存目录（如 `build/scratch_assets`）：
+   ```powershell
+   # 将 resources.json 中声明的资产复制到暂存目录
+   python -c "import json, shutil, pathlib; r=json.loads(pathlib.Path('resources.json').read_text('utf-8')); src=pathlib.Path('<engine_root>'); dst=pathlib.Path('build/scratch_assets'); [dst.joinpath(k).parent.mkdir(parents=True, exist_ok=True) or shutil.copy2(src/v, dst/k) for k, v in r.items()]"
+   ```
+   随后通过命令行将暂存路径传给二进制文件运行：
+   ```powershell
+   build/noqt_probe.exe build/scratch_assets <input.musicxml> <output.musicxml>
+   build/assets_test.exe build/scratch_assets artifacts/assets_test <test_font_path>
+   ```
+
+xmake 的生成目标在各自构建目录写入框架配置与工具定义；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。源码清单已提交，常规构建不运行 `capture_xmake_manifest.py`：该脚本从引擎自身的 CMake 源清单（`muse/framework/*/CMakeLists.txt`、`src/*/CMakeLists.txt`）生成 `xmake/manifest.lua`，仅在引擎目录结构变化时用 `python scripts/capture_xmake_manifest.py --source-root <engine>` 重新生成。
 
 Windows 和 Linux 已验证长 UTF-8 schema 的完整传递、修改 schema 只重编译 `noqt_engine.cpp`，以及恢复后的无变化构建不编译/链接。生成器分块编码字符串，避免 MSVC 单个字符串长度限制。验收命令：
 
@@ -118,7 +138,7 @@ Linux 构建与验证现已常态化运行于 Linux x86_64 宿主机器（`ssh <
 
 ```bash
 pixi install -e native --locked
-pixi run --locked -e native python scripts/bootstrap.py --soundfont --harfbuzz
+pixi run --locked -e native python scripts/bootstrap.py --soundfont
 pixi run --locked -e native python scripts/prepare.py
 bash scripts/build-native.sh 8
 pixi run --locked -e native python scripts/package_linux.py --binary build/xmake-linux/musescore-mcp --output artifacts/linux-next

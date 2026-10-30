@@ -33,7 +33,9 @@ std::string render_score(mu::engraving::Score* score, const std::string& format,
     if (!score || !score->npages()) throw std::runtime_error("Score has no pages");
     if (options.page < 0 || (format != "pdf" && static_cast<size_t>(options.page) >= score->npages()))
         throw std::invalid_argument("Page out of range");
-    const auto renderer = muse::modularity::ioc(score->iocContext())->resolve<rendering::IScoreRenderer>("native");
+    // 5.0 drops the context IoC: IScoreRenderer is a global interface registered
+    // by EngravingModule, and resolve() looks the export up by interface id.
+    const auto renderer = muse::modularity::globalIoc()->resolve<rendering::IScoreRenderer>("native");
     if (!renderer) throw std::runtime_error("Score renderer unavailable");
     const auto inches = renderer->pageSizeInch(score);
     int dpi = 72;

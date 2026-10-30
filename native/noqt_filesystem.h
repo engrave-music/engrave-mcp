@@ -31,6 +31,7 @@ public:
     muse::io::EntryType entryType(const muse::io::path_t& path) const override;
 
     muse::RetVal<uint64_t> fileSize(const muse::io::path_t& path) const override;
+    muse::RetVal<uint64_t> availableSpace(const muse::io::path_t& path) const override;
 
     muse::RetVal<muse::io::paths_t> scanFiles(const muse::io::path_t& rootDir,
                                               const std::vector<std::string>& filters,
@@ -54,6 +55,10 @@ public:
     muse::io::path_t canonicalFilePath(const muse::io::path_t& filePath) const override;
     muse::io::path_t absolutePath(const muse::io::path_t& filePath) const override;
     muse::io::path_t absoluteFilePath(const muse::io::path_t& filePath) const override;
+    muse::io::path_t cleanPath(const muse::io::path_t& filePath) const override;
+    bool isSymLink(const muse::io::path_t& filePath) const override;
+    muse::io::path_t symLinkTarget(const muse::io::path_t& filePath) const override;
+    muse::io::path_t temporaryDirectoryPath() const override;
     muse::DateTime birthTime(const muse::io::path_t& filePath) const override;
     muse::DateTime lastModified(const muse::io::path_t& filePath) const override;
     muse::Ret isWritable(const muse::io::path_t& filePath) const override;

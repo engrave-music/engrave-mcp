@@ -20,6 +20,7 @@
 #include "engraving/engravingmodule.h"
 #include "engraving/engravingproject.h"
 #include "engraving/dom/masterscore.h"
+#include "engraving/dom/score.h"
 #include "engraving/dom/excerpt.h"
 #include "engraving/dom/instrtemplate.h"
 #include "engraving/dom/instrument.h"
@@ -32,7 +33,9 @@
 #include "importexport/musicxml/internal/musicxmlconfiguration.h"
 #include "importexport/midi/internal/midiexport/exportmidi.h"
 #include <iostream>
+#include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace music {
 using namespace muse;
@@ -45,23 +48,6 @@ public:
     void write(const logger::LogMsg& message) override { std::cerr << m_layout.output(message) << '\n'; }
 };
 
-// FreeType's upstream text provider assumes 360 DPI; engraving uses 1200.
-class EngravingFontProvider final : public draw::FontProvider {
-    static draw::Font scaled(draw::Font f) { f.setPointSizeF(f.pointSizeF() * (1200.0 / 360.0)); return f; }
-public:
-    EngravingFontProvider() : FontProvider(nullptr) {}
-    double lineSpacing(const draw::Font& f) const override { return FontProvider::lineSpacing(scaled(f)); }
-    double xHeight(const draw::Font& f) const override { return FontProvider::xHeight(scaled(f)); }
-    double height(const draw::Font& f) const override { return FontProvider::height(scaled(f)); }
-    double capHeight(const draw::Font& f) const override { return FontProvider::capHeight(scaled(f)); }
-    double ascent(const draw::Font& f) const override { return FontProvider::ascent(scaled(f)); }
-    double descent(const draw::Font& f) const override { return FontProvider::descent(scaled(f)); }
-    double horizontalAdvance(const draw::Font& f, const String& s) const override { return FontProvider::horizontalAdvance(scaled(f), s); }
-    double horizontalAdvance(const draw::Font& f, char32_t c) const override { return FontProvider::horizontalAdvance(scaled(f), c); }
-    RectF boundingRect(const draw::Font& f, const String& s) const override { return FontProvider::boundingRect(scaled(f), s); }
-    RectF boundingRect(const draw::Font& f, char32_t c) const override { return FontProvider::boundingRect(scaled(f), c); }
-    RectF tightBoundingRect(const draw::Font& f, const String& s) const override { return FontProvider::tightBoundingRect(scaled(f), s); }
-};
 
 void check(const Ret& result) { if (!result) throw std::runtime_error(result.toString()); }
 std::string bytes(const ByteArray& data) { return {reinterpret_cast<const char*>(data.constData()), data.size()}; }
@@ -78,6 +64,62 @@ void check_zip(ZipReader& zip) {
     }
     if (zip.hasError()) throw std::invalid_argument("Invalid archive");
 }
+
+// Context-scoped module setups (modularity::IContextSetup) belong to the
+// process-wide context and are never destroyed while the engine lives.
+std::vector<std::unique_ptr<modularity::IContextSetup> > s_contextSetups;
+
+// The Qt-free part of AppFactory::addConsoleModules(): the framework "mpe"
+// module, then the engraving module, then the import/export modules. DrawModule
+// is not instantiated: the host installs its own font database/engine through
+// install_runtime_font_services() (retained runtime fonts, 1200 DPI provider),
+// and DrawModule::registerExports() would fill the same IoC slots with the plain
+// FT ones. "audio" is registered by engine_audio.cpp through EngineGlobalSetup,
+// and "midi" has no compiled module (the MIDI import/export path is a direct
+// function call).
+void setup_modules(const std::vector<modularity::IModuleSetup*>& modules,
+                   const std::shared_ptr<iex::musicxml::MusicXmlConfiguration>& musicXml,
+                   const IApplication::RunMode runMode)
+{
+    // Phase order and grouping follow BaseApplication::doSetup(): every module
+    // registers its resources and exports first, only then imports are resolved,
+    // then onPreInit -> onInit -> onAllInited run over the whole list.
+    for (auto* module : modules) module->registerResources();
+    for (auto* module : modules) module->registerExports();
+
+    for (auto* module : modules) module->resolveImports();
+
+    for (auto* module : modules) module->onPreInit(runMode);
+
+    for (auto* module : modules) module->onInit(runMode);
+    // MusicXmlModule::onInit() does exactly this. MUSICXML_NO_INTERNAL leaves that
+    // module empty, so the host creates and initialises the configuration itself.
+    if (musicXml) musicXml->init();
+
+    for (auto* module : modules) module->onAllInited(runMode);
+}
+
+// BaseApplication::setupContext(): the context-scoped setups, in the same phase
+// order as the global ones. With engraving internals compiled in this registers
+// the palette score provider, the context configuration and the elements
+// provider; under ENGRAVING_NO_INTERNAL every EngravingContext hook is empty.
+void setup_context_modules(const std::vector<modularity::IModuleSetup*>& modules,
+                           const modularity::ContextPtr& ctx,
+                           const IApplication::RunMode runMode)
+{
+    std::vector<modularity::IContextSetup*> setups;
+    for (auto* module : modules) {
+        if (auto* setup = module->newContext(ctx)) {
+            s_contextSetups.emplace_back(setup);
+            setups.push_back(setup);
+        }
+    }
+    for (auto* setup : setups) setup->registerExports();
+    for (auto* setup : setups) setup->resolveImports();
+    for (auto* setup : setups) setup->onPreInit(runMode);
+    for (auto* setup : setups) setup->onInit(runMode);
+    for (auto* setup : setups) setup->onAllInited(runMode);
+}
 }
 
 void initialize_native_runtime(const std::string& assets) {
@@ -91,21 +133,33 @@ void initialize_native_runtime(const std::string& assets) {
     auto* logger = logger::Logger::instance();
     logger->clearDests();
     logger->addDest(new StderrLog());
+
+    const IApplication::RunMode runMode = IApplication::RunMode::ConsoleApp;
+
+    // Host-owned exports come first, like BaseApplication::doSetup() registering
+    // IApplication before any module's exports.
     modularity::globalIoc()->registerExport<io::IFileSystem>("native", new NativeFileSystem(root));
     install_runtime_font_services();
-    modularity::globalIoc()->registerExport<draw::IFontProvider>("native", new EngravingFontProvider());
+    modularity::globalIoc()->registerExport<draw::IFontProvider>("native", std::make_shared<draw::FontProvider>(modularity::globalCtx()));
     // Writer, MusicXML export, and the $v header macro resolve IApplication
     // through the project IoC; without it application() is null and export crashes.
-    modularity::globalIoc()->registerExport<IApplication>("native", std::make_shared<NoQtApplication>());
+    auto application = std::make_shared<NoQtApplication>();
+    modularity::globalIoc()->registerExport<IApplication>("native", application);
+
     // Module services live in the process-wide IoC; no desktop application is created.
-    engraving::EngravingModule engraving;
-    engraving.registerExports();
-    engraving.onInit(IApplication::RunMode::ConsoleApp);
     mpe::MpeModule mpe;
-    mpe.registerExports();
-    auto xml = std::make_shared<iex::musicxml::MusicXmlConfiguration>();
-    modularity::globalIoc()->registerExport<iex::musicxml::IMusicXmlConfiguration>("native", xml);
-    xml->init();
+    engraving::EngravingModule engraving;
+    std::vector<modularity::IModuleSetup*> modules{ &mpe, &engraving };
+    auto musicXml = std::make_shared<iex::musicxml::MusicXmlConfiguration>();
+    modularity::globalIoc()->registerExport<iex::musicxml::IMusicXmlConfiguration>("native", musicXml);
+
+    setup_modules(modules, musicXml, runMode);
+
+    // BaseApplication::setupNewContext() creates the context and runs the context
+    // setups after the global ones; NoQtApplication's single context is globalCtx.
+    const modularity::ContextPtr ctx = application->setupNewContext();
+    setup_context_modules(modules, ctx, runMode);
+
     engraving::loadInstrumentTemplates(":/engraving/instruments/instruments.xml");
 }
 
@@ -126,6 +180,10 @@ void copy_score_versions(engraving::MasterScore* source, engraving::MasterScore*
 
 ScoreProject load_native_score(const std::string& input, const std::string& format) {
     if (input.empty() || input.size() > 8 * 1024 * 1024) throw std::invalid_argument("Input must contain 1..8388608 bytes");
+    // Like NotationProject::doImport (project/internal/notationproject.cpp:304) and
+    // importMusicXmlfromBuffer, the whole reading + setup phase is a load: layout
+    // inside it runs outside a transaction and must not push undo commands or warn.
+    engraving::ScoreLoad scoreLoad;
     auto project = engraving::EngravingProject::create(modularity::globalCtx());
     project->setFileInfoProvider(std::make_shared<engraving::LocalFileInfoProvider>("Untitled.mscz"));
     ByteArray data = byte_array(input);
@@ -189,6 +247,16 @@ ScoreProject load_native_score(const std::string& input, const std::string& form
     } else throw std::invalid_argument("Unsupported score input format");
     auto* score = project->masterScore();
     score->connectTies();
+    // 5.0 moved the post-load MIDI wiring out of EngravingProject::setupMasterScore
+    // into the MSCX reader (rw/read500/read500.cpp:307-315), so a score that did not
+    // come from MSCX keeps an empty MasterScore::midiMapping(): every InstrChannel
+    // still has channel() == -1 (dom/instrument.cpp:319) and
+    // MasterScore::playbackChannel() indexes m_midiMapping with it
+    // (dom/masterscore.h:185), i.e. reads 72*(channel()+1) bytes out of bounds.
+    // Run the same three steps, in the same order, where every reader converges.
+    for (auto* part : score->parts()) part->updateHarmonyChannels(false);
+    score->rebuildMidiMapping();
+    score->updateChannel();
     check(project->setupMasterScore(true));
     // MusicXML import can call Part::setMidiProgram after the MIDI mapping was
     // built, leaving playback channels on the template program until an MSCZ
@@ -280,7 +348,7 @@ std::string export_native_score(const ScoreProject& project, const std::string& 
             style_buffer.open(io::IODevice::WriteOnly);
             score_buffer.open(io::IODevice::WriteOnly);
             score->style().write(&style_buffer);
-            success = engraving::rw::RWRegister::writer(score->iocContext())->writeScore(score, &score_buffer);
+            success = engraving::rw::RWRegister::writer()->writeScore(score, &score_buffer);
             writer.writeStyleFile(style_data);
             writer.writeScoreFile(score_data);
         }

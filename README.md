@@ -50,7 +50,7 @@
 ```powershell
 # 1. 安装锁定依赖
 pixi install -e native --locked
-pixi run -e native python scripts/bootstrap.py --soundfont --harfbuzz
+pixi run -e native python scripts/bootstrap.py --soundfont
 
 # 2. 编译（构建脚本自动校验 vendor/musescore 子模块并准备运行时资源）
 ./scripts/build-native.ps1 -Jobs 12
@@ -112,6 +112,6 @@ pixi run -e native python scripts/package_windows.py --no-qt --output artifacts/
 
 - **忽略目录**：`build/`、`.upstream/`、`.runtime/`、`artifacts/`、`notes/`。
 - **持久化文档**：设计决策与规范归档于 `docs/dev/`。
-- **上游基线**：以 Git 子模块 `vendor/musescore` 形式引入 Fork 仓库（https://github.com/Locietta/engrave ，分支 `mcp/v4.7.5`，Tag `mcp-4.7.5-1`，Commit `e70fdef0`），包含 MuseScore v4.7.5 官方发布及适配所需的专题提交（详见 `docs/dev/fork.md`）。HarfBuzz 依赖版本由 `upstream.lock.json` 固化。
+- **上游基线**：以 Git 子模块 `vendor/musescore` 形式引入 Fork 仓库（https://github.com/Locietta/engrave ，分支 `mcp/v4.7.5`，Tag `mcp-4.7.5-1`，Commit `e70fdef0`），包含 MuseScore v4.7.5 官方发布及适配所需的专题提交（详见 `docs/dev/fork.md`）。第三方依赖（FreeType、HarfBuzz、FLAC、LAME、Opus/libopusenc、fdk-aac、pugixml、utfcpp、picojson）为固定版本的 xmake 包，版本与校验和记录在 `xmake/packages/` 中。
 
 

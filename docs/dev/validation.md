@@ -618,10 +618,83 @@ Tolerances for A2, fixed before the port starts:
   (`tests/golden/allow.json`) that also names the upstream commit causing it.
 - `audio.json`: the existing per-platform tolerances of `scripts/golden.py` (peak and rms
   1e-4, spectral centroid 1 Hz, centroid envelope 2 Hz; frames, sample rate and channels
-  exact). The engine_audio lane keeps the step-5 criteria (onset 1.95 ms, pitch 0.80 cent,
-  level within 2%, MIDI events exact).
+  exact). Silence rule (A0, corrected for the re-review): spectral centroid envelope
+  differences were first bypassed whenever RMS <= 1e-4 and then whenever the stored RMS
+  rounded to 0.0; neither proves silence, because a window with a few samples, a sub-display
+  floor or a decaying tail also rounds to 0.0. `audio.json` now carries exact PCM evidence per
+  0.25 s window, `nonzeroSamples` (the count of samples that are not exactly zero, per
+  channel), taken from the rendered WAV. The centroid is ignored only in windows whose count
+  is zero on *both* sides, i.e. windows the PCM proves are exactly all-zero; every other window
+  is compared against the 2.0 Hz tolerance, including quiet nonzero tones (e.g. RMS 0.00010,
+  -80 dBFS) and rounded-zero RMS windows with samples. A baseline that lacks the field is
+  rejected as a golden error ("recapture the baseline") instead of silently compared under a
+  weaker rule, so the not-yet-recaptured Linux tree fails clearly rather than passing. The
+  4.7.6 Windows baseline was recaptured with the same feature code from the 4.7.6 host binary:
+  all 22 `audio.json` files differ from their stored version by exactly the new field, every
+  pre-existing field and all 102 other oracle files are byte-identical. Under the old rule 337
+  centroid windows were skipped; under the exact rule only 1 window is skipped, and 289 windows
+  in 15 fixtures exceed 2.0 Hz. All 289 are the 5.0 reverb-tail class: both stored window RMS
+  are 0.0, i.e. below -106 dBFS. For the 13 tail-only fixtures, peak, rms, global centroid,
+  rms envelope, frame count, sample rate and channels are unchanged; `nonzeroSamples` can
+  differ. Evening and layout_elements also carry the previously accepted velocity and fermata
+  changes, respectively. 4.7.6 truncated the tail at Mixer's `RealIsNull` gate (peak
+  <= 1e-6), while the 5.0 node graph processes the aux chain until `SignalNode::isSilent`
+  (peak > 0 exactly), so the aux chain can continue decaying below that threshold. Executed control:
+  chordline_path 4.7.6 and 5.0 are sample-identical up to the 4096-frame block after 4.7.6's
+  peak falls below 1e-6 (5.294150 s), then 4.7.6 writes exact zeros while 5.0 continues the
+  same tail (5.3e-07 down to 5.6e-42). The 13 newly differing `audio.json` files are pinned in
+  `tests/golden/allow.json` with that cause and the upstream commits (`7e9e6edd6e` added the
+  signal node; the framework subtree `7150f2b05e` carries the 5.0 mixer). Regression unit tests
+  (exact silence, rounded-zero RMS with samples, quiet tones within and beyond tolerance,
+  asymmetric silence, missing evidence) enforce this contract in
+  `scripts/test_oracle_harness.py`.
+  The engine_audio lane enforces pitch error <= 0.80 cent and onset error <= 86/44100 s
+  (1.950113379 ms), along with level within 2% and exact MIDI events. Step 5 (`ed60118`)
+  reported the rounded measured maxima as 1.95 ms and 0.80 cent, while its executable
+  assertions were < 5 ms and < 1 cent; A0 (`6df5fef`) then recorded the rounded figures
+  as the A2 criteria. The retained Windows A0 pitch WAV (SHA-256
+  `eea0de33784bef98d5fbc7643d22f0ee69c7bbaf48926526671594d24f34a9d6`)
+  measures 86 samples at 44.1 kHz and 0.797233368 cent. The onset limit above is
+  0.000113379 ms beyond the written 1.95 ms: it is the smallest duration that admits the
+  recorded A0 onset, and the next 44.1 kHz sample fails. Ten fresh Windows A2 renders
+  produced the same maxima, with no observed measurement variation in those runs. The
+  lane also rejects mutated 88-sample onset and 0.90-cent pitch errors that the old
+  executable bounds accepted; this repetition does not establish Linux results.
 - MSCX, raw MusicXML, SVG, PNG, PDF, positions and metadata are re-baselined in A2 with a diff
   report sorted by cause, plus a spot check of rendered pages. They are not an oracle across
   the port.
 
 Full suite (executed 2026-10-28, tag `a0`): Windows 26/26 lanes and Linux 26/26 lanes pass, including the new `semantic_check` lane and `golden` against the recaptured trees (348 outputs per platform).
+
+
+## Roadmap-engrave A2: Oracle harness hardening and review fixes (2026-10-29)
+
+Review finding fixes and oracle hardening:
+1. **Semantic checker spanner validation (`scripts/check_semantic_dump.py`)**:
+   Replaced the blind-spot intersection of observed types with an explicit, documented set of supported spanner types (`HairPin`, `Ottava`, `Pedal`, `Slur`, `Volta`). A missing or unexpected spanner type on either side is immediately flagged as a mismatch. Added a mutation test suite in `scripts/test_oracle_harness.py` that mutates dumps (dropping all spanners of a type, shifting an endpoint, dropping a tie, and altering note pitch) and proves each mutation is detected.
+2. **Audio near-silence centroid rule (`scripts/golden.py`)**:
+   The first fix bypassed the centroid whenever the stored 5-decimal RMS rounded to 0.0, which
+the re-review showed is not silence: 341 of 1283 windows store 0.0 RMS while 71 of them still
+hold nonzero PCM samples, and the review measured 280 skipped windows in 13 fixtures whose
+centroid moved by more than 2.0 Hz (re-measured here: 289 windows in 15 fixtures).
+`audio.json` now records `nonzeroSamples` per 0.25 s window (exact per-channel count of samples
+that are not zero), the centroid is compared (2.0 Hz) in every window except those with zero
+counts on both sides, and a baseline without the field is a golden error rather than a weaker
+comparison. The 4.7.6 Windows baseline was recaptured from the 4.7.6 host binary
+(`build/xmake-windows/musescore-mcp.exe` with `.runtime/assets`); the recapture adds exactly
+that one field and leaves every pre-existing field and 102 other oracle files byte-identical.
+The 13 `audio.json` files that now differ (12 fixtures that were previously hidden plus
+`slurs.mscz`) are hash-pinned with the same cause and upstream commits as the tolerance section:
+the 5.0 mixer no longer applies 4.7.6's `RealIsNull` (1e-6) tail truncation, so the reverb tail
+continues below -106 dBFS; their peak/rms/spectral centroid/rms envelope are unchanged. The
+Linux tree was not recaptured (host down) and will fail clearly until it is.
+3. **Complete EID token normalization (`scripts/golden.py`)**:
+   Expanded EID normalization to cover all 9 writer/reader EID-valued tags: `eid`, `linkedTo`, `startElement`, `endElement`, `NoteEID`, `mmRestLast`, `startMeasure`, `endMeasure`, and `sharedPart`. Ensures 5.0 `<PageLocks>`, `<SystemLocks>`, and `SharedPart` references map to consistent `e1, e2, ...` tokens preserving element identity while detecting modified targets. Token mode is now the only automatic representation: the 4.7.6 blanked form (`<eid/>`), which erases which measure or element a reference targets, is only readable with the explicit `--legacy-blank-eids` migration flag. A baseline tree detected as blanked is rejected without that flag (a recapture therefore cannot silently keep the weak form), and tests show that a changed `startMeasure` target is detected in token mode while the blanked form hides it and the legacy tree fails without the flag. The stored Linux tree is still the 4.7.6 blanked form, so it needs `--legacy-blank-eids` (or a recapture) before it can be compared at all.
+4. **Rendered-page spot check without screenshots (`scripts/check_rendered_page.py`)**:
+   Checks fresh 5.0 exports of all 26 golden pages against checked-in 4.7.6 reference statistics in `tests/golden/page_reference.json`. Git-backed entries cite ancestor `7b6dc2a`; the `custom_part_name` page was captured with the pinned 4.7.6 binary. A clean checkout needs neither git history nor the 4.7.6 binary.
+   - SVG geometry: transforms are composed through all ancestors and path bounds are parsed (relative commands and arcs included); every glyph and path box must lie within the viewBox (0.01 pt rounding).
+   - SVG element counts (paths, text runs, notehead glyphs, uses) must match the reference exactly; a change needs a SHA-256-pinned exception. Content hidden by opacity, `fill`/`stroke` none, `visibility` or `display` fails, and so do glyphs whose composed scale or median size falls below 50% of the reference. Glyph-box overlap (pair count and area) may differ by 10%; the largest observed change is 7.4%.
+   - PNG ink on the 22 master page-0 exports: ink share within ±10% (observed ratios 0.967–1.027), ink bounding-box edge movement at most 0.09 of the page (observed 0.071), and an 8×8 ink-density grid L1 difference at most 0.25 (observed 0.191). The three excerpt pages and `slurs.mscz` page 1 are SVG-only.
+   - Known limitations: near-transparent content and empty path geometry can pass the SVG checks; the four SVG-only pages have no independent PNG ink check.
+   - Negative controls fail: stacked glyphs, a glyph moved off the page by an ancestor transform, a translated path, a removed glyph group, one removed glyph, every use scaled by 1e-6, root opacity 0, and blank, transparent and corner-shrunken PNGs.
+   - Lanes `oracle_harness` and `rendered_page` in `notes/a2/verify/run_all_a2.ps1`.

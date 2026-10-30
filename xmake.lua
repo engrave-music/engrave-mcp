@@ -1,18 +1,25 @@
--- Qt-free xmake build for the pinned MuseScore native engine.
+﻿-- Qt-free xmake build for the pinned MuseScore native engine (5.0 layout).
 --
--- This is the primary build. CMake is not invoked. The checked-in manifest was
--- initially captured from the previous CMake baseline and is now maintained here.
+-- This is the primary build. CMake is not invoked. The checked-in manifest
+-- (xmake/manifest.lua) is generated from the engine's own CMake source lists by
+-- scripts/capture_xmake_manifest.py; this file supplies everything the engine
+-- CMake files cannot: feature switches, the generated framework config header,
+-- and the third-party packages.
 --
--- Layout:
---   freetype / harfbuzz              bundled dependency libraries
+-- Layout (engine paths follow MuseScore 5.0: the framework lives at muse/framework):
 --   muse_global / muse_draw / muse_mpe / engraving / iex_musicxml
---   native_fluidsynth              FluidSynth sources for the audio engine
---   muse_audio_engine                MuseScore 4 audio engine and encoders
---   noqt_support                     native filesystem/settings/font/MIDI adapters
+--   iex_guitarpro / iex_midi_import  importers, explicit source lists
+--   native_fluidsynth                FluidSynth sources for the audio engine
+--   muse_audio_engine                MuseScore audio engine and encoders
+--   noqt_support                     native font/settings/MIDI/MusicXML adapters
 --   score_engine                     private engraving and format adapters
 --   music_core                       typed owner-thread document facade
 --   musescore_mcp                    stdio JSON-RPC host (musescore-mcp binary)
---   test targets                     engine, core and adapter regression binaries
+--   test targets                     core and adapter regression binaries
+--
+-- Third-party dependencies (freetype, harfbuzz, flac, lame, opus, opusenc,
+-- fdk-aac, pugixml, utfcpp, picojson) are pinned xmake packages; see
+-- xmake/packages/ and the add_requires() block below.
 
 set_project("musescore-mcp")
 set_xmakever("3.1.1")
@@ -20,14 +27,49 @@ set_version("0.1.0")
 set_languages("cxx23")
 set_targetdir("$(builddir)")
 add_rules("mode.debug", "mode.release", "mode.releasedbg")
+-- Packages install into the project (.xmake, gitignored) so a checkout is
+-- self-contained, and everything is built from source: a precompiled artifact
+-- could carry a different CRT or feature set than the pinned recipe asks for.
 set_policy("package.install_locally", true)
+set_policy("package.precompiled", false)
+
 includes("xmake/packages/asio.lua")
+includes("xmake/packages/freetype.lua")
+includes("xmake/packages/harfbuzz.lua")
+includes("xmake/packages/flac.lua")
+includes("xmake/packages/lame.lua")
+includes("xmake/packages/opus.lua")
+includes("xmake/packages/opusenc.lua")
+includes("xmake/packages/picojson.lua")
+includes("xmake/packages/pugixml.lua")
+includes("xmake/packages/fdk-aac.lua")
+includes("xmake/packages/utfcpp.lua")
+
 add_requires("asio 1.36.0", {system = false})
 
-option("harfbuzz_root")
-    set_default("")
-    set_showmenu(true)
-    set_description("HarfBuzz source tree containing src/harfbuzz.cc")
+-- Third-party engine dependencies, pinned to the versions MuseScore 5.0 builds
+-- against (muse/buildscripts/muse_deps.ref = 39c897ed, recipes/):
+--   freetype 2.14.1, harfbuzz 12.3.0, flac 1.4.3, lame 3.100, opus 1.5.2,
+--   opusenc 0.2.1, fdk-aac 2.0.3, pugixml 1.15, utfcpp 4.1.1, picojson 111c9be.
+-- freetype: muse_deps builds it static with PNG/bzip2/zlib/harfbuzz disabled.
+-- Every library package here is a local recipe with a pinned archive and
+-- SHA-256, so no build input depends on the xmake-repo revision a machine has:
+-- pugixml/opus/opusenc/picojson because xmake-repo's versions or layouts
+-- differ, freetype/lame/utfcpp because xmake-repo carried no version pin of
+-- its own (see the recipe headers for the copied upstream pins).  Only build
+-- tools (cmake, nasm, pkgconf) and the dev-only gtest still come from
+-- xmake-repo.
+add_requires("freetype 2.14.1", {system = false, configs = {
+    zlib = false, png = false, bzip2 = false, woff2 = false, harfbuzz = false}})
+add_requires("muse-harfbuzz 12.3.0", {system = false})
+add_requires("muse-flac 1.4.3", {system = false})
+add_requires("lame 3.100", {system = false})
+add_requires("muse-opus 1.5.2", {system = false})
+add_requires("muse-opusenc 0.2.1", {system = false})
+add_requires("muse-fdk-aac 2.0.3", {system = false})
+add_requires("muse-pugixml 1.15", {system = false})
+add_requires("utfcpp v4.1.1", {system = false})
+add_requires("muse-picojson 111c9be", {system = false})
 
 option("musescore_source")
     set_default("")
@@ -42,29 +84,9 @@ end
 source_root = path.absolute(source_root, project_root)
 local manifest_path = path.join(project_root, "xmake", "manifest.lua")
 
-local function find_harfbuzz()
-    local configured = get_config("harfbuzz_root")
-    local candidates = {}
-    if configured and configured ~= "" then
-        table.insert(candidates, configured)
-    end
-    table.insert(candidates, path.join(project_root, ".upstream", "harfbuzz"))
-    table.insert(candidates, path.join(project_root, ".upstream", "harfbuzz", "harfbuzz"))
-    table.insert(candidates, path.join(project_root, ".upstream", "harfbuzz", "harfbuzz-12.3.0"))
-    for _, candidate in ipairs(candidates) do
-        if os.isfile(path.join(candidate, "src", "harfbuzz.cc")) then
-            return path.absolute(candidate)
-        end
-    end
-    raise("HarfBuzz source not found. Expected .upstream/harfbuzz/src/harfbuzz.cc "
-        .. "(or pass --harfbuzz_root=DIR) so bundled HarfBuzz stays pinned.")
-end
-
-local harfbuzz_root = find_harfbuzz()
-
 if not os.isfile(manifest_path) then
     raise("xmake/manifest.lua is missing. Run once: "
-        .. "python scripts/capture_xmake_manifest.py")
+        .. "python scripts/capture_xmake_manifest.py --source-root <engine>")
 end
 includes("xmake/manifest.lua")
 local manifest = MUSESCORE_XMAKE_MANIFEST
@@ -79,8 +101,6 @@ local function expand(item)
             return project_root
         elseif name == "SOURCE_ROOT" then
             return source_root
-        elseif name == "HARFBUZZ_ROOT" then
-            return harfbuzz_root
         end
         raise("unknown manifest placeholder: " .. name)
     end))
@@ -167,12 +187,8 @@ local function read_version(os, io)
     end
     local version_label = value("MUSE_APP_VERSION_LABEL")
     local result = {
-        MUSE_APP_NAME_HUMAN_READABLE = "MuseScore Studio",
-        MUSE_APP_NAME_MACHINE_READABLE = "MuseScoreStudio",
-        MUSE_APP_NAME_HUMAN_READABLE_COMPAT = "MuseScore",
-        MUSE_APP_NAME_MACHINE_READABLE_COMPAT = "MuseScore",
-        MUSE_APP_NAME = "MuseScore",
-        MUSE_APP_TITLE = "MuseScore Studio",
+        MUSE_APP_NAME_HUMAN_READABLE = value("MUSE_APP_NAME_HUMAN_READABLE") or "MuseScore Studio",
+        MUSE_APP_NAME_MACHINE_READABLE = value("MUSE_APP_NAME_MACHINE_READABLE") or "MuseScoreStudio",
         -- Upstream SetupConfigure.cmake leaves MUSE_APP_UNSTABLE undefined for
         -- MUSE_APP_BUILD_MODE=release; debug and releasedbg stay unstable.
         MUSE_APP_UNSTABLE = not is_mode("release"),
@@ -182,9 +198,10 @@ local function read_version(os, io)
         MUSE_APP_VERSION_MAJOR = major,
         MUSE_APP_VERSION_MINOR = minor,
         MUSE_APP_VERSION_PATCH = patch,
-        -- Selected module graph, matching the native CMake baseline.
-        MUSE_MODULE_ACTIONS = true,
-        MUSE_MODULE_ACTIONS_API = true,
+        -- Selected module graph.  The engine modules we compile need their
+        -- enable macros; the audio work mode is only read by
+        -- audio/common/workmode.cpp defaultMode() (no Qt path, unused by the
+        -- host) and stays at the 4.7.6 value.
         MUSE_MODULE_AUDIO = true,
         MUSE_MODULE_AUDIO_API = true,
         MUSE_MODULE_AUDIO_EXPORT = true,
@@ -264,82 +281,6 @@ local function render_tool_schema(tools)
     return table.concat(output, "\n") .. "\n"
 end
 
--- The bundled encoders configure a config.h in their own CMake builds. Reproduce
--- the few values the pinned sources actually read so no CMake step is needed.
-local function write_thirdparty_configs(os, io, output_dir)
-    local windows = is_plat("windows")
-    local x86 = is_arch("x64", "x86_64", "x86")
-    local arm = is_arch("arm64", "aarch64", "arm")
-    local thirdparty = path.join(output_dir, "thirdparty")
-
-    local function define(name, value)
-        return "#define " .. name .. " " .. tostring(value)
-    end
-    local function define_if(enabled, name)
-        return (enabled and "#define " or "/* #undef ") .. name .. (enabled and "" or " */")
-    end
-
-    -- thirdparty/flac/CMakeLists.txt configures config.cmake.h.in with the
-    -- probe results of GetFlacCompileInfo.cmake. The standalone FLAC project
-    -- sets ENABLE_64_BIT_WORDS and FLAC__ALIGN_MALLOC_DATA, but MuseScore's
-    -- wrapper does not, so both stay off (the #cmakedefine01 default). The
-    -- template's hard-coded _FILE_OFFSET_BITS/_LARGEFILE_SOURCE are kept.
-    local flac = {
-        "/* Generated by xmake; mirrors configure_file(config.cmake.h.in). */",
-        "#ifndef FLAC_CONFIG_H",
-        "#define FLAC_CONFIG_H",
-        "",
-        define("CPU_IS_BIG_ENDIAN", 0),
-        "#define WORDS_BIGENDIAN CPU_IS_BIG_ENDIAN",
-        define("ENABLE_64_BIT_WORDS", 0),
-        define("OGG_FOUND", 0),
-        "#define FLAC__HAS_OGG OGG_FOUND",
-        define("FLAC__HAS_X86INTRIN", x86 and 1 or 0),
-        define("FLAC__HAS_NEONINTRIN", arm and 1 or 0),
-        define("FLAC__HAS_A64NEONINTRIN", 0),
-        define_if(not windows, "HAVE_BYTESWAP_H"),
-        define_if(not windows, "HAVE_BSWAP16"),
-        define_if(not windows, "HAVE_BSWAP32"),
-        "#define HAVE_INTTYPES_H",
-        "#define HAVE_STDINT_H",
-        define_if(not windows, "HAVE_FSEEKO"),
-        define_if(not windows, "HAVE_LANGINFO_CODESET"),
-        -- #cmakedefine01 always defines it (0 without a probe); lpc.c only tests defined().
-        define("HAVE_LROUND", 0),
-        -- Upstream never sets PROJECT_VERSION for the FLAC subdirectory, so
-        -- configure_file substitutes an empty version string.
-        "#define PACKAGE_VERSION \"\"",
-        "",
-        "#ifndef _DARWIN_USE_64_BIT_INODE",
-        "# define _DARWIN_USE_64_BIT_INODE 1",
-        "#endif",
-        "#ifndef _FILE_OFFSET_BITS",
-        "# define _FILE_OFFSET_BITS 64",
-        "#endif",
-        "#ifndef _LARGEFILE_SOURCE",
-        "# define _LARGEFILE_SOURCE",
-        "#endif",
-        "",
-        "#endif",
-    }
-    local flac_dir = path.join(thirdparty, "flac")
-    os.mkdir(flac_dir)
-    write_if_changed(os, io, path.join(flac_dir, "config.h"), table.concat(flac, "\n") .. "\n")
-
-    -- LAME is built with HAVE_CONFIG_H only under MSVC, where upstream's
-    -- configure_file(configMS.h config.h) is a plain copy.
-    if windows then
-        local lame_template = path.join(source_root, "src", "framework", "audio", "thirdparty",
-            "lame", "configMS.h")
-        local lame_config = io.readfile(lame_template)
-        if not lame_config then
-            raise("cannot read the pinned LAME config template: " .. lame_template)
-        end
-        local lame_dir = path.join(thirdparty, "lame")
-        os.mkdir(lame_dir)
-        write_if_changed(os, io, path.join(lame_dir, "config.h"), lame_config)
-    end
-end
 
 local function generate_inputs(target, os, io, json)
     local output_dir = target:targetdir()
@@ -348,7 +289,12 @@ local function generate_inputs(target, os, io, json)
     end
     os.mkdir(output_dir)
 
-    local template_path = path.join(source_root, "src", "framework", "cmake",
+    -- The engine's framework config header. 5.0 moved the template into the
+    -- absorbed framework tree (muse/framework/cmake); the #cmakedefine shape is
+    -- unchanged, but the variables it substitutes changed
+    -- (MUSE_APP_INSTALL_* replaced MUSE_APP_INSTALL_NAME, AUDIO_WORKER_MODE
+    -- became AUDIO_HYBRID_MODE, MUSE_MODULE_*_COMPAT/MULTICONTEXT_WIP are gone).
+    local template_path = path.join(source_root, "muse", "framework", "cmake",
         "muse_framework_config.h.in")
     local template = io.readfile(template_path)
     if not template then
@@ -368,8 +314,6 @@ local function generate_inputs(target, os, io, json)
     end
     write_if_changed(os, io, path.join(output_dir, "tool_schema.inc"),
         render_tool_schema(tools))
-
-    write_thirdparty_configs(os, io, output_dir)
 end
 
 target("muse_generated")
@@ -414,6 +358,12 @@ end
 local manifest_includes = expand_list(manifest.includes)
 add_includedirs(manifest_includes)
 
+-- The Qt-free feature selection comes from the manifest generator (its
+-- PROJECT_DEFINES list), so there is one place to change what the engine
+-- compiles as.  It must be project-wide: these macros change class layouts and
+-- interfaces that native/ host code includes as well.
+add_defines(table.unpack(manifest.defines))
+
 -- Qt platform macros normally come from <QtGlobal>; the pinned engine and
 -- native/ adapters branch on them under NO_QT_SUPPORT. Define them once,
 -- project-wide, for every target compiled from the engine and native/:
@@ -453,32 +403,13 @@ else
 end
 
 -------------------------------------------------------------------------------
--- Bundled dependencies
+-- Third-party dependencies
 -------------------------------------------------------------------------------
-
-target("freetype")
-    set_kind("static")
-    set_languages("c11")
-    local freetype = add_manifest_target("freetype")
-    if is_plat("windows") then
-        add_files(expand_list(freetype.windows_sources))
-    else
-        add_files(expand_list(freetype.unix_sources))
-    end
-    add_defines("FT2_BUILD_LIBRARY")
-    if not is_plat("windows") then
-        -- FreeType's CMake build patches these into the generated unix
-        -- ftconfig.h after check_include_file().
-        add_defines("HAVE_UNISTD_H=1", "HAVE_FCNTL_H=1")
-    end
-    add_links("z", {public = true})
-    set_warnings("none")
-
-target("harfbuzz")
-    set_kind("static")
-    add_deps("freetype")
-    add_manifest_target("harfbuzz")
-    set_warnings("none")
+-- freetype, harfbuzz, flac, lame, opus, opusenc, fdk-aac, pugixml, utfcpp and
+-- picojson are xmake packages (add_requires above), not targets: MuseScore 5.0
+-- builds all of them from muse_deps, so nothing third-party is compiled from
+-- the engine tree any more. The only exception is FluidSynth, which upstream
+-- still ships in tree (see native_fluidsynth).
 
 -------------------------------------------------------------------------------
 -- Pinned MuseScore modules
@@ -487,6 +418,7 @@ target("harfbuzz")
 target("muse_global")
     set_kind("static")
     add_deps("muse_generated")
+    add_packages("muse-pugixml", "utfcpp", "muse-picojson")
     add_manifest_target("muse_global")
     if is_plat("linux") then
         add_syslinks("dl", "pthread", {public = true})
@@ -494,7 +426,11 @@ target("muse_global")
 
 target("muse_draw")
     set_kind("static")
-    add_deps("muse_generated", "muse_global", "harfbuzz", "freetype")
+    add_deps("muse_generated", "muse_global")
+    -- public: every consumer includes draw headers that reach <ft2build.h>/<hb-ft.h>
+    -- (fontsengine.h, fontfaceutils.h), and xmake only propagates package include
+    -- dirs of a dependency when the package is public.
+    add_packages("freetype", "muse-harfbuzz", {public = true})
     add_manifest_target("muse_draw")
 
 target("muse_mpe")
@@ -527,159 +463,16 @@ target("native_fluidsynth")
     add_manifest_target("native_fluidsynth")
     set_warnings("none")
 
--- MuseScore 4's audio engine and its bundled encoders (roadmap step 5). The
--- lists live in the manifest; only the platform-specific configuration that
--- CMake would generate stays here. MUSE_THREADS_SUPPORT is deliberately left
--- undefined so Mixer stays single-threaded.
-local audio_thirdparty = path.join(source_root, "src", "framework", "audio", "thirdparty")
-local generated_thirdparty = path.join("$(builddir)", "xmake-generated", "thirdparty")
-
-target("lame")
-    set_kind("static")
-    set_languages("c11")
-    add_deps("muse_generated")
-    add_manifest_target("lame")
-    if is_plat("windows") then
-        -- MSVC branches of thirdparty/lame/CMakeLists.txt.
-        add_defines("HAVE_CONFIG_H", "USE_LAYER_2", "_CRT_SECURE_NO_DEPRECATED")
-        add_includedirs(path.join(generated_thirdparty, "lame"))
-        add_files(path.join(audio_thirdparty, "lame", "Dll", "BladeMP3EncDLL.c"))
-    else
-        add_defines("STDC_HEADERS", "ieee754_float32_t=float")
-    end
-    set_warnings("none")
-
-target("flac")
-    set_kind("static")
-    -- The system FLAC.lib from the native package environment would win the
-    -- library search if this target kept its name, so give the archive a
-    -- project-specific basename (target names stay upstream-shaped).
-    set_basename("muse_flac")
-    if is_plat("windows") then
-        set_languages("c11", "cxx23")
-    else
-        set_languages("gnu11", "cxx23")
-    end
-    add_deps("muse_generated")
-    add_manifest_target("flac")
-    add_includedirs(path.join(generated_thirdparty, "flac"))
-    if is_plat("windows") then
-        add_files(path.join(audio_thirdparty, "flac", "flac-1.4.3", "src", "share",
-            "win_utf8_io", "win_utf8_io.c"))
-    end
-    set_warnings("none")
-
-target("opus")
-    set_kind("static")
-    -- Same reason as flac: the native package environment ships an opus.lib.
-    set_basename("muse_opus")
-    if is_plat("windows") then
-        set_languages("c11")
-    else
-        set_languages("gnu99")
-    end
-    add_deps("muse_generated")
-    add_manifest_target("opus")
-    if is_plat("windows") then
-        add_defines("USE_ALLOCA")
-    else
-        add_defines("VAR_ARRAYS", "CPU_INFO_BY_ASM", "HAVE_LRINT", "HAVE_LRINTF")
-    end
-    if is_arch("x64", "x86_64", "x86") then
-        -- OPUS_HAVE_RTCD + x86 kernels from thirdparty/opus/opus-1.5.2/CMakeLists.txt
-        -- (SSE/SSE2 presumed on x86_64, SSE4.1/AVX2 runtime detected).
-        add_defines("OPUS_HAVE_RTCD",
-            "OPUS_X86_MAY_HAVE_SSE", "OPUS_X86_PRESUME_SSE",
-            "OPUS_X86_MAY_HAVE_SSE2", "OPUS_X86_PRESUME_SSE2",
-            "OPUS_X86_MAY_HAVE_SSE4_1", "OPUS_X86_MAY_HAVE_AVX2")
-        if is_arch("x86") and not is_arch("x64", "x86_64") then
-            -- 32-bit x86: the PRESUME_* macros above assume SSE/SSE2 for every
-            -- translation unit, as upstream does when the option is enabled.
-            if is_plat("windows") then
-                add_cflags("/arch:SSE2")
-            else
-                add_cflags("-msse", "-msse2")
-            end
-        end
-        -- xmake's add_cflags(..., {files = ...}) condition only selects whether
-        -- the flag is added to the target; it does not scope the flag to those
-        -- files. Pass the per-file flags to add_files() instead (upstream uses
-        -- set_source_files_properties in thirdparty/opus/opus-1.5.2/CMakeLists.txt).
-        local function opus_sources(list, flags)
-            local result = {}
-            for _, item in ipairs(list) do
-                table.insert(result, path.join(audio_thirdparty, "opus", "opus-1.5.2", item))
-            end
-            if flags then
-                add_files(result, { cflags = flags })
-            else
-                add_files(result)
-            end
-            return result
-        end
-        opus_sources({
-            "celt/x86/x86cpu.c",
-            "celt/x86/x86_celt_map.c",
-            "silk/x86/x86_silk_map.c",
-        })
-        if is_plat("windows") then
-            -- MSVC has no -msse/-msse2 switches; x64 already implies SSE2.
-            opus_sources({ "celt/x86/pitch_sse.c" })
-            opus_sources({ "celt/x86/pitch_sse2.c", "celt/x86/vq_sse2.c" })
-            opus_sources({
-                "celt/x86/celt_lpc_sse4_1.c",
-                "celt/x86/pitch_sse4_1.c",
-                "silk/x86/NSQ_sse4_1.c",
-                "silk/x86/NSQ_del_dec_sse4_1.c",
-                "silk/x86/VAD_sse4_1.c",
-                "silk/x86/VQ_WMat_EC_sse4_1.c",
-            })
-            opus_sources({
-                "celt/x86/pitch_avx.c",
-                "silk/x86/NSQ_del_dec_avx2.c",
-                "silk/float/x86/inner_product_FLP_avx2.c",
-            }, "/arch:AVX2")
-        else
-            opus_sources({ "celt/x86/pitch_sse.c" }, "-msse")
-            opus_sources({ "celt/x86/pitch_sse2.c", "celt/x86/vq_sse2.c" }, "-msse2")
-            opus_sources({
-                "celt/x86/celt_lpc_sse4_1.c",
-                "celt/x86/pitch_sse4_1.c",
-                "silk/x86/NSQ_sse4_1.c",
-                "silk/x86/NSQ_del_dec_sse4_1.c",
-                "silk/x86/VAD_sse4_1.c",
-                "silk/x86/VQ_WMat_EC_sse4_1.c",
-            }, "-msse4.1")
-            opus_sources({
-                "celt/x86/pitch_avx.c",
-                "silk/x86/NSQ_del_dec_avx2.c",
-                "silk/float/x86/inner_product_FLP_avx2.c",
-            }, { "-mavx2", "-mfma", "-mavx" })
-        end
-    end
-    set_warnings("none")
-
-target("opusenc")
-    set_kind("static")
-    if is_plat("windows") then
-        set_languages("c11")
-    else
-        set_languages("gnu99")
-    end
-    add_deps("muse_generated", "opus")
-    add_manifest_target("opusenc")
-    set_warnings("none")
-
-target("fdk_aac")
-    set_kind("static")
-    add_deps("muse_generated")
-    add_manifest_target("fdk_aac")
-    set_warnings("none")
-
+-- MuseScore 5.0's audio engine and its encoders (roadmap step 5).  The source
+-- list is in the manifest (audio/common + audio/engine + fluidsynth); the
+-- encoders are the pinned packages.  MUSE_THREADS_SUPPORT is deliberately left
+-- undefined so the mixer stays single-threaded, and the engine's own audio
+-- worker thread (platform/general/generalaudioworker.cpp) is not compiled: the
+-- host drives the engine from its own thread.
 target("muse_audio_engine")
     set_kind("static")
-    add_deps("muse_generated", "muse_global", "native_fluidsynth",
-        "lame", "flac", "opusenc", "fdk_aac")
+    add_deps("muse_generated", "muse_global", "native_fluidsynth")
+    add_packages("muse-flac", "lame", "muse-opus", "muse-opusenc", "muse-fdk-aac")
     add_manifest_target("muse_audio_engine")
 
 target("audio_engine_link_check")
@@ -700,7 +493,7 @@ target("audio_engine_link_check")
 target("noqt_support")
     set_kind("static")
     add_deps("muse_generated", "muse_global", "muse_draw", "muse_mpe",
-        "engraving", "iex_musicxml", "harfbuzz", "freetype")
+        "engraving", "iex_musicxml")
     add_manifest_target("noqt_support")
     add_links("z", {public = true})
 
@@ -715,13 +508,17 @@ target("score_engine")
         add_links("m", {public = true})
     end
 
--- Headless MuseScore 4 audio-engine driver (roadmap step 5). It needs both the
--- engraving playback model (score_engine) and the Qt-free engine/encoders
+-- Headless audio-engine driver (roadmap step 5). It needs both the engraving
+-- playback model (score_engine) and the Qt-free engine/encoders
 -- (muse_audio_engine); the process-wide engine state lives in engine_audio.cpp.
 target("engine_audio")
     set_kind("static")
-    add_deps("muse_generated", "score_engine", "muse_audio_engine")
+    add_deps("muse_generated", "score_engine", "muse_audio_engine", "native_fluidsynth")
     add_manifest_target("engine_audio")
+    -- engine_audio.cpp reaches into FluidSynth (soundfont/synth settings), so the
+    -- FluidSynth include roots must be visible here; manifest includes are
+    -- per-target and do not travel through add_deps.
+    add_includedirs(expand_list(manifest.targets.native_fluidsynth.includes))
 
 target("music_core")
     set_kind("static")
@@ -793,8 +590,12 @@ target("musescore_mcp_test")
 
 target("noqt_support_test")
     set_kind("binary")
-    add_deps("muse_generated", "noqt_support")
+    -- engine_audio is linked so the IoC contract test can call a real host entry
+    -- point that requires the file-system service (initialize_engine_audio, which
+    -- guards on it in engine_audio.cpp); the adapter itself lives in noqt_support.
+    add_deps("muse_generated", "noqt_support", "engine_audio")
     add_manifest_target("noqt_support_test")
+    add_files(path.join(project_root, "native", "tests", "ioc_tu2.cpp"))
     add_links("z")
     if is_plat("windows") then
         add_files(path.join(project_root, "native", "utf8.manifest"))
@@ -814,21 +615,21 @@ target("score_positions_test")
     end
 
 
--- Import algorithms retain their upstream module boundary and explicit source lists.
-includes("xmake/imports.lua")
-local function add_import_module(name, sources, extra_includes)
-    target(name)
-        set_kind("static")
-        add_deps("muse_generated", "noqt_support")
-        add_defines(manifest.targets.music_core.defines)
-        add_includedirs(expand_list(manifest.targets.music_core.includes))
-        for _, source in ipairs(sources) do add_files(path.join(source_root, source)) end
-        if extra_includes then add_includedirs(path.join(source_root, extra_includes)) end
-    target_end()
-end
-add_import_module("iex_guitarpro", IMPORT_SOURCES.guitarpro, "src/importexport/guitarpro")
-local midi_sources = table.join(IMPORT_SOURCES.midi, IMPORT_SOURCES.beatroot)
-add_import_module("iex_midi_import", midi_sources, "src/importexport/midi")
+-- Import algorithms keep their upstream module boundary; both source lists are
+-- generated from the engine's importexport CMakeLists (xmake/manifest.lua), so
+-- they follow upstream's file moves (for example the 5.0 guitarbendimport
+-- split and the new MIDI import model, which stays out: it is Qt-only).
+target("iex_guitarpro")
+    set_kind("static")
+    add_deps("muse_generated", "noqt_support")
+    add_manifest_target("iex_guitarpro")
+target_end()
+
+target("iex_midi_import")
+    set_kind("static")
+    add_deps("muse_generated", "noqt_support")
+    add_manifest_target("iex_midi_import")
+target_end()
 
 
 local function add_engine_test(name, file)
@@ -861,28 +662,13 @@ target_end()
 
 -- Upstream unit tests (dev-only; roadmap step 5 acceptance). Qt-free gtest main in native/tests.
 -------------------------------------------------------------------------------
--- Upstream GoogleTest / GoogleMock static library (dev-only)
+-- Upstream GoogleTest / GoogleMock (dev-only)
 -------------------------------------------------------------------------------
-
-target("gtest")
-    set_kind("static")
-    -- Dev-only upstream test library; built explicitly by the run_all lanes.
-    set_default(false)
-    local gtest_root = path.join(source_root, "src/framework/testing/thirdparty/googletest")
-    add_includedirs(path.join(gtest_root, "googletest/include"), {public = true})
-    add_includedirs(path.join(gtest_root, "googlemock/include"), {public = true})
-    add_includedirs(path.join(gtest_root, "googletest"))
-    add_includedirs(path.join(gtest_root, "googlemock"))
-    add_files(
-        path.join(gtest_root, "googletest/src/gtest-all.cc"),
-        path.join(gtest_root, "googlemock/src/gmock-all.cc")
-    )
-    if is_plat("windows") then
-        add_defines("_UNICODE", "UNICODE")
-    else
-        add_syslinks("pthread")
-    end
-target_end()
+-- MuseScore 5.0 no longer vendors googletest: muse_deps fetches it as a source
+-- dependency when MUSE_ENABLE_UNIT_TESTS is on (ExtDepsManifest.cmake), pinned
+-- by muse_deps.ref, and the version is not reproduced here. The dev-only test
+-- lanes therefore take xmake-repo's gtest; they never run in the release build.
+add_requires("gtest v1.17.0", {system = false, configs = {shared = false}})
 
 -------------------------------------------------------------------------------
 -- Upstream Engraving Playback unit tests (Qt-free)
@@ -893,19 +679,23 @@ target("engraving_playback_tests")
     -- Dev-only upstream tests; built explicitly by the upstream_gtest lane.
     set_default(false)
     set_basename("engraving_playback_tests")
-    add_deps("muse_generated", "score_engine", "gtest")
+    add_deps("muse_generated", "score_engine")
+    add_packages("gtest")
     add_defines(manifest.targets.score_engine.defines)
     add_defines("TEST_HAS_ENGRAVING=1")
     add_defines('ENGRAVING_TESTS_DATA_ROOT="' .. path.join(source_root, "src/engraving/tests"):gsub("\\", "/") .. '"')
     add_includedirs(expand_list(manifest.targets.score_engine.includes))
     add_includedirs(path.join(source_root, "src/engraving/tests"))
-    add_includedirs(path.join(source_root, "src/framework"))
+    add_includedirs(path.join(source_root, "muse/framework"))
     add_includedirs(path.join(project_root, "native/tests"))
     add_files(
         path.join(source_root, "src/engraving/tests/playback/playbackeventsrendering_tests.cpp"),
         path.join(source_root, "src/engraving/tests/playback/playbackmodel_tests.cpp"),
         path.join(source_root, "src/engraving/tests/playback/playbackcontext_tests.cpp"),
         path.join(source_root, "src/engraving/tests/playback/bendsrenderer_tests.cpp"),
+        path.join(source_root, "src/engraving/tests/repeat_tests.cpp"),
+        path.join(source_root, "src/engraving/tests/parts_tests.cpp"),
+        path.join(source_root, "src/engraving/tests/utils/scorecomp.cpp"),
         path.join(source_root, "src/engraving/tests/utils/scorerw.cpp"),
         path.join(source_root, "src/engraving/tests/utils/testutils.cpp"),
         path.join(project_root, "native/tests/gtest_main.cpp"),
@@ -928,14 +718,15 @@ target("mpe_tests")
     -- Dev-only upstream tests; built explicitly by the upstream_gtest lane.
     set_default(false)
     set_basename("mpe_tests")
-    add_deps("muse_generated", "muse_mpe", "gtest")
+    add_deps("muse_generated", "muse_mpe")
+    add_packages("gtest")
     add_defines(manifest.targets.muse_mpe.defines)
     add_includedirs(expand_list(manifest.targets.muse_mpe.includes))
-    add_includedirs(path.join(source_root, "src/framework"))
+    add_includedirs(path.join(source_root, "muse/framework"))
     add_includedirs(path.join(project_root, "native/tests"))
     add_files(
-        path.join(source_root, "src/framework/mpe/tests/singlenotearticulationstest.cpp"),
-        path.join(source_root, "src/framework/mpe/tests/multinotearticulationstest.cpp"),
+        path.join(source_root, "muse/framework/mpe/tests/singlenotearticulationstest.cpp"),
+        path.join(source_root, "muse/framework/mpe/tests/multinotearticulationstest.cpp"),
         path.join(project_root, "native/tests/gtest_main.cpp"),
         path.join(project_root, "native/tests/test_environment.cpp")
     )

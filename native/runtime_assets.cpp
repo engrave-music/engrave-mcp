@@ -455,15 +455,19 @@ public:
         return baseKey;
     }
 
-    std::vector<draw::FontDataKey> substitutionFonts(draw::Font::Type type) const override
+    std::vector<draw::FontDataKey> substitutionFonts(const draw::FontDataKey& requireKey) const override
     {
-        std::vector<draw::FontDataKey> result = draw::FontsDatabase::substitutionFonts(type);
-        if (type == draw::Font::Type::Text) {
-            result.reserve(result.size() + m_active->size());
-            for (const FontRecord& record : *m_active) {
-                if (std::find(result.begin(), result.end(), record.key) == result.end()) {
-                    result.push_back(record.key);
-                }
+        std::vector<draw::FontDataKey> result = draw::FontsDatabase::substitutionFonts(requireKey);
+        // 5.0 keys the substitution list by family instead of by font type, so
+        // the 4.7.6 rule "every registered runtime face is a text fallback" has
+        // no type to gate on. Keep the registered faces as extra glyph-fallback
+        // candidates: the primary face is always tried first, so this only
+        // changes codepoints it cannot render (for example CJK text in a score
+        // that names a Latin-only family).
+        result.reserve(result.size() + m_active->size());
+        for (const FontRecord& record : *m_active) {
+            if (std::find(result.begin(), result.end(), record.key) == result.end()) {
+                result.push_back(record.key);
             }
         }
         return result;
@@ -480,16 +484,6 @@ public:
             return data;
         }
         return draw::FontsDatabase::fontData(requireKey, type);
-    }
-
-    muse::io::path_t fontPath(const draw::FontDataKey& requireKey,
-                              draw::Font::Type type) const override
-    {
-        const draw::FontDataKey actualKey = actualFont(requireKey, type);
-        if (const FontRecord* record = findRecord(*m_active, actualKey)) {
-            return muse::io::path_t(record->info.path);
-        }
-        return draw::FontsDatabase::fontPath(requireKey, type);
     }
 
 private:
@@ -521,6 +515,25 @@ public:
         m_engine = std::move(engine);
     }
 
+    // The render cache is optional (FontRenderCache is a no-op without a
+    // directory); forward it so a caller can opt in.
+    void setRenderCacheDirPath(const muse::io::path_t& path, const std::string& revision = std::string()) override
+    {
+        checkOwnerThread();
+        if (!m_engine) {
+            throw std::runtime_error("Runtime font engine is not initialized");
+        }
+        m_engine->setRenderCacheDirPath(path, revision);
+    }
+
+    void clearLoadedFaces() override
+    {
+        checkOwnerThread();
+        if (m_engine) {
+            m_engine->clearLoadedFaces();
+        }
+    }
+
     double lineSpacing(const draw::Font& f) const override
     {
         return engine()->lineSpacing(f);
@@ -549,6 +562,21 @@ public:
     double descent(const draw::Font& f) const override
     {
         return engine()->descent(f);
+    }
+
+    double underlinePos(const draw::Font& f) const override
+    {
+        return engine()->underlinePos(f);
+    }
+
+    double lineWidth(const draw::Font& f) const override
+    {
+        return engine()->lineWidth(f);
+    }
+
+    double strikeOutPos(const draw::Font& f) const override
+    {
+        return engine()->strikeOutPos(f);
     }
 
     bool inFont(const draw::Font& f, char32_t ucs4) const override
@@ -651,10 +679,13 @@ void install_runtime_font_services()
         auto cacheStore = std::make_shared<CacheStore>();
         auto active = std::make_shared<ActiveTable>();
         auto database = std::make_shared<RuntimeFontsDatabase>(cacheStore, active);
-        auto proxy = std::make_shared<FontsEngineProxy>(cacheStore, createEngine());
 
         auto* ioc = muse::modularity::globalIoc();
         ioc->registerExport<muse::draw::IFontsDatabase>("native", database);
+
+        // FontsEngine::init() subscribes to IFontsDatabase::changed() in 5.0, so the
+        // database must be resolvable before the engine is constructed.
+        auto proxy = std::make_shared<FontsEngineProxy>(cacheStore, createEngine());
         ioc->registerExport<muse::draw::IFontsEngine>("native", proxy);
 
         s_database = std::move(database);

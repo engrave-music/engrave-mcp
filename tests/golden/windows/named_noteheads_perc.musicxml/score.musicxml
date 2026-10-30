@@ -105,11 +105,11 @@
       </score-part>
     </part-list>
   <part id="P1">
-    <measure number="1" width="193.33">
+    <measure number="1" width="193.03">
       <print>
         <system-layout>
           <system-margins>
-            <left-margin>109.22</left-margin>
+            <left-margin>109.92</left-margin>
             <right-margin>0</right-margin>
             </system-margins>
           <top-system-distance>170.02</top-system-distance>
@@ -128,7 +128,7 @@
           <sign>percussion</sign>
           </clef>
         </attributes>
-      <note default-x="69.03" default-y="0">
+      <note default-x="68.73" default-y="0">
         <unpitched>
           <display-step>F</display-step>
           <display-octave>5</display-octave>
@@ -139,7 +139,7 @@
         <type>quarter</type>
         <stem>up</stem>
         </note>
-      <note default-x="104.03" default-y="0">
+      <note default-x="103.73" default-y="0">
         <unpitched>
           <display-step>F</display-step>
           <display-octave>5</display-octave>
@@ -150,7 +150,7 @@
         <type>quarter</type>
         <stem>up</stem>
         </note>
-      <note default-x="139.03" default-y="0">
+      <note default-x="138.73" default-y="0">
         <unpitched>
           <display-step>F</display-step>
           <display-octave>5</display-octave>

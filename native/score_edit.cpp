@@ -20,8 +20,9 @@
 #include "engraving/dom/staff.h"
 #include "engraving/dom/tie.h"
 #include "engraving/types/fraction.h"
+#include "engraving/editing/editnote.h"
+#include "engraving/editing/transaction/undostack.h"
 #include "engraving/editing/transpose.h"
-#include "engraving/editing/undo.h"
 #include "engraving/infrastructure/eid.h"
 
 #include <algorithm>
@@ -209,7 +210,7 @@ public:
     void begin() {
         MScore::setError(MsError::MS_NO_ERROR);
         m_score->startCmd(TranslatableString::untranslatable("MCP pitch edit"));
-        m_active = m_score->undoStack()->hasActiveCommand();
+        m_active = m_score->undoStack()->hasActiveTransaction();
         if (!m_active) throw std::runtime_error("Failed to begin pitch edit");
     }
     void finish(bool rollback) {
@@ -256,7 +257,7 @@ PreparedPitchEdit prepare_score_pitch_edit(mu::engraving::MasterScore* score, co
     UndoStack* stack = score->undoStack();
     if (!stack) throw std::runtime_error("Score has no undo stack");
     if (stack->isLocked()) throw std::runtime_error("Score undo stack is locked");
-    if (stack->hasActiveCommand()) throw std::runtime_error("Score already has an active undo command");
+    if (stack->hasActiveTransaction()) throw std::runtime_error("Score already has an active undo command");
 
     const std::vector<Measure*> measures = standard_measures(score);
     std::unordered_map<const Measure*, size_t> measure_indices;
@@ -450,7 +451,7 @@ NativePitchResult apply_score_pitch_edit(mu::engraving::MasterScore* score, cons
         size_t applied = 0;
         for (const auto& change : changes) {
             if (change.oldPitch == change.pitch) continue;
-            score->undoChangePitch(change.note, change.pitch, change.tpc1, change.tpc2);
+            EditNote::undoChangePitch(score, change.note, change.pitch, change.tpc1, change.tpc2);
             ++applied;
 #ifdef MUSIC_CORE_TESTING
             if (applied == 1 && test_fault != NativeEditTestFault::none) {
@@ -466,11 +467,11 @@ NativePitchResult apply_score_pitch_edit(mu::engraving::MasterScore* score, cons
         const auto message = engine_failed ? engine_error_message() : std::string{};
         command.finish(engine_failed);
         if (engine_failed) {
-            bool restored = !stack->hasActiveCommand() && stack->currentIndex() == before_index;
+            bool restored = !stack->hasActiveTransaction() && stack->currentIndex() == before_index;
             for (const auto& change : changes) restored = restored && change.note->pitch() == change.oldPitch;
             throw NativeEditFailure(message, !restored);
         }
-        bool committed = !stack->hasActiveCommand() && stack->currentIndex() == before_index + 1
+        bool committed = !stack->hasActiveTransaction() && stack->currentIndex() == before_index + 1
             && (MScore::_error == MsError::MS_NO_ERROR || MScore::_errorIsWarning);
         for (const auto& change : changes) committed = committed && change.note->pitch() == change.pitch;
         if (!committed) throw NativeEditFailure("Engraving transaction did not commit consistently", true);

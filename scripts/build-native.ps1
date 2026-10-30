@@ -8,10 +8,12 @@ try {
     if (-not $vsPath) { throw 'Visual Studio C++ x64 toolchain is required' }
     Import-Module (Join-Path $vsPath 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
     Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+    # bootstrap.py initializes an absent vendor/musescore submodule and prepare.py
+    # refuses to run until it is initialized, so a fresh checkout needs this order.
+    & pixi run --locked -e native python scripts/bootstrap.py
+    if ($LASTEXITCODE) { throw 'Engine bootstrap failed' }
     & pixi run --locked -e native python scripts/prepare.py
     if ($LASTEXITCODE) { throw 'Native source preparation failed' }
-    & pixi run --locked -e native python scripts/bootstrap.py --harfbuzz
-    if ($LASTEXITCODE) { throw 'HarfBuzz source preparation failed' }
     & pixi run --locked -e native python scripts/prepare_xmake.py --check
     if ($LASTEXITCODE) { throw 'xmake input validation failed' }
     & xmake f -y -m release -o $BuildDirectory

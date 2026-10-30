@@ -93,7 +93,7 @@
     <part-group type="stop" number="1"/>
     </part-list>
   <part id="P1">
-    <measure number="1" width="482.29">
+    <measure number="1" width="482.21">
       <print>
         <system-layout>
           <system-margins>
@@ -103,7 +103,7 @@
           <top-system-distance>170</top-system-distance>
           </system-layout>
         <staff-layout number="2">
-          <staff-distance>96.05</staff-distance>
+          <staff-distance>96.23</staff-distance>
           </staff-layout>
         </print>
       <attributes>
@@ -125,7 +125,7 @@
           <line>2</line>
           </clef>
         </attributes>
-      <note default-x="82.21" default-y="-20">
+      <note default-x="82.06" default-y="-20">
         <pitch>
           <step>B</step>
           <octave>4</octave>
@@ -140,7 +140,7 @@
           <tied type="start"/>
           </notations>
         </note>
-      <note default-x="196" default-y="-20">
+      <note default-x="195.87" default-y="-20">
         <pitch>
           <step>B</step>
           <octave>4</octave>
@@ -155,7 +155,7 @@
           <tied type="stop"/>
           </notations>
         </note>
-      <note default-x="309.8" default-y="-20">
+      <note default-x="309.69" default-y="-20">
         <rest/>
         <duration>2</duration>
         <voice>1</voice>
@@ -165,7 +165,7 @@
       <backup>
         <duration>4</duration>
         </backup>
-      <note default-x="82.21" default-y="-156.05">
+      <note default-x="82.06" default-y="-156.23">
         <pitch>
           <step>B</step>
           <octave>4</octave>
@@ -180,7 +180,7 @@
           <tied type="start"/>
           </notations>
         </note>
-      <note default-x="196" default-y="-156.05">
+      <note default-x="195.87" default-y="-156.23">
         <pitch>
           <step>B</step>
           <octave>4</octave>
@@ -195,7 +195,7 @@
           <tied type="stop"/>
           </notations>
         </note>
-      <note default-x="309.8" default-y="-156.05">
+      <note default-x="309.69" default-y="-156.23">
         <rest/>
         <duration>2</duration>
         <voice>5</voice>
@@ -203,7 +203,7 @@
         <staff>2</staff>
         </note>
       </measure>
-    <measure number="2" width="496.28">
+    <measure number="2" width="496.36">
       <note default-x="10.62" default-y="-20">
         <grace/>
         <pitch>
@@ -234,14 +234,14 @@
           <tied type="stop"/>
           </notations>
         </note>
-      <note default-x="143.9" default-y="-20">
+      <note default-x="143.91" default-y="-20">
         <rest/>
         <duration>1</duration>
         <voice>1</voice>
         <type>quarter</type>
         <staff>1</staff>
         </note>
-      <note default-x="257.69" default-y="-20">
+      <note default-x="257.73" default-y="-20">
         <pitch>
           <step>B</step>
           <octave>4</octave>
@@ -256,7 +256,7 @@
           <tied type="start"/>
           </notations>
         </note>
-      <note default-x="352.01" default-y="-20">
+      <note default-x="352.07" default-y="-20">
         <grace/>
         <pitch>
           <step>B</step>
@@ -271,7 +271,7 @@
           <tied type="stop"/>
           </notations>
         </note>
-      <note default-x="371.49" default-y="-20">
+      <note default-x="371.55" default-y="-20">
         <rest/>
         <duration>1</duration>
         <voice>1</voice>
@@ -281,7 +281,7 @@
       <backup>
         <duration>4</duration>
         </backup>
-      <note default-x="10.62" default-y="-156.05">
+      <note default-x="10.62" default-y="-156.23">
         <grace/>
         <pitch>
           <step>B</step>
@@ -296,7 +296,7 @@
           <tied type="start"/>
           </notations>
         </note>
-      <note default-x="30.1" default-y="-156.05">
+      <note default-x="30.1" default-y="-156.23">
         <pitch>
           <step>B</step>
           <octave>4</octave>
@@ -311,14 +311,14 @@
           <tied type="stop"/>
           </notations>
         </note>
-      <note default-x="143.9" default-y="-156.05">
+      <note default-x="143.91" default-y="-156.23">
         <rest/>
         <duration>1</duration>
         <voice>5</voice>
         <type>quarter</type>
         <staff>2</staff>
         </note>
-      <note default-x="257.69" default-y="-156.05">
+      <note default-x="257.73" default-y="-156.23">
         <pitch>
           <step>B</step>
           <octave>4</octave>
@@ -333,7 +333,7 @@
           <tied type="start"/>
           </notations>
         </note>
-      <note default-x="352.01" default-y="-156.05">
+      <note default-x="352.07" default-y="-156.23">
         <grace/>
         <pitch>
           <step>B</step>
@@ -348,7 +348,7 @@
           <tied type="stop"/>
           </notations>
         </note>
-      <note default-x="371.49" default-y="-156.05">
+      <note default-x="371.55" default-y="-156.23">
         <rest/>
         <duration>1</duration>
         <voice>5</voice>

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.70">
+<museScore version="5.00">
   <programVersion></programVersion>
   <programRevision></programRevision>
   <Score>
-    <eid/>
+    <eid>e1</eid>
     <Division>480</Division>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
@@ -72,23 +72,25 @@
         </section>
       </Order>
     <Part id="1">
+      <eid>e2</eid>
       <Staff>
-        <eid/>
+        <eid>e3</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
         </Staff>
       <Staff>
-        <eid/>
-        <linkedTo/>
+        <eid>e4</eid>
+        <linkedTo>e3</linkedTo>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
         </Staff>
-      <trackName>Flute</trackName>
       <Instrument id="flute">
-        <longName>Flute</longName>
-        <shortName>Fl.</shortName>
+        <InstrumentLabel>
+          <longName>Flute</longName>
+          <shortName>Fl.</shortName>
+          </InstrumentLabel>
         <trackName>Flute</trackName>
         <minPitchP>59</minPitchP>
         <maxPitchP>98</maxPitchP>
@@ -104,140 +106,109 @@
     <Staff id="1">
       <VBox>
         <height>10</height>
-        <eid/>
+        <eid>e5</eid>
         </VBox>
       <Measure>
-        <eid/>
+        <eid>e6</eid>
         <voice>
           <KeySig>
-            <eid/>
+            <eid>e7</eid>
             <concertKey>0</concertKey>
             </KeySig>
           <TimeSig>
-            <eid/>
+            <eid>e8</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Chord>
-            <eid/>
+            <eid>e9</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <Spanner type="Tie">
-                <Tie>
-                  <eid/>
-                  </Tie>
-                <next>
-                  <location>
-                    <fractions>1/4</fractions>
-                    </location>
-                  </next>
-                </Spanner>
+              <eid>e10</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e11</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <Spanner type="Tie">
-                <prev>
-                  <location>
-                    <fractions>-1/4</fractions>
-                    </location>
-                  </prev>
-                </Spanner>
+              <eid>e12</eid>
+              <Tie>
+                <startElement>e10</startElement>
+                <endElement>e12</endElement>
+                <eid>e13</eid>
+                <track>0</track>
+                </Tie>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
+            <eid>e14</eid>
             <durationType>half</durationType>
             </Rest>
           </voice>
         </Measure>
       <Measure>
-        <eid/>
+        <eid>e15</eid>
         <voice>
           <Chord>
-            <eid/>
+            <eid>e16</eid>
             <durationType>eighth</durationType>
             <appoggiatura/>
             <Note>
-              <eid/>
-              <Spanner type="Tie">
-                <Tie>
-                  <eid/>
-                  </Tie>
-                <next>
-                  <location>
-                    </location>
-                  </next>
-                </Spanner>
+              <eid>e17</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e18</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <Spanner type="Tie">
-                <prev>
-                  <location>
-                    <grace>0</grace>
-                    </location>
-                  </prev>
-                </Spanner>
+              <eid>e19</eid>
+              <Tie>
+                <startElement>e17</startElement>
+                <endElement>e19</endElement>
+                <eid>e20</eid>
+                <track>0</track>
+                </Tie>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
+            <eid>e21</eid>
             <durationType>quarter</durationType>
             </Rest>
           <Chord>
-            <eid/>
+            <eid>e22</eid>
             <durationType>eighth</durationType>
             <grace8after/>
             <Note>
-              <eid/>
-              <Spanner type="Tie">
-                <prev>
-                  <location>
-                    </location>
-                  </prev>
-                </Spanner>
+              <eid>e23</eid>
+              <Tie>
+                <startElement>e24</startElement>
+                <endElement>e23</endElement>
+                <eid>e25</eid>
+                <track>0</track>
+                </Tie>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
+            <eid>e26</eid>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <Spanner type="Tie">
-                <Tie>
-                  <eid/>
-                  </Tie>
-                <next>
-                  <location>
-                    <grace>0</grace>
-                    </location>
-                  </next>
-                </Spanner>
+              <eid>e24</eid>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
+            <eid>e27</eid>
             <durationType>quarter</durationType>
             </Rest>
           </voice>
@@ -247,58 +218,47 @@
       <Measure>
         <voice>
           <KeySig>
-            <eid/>
-            <linkedTo/>
+            <eid>e28</eid>
+            <linkedTo>e7</linkedTo>
             <concertKey>0</concertKey>
             </KeySig>
           <TimeSig>
-            <eid/>
+            <eid>e29</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e30</eid>
+            <linkedTo>e9</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
-              <Spanner type="Tie">
-                <Tie>
-                  <eid/>
-                  <linkedTo/>
-                  </Tie>
-                <next>
-                  <location>
-                    <fractions>1/4</fractions>
-                    </location>
-                  </next>
-                </Spanner>
+              <eid>e31</eid>
+              <linkedTo>e10</linkedTo>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e32</eid>
+            <linkedTo>e11</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
-              <Spanner type="Tie">
-                <prev>
-                  <location>
-                    <fractions>-1/4</fractions>
-                    </location>
-                  </prev>
-                </Spanner>
+              <eid>e33</eid>
+              <linkedTo>e12</linkedTo>
+              <Tie>
+                <startElement>e31</startElement>
+                <endElement>e33</endElement>
+                <eid>e34</eid>
+                <linkedTo>e13</linkedTo>
+                <track>4</track>
+                </Tie>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e35</eid>
+            <linkedTo>e14</linkedTo>
             <durationType>half</durationType>
             </Rest>
           </voice>
@@ -306,93 +266,73 @@
       <Measure>
         <voice>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e36</eid>
+            <linkedTo>e16</linkedTo>
             <durationType>eighth</durationType>
             <appoggiatura/>
             <Note>
-              <eid/>
-              <linkedTo/>
-              <Spanner type="Tie">
-                <Tie>
-                  <eid/>
-                  <linkedTo/>
-                  </Tie>
-                <next>
-                  <location>
-                    </location>
-                  </next>
-                </Spanner>
+              <eid>e37</eid>
+              <linkedTo>e17</linkedTo>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e38</eid>
+            <linkedTo>e18</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
-              <Spanner type="Tie">
-                <prev>
-                  <location>
-                    <grace>0</grace>
-                    </location>
-                  </prev>
-                </Spanner>
+              <eid>e39</eid>
+              <linkedTo>e19</linkedTo>
+              <Tie>
+                <startElement>e37</startElement>
+                <endElement>e39</endElement>
+                <eid>e40</eid>
+                <linkedTo>e20</linkedTo>
+                <track>4</track>
+                </Tie>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e41</eid>
+            <linkedTo>e21</linkedTo>
             <durationType>quarter</durationType>
             </Rest>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e42</eid>
+            <linkedTo>e22</linkedTo>
             <durationType>eighth</durationType>
             <grace8after/>
             <Note>
-              <eid/>
-              <linkedTo/>
-              <Spanner type="Tie">
-                <prev>
-                  <location>
-                    </location>
-                  </prev>
-                </Spanner>
+              <eid>e43</eid>
+              <linkedTo>e23</linkedTo>
+              <Tie>
+                <startElement>e44</startElement>
+                <endElement>e43</endElement>
+                <eid>e45</eid>
+                <linkedTo>e25</linkedTo>
+                <track>4</track>
+                </Tie>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Chord>
-            <eid/>
-            <linkedTo/>
+            <eid>e46</eid>
+            <linkedTo>e26</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <eid/>
-              <linkedTo/>
-              <Spanner type="Tie">
-                <Tie>
-                  <eid/>
-                  <linkedTo/>
-                  </Tie>
-                <next>
-                  <location>
-                    <grace>0</grace>
-                    </location>
-                  </next>
-                </Spanner>
+              <eid>e44</eid>
+              <linkedTo>e24</linkedTo>
               <pitch>71</pitch>
               <tpc>19</tpc>
               </Note>
             </Chord>
           <Rest>
-            <eid/>
-            <linkedTo/>
+            <eid>e47</eid>
+            <linkedTo>e27</linkedTo>
             <durationType>quarter</durationType>
             </Rest>
           </voice>

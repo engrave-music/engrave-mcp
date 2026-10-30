@@ -770,26 +770,41 @@ class LiveSession:
         if self.assets is not None:
             command += ["--resources", str(self.assets.resolve())]
         self.stderr = (self.directory / "server-stderr.log").open("wb")
-        self.proc = await asyncio.create_subprocess_exec(
-            *command,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=self.stderr,
-            cwd=str(self.directory),
-            limit=16 * 1024 * 1024,
-        )
-        assert self.proc.stdin is not None and self.proc.stdout is not None
-        self.reader = asyncio.create_task(self._read())
-        await self.call(
-            "initialize",
-            {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {"name": "tool-schema-contract", "version": "1"},
-            },
-        )
-        await self.notify("notifications/initialized", {})
-        return self
+        try:
+            self.proc = await asyncio.create_subprocess_exec(
+                *command,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=self.stderr,
+                cwd=str(self.directory),
+                limit=16 * 1024 * 1024,
+            )
+            assert self.proc.stdin is not None and self.proc.stdout is not None
+            self.reader = asyncio.create_task(self._read())
+            await self.call(
+                "initialize",
+                {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "tool-schema-contract", "version": "1"},
+                },
+            )
+            await self.notify("notifications/initialized", {})
+            return self
+        except BaseException:
+            if self.proc is not None:
+                if self.proc.returncode is None:
+                    self.proc.kill()
+                    await self.proc.wait()
+            if self.reader is not None and not self.reader.done():
+                self.reader.cancel()
+                try:
+                    await self.reader
+                except asyncio.CancelledError:
+                    pass
+            if self.stderr is not None and not self.stderr.closed:
+                self.stderr.close()
+            raise
 
     async def _read(self) -> None:
         assert self.proc is not None and self.proc.stdout is not None

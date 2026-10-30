@@ -30,10 +30,13 @@ ROOT = Path(__file__).resolve().parents[1]
 # A different difference list fails with its new digest; an entry whose phase no longer differs is reported stale.
 KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
     "bend.gp": {
-        "musicxml": ("9bb3db5215477217", "GP bend grace-after notes re-imported as grace-before (appoggiatura) on following chord"),
+        "musicxml": ("f386eae23b9c8cb7", "The same GP grace-after notes become grace-before on the following chord; the corrected 5.00 parser changes the digest representation."),
     },
     "drums_import.musicxml": {
-        "mscz_text": ("4fbcfbaf8ebf0f31", "MSCZ round-trip synthesizes title <size>24</size> element from font size attribute"),
+        "mscz_text": ("3a759cb7769875f9", "The only content change is the same synthesized title size element; hunk context and line numbers differ in 5.00 serialization."),
+    },
+    "custom_part_name.mscx": {
+        "musicxml": ("05dd75d215fedcc1", "invisible fff dynamic is not exported"),
     },
     "hairpins_and_repeats.mscx": {
         "musicxml": ("05dd75d215fedcc1", "invisible fff dynamic is not exported"),
@@ -43,19 +46,18 @@ KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
         "idempotence": ("aeab1d528f30d872", "unrendered MusicXML harmony dropped on second export"),
     },
     "linked_parts.mscx": {
-        "musicxml": ("565be437be792c3f", "grace8after with ties converted to appoggiatura in MusicXML"),
+        "musicxml": ("fb3d4f6354501cb7", "The same grace conversion and backward cross-staff tie occur in historical 4.7.6 A/C files; the corrected 5.00 parser describes them differently."),
         "idempotence": ("efa1ff9698e4b076", "the tie re-attached to moved grace note is dropped on second import"),
     },
     "linked_parts.mscx:excerpt:0": {
-        "mscz_text": ("de7e328d6843c80a", "MSCZ round-trip drops excerpt <name>, <Style><spatium>, and all <linkedTo> tags"),
-        "musicxml": ("565be437be792c3f", "grace8after with ties converted to appoggiatura in MusicXML"),
+        "mscz_text": ("77d073cac18ac443", "Same dropped excerpt name, style block and links as 4.7.6; the dropped 5.00 style block contains additional upstream style fields. Both current runs produced the same digest."),
+        "musicxml": ("fb3d4f6354501cb7", "Same grace conversion and backward cross-staff tie as the linked master; parser representation changed."),
         "idempotence": ("efa1ff9698e4b076", "the tie re-attached to moved grace note is dropped on second import"),
     },
     "slurs.mscz": {
         "musicxml": ("02ce304f5126a1fd", "grace16after slurs: grace-after notes converted to grace-before in MusicXML"),
     },
     "ghost_note.mscx": {
-        "mscz_text": ("eca5346553661549", "4.10 ghost notes: the first save after the legacy read writes one NoteParenGroup twice; the reloaded score writes it once"),
         "musicxml": ("7872bae4c4cf03e9", "linked tab staff gains an explicit 4/4 time signature after MusicXML import"),
     },
     "tab_grace_prebend.mscx": {
@@ -97,7 +99,7 @@ def spanner_target_tick(
 
 def get_spanner_props(sp: ET.Element) -> tuple[tuple[str, Any], ...]:
     """Extract placement, offset, endings, and beginText properties for supported spanners."""
-    stype = sp.get("type", "")
+    stype = sp.get("type", "") or sp.tag
     if stype not in {"Pedal", "Ottava", "HairPin", "Volta"}:
         return ()
     inner = sp.find(stype)
@@ -128,9 +130,395 @@ def normalize_mscx_text(text: str) -> str:
     return text
 
 
+def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
+    score = root.find("Score")
+    if score is None:
+        score = root
+    div = int(score.findtext("Division", "480"))
+
+    # Metadata
+    metadata: dict[str, str] = {}
+    for m in score.findall("metaTag"):
+        name = m.get("name")
+        if name and name not in ("creationDate", "platform"):
+            metadata[name] = (m.text or "").strip()
+
+    # Parts
+    parts: list[dict[str, Any]] = []
+    for p in score.findall("Part"):
+        inst = p.find("Instrument")
+        staves_p = p.findall("Staff")
+        groups = [s.find("StaffType").get("group", "") for s in staves_p if s.find("StaffType") is not None]
+        inst_vis = {c.tag: (c.text or "").strip() for c in (inst if inst is not None else []) if "vis" in c.tag.lower() or "show" in c.tag.lower()}
+        
+        long_name = ""
+        if inst is not None:
+            long_name = inst.findtext("InstrumentLabel/longName") or inst.findtext("longName") or ""
+        long_name = long_name.strip()
+        
+        track_name = p.findtext("trackName", "")
+        if not track_name and inst is not None:
+            track_name = inst.findtext("trackName", "")
+        track_name = track_name.strip()
+
+        inst_id = inst.findtext("instrumentId", "").strip() if inst is not None else ""
+
+        parts.append({
+            "trackName": track_name,
+            "instrumentId": inst_id,
+            "longName": long_name,
+            "staffCount": len(staves_p),
+            "staffTypeGroups": groups,
+            "show": p.findtext("show"),
+            "staffInvisible": [s.findtext("invisible") for s in staves_p],
+            "instrumentVisibility": inst_vis,
+        })
+
+    # Measures per staff
+    staves = score.findall("Staff")
+    meas_ticks: list[tuple[int, int, tuple[int, int]]] = []
+    curr_tick, curr_sig = 0, (4, 4)
+    if staves:
+        for m in staves[0].findall("Measure"):
+            ts = m.find(".//TimeSig")
+            if ts is not None:
+                curr_sig = (int(ts.findtext("sigN", "4")), int(ts.findtext("sigD", "4")))
+            mlen = frac_to_ticks(m.get("len"), div) if m.get("len") else int(Fraction(curr_sig[0], curr_sig[1]) * 4 * div)
+            meas_ticks.append((curr_tick, mlen, curr_sig))
+            curr_tick += mlen
+
+    staff_measures, staff_events, staff_spanners, staff_clefs, staff_annotations = {}, {}, {}, {}, {}
+    eid_to_info: dict[str, Any] = {}
+    ties_to_resolve: list[dict[str, Any]] = []
+
+    for s_idx, staff in enumerate(staves):
+        staff_id = staff.get("id", str(s_idx + 1))
+        measures_info, events_by_voice, spanners_list, clef_list = [], {}, [], []
+        dyn_counts, tempo_list, lyrics_list, artic_counts, fingering_list, staff_text_list = {}, [], [], {}, [], []
+        jumps_list, markers_list = [], []
+        harmony_count, fermata_count = 0, 0
+
+        m_list = staff.findall("Measure")
+        for m_idx, m in enumerate(m_list):
+            m_start, mlen, _ = meas_ticks[m_idx] if m_idx < len(meas_ticks) else (0, 1920, (4, 4))
+            m_eid = m.findtext("eid")
+            if m_eid:
+                eid_to_info[m_eid.strip()] = ("measure", staff_id, m_idx, m_start, mlen)
+
+            ts = m.find(".//TimeSig")
+            ts_str = f"{ts.findtext('sigN')}/{ts.findtext('sigD')}" if ts is not None else None
+            ks = m.find(".//KeySig")
+            key_val = (ks.findtext("concertKey") or ks.findtext("accidental")) if ks is not None else None
+            measures_info.append({
+                "timesig": ts_str,
+                "len": m.get("len"),
+                "startRepeat": bool(m.find("startRepeat") is not None),
+                "endRepeat": int(m.findtext("endRepeat")) if m.find("endRepeat") is not None else 0,
+                "keySig": key_val,
+            })
+
+            for mc in m.findall("Clef"):
+                c_type = (mc.findtext("concertClefType") or mc.findtext("transposingClefType") or "").strip()
+                clef_list.append((m_start, c_type))
+            for j in m.findall("Jump"):
+                j_sub = (j.findtext("jumpType") or j.findtext("subtype") or j.findtext("text") or "").strip()
+                jumps_list.append((m_idx, j_sub))
+            for mk in m.findall("Marker"):
+                mk_sub = (mk.findtext("markerType") or mk.findtext("subtype") or mk.findtext("label") or mk.findtext("text") or "").strip()
+                markers_list.append((m_idx, mk_sub))
+
+            for v_idx, voice in enumerate(m.findall("voice")):
+                events_by_voice.setdefault(v_idx, [])
+                v_tick = m_start
+                last_main_tick = m_start
+                raw_events = []
+                seq = 0
+                tuplet_stack = []
+
+                for child in voice:
+                    if child.tag == "Tuplet":
+                        norm = int(child.findtext("normalNotes", "2"))
+                        act = int(child.findtext("actualNotes", "3"))
+                        tuplet_stack.append((norm, act))
+                    elif child.tag == "endTuplet":
+                        if tuplet_stack:
+                            tuplet_stack.pop()
+                    elif child.tag == "TimeSig":
+                        sig_n = child.findtext("sigN")
+                        sig_d = child.findtext("sigD")
+                        if sig_n and sig_d:
+                            curr_sig = (int(sig_n), int(sig_d))
+                    elif child.tag == "Clef":
+                        c_type = (child.findtext("concertClefType") or child.findtext("transposingClefType") or "").strip()
+                        clef_list.append((v_tick, c_type))
+                    elif child.tag == "Chord":
+                        c_eid = child.findtext("eid")
+                        grace_kind = "none"
+                        for gtag in GRACE_TAGS:
+                            if child.find(gtag) is not None:
+                                grace_kind = gtag
+                                break
+                        is_grace = (grace_kind != "none")
+                        is_grace_after = grace_kind.endswith("after")
+
+                        if is_grace:
+                            dur = 0
+                            event_tick = v_tick
+                            order_rank = 2 if is_grace_after else 0
+                        elif child.findtext("duration"):
+                            dur = frac_to_ticks(child.findtext("duration"), div)
+                            event_tick = v_tick
+                            last_main_tick = v_tick
+                            order_rank = 1
+                        else:
+                            dtype = child.findtext("durationType", "quarter")
+                            dots = int(child.findtext("dots", "0"))
+                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2 ** dots)
+                            ratio = Fraction(1, 1)
+                            for norm, act in tuplet_stack:
+                                ratio *= Fraction(norm, act)
+                            dur = int(base_dur * ratio)
+                            event_tick = v_tick
+                            last_main_tick = v_tick
+                            order_rank = 1
+
+                        if c_eid:
+                            eid_to_info[c_eid.strip()] = ("chord", staff_id, event_tick, dur, child)
+
+                        stem_dir = (child.findtext("StemDirection") or child.findtext("stemDirection") or "").strip()
+                        notes_list = []
+                        for n in child.findall("Note"):
+                            n_eid = n.findtext("eid")
+                            pitch, tpc = int(n.findtext("pitch", "0")), int(n.findtext("tpc", "0"))
+                            head = (n.findtext("head") or "").strip()
+                            head_type = (n.findtext("headType") or "").strip()
+                            
+                            # Note object representation in list: [pitch, tpc, tie_start, head, head_type]
+                            note_obj = [pitch, tpc, False, head, head_type]
+                            notes_list.append(note_obj)
+
+                            if n_eid:
+                                eid_to_info[n_eid.strip()] = ("note", staff_id, event_tick, dur, note_obj)
+
+                            for f in n.findall("Fingering"):
+                                fingering_list.append(f.findtext("text", "").strip())
+                            
+                            tie = n.find("Tie")
+                            if tie is not None:
+                                s_el = tie.findtext("startElement")
+                                e_el = tie.findtext("endElement")
+                                ties_to_resolve.append({
+                                    "end_note": note_obj,
+                                    "end_tick": event_tick,
+                                    "staff_id": staff_id,
+                                    "voice_idx": v_idx,
+                                    "pitch": pitch,
+                                    "is_grace_after": is_grace_after,
+                                    "start_eid": s_el.strip() if s_el else None,
+                                    "end_eid": e_el.strip() if e_el else None,
+                                    "raw_index": len(raw_events),
+                                    "raw_events": raw_events,
+                                    "m_idx": m_idx,
+                                })
+
+                        evt_container = ["chord", event_tick, dur, notes_list, grace_kind, stem_dir]
+                        raw_events.append((event_tick, order_rank, seq, evt_container))
+                        seq += 1
+
+                        for art in child.findall("Articulation"):
+                            sub = art.findtext("subtype") or art.get("name") or ""
+                            artic_counts[sub] = artic_counts.get(sub, 0) + 1
+                        for lyr in child.findall("Lyrics"):
+                            lyrics_list.append((int(lyr.findtext("no", "0")), lyr.findtext("text", "").strip()))
+                        fermata_count += len(child.findall("Fermata"))
+                        v_tick += dur
+                    elif child.tag == "Rest":
+                        if child.findtext("duration"):
+                            dur = frac_to_ticks(child.findtext("duration"), div)
+                        elif child.findtext("durationType") == "measure":
+                            dur = mlen
+                        else:
+                            dtype = child.findtext("durationType", "quarter")
+                            dots = int(child.findtext("dots", "0"))
+                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2 ** dots)
+                            ratio = Fraction(1, 1)
+                            for norm, act in tuplet_stack:
+                                ratio *= Fraction(norm, act)
+                            dur = int(base_dur * ratio)
+
+                        event_tick = v_tick
+                        last_main_tick = v_tick
+                        order_rank = 1
+                        r_eid = child.findtext("eid")
+                        evt_container = ["rest", event_tick, dur, (), "none", ""]
+                        if r_eid:
+                            eid_to_info[r_eid.strip()] = ("rest", staff_id, event_tick, dur, child)
+                        raw_events.append((event_tick, order_rank, seq, evt_container))
+                        seq += 1
+
+                        fermata_count += len(child.findall("Fermata"))
+                        v_tick += dur
+                    elif child.tag == "Dynamic":
+                        sub = child.findtext("subtype", "").strip()
+                        dyn_counts[sub] = dyn_counts.get(sub, 0) + 1
+                    elif child.tag == "Tempo":
+                        tempo_list.append(round(float(child.findtext("tempo", "0")), 4))
+                    elif child.tag == "Harmony":
+                        harmony_count += 1
+                    elif child.tag == "StaffText":
+                        staff_text_list.append(child.findtext("text", "").strip())
+                    elif child.tag == "Jump":
+                        j_sub = (child.findtext("jumpType") or child.findtext("subtype") or child.findtext("text") or "").strip()
+                        jumps_list.append((m_idx, j_sub))
+                    elif child.tag == "Marker":
+                        mk_sub = (mk.findtext("markerType") or mk.findtext("subtype") or mk.findtext("label") or mk.findtext("text") or "").strip()
+                        markers_list.append((m_idx, mk_sub))
+
+
+                raw_events.sort(key=lambda item: (item[0], item[1], item[2]))
+                events_by_voice[v_idx].extend(item[3] for item in raw_events)
+
+        staff_measures[staff_id] = measures_info
+        staff_events[staff_id] = events_by_voice
+        staff_spanners[staff_id] = spanners_list
+        staff_clefs[staff_id] = sorted(clef_list)
+        staff_annotations[staff_id] = {
+            "dynamics": dyn_counts, "tempos": tempo_list, "harmony": harmony_count,
+            "lyrics": lyrics_list, "articulations": artic_counts, "fingerings": fingering_list,
+            "staffTexts": staff_text_list, "fermatas": fermata_count,
+            "jumps": jumps_list, "markers": markers_list,
+        }
+
+    # Resolve Ties
+    for tie_info in ties_to_resolve:
+        staff_id = tie_info["staff_id"]
+        v_idx = tie_info["voice_idx"]
+        pitch = tie_info["pitch"]
+        end_tick = tie_info["end_tick"]
+        start_eid = tie_info["start_eid"]
+        is_grace_after = tie_info["is_grace_after"]
+
+        start_found = False
+        start_tick = 0
+        info = None
+        if start_eid and start_eid in eid_to_info:
+            info = eid_to_info[start_eid]
+            if info[0] == "note":
+                info[4][2] = True  # tie_start = True
+                start_tick = info[2]
+                start_found = True
+
+        if not start_found:
+            # Fallback when EIDs were stripped
+            raw_evts = tie_info["raw_events"]
+            raw_idx = tie_info["raw_index"]
+            if is_grace_after:
+                for item in raw_evts[raw_idx + 1:]:
+                    evt = item[3]
+                    if evt[0] == "chord":
+                        for n in evt[3]:
+                            if n[0] == pitch:
+                                n[2] = True
+                                start_tick = evt[1]
+                                start_found = True
+                                break
+                    if start_found:
+                        break
+            else:
+                for item in reversed(raw_evts[:raw_idx]):
+                    evt = item[3]
+                    if evt[0] == "chord":
+                        for n in evt[3]:
+                            if n[0] == pitch:
+                                n[2] = True
+                                start_tick = evt[1]
+                                start_found = True
+                                break
+                    if start_found:
+                        break
+                if not start_found:
+                    for evt in reversed(staff_events[staff_id][v_idx]):
+                        if evt[0] == "chord" and evt[1] < end_tick:
+                            for n in evt[3]:
+                                if n[0] == pitch:
+                                    n[2] = True
+                                    start_tick = evt[1]
+                                    start_found = True
+                                    break
+                        if start_found:
+                            break
+
+        tie_staff = info[1] if (start_found and start_eid and start_eid in eid_to_info) else staff_id
+        if start_found:
+            staff_spanners.setdefault(tie_staff, []).append(("Tie", tie_staff, start_tick, end_tick, ()))
+
+    # Convert notes_list to tuple(sorted(notes)) and evt_container to tuple
+    for staff_id, vmap in staff_events.items():
+        for v_idx, evts in vmap.items():
+            final_evts = []
+            for evt in evts:
+                if evt[0] == "chord":
+                    sorted_notes = tuple(sorted((n[0], n[1], n[2], n[3], n[4]) for n in evt[3]))
+                    final_evts.append((evt[0], evt[1], evt[2], sorted_notes, evt[4], evt[5]))
+                else:
+                    final_evts.append(tuple(evt))
+            vmap[v_idx] = final_evts
+
+    # Resolve score-level <SpannerMap>
+    spanner_map = score.find("SpannerMap")
+    if spanner_map is not None:
+        for sp in spanner_map:
+            stype = sp.tag
+            track = int(sp.findtext("track", "0"))
+            s_idx = track // 4
+            staff_id = staves[s_idx].get("id", str(s_idx + 1)) if s_idx < len(staves) else str(s_idx + 1)
+            props = get_spanner_props(sp)
+
+            start_tick_el = sp.find("startTick")
+            if start_tick_el is not None:
+                start_tick = frac_to_ticks(start_tick_el.text, div)
+                ticks_val = frac_to_ticks(sp.findtext("ticks"), div)
+                end_tick = start_tick + ticks_val
+                if staff_id in staff_spanners:
+                    staff_spanners[staff_id].append((stype, staff_id, start_tick, end_tick, props))
+            else:
+                s_el = sp.findtext("startElement")
+                e_el = sp.findtext("endElement")
+                start_eid = s_el.strip() if s_el else None
+                end_eid = e_el.strip() if e_el else None
+                if start_eid and end_eid:
+                    start_info = eid_to_info.get(start_eid)
+                    end_info = eid_to_info.get(end_eid)
+                    if start_info and end_info:
+                        if stype == "Volta":
+                            start_m = start_info[2]
+                            end_m = end_info[2]
+                            start_tick = meas_ticks[start_m][0]
+                            end_tick = meas_ticks[end_m][0] + meas_ticks[end_m][1]
+                        else:
+                            start_tick = start_info[2]
+                            end_tick = end_info[2]
+                        if staff_id in staff_spanners:
+                            staff_spanners[staff_id].append((stype, staff_id, start_tick, end_tick, props))
+
+    for staff_id in staff_spanners:
+        staff_spanners[staff_id].sort()
+
+    excerpts = [{"title": s.findtext("name") or "", "parts": [p.get("id") for p in s.findall("Part")]} for s in score.findall("Score")]
+    return {
+        "metadata": metadata, "parts": parts, "measures": staff_measures,
+        "events": staff_events, "spanners": staff_spanners,
+        "clefs": staff_clefs, "annotations": staff_annotations, "excerpts": excerpts,
+    }
+
+
 def parse_mscx(text: str) -> dict[str, Any]:
-    """Parse a MuseScore 4 MSCX document into its semantic representation."""
+    """Parse a MuseScore MSCX document into its semantic representation."""
     root = ET.fromstring(text)
+    version = root.get("version", "4.70")
+    if version.startswith("5."):
+        return parse_mscx_500(root)
+
     score = root.find("Score")
     if score is None:
         score = root
