@@ -1,6 +1,6 @@
-# MuseScore Native MCP 构建与开发者指南
+# engrave-mcp 构建与开发者指南
 
-本文档记录基于固定（pinned）上游代码的原生 C++ MuseScore MCP 服务端构建流程、架构约束及验证规范。
+本文档记录基于固定（pinned）上游代码的原生 C++ engrave-mcp 服务端构建流程、架构约束及验证规范。
 
 ---
 

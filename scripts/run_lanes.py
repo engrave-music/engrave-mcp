@@ -97,6 +97,7 @@ def check_preflight_eol(repo_root: Path) -> None:
         sys.exit(2)
 
     violations = []
+    boms = []
     for line in res.stdout.splitlines():
         if not line or "\t" not in line:
             continue
@@ -104,18 +105,32 @@ def check_preflight_eol(repo_root: Path) -> None:
         tokens = meta.split()
         if len(tokens) < 2:
             continue
+        i_eol = tokens[0]
         w_eol = tokens[1]
-        if w_eol in ("w/crlf", "w/mixed"):
-            attrs = tokens[2:]
-            has_crlf_attr = any("eol=crlf" in a for a in attrs)
-            has_minus_text = any("-text" in a for a in attrs)
-            if not (has_crlf_attr or has_minus_text):
-                violations.append((path, w_eol, " ".join(attrs)))
+        attrs = tokens[2:]
+        binary = any("-text" in a for a in attrs)
+        crlf_allowed = binary or any("eol=crlf" in a for a in attrs)
+        if (w_eol == "w/mixed" and not binary) or (w_eol == "w/crlf" and not crlf_allowed):
+            violations.append((path, w_eol, " ".join(attrs)))
+        if not binary and i_eol != "i/-text":
+            try:
+                with open(repo_root / path, "rb") as f:
+                    if f.read(3) == b"\xef\xbb\xbf":
+                        boms.append(path)
+            except OSError:
+                pass
 
     if violations:
         sys.stderr.write(
-            f"Error: git ls-files --eol shows unexpected CRLF/mixed line endings in {len(violations)} file(s):\n"
+            f"Error: git ls-files --eol in {repo_root} shows unexpected CRLF/mixed line endings in {len(violations)} file(s):\n"
             + "\n".join(f"  - {p}: {w} ({a})" for p, w, a in violations[:25])
+            + "\n"
+        )
+        sys.exit(2)
+    if boms:
+        sys.stderr.write(
+            f"Error: {len(boms)} text file(s) in {repo_root} start with a UTF-8 BOM:\n"
+            + "\n".join(f"  - {p}" for p in boms[:25])
             + "\n"
         )
         sys.exit(2)
@@ -527,13 +542,17 @@ def main() -> None:
     # Pre-flight check 1: expected binaries in build dir
     check_preflight_binaries(build_dir, exe_suffix)
 
-    # Pre-flight check 2: git line endings
+    # Pre-flight check 2: git line endings and no UTF-8 BOM in both checkouts
     check_preflight_eol(repo_root)
+    check_preflight_eol(engine_source)
 
     # Validate --only lanes if requested
     selected_lanes = LANE_NAMES
-    if args.only:
+    if args.only is not None:
         requested = [item.strip() for item in args.only.split(",") if item.strip()]
+        if not requested:
+            sys.stderr.write("Error: --only selects no lanes\n")
+            sys.exit(1)
         for name in requested:
             if name not in LANE_NAMES:
                 sys.stderr.write(f"Error: Unknown lane: {name}\n")
