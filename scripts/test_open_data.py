@@ -12,6 +12,8 @@ import argparse
 import asyncio
 import base64
 import json
+import io
+import zipfile
 import os
 from pathlib import Path
 import subprocess
@@ -235,7 +237,17 @@ async def run(args):
                     )
 
                 valid = base64.b64encode(exports["mscz"].read_bytes()).decode("ascii")
+                legacy_zip = io.BytesIO()
+                with zipfile.ZipFile(legacy_zip, "w") as archive:
+                    archive.writestr("score.mscx", (ROOT / "tests/negative/legacy-3.mscx").read_bytes())
                 rejections = [
+                    ("pre-4.6 archive", {"data": base64.b64encode(legacy_zip.getvalue()).decode("ascii"), "format": "mscz"},
+                     "scores from before MuseScore 4.6 are not supported"),
+                    ("pre-MuseScore-4 path", {"path": str(ROOT / "tests/negative/legacy-3.mscx")},
+                     "written by MuseScore 3.02; scores from before MuseScore 4.6 are not supported"),
+                    ("pre-MuseScore-4 data",
+                     {"data": base64.b64encode((ROOT / "tests/negative/legacy-3.mscx").read_bytes()).decode("ascii"), "format": "mscx"},
+                     "scores from before MuseScore 4.6 are not supported"),
                     ("invalid base64 characters",
                      {"data": "U2Nvcm$=", "format": "mscz"}, "base64"),
                     ("unpadded base64", {"data": "U2NvcmU", "format": "mscz"}, "base64"),
