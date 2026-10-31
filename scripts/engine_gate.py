@@ -54,7 +54,7 @@ def main():
                    '-Log', a.output / (name + '-mutex.log'), '-Command', ' '.join(map(str,args))]
         run(name, cmd, a.engine_source)
     if not a.skip_build:
-        config = ['f','-P','.','-y','-m','release','-o',a.build_dir,'--ccache=y']
+        config = ['f','-P','.','-y','-m','release','-o',a.build_dir,'--ccache=y','--engrave_tests=y']
         if a.cairo_prefix: config.append('--cairo_prefix='+str(a.cairo_prefix))
         if platform == 'linux':
             prefix = a.cairo_prefix
