@@ -769,3 +769,43 @@ python scripts/run_lanes.py \
 ```
 
 All 29 acceptance lanes run in order. Pre-flight checks refuse execution (exit 2) if required binaries are missing or if uncommitted files contain unexpected CRLF/mixed line endings.
+
+## Roadmap-engrave A4 S0: engine build in the fork (2026-10-30)
+
+The engine's xmake build moved into the fork (`engrave` `a4/s0-build`, tip
+`1455abe210`): `xmake.lua` (standalone project), `xmake/engrave.lua` (engine targets,
+pinned package requirements, generated framework config header), `xmake/manifest.lua`
+with `tools/capture_xmake_manifest.py` + `tools/test_manifest_generator.py`, and
+`xmake/packages/`. The superproject (`engrave/a4`, tip `c14b31c`) keeps only the host
+targets, computes the engine checkout (`vendor/musescore` or `--musescore_source`) and
+includes the engine build; `muse_generated` now writes only
+`muse_framework_config.h`, the new host target `host_generated` writes only
+`tool_schema.inc`. No source file moved. Full evidence: `notes/a4/s0/REPORT.md`.
+
+**Executed, both hosts, `--musescore_source=<fork worktree>`, cold builds with
+`--ccache=n`, `-j8`, fresh build directories:**
+
+| | Windows | linux-host |
+|---|---|---|
+| fork standalone `xmake build -a` | `build ok, 577.734s`, 9 libraries | `build ok, 207.593s`, 9 libraries |
+| superproject all-target build | `build ok, 721.469s`, 29 targets | `build ok, 262.646s`, 29 targets |
+| engine revision in `muse_framework_config.h` | `1455abe`, release | `1455abe`, release |
+| `scripts/run_lanes.py` (29 lanes) | 29 passed, 0 failed, 0 pending | 29 passed, 0 failed, 0 pending |
+| golden lane | 308 identical / 55 allowed / 0 different | 308 identical / 55 allowed / 0 different |
+| upstream gtest (`upstream_gtest` lane) | 219/219 + 11/11 | 219/219 + 11/11 |
+| cross-platform audio | 22 fixtures agree, peak 0.019408, rms 0.001524, spectralCentroidHz 44.5, rmsEnvelope 0.02438, centroidEnvelope 982.5 | same |
+
+The golden and audio results are exactly the A3/engrave-2 values, i.e. the split changed
+no compiled behaviour. `tools/test_manifest_generator.py` passes from its new location
+(byte-identical manifest, both negative controls) on both hosts;
+`scripts/test_xmake_incremental.py` still reports schema regeneration, one rebuilt
+translation unit and a no-op rebuild; `scripts/prepare_xmake.py --check` and
+`--generate-manifest` work against the engine checkout.
+
+**Deliberate limits of this slice (details in the report):** the upstream gtest targets
+are defined in the fork (`xmake/tests.lua`) but only instantiated when the including
+project supplies the Qt-free test runtime through `ENGRAVE_TEST_SUPPORT` (the harness
+still lives in `native/tests` and moves in S1), so the fork's standalone build produces
+no test binaries yet; the engine's include roots and feature defines remain project-wide
+in the host because host headers still expose engine types; the default
+`vendor/musescore` path needs the next pin bump before it carries `xmake/engrave.lua`.

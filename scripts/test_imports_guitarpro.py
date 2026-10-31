@@ -3,7 +3,7 @@
 The script uses the official Python MCP SDK and the pinned upstream fixtures in
 vendor/musescore/src/importexport/guitarpro/tests/data. It is written for the
 native server but is intentionally not wired into CI until score_open routes the
-Guitar Pro / Power Tab extensions to native/score_imports.cpp.
+Guitar Pro / Power Tab extensions to engrave/src/io/score_imports.cpp.
 
 Run with:
     python scripts/test_imports_guitarpro.py

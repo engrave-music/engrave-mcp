@@ -1,6 +1,6 @@
 #include "async_session.h"
-#include "atomic_file.h"
-#include "audio_output.h"
+#include "engrave/src/runtime/atomic_file.h"
+#include "engrave/src/audio/audio_output.h"
 #include "background_job.h"
 #include "engine.h"
 #include "mcp_transport.h"

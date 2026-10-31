@@ -6,7 +6,7 @@
 
 ## 1. 架构设计与约束
 
-- **构建系统**：以 `xmake.lua` 与显式源码清单 `xmake/manifest.lua` 为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux x86_64 均已验证）。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块）。
+- **构建系统**：以 `xmake.lua` 与显式源码清单为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux x86_64 均已验证）。引擎的 xmake 构建（引擎 targets、目录通配符与固定版本包 recipe）位于引擎 Fork 检出内（`xmake/engrave.lua`、`xmake/packages/`）；本仓库 `xmake.lua` 只保留宿主 targets，并通过 `includes()` 从 `vendor/musescore`（或 `--musescore_source` 指定的检出）引入引擎构建。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块；该检出必须带有 `xmake/engrave.lua`）。
 - **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件，以及 MuseScore 4 音频引擎（`muse_audio_engine`：FluidSynth 合成、混音、混响与 SoundTrackWriter）及其编码器 LAME（MP3）、libFLAC、Opus/libopusenc（Ogg）、fdk-aac（AAC），全部来自子模块并以 Qt-free 方式编译；音频仅在 `--worker` 子进程中渲染。libsndfile 已从构建依赖和 pixi 环境中移除；测试分析用的 Python `soundfile` wheel 自带其运行时副本，因此解码检查不依赖系统 libsndfile。捆绑的原生依赖包括 FreeType、HarfBuzz、FluidSynth、FLAC、Opus/libopusenc、LAME 与 fdk-aac（Brotli 依赖已移除）。
 - **底层适配**：采用原生文件系统、进程内设置、FreeType/HarfBuzz 字体引擎和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
 
@@ -18,7 +18,7 @@
 - **版本控制与工具**：Git（用于管理工程与拉取 `vendor/musescore` 子模块）。全新克隆需运行 `git submodule update --init --depth 1` 或 `python scripts/bootstrap.py`。
 - **编译器**：Visual Studio x64 MSVC 工具链（推荐 VS 2022 / 18.10+，MSVC 14.51+）；构建脚本自动初始化开发环境，单独打包需在 VS 开发人员终端执行。
 - **包管理器**：Pixi。构建与验证在 `native` 环境（`-e native`，纯原生无 Qt 编译环境）下执行。
-- **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）。第三方依赖已改为固定版本的 xmake 包（见 `xmake/packages/`），首次配置会下载并本地构建它们，不再需要 `7z` 解压 HarfBuzz。
+- **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）。第三方依赖已改为固定版本的 xmake 包：引擎依赖的 recipe 在引擎检出的 `xmake/packages/` 内，宿主专用的 asio 在 `xmake/packages/asio.lua`。首次配置会下载并本地构建它们，不再需要 `7z` 解压 HarfBuzz。
   > [!TIP]
   > **下载器配置（机器级）**：在部分 Windows 宿主上，xmake 内置的 aria2 在下载第三方依赖包时可能遭遇 TLS 握手失败（`SSL/TLS handshake failure`）。若遇到包下载中断，可配置 xmake 全局改用 curl：
   > ```powershell
@@ -45,12 +45,12 @@ python scripts/bootstrap.py --soundfont   # 先初始化子模块
 python scripts/prepare.py                 # 再校验并分发资源
 ```
 
-第三方**库**依赖全部由仓库内的本地 xmake recipe 固定，`xmake/packages/` 下的每个 recipe 都写明版本与归档 SHA-256：freetype 2.14.1（`174d9e53…`）、harfbuzz 12.3.0、flac 1.4.3、lame 3.100（`ddfe36ca…`）、opus 1.5.2、opusenc 0.2.1、fdk-aac 2.0.3、pugixml 1.15、utfcpp v4.1.1（`1ca68016…`）、picojson 111c9be 与 asio 1.36.0。freetype/lame/utfcpp 的 recipe 是从 xmake-repo（修订 `e96d4103633e161d259aa307e02a4d0842207651`）同名 recipe 逐行复制并裁剪到单一版本，版本、归档 URL 与 SHA-256 均未改动，因此依赖解析不再取决于某台机器上的 xmake-repo 修订。
+第三方**库**依赖由引擎检出内的本地 xmake recipe 固定（`vendor/musescore/xmake/packages/`，或 `--musescore_source` 指定检出的同名目录）；每个 recipe 都写明版本与归档 SHA-256：freetype 2.14.1（`174d9e53…`）、harfbuzz 12.3.0、flac 1.4.3、lame 3.100（`ddfe36ca…`）、opus 1.5.2、opusenc 0.2.1、fdk-aac 2.0.3、pugixml 1.15、utfcpp v4.1.1（`1ca68016…`）、picojson 111c9be 与 asio 1.36.0（asio 留在本仓库 `xmake/packages/asio.lua`；引擎单独构建时另加固定版本 zlib 1.3.1）。freetype/lame/utfcpp 的 recipe 是从 xmake-repo（修订 `e96d4103633e161d259aa307e02a4d0842207651`）同名 recipe 逐行复制并裁剪到单一版本，版本、归档 URL 与 SHA-256 均未改动，因此依赖解析不再取决于某台机器上的 xmake-repo 修订。
 
 注意区分：只有上述库依赖由本仓库固定版本与校验和；xmake-repo 仍提供构建工具包（cmake、nasm、pkgconf）与仅用于开发测试道的 gtest，它们的 recipe 修订记录在每个已安装包的 `manifest.txt`（`repo.commit`）中，不进入发布产物（freetype 的可选 zlib/libpng/woff2 支持在 `add_requires()` 中全部关闭，因此不会额外引入 xmake-repo 的库依赖）。因此“所有输入都已固定校验和”的说法仅对这些库依赖成立，工具包不在此列。
 
 ### 3.2 资源清单生成与资产分发 (Runtime Asset Staging)
-运行时资源清单 `resources.json` 由 `scripts/generate_resources.py` 从引擎的 Qt 资源清单（`src/engraving/engraving.qrc`、`src/engraving/data/fonts/*.qrc` 以及 MPE 的 `qt_add_resources` 配置块）外加一项显式历史回退样式（`legacy-style-defaults-v450.mss`）自动解析生成。对于 5.0 引擎，脚本支持 `--source-root` 参数以读取新的 MPE 路径（`muse/framework/mpe`）与 11 种制表谱字体（`fonts_Tabulature.qrc` 中的 `MuseScoreTab*.ttf`）：
+运行时资源清单 `resources.json` 由 `scripts/generate_resources.py` 从引擎的 Qt 资源清单（`src/engraving/engraving.qrc`、`src/engraving/data/fonts/*.qrc` 以及 MPE 的 `qt_add_resources` 配置块）外加一项显式历史回退样式（`legacy-style-defaults-v450.mss`）自动解析生成；另外收录乐谱模板，即 `share/templates/categories.json` 及其列出的每个模板目录（别名 `templates/...`，engrave 公共 API 的 `Engine::templates()` 与 `create_document()` 从这里读取）。对于 5.0 引擎，脚本支持 `--source-root` 参数以读取新的 MPE 路径（`muse/framework/mpe`）与 11 种制表谱字体（`fonts_Tabulature.qrc` 中的 `MuseScoreTab*.ttf`）：
 
 ```powershell
 python scripts/generate_resources.py --source-root <path-to-engine>
@@ -70,7 +70,9 @@ python scripts/generate_resources.py --check
    build/assets_test.exe build/scratch_assets artifacts/assets_test <test_font_path>
    ```
 
-xmake 的生成目标在各自构建目录写入框架配置与工具定义；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。源码清单已提交，常规构建不运行 `capture_xmake_manifest.py`：该脚本从引擎自身的 CMake 源清单（`muse/framework/*/CMakeLists.txt`、`src/*/CMakeLists.txt`）生成 `xmake/manifest.lua`，仅在引擎目录结构变化时用 `python scripts/capture_xmake_manifest.py --source-root <engine>` 重新生成。
+xmake 的生成目标在各自构建目录写入框架配置与工具定义（引擎的 `muse_generated` 写 `muse_framework_config.h`，宿主的 `host_generated` 写 `tool_schema.inc`）；增量构建重新检查 `native/tools.json`，内容未变时保留时间戳。引擎各模块源码通过 `xmake/engrave.lua` 中的目录通配符（folder globs）直接按模块目录引入，不再维护静态源码清单与清单生成器；新增源码文件落入对应模块目录即自动参与编译。
+
+引擎适配层（原 `native/` 下 `noqt_support`、`score_engine`、`engine_audio` 的源码）自 A4 S1 起位于引擎检出的 `engrave/src/<area>/`（`runtime`、`io`、`render`、`audio`、`score`），由引擎构建中的静态库 target `engrave` 以目录通配符编译；其回归测试、探针（`*_test`、`semantic_dump`、`noqt_probe`、`engine_audio_probe`、`audio_engine_link_check`）与上游 gtest 套件的测试框架位于 `engrave/tests/`，target 定义在引擎的 `xmake/tests.lua`。本仓库 `native/` 只保留 MCP 宿主（`main`、`mcp_transport`、`async_session`、`background_job`、`worker_protocol`、`noqt_engine`、`music_core`、`composition`、`tools.json`）；`music_core` 链接 `engrave`，并以 `"<area>/<file>.h"` 形式包含其内部头文件（A5 之前的特权客户端）。zlib 与 Cairo 由包含方提供：本仓库取自 pixi `native` 环境；引擎单独构建时 zlib 使用固定版本包，Cairo 使用系统包或 `--cairo_prefix=<prefix>`。所有二进制的名称与输出位置（`$(builddir)` 下）不变。
 
 Windows 和 Linux 已验证长 UTF-8 schema 的完整传递、修改 schema 只重编译 `noqt_engine.cpp`，以及恢复后的无变化构建不编译/链接。生成器分块编码字符串，避免 MSVC 单个字符串长度限制。验收命令：
 

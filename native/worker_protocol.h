@@ -1,5 +1,5 @@
 #pragma once
-#include "export_options.h"
+#include "engrave/src/score/export_options.h"
 #include "music_core.h"
 #include <filesystem>
 #include <string>

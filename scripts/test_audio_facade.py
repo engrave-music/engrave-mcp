@@ -19,7 +19,7 @@ from test_async_session import Client
 from test_export_options import bar
 
 # A hard-panned track still leaks through the Muse Reverb aux return (the
-# engine adds a 0.30 send per track, native/engine_audio.cpp). Measured with
+# engine adds a 0.30 send per track, engrave/src/audio/engine_audio.cpp). Measured with
 # the reverb enabled on Windows and Linux 2026-10-28, three identical runs per
 # side: hard left -> right/left RMS 0.213, hard right -> left/right RMS 0.272.
 # The older 0.35 limit was loosened without this measurement. 0.30 is just
