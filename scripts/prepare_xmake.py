@@ -47,16 +47,10 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
     errors: list[str] = []
     native_root = _find_native_root(project_root)
 
-    # Engine layout: MuseScore 5.0 absorbed muse_framework at muse/, so the
-    # framework paths are muse/framework/... and the module CMake files are the
-    # manifest generator's input.
+    # The fork's xmake build generates its version header directly; it no
+    # longer consumes the removed Qt-era framework config template.
     required_files = {
         "MuseScore submodule": source_root / "version.cmake",
-        "framework config template": source_root
-        / "muse"
-        / "framework"
-        / "cmake"
-        / "muse_framework_config.h.in",
         "engine xmake build": source_root / "xmake" / "engrave.lua",
         "tool schema source": project_root / "native" / "tools.json",
         "host asio recipe": project_root / "xmake" / "packages" / "asio.lua",
