@@ -335,7 +335,7 @@ def run_lane(
     if lane == "tool_schema":
         cmd = [
             py,
-            str(repo_root / "scripts/test_tool_schema.py"),
+            str(repo_root / "scripts/test_legacy_tool_schema.py"),
             "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
             "--assets", str(assets),
         ]

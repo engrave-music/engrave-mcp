@@ -1,0 +1,1123 @@
+[
+  {
+    "name": "score_create",
+    "description": "Create an editable score. Fixed 4/4, 480 ticks/quarter; each bar totals 1920 ticks. pitches is a MIDI chord; [] means rest. All parts have equal measure counts. tempo defaults to 100.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "score": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 256,
+              "pattern": "^[^\\u0000]*$"
+            },
+            "tempo": {
+              "type": "integer",
+              "minimum": 20,
+              "maximum": 300
+            },
+            "parts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "pattern": "^[^\\u0000]*$"
+                  },
+                  "midiProgram": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 128
+                  },
+                  "measures": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "notes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "pitches": {
+                                "type": "array",
+                                "items": {
+                                  "type": "integer",
+                                  "minimum": 12,
+                                  "maximum": 127
+                                },
+                                "maxItems": 8,
+                                "uniqueItems": true
+                              },
+                              "ticks": {
+                                "type": "integer",
+                                "enum": [
+                                  120,
+                                  240,
+                                  480,
+                                  960,
+                                  1920
+                                ]
+                              }
+                            },
+                            "required": [
+                              "pitches",
+                              "ticks"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "minItems": 1,
+                          "maxItems": 16
+                        }
+                      },
+                      "required": [
+                        "notes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 128
+                  }
+                },
+                "required": [
+                  "name",
+                  "midiProgram",
+                  "measures"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 15
+            }
+          },
+          "required": [
+            "parts"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "score"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_open",
+    "description": "Import exactly one of raw MusicXML text (musicxml), a local score path (path), or in-memory score bytes as standard base64 (data, with format). Supported formats: MusicXML/XML/MXL/MSCZ/MSCX, MIDI/KAR (midi/mid/kar), and Guitar Pro GP/GP3/GP4/GP5/GP6/GP7/GPX/GTP/PTB. The path extension selects the importer; data requires an explicit format and decodes to at most 8 MiB. Imported documents support reading/export; structured measure replacement requires score_create.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$",
+          "description": "Local score path; the extension selects the importer."
+        },
+        "musicxml": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$",
+          "description": "Raw MusicXML document text."
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "description": "In-memory score bytes as padded standard base64 (RFC 4648 section 4); at most 8 MiB after decoding."
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "mscz",
+            "mscx",
+            "mxl",
+            "musicxml",
+            "xml",
+            "midi",
+            "mid",
+            "kar",
+            "gp",
+            "gp3",
+            "gp4",
+            "gp5",
+            "gp6",
+            "gp7",
+            "gpx",
+            "gtp",
+            "ptb"
+          ],
+          "description": "Importer for data; required with data and rejected with path or musicxml."
+        }
+      },
+      "required": [],
+      "oneOf": [
+        {
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "musicxml"
+          ]
+        },
+        {
+          "required": [
+            "data"
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "format"
+            ]
+          },
+          "then": {
+            "required": [
+              "data"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "data"
+            ]
+          },
+          "then": {
+            "required": [
+              "format"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_get",
+    "description": "Read title, pages, parts, metadata, canonical MusicXML and editable composition if present. excerptId selects an excerpt returned by score_list_excerpts; -1 selects the master score.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        },
+        "excerptId": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 2147483647,
+          "default": -1,
+          "description": "Excerpt index; -1 selects the master score."
+        }
+      },
+      "required": [
+        "documentId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_replace_measures",
+    "description": "Atomically replace existing measures while the score_create compatibility composition is available. partIndex and startMeasure are zero-based. Native pitch edits invalidate that composition. baseRevision and operationId are optional together: disjoint edits may rebase and exact retries deduplicate. Failed validation leaves the document intact.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        },
+        "partIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14
+        },
+        "startMeasure": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127
+        },
+        "measures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pitches": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 12,
+                        "maximum": 127
+                      },
+                      "maxItems": 8,
+                      "uniqueItems": true
+                    },
+                    "ticks": {
+                      "type": "integer",
+                      "enum": [
+                        120,
+                        240,
+                        480,
+                        960,
+                        1920
+                      ]
+                    }
+                  },
+                  "required": [
+                    "pitches",
+                    "ticks"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 16
+              }
+            },
+            "required": [
+              "notes"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 128
+        },
+        "baseRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$",
+          "description": "Unique operation ID for this document lifetime; 1..128 UTF-8 bytes, no NUL. Exact retries return a retained result; retries older than the bounded replay/history window fail stale. Do not reuse an ID with a different request."
+        }
+      },
+      "required": [
+        "documentId",
+        "partIndex",
+        "startMeasure",
+        "measures"
+      ],
+      "dependentRequired": {
+        "baseRevision": [
+          "operationId"
+        ],
+        "operationId": [
+          "baseRevision"
+        ]
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_export",
+    "description": "Export to a local file atomically, replacing an existing file. Parent directory must exist. page is zero-based for SVG/PNG; PDF exports all pages. Audio export (WAV/FLAC/OGG/MP3/AAC) requires a SoundFont from --soundfont or runtime_set_soundfont and is rendered in a worker process. mix overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral); it never changes document state or revision. measurePositions/segmentPositions follow the webmscore position schema, with corrected segment widths and always repeat-expanded times (ms). Coordinates use 1200-DPI layout units, independent of PNG DPI; id/elid are local to each result, not stable edit IDs. Format-specific options are rejected on other formats.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "musicxml",
+            "mxl",
+            "mscz",
+            "mscx",
+            "midi",
+            "svg",
+            "png",
+            "pdf",
+            "metadata",
+            "measurePositions",
+            "segmentPositions",
+            "wav",
+            "flac",
+            "ogg",
+            "mp3",
+            "aac"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$"
+        },
+        "excerptId": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 2147483647,
+          "default": -1,
+          "description": "Excerpt index; -1 selects the master score."
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "default": 0,
+          "description": "Zero-based page index for SVG/PNG only."
+        },
+        "pngDpi": {
+          "type": "integer",
+          "minimum": 36,
+          "maximum": 1200,
+          "default": 144,
+          "description": "PNG only. Resolution in dots per inch; rendering size limits still apply."
+        },
+        "drawPageBackground": {
+          "type": "boolean",
+          "default": false,
+          "description": "SVG/PNG only. Draw the score page background."
+        },
+        "transparent": {
+          "type": "boolean",
+          "default": true,
+          "description": "PNG only. False paints an opaque white background."
+        },
+        "expandRepeats": {
+          "type": "boolean",
+          "default": true,
+          "description": "MIDI/WAV/FLAC/OGG/MP3/AAC only. Expand score repeats in playback."
+        },
+        "exportRPNs": {
+          "type": "boolean",
+          "default": true,
+          "description": "MIDI only. Include registered parameter messages in playback. The MuseScore audio engine path reads playback data directly and ignores RPNs."
+        },
+        "mix": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "master": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -120,
+                  "maximum": 24
+                },
+                "balance": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              }
+            },
+            "tracks": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "trackId"
+                ],
+                "properties": {
+                  "trackId": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "volumeDb": {
+                    "type": "number",
+                    "minimum": -120,
+                    "maximum": 24
+                  },
+                  "balance": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  },
+                  "solo": {
+                    "type": "boolean"
+                  },
+                  "muted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "description": "WAV/FLAC/OGG/MP3/AAC only. Overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral). Use trackIds from score_audio_tracks; unknown or duplicate trackIds reject the export."
+        }
+      },
+      "required": [
+        "documentId",
+        "format",
+        "path"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "page"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "svg",
+                  "png"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "pngDpi"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "png"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "drawPageBackground"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "svg",
+                  "png"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "transparent"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "png"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "expandRepeats"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "midi",
+                  "wav",
+                  "flac",
+                  "ogg",
+                  "mp3",
+                  "aac"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "exportRPNs"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "midi"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "mix"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "wav",
+                  "flac",
+                  "ogg",
+                  "mp3",
+                  "aac"
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_close",
+    "description": "Close a live document and release its score resources. Its handle expires; already captured export jobs retain their independent snapshots.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        }
+      },
+      "required": [
+        "documentId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_query_region",
+    "description": "Read measures and notes in a bounded region of an open document. partIndex and firstMeasure are zero-based. measureCount is 1..128 and partIndex/firstMeasure are bounded by the 256-part/1024-measure published projection. voice, when present, is 0..3. Returned note ids feed score_set_pitches.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        },
+        "partIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "firstMeasure": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1023
+        },
+        "measureCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "voice": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      },
+      "required": [
+        "documentId",
+        "partIndex",
+        "firstMeasure",
+        "measureCount"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_set_pitches",
+    "description": "Atomically edit existing native note pitches. Use note IDs and revision from score_query_region; changes contains 1..256 unique IDs and MIDI pitches 0..127. Current support excludes ties, spanners, grace notes, tablature, drums and cross-staff notes. Same-base edits to disjoint regions may rebase; overlapping dependencies conflict. A successful musical edit clears the compatibility composition used by score_replace_measures.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        },
+        "baseRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$",
+          "description": "Unique operation ID for this document lifetime; 1..128 UTF-8 bytes, no NUL. Exact retries return a retained result; retries older than the bounded replay/history window fail stale. Do not reuse an ID with a different request."
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "noteId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 23,
+                "pattern": "^[A-Za-z0-9+/]+_[A-Za-z0-9+/]+$",
+                "description": "Opaque note id returned by score_query_region; at most 23 ASCII characters."
+              },
+              "pitch": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 127
+              }
+            },
+            "required": [
+              "noteId",
+              "pitch"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "documentId",
+        "baseRevision",
+        "operationId",
+        "changes"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_generate_excerpts",
+    "description": "Generate one excerpt per part when the document has none, otherwise return the existing excerpts unchanged. Returns the revision and excerpt summaries.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        }
+      },
+      "required": [
+        "documentId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_list_excerpts",
+    "description": "List existing excerpts without generating new ones. Each item carries its excerpt id, title, part ids and page count.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        }
+      },
+      "required": [
+        "documentId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "runtime_add_font",
+    "description": "Install a local font for subsequent layout, relayout open documents, and return its id, family, style flags, retained path and content hash.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "runtime_set_soundfont",
+    "description": "Freeze and select a local SoundFont for subsequent WAV/FLAC/OGG/MP3/AAC exports. Returns its retained path and content hash.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_export_start",
+    "description": "Start an isolated background export from a frozen document snapshot. Options match score_export. expectedRevision optionally requires the current revision at capture. Poll score_job_get and cancel with score_job_cancel. Captured jobs survive live document close; files publish atomically only on success.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "musicxml",
+            "mxl",
+            "mscz",
+            "mscx",
+            "midi",
+            "svg",
+            "png",
+            "pdf",
+            "metadata",
+            "measurePositions",
+            "segmentPositions",
+            "wav",
+            "flac",
+            "ogg",
+            "mp3",
+            "aac"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$"
+        },
+        "excerptId": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 2147483647,
+          "default": -1,
+          "description": "Excerpt index; -1 selects the master score."
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "default": 0,
+          "description": "Zero-based page index for SVG/PNG only."
+        },
+        "pngDpi": {
+          "type": "integer",
+          "minimum": 36,
+          "maximum": 1200,
+          "default": 144,
+          "description": "PNG only."
+        },
+        "drawPageBackground": {
+          "type": "boolean",
+          "default": false,
+          "description": "SVG/PNG only."
+        },
+        "transparent": {
+          "type": "boolean",
+          "default": true,
+          "description": "PNG only. False paints an opaque white background."
+        },
+        "expandRepeats": {
+          "type": "boolean",
+          "default": true,
+          "description": "MIDI/WAV/FLAC/OGG/MP3/AAC only. Expand score repeats in playback."
+        },
+        "exportRPNs": {
+          "type": "boolean",
+          "default": true,
+          "description": "MIDI only. Include registered parameter messages in playback. The MuseScore audio engine path reads playback data directly and ignores RPNs."
+        },
+        "mix": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "master": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "volumeDb": {
+                  "type": "number",
+                  "minimum": -120,
+                  "maximum": 24
+                },
+                "balance": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              }
+            },
+            "tracks": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "trackId"
+                ],
+                "properties": {
+                  "trackId": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "volumeDb": {
+                    "type": "number",
+                    "minimum": -120,
+                    "maximum": 24
+                  },
+                  "balance": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  },
+                  "solo": {
+                    "type": "boolean"
+                  },
+                  "muted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "description": "WAV/FLAC/OGG/MP3/AAC only. Overrides, field by field, the score's default mix (the MSCZ audiosettings.json mix when the document was opened from such a file, otherwise neutral). Use trackIds from score_audio_tracks; unknown or duplicate trackIds reject the export."
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615,
+          "description": "Reject the job if the document revision is no longer current."
+        }
+      },
+      "required": [
+        "documentId",
+        "format",
+        "path"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "page"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "svg",
+                  "png"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "pngDpi"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "png"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "drawPageBackground"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "svg",
+                  "png"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "transparent"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "png"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "expandRepeats"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "midi",
+                  "wav",
+                  "flac",
+                  "ogg",
+                  "mp3",
+                  "aac"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "exportRPNs"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "midi"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "mix"
+            ]
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "enum": [
+                  "wav",
+                  "flac",
+                  "ogg",
+                  "mp3",
+                  "aac"
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_job_get",
+    "description": "Read a background export job summary, including frozen document revision and state. Reports destination and completed byte count or failure text. Terminal states are completed, failed and cancelled.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$",
+          "description": "Opaque job id returned by score_export_start."
+        }
+      },
+      "required": [
+        "jobId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_job_cancel",
+    "description": "Request cancellation of a background export job. A completed file publication cannot be undone by a late cancel. Returns the job summary.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]*$",
+          "description": "Opaque job id returned by score_export_start."
+        }
+      },
+      "required": [
+        "jobId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "score_audio_tracks",
+    "description": "List actual audio track IDs, part/instrument identities and the score's default mix output values for the full score or an explicit excerpt. Every instrument track of every part is listed (multi-instrument parts and instrument changes produce one entry per instrument) plus chord-symbol tracks, which are flagged and always muted because chord playback is off. trackId is the zero-based index in this deterministic list and is the id accepted by the export mix option. An excerpt lists only the tracks of that excerpt's parts. Defaults come from the source MSCZ audiosettings.json when present, otherwise they are neutral; forceMute is derived from solo. Requires no SoundFont.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^score-[1-9][0-9]*$"
+        },
+        "excerptId": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 2147483647,
+          "default": -1,
+          "description": "Excerpt index; -1 selects the master score."
+        }
+      },
+      "required": [
+        "documentId"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

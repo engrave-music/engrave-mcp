@@ -8,7 +8,9 @@
 -- vendor/musescore by default, or from the checkout named by
 -- --musescore_source - and keeps what is the host's:
 --
---   host_generated                   MCP tool schema (tool_schema.inc)
+--   host_generated                   legacy MCP tool schema (tool_schema.inc)
+--   v2_registry, registry_dump       standalone v2 schema authority
+--   registry_test, registry_check    v2 contract validation
 --   music_core                       typed document facade and composition
 --   musescore_mcp                    stdio JSON-RPC host (musescore-mcp binary)
 --   musescore_mcp_test, music_core_test   host regression binaries
@@ -256,7 +258,7 @@ target("host_generated")
             raise("generated target requires a build directory")
         end
         os.mkdir(output_dir)
-        local tools_path = path.join(project_root, "native", "tools.json")
+        local tools_path = path.join(project_root, "native", "legacy_tools.json")
         local tools = io.readfile(tools_path)
         if not tools then
             raise("cannot read MCP tool schema: %s", tools_path)
@@ -287,6 +289,45 @@ target_end()
 
 local native_dir = path.join(project_root, "native")
 
+-- The declared v2 contract is independent of the Engine and of tools.json.
+-- It is linked into the host for future S4 integration, without replacing the
+-- existing v1 dispatcher or its discovery list during S1.
+target("v2_registry")
+    set_kind("static")
+    set_default(false)
+    add_includedirs(path.join(source_root, "engrave", "include"))
+    add_files(path.join(native_dir, "registry.cpp"), path.join(native_dir, "schema_defs.cpp"))
+target_end()
+
+target("registry_dump")
+    set_kind("binary")
+    set_default(false)
+    add_deps("v2_registry")
+    add_files(path.join(native_dir, "registry_dump.cpp"))
+target_end()
+
+target("registry_test")
+    set_kind("binary")
+    set_default(false)
+    add_deps("v2_registry")
+    add_files(path.join(native_dir, "registry_test.cpp"))
+target_end()
+
+target("registry_check")
+    set_kind("phony")
+    set_default(false)
+    add_deps("registry_dump", "registry_test")
+    on_build(function (target)
+        local python = path.join(native_env, is_host("windows") and "python.exe" or "bin/python")
+        if not os.isfile(python) then
+            python = is_host("windows") and "python" or "python3"
+        end
+        os.execv(python, {path.join(project_root, "scripts", "test_tool_schema.py"),
+            "--dump", target:dep("registry_dump"):targetfile(),
+            "--registry-test", target:dep("registry_test"):targetfile()})
+    end)
+target_end()
+
 -- Typed document facade and the composition model it drives.
 target("music_core")
     set_kind("static")
@@ -302,10 +343,11 @@ local function add_host_binary(name, basename)
         set_kind("binary")
         set_default(false)
         set_basename(basename)
-        add_deps("muse_generated", "host_generated", "music_core")
+        add_deps("muse_generated", "host_generated", "music_core", "v2_registry")
         add_files(path.join(native_dir, "*.cpp"))
         remove_files(path.join(native_dir, "music_core.cpp"), path.join(native_dir, "composition.cpp"),
-            path.join(native_dir, "*_test.cpp"))
+            path.join(native_dir, "*_test.cpp"), path.join(native_dir, "registry.cpp"),
+            path.join(native_dir, "schema_defs.cpp"), path.join(native_dir, "registry_dump.cpp"))
         add_engine_flags()
         add_packages("asio")
         if is_plat("windows") then

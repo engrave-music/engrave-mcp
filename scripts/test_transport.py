@@ -10,7 +10,7 @@ PROTOCOL_VERSION = "2025-11-25"
 EXPECTED_TOOLS = [
     tool["name"]
     for tool in json.loads(
-        (Path(__file__).resolve().parents[1] / "native/tools.json").read_text(encoding="utf-8")
+        (Path(__file__).resolve().parents[1] / "native/legacy_tools.json").read_text(encoding="utf-8")
     )
 ]
 EXPECTED_RESPONSE_IDS = [None, None, None, None, None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]

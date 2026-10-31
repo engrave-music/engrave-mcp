@@ -16,7 +16,7 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     binary = args.binary.resolve()
-    schema = ROOT / "native/tools.json"
+    schema = ROOT / "native/legacy_tools.json"
     original = schema.read_bytes()
     tools = json.loads(original)
     # Exceeds a single MSVC literal's capacity and exercises UTF-8 boundaries.
