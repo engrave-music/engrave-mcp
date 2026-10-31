@@ -1,18 +1,5 @@
 # MuseScore fork
 
-## C0 gate pin (2026-10-31)
-
-The `engrave/c0` implementation branch pins `bdbb77f87ae6e59e979e2f62e9d4336fd7bcc027`,
-annotated tag `engrave-c0-gate` on fork branch `c0/gate`. It descends from
-`engrave-5` (`23c743d339`), retaining that pin's upstream/framework provenance.
-Only test capture/build closure and verified Linux conversion render hashes change;
-production engine sources are identical to engrave-5. Both host gates executed green,
-and all 211 overlapping public artifacts equal the exact-pin v1 host captures.
-See [C0 usage and coverage](c0-gate.md) and [Linux hash transitions](c0-linux-transitions.json).
-The v1 host targets are opt-in; its binaries and replay runner are preserved under ignored
-`artifacts/frozen-v1/`. The historical sync rules and older pin descriptions below
-are not the C0 engine validation workflow.
-
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/musescore` (shallow, fetched by SHA). webmscore and the
@@ -180,6 +167,7 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 | `engrave-4` | `d8c21df149` | `2abc2de` | `ecdc6e7` | A4 C++ API. Merges `a4/int` (`d382aad91c`): public headers `engrave/include/engrave/`, library and tests under `engrave/`; the xmake build uses folder globs, so the manifest and its generator are gone, and so are the CMake files it read (trim batch 7; batch 8 removes more uncompiled sources). Engine patches, all goldens identical: EID fixes F1-F3, the `Transaction::push` hook (F4), a PowerTab empty chord becomes a rest, a `layoutPageView` guard, a figured-bass `layoutLines` runaway, a tuplet `doUndoAddElement` marker, and a GPX back-reference that repeats its pattern. Validated on Windows and linux-host (superproject `engrave/a4-int` `cb31e46`, report `notes/a4/validation/FINAL.md`): cold builds, 29/29 lanes on both hosts, audio paired both ways, ASan clean, goldens 308/55/0. Accepted with one relaxed guarantee: a failed batch that ran a Snapshot-policy operation is reloaded and may move layout (user decision 2026-10-31). |
 | `upstream-final` | `cbffaa078d` | `32f0a26e5b` | `da3885cb` | Not a pin. The last upstream sync (9 files changed after trim, no conflicts); the fork is a hard fork from here and takes upstream fixes by cherry-pick only. Checked on Windows (fork suites, goldens 308/55/0) and linux-host (build only), report `notes/sync32f0/REPORT.md`. |
 | `engrave-5` | `23c743d339` | `32f0a26e5b` | `da3885cb` | Phase C step C1. Merges `a4/drop-3x` (`41565474d6`): the readers for scores before MuseScore 4.6 (read114, read206, read302, read400, read410) are deleted and listed in `TRIM`; such scores fail with `Unsupported`. Fixtures were upgraded once to the current format (`native-format-upgrade.json`). Report `notes/drop3x/REPORT.md`; the merge was built on Windows and passed the ops, handles, op-policy and api suites. |
+| `engrave-6` | `a05c3bc3f5` | `32f0a26e5b` | `da3885cb` | Phase C step C0. Merges `c0/gate` (`bdbb77f87a`, tag `engrave-c0-gate`): test capture and build closure only, production engine sources equal engrave-5. The engine gate `scripts/engine_gate.py` (usage and coverage `docs/dev/c0-gate.md`) checks the engine through the public API; green on Windows and linux-host, and all 211 overlapping artifacts equal the v1 host's. The v1 host is frozen: its targets are opt-in, binaries and replay runner archived under ignored `artifacts/frozen-v1/`. Report `notes/cleanup/c0/REPORT.md`. |
 
 The superproject's `.gitmodules` now tracks `branch = main`.
 
