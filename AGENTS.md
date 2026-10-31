@@ -5,6 +5,12 @@ core. Renamed from musescore-mcp on 2026-10-30; the binary, the MCP server name
 and the `MUSIC_MCP_*` env vars keep their old names until A5. This is a
 separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 
+Goal: give LLM agents a tool to compose music, with enough MuseScore interop that
+agent-made scores can be edited by humans in MuseScore and vice versa. Full MuseScore
+compatibility and its legacy are not a goal: only scores from MuseScore 4.6 on open,
+and nothing is kept or validated just because MuseScore has it. Since 2026-10-31 the
+fork is a hard fork (one last upstream sync, then cherry-picks only).
+
 - The engine is the fork github.com/Locietta/engrave (renamed from Locietta/MuseScore on 2026-10-28), consumed as the shallow submodule
   `vendor/musescore` (ledger and rules in `docs/dev/fork.md`; never force-push fork branches,
   tag every pinned SHA). webmscore and `patches/` are retired.
@@ -25,7 +31,7 @@ separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
 - Worker models: Opus 5.5, GPT-6 Astra, GPT-6.1 Terra, DeepSeek Flash and Gemini 3.8 Flash.
   Pick the cheapest model likely to finish a task in one pass, and escalate on a stall rather
-  than retrying. Hard rules: Terra only at reasoning effort max; DeepSeek via Pi
+  than retrying. Hard rules: Terra only at reasoning effort max, in fast mode (fast mode is for Terra only, never Astra); DeepSeek via Pi
   `opencode-go/deepseek-v4.1-flash` (the paid `deepseek/deepseek-flash` only while opencode-go
   is down); no GPT-6.1 Sol.
 - Reviews: each roadmap step (A1, A2, ...) ends with a full Terra validation; each phase
