@@ -291,6 +291,7 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
 
         RuntimeOptions runtime{path_utf8(absolute_field(request, "resources")), std::string{}};
         const std::string soundfont = request.value("soundfont", std::string{});
+        runtime.soundfont = soundfont;
         runtime.font_paths = request.at("fonts").get<std::vector<std::string>>();
         if (request.contains("cacheDirectory")) {
             const auto cache_dir = absolute_field(request, "cacheDirectory");
@@ -327,12 +328,7 @@ int run_export_worker(const std::filesystem::path& request_path) noexcept {
 
                 std::uintmax_t bytes = 0;
                 if (is_audio_format(job.format)) {
-                    std::string engine_error;
-                    if (!initialize_engine_audio(soundfont, &engine_error)) {
-                        throw std::runtime_error(engine_error.empty()
-                                                     ? "Audio engine initialisation failed"
-                                                     : engine_error);
-                    }
+                    core.initialize_audio();
                     const auto rendered = core.export_audio(score.id, job.format,
                                                             path_utf8(job.output_path), effective);
                     if (!rendered.ok) {

@@ -298,9 +298,11 @@ public:
                                 const std::vector<Measure>& measures, const EditContext& context);
     EditResult set_pitches(DocumentId id, const NativePitchEdit& edit, const EditContext& context);
     ExportData export_bytes(DocumentId id, ExportFormat format, const ExportOptions& options = {});
+    // Worker-only: select the retained SoundFont and initialise owned audio.
+    void initialize_audio();
     // Worker-only: render one audio file through MuseScore 4's engine. The
-    // caller must already have initialised the process-wide engine with the
-    // runtime SoundFont (initialize_engine_audio). The host process never calls
+    // caller must already have initialised this core's audio with the runtime
+    // SoundFont (initialize_audio). The host process never calls
     // this; run_export_worker() uses it in a child process. Read-only: the
     // document revision is unchanged. Audio formats only.
     AudioExportResult export_audio(DocumentId id, ExportFormat format, const std::string& output_path,

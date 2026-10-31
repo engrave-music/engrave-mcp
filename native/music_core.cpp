@@ -1,6 +1,8 @@
 #include "music_core.h"
 
 #include "composition.h"
+#include <engrave/engine.h>
+#include "engrave/src/api/state.h"
 #include "engrave/src/audio/engine_audio.h"
 #include "engrave/src/runtime/noqt_runtime.h"
 #include "engrave/src/audio/score_audio.h"
@@ -9,6 +11,7 @@
 #include "engraving/dom/excerpt.h"
 #include "engraving/dom/masterscore.h"
 #include "engraving/dom/repeatlist.h"
+#include "engraving/dom/textbase.h"
 #include "engraving/engravingproject.h"
 
 #include <charconv>
@@ -357,6 +360,11 @@ struct MusicCore::Impl {
     };
 
     std::thread::id owner;
+    // The public engine owns the context. The anchor supplies the same
+    // DocumentAccess bridge used by the engine's internal tests while these
+    // legacy projects remain outside the public Document API.
+    std::unique_ptr<engrave::Engine> engine;
+    std::unique_ptr<engrave::Document> anchor;
     std::map<std::uint64_t, Document> documents;
     std::uint64_t next_document = 1;
     RuntimeOptions options;
@@ -408,8 +416,12 @@ struct MusicCore::Impl {
         return info(id, document.project, document.revision, document.composition.has_value());
     }
 
-    static ScoreProject build(const Composition& composition) {
-        return load_native_score(composition_xml(composition_json(composition)), "musicxml");
+    EngineContext& context() const {
+        return engrave::DocumentAccess::context(*anchor);
+    }
+
+    ScoreProject build(const Composition& composition) {
+        return load_native_score(context(), composition_xml(composition_json(composition)), "musicxml");
     }
 
     static void validate_operation(const EditContext& context) {
@@ -986,7 +998,7 @@ struct MusicCore::Impl {
             throw CoreError(CoreError::Code::invalid_argument,
                             "Audio exports are rendered in a worker process");
         }
-        auto data = export_native_score(document.project, export_backend_name(format), options, soundfont);
+        auto data = export_native_score(context(), document.project, export_backend_name(format), options, soundfont);
         if (data.empty()) throw CoreError(CoreError::Code::engine_failure, "Exporter returned no data");
         return ExportData{document.revision, std::move(data)};
     }
@@ -1015,18 +1027,30 @@ MusicCore::MusicCore(const RuntimeOptions& options) : impl_(std::make_unique<Imp
         normalized.font_paths.clear();
         if (!options.cache_directory.empty()) {
             normalized.cache_directory = path_utf8(std::filesystem::absolute(std::filesystem::u8path(options.cache_directory)));
-            set_runtime_cache_root(normalized.cache_directory);
         }
 
         impl_->options = std::move(normalized);
-        impl_->soundfont = impl_->options.soundfont;
-        initialize_native_runtime(impl_->options.resources_path);
-        if (!impl_->soundfont.empty()) {
-            const auto frozen = freeze_runtime_soundfont(impl_->soundfont);
+        engrave::EngineOptions engine_options;
+        engine_options.resources = resources;
+        if (!impl_->options.cache_directory.empty())
+            engine_options.cache_dir = std::filesystem::u8path(impl_->options.cache_directory);
+        auto engine = engrave::Engine::create(engine_options);
+        if (!engine) throw std::invalid_argument(engine.error().message);
+        impl_->engine = std::move(*engine);
+
+        // Same minimal anchor and access path as engrave/tests/describe_test.cpp.
+        const std::string anchor = R"(<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><note><rest/><duration>4</duration></note></measure></part></score-partwise>)";
+        auto document = impl_->engine->open(std::as_bytes(std::span(anchor.data(), anchor.size())));
+        if (!document) throw std::runtime_error("Cannot create engine context anchor: " + document.error().message);
+        impl_->anchor = std::move(*document);
+
+        if (!impl_->options.soundfont.empty()) {
+            const auto frozen = impl_->context().assets().freezeSoundFont(impl_->options.soundfont);
             impl_->soundfont = frozen.path;
             impl_->options.soundfont = frozen.path;
         }
-        for (const auto& path : options.font_paths) add_runtime_font(path);
+        for (const auto& path : options.font_paths) add_font(path);
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
     }
@@ -1037,13 +1061,8 @@ MusicCore::~MusicCore() {
         std::terminate();
     if (impl_) {
         impl_->documents.clear();
-        try {
-            shutdown_runtime_assets();
-        } catch (const std::exception& error) {
-            std::fprintf(stderr, "Runtime asset cleanup failed: %s\n", error.what());
-        } catch (...) {
-            std::fprintf(stderr, "Runtime asset cleanup failed\n");
-        }
+        impl_->anchor.reset();
+        impl_->engine.reset();
     }
 }
 
@@ -1051,7 +1070,7 @@ ScoreInfo MusicCore::create(const Composition& composition) {
     try {
         impl_->check_owner();
         impl_->ensure_capacity();
-        auto project = Impl::build(composition);
+        auto project = impl_->build(composition);
         return impl_->insert(std::move(project), composition);
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
@@ -1066,7 +1085,7 @@ ScoreInfo MusicCore::open(const std::string& bytes, InputFormat format) {
         // the DOM exists and keep the identity-keyed values with the document.
         ScoreAudioMixDefaults defaults;
         if (format == InputFormat::Mscz) defaults = score_audio_mix_defaults(bytes);
-        auto project = load_native_score(bytes, input_backend_name(format));
+        auto project = load_native_score(impl_->context(), bytes, input_backend_name(format));
         return impl_->insert(std::move(project), std::nullopt, std::move(defaults));
     } catch (...) {
         translate_current_exception(CoreError::Code::engine_failure);
@@ -1099,7 +1118,7 @@ ScoreView MusicCore::get(DocumentId id, int excerpt_id) {
         view.info.editable = excerpt_id == -1 && document.composition.has_value();
         ExportOptions options;
         options.excerpt_id = excerpt_id;
-        view.musicxml = export_native_score(document.project, "musicxml", options, impl_->soundfont);
+        view.musicxml = export_native_score(impl_->context(), document.project, "musicxml", options, impl_->soundfont);
         const auto meta_tracks = Impl::metadata_tracks_or_empty(document, selected, excerpt_id);
         view.metadata_json = score_metadata(selected, meta_tracks).dump();
         return view;
@@ -1141,8 +1160,8 @@ ExcerptsData MusicCore::generate_excerpts(DocumentId id) {
             throw CoreError(CoreError::resource_limit, "Document revision limit reached");
         // Excerpt creation changes a candidate project only. A failed layout or
         // allocation cannot leave a partially generated live score behind.
-        const auto bytes = export_native_score(document.project, "mscz", 0, impl_->soundfont);
-        auto candidate = load_native_score(bytes, "mscz");
+        const auto bytes = export_native_score(impl_->context(), document.project, "mscz", 0, impl_->soundfont);
+        auto candidate = load_native_score(impl_->context(), bytes, "mscz");
         // The reload reads the version our writer stamped; keep the source file's.
         copy_score_versions(document.project->masterScore(), candidate->masterScore());
         if (!generate_score_excerpts(candidate->masterScore()))
@@ -1255,6 +1274,18 @@ double MusicCore::audio_export_duration(DocumentId id, bool use_repeats) {
     }
 }
 
+void MusicCore::initialize_audio() {
+    try {
+        impl_->check_owner();
+        if (impl_->soundfont.empty())
+            throw CoreError(CoreError::Code::engine_failure, "No SoundFont was given for audio export");
+        auto selected = impl_->engine->set_soundfonts({std::filesystem::u8path(impl_->soundfont)});
+        if (!selected) throw CoreError(CoreError::Code::engine_failure, selected.error().message);
+    } catch (...) {
+        translate_current_exception(CoreError::Code::engine_failure);
+    }
+}
+
 AudioExportResult MusicCore::export_audio(DocumentId id, ExportFormat format, const std::string& output_path,
                                           const ExportOptions& options) {
     try {
@@ -1270,7 +1301,7 @@ AudioExportResult MusicCore::export_audio(DocumentId id, ExportFormat format, co
             throw CoreError(CoreError::Code::invalid_argument,
                             "Audio export requires an audio format");
         }
-        if (!engine_audio_initialized()) {
+        if (!engine_audio_initialized(impl_->context().audio())) {
             throw CoreError(CoreError::Code::engine_failure,
                             "Audio engine is not initialized in this worker process");
         }
@@ -1294,7 +1325,7 @@ AudioExportResult MusicCore::export_audio(DocumentId id, ExportFormat format, co
                 track.output.volume_db, track.output.balance, track.output.solo, track.output.muted });
         }
 
-        const AudioRenderResult rendered = export_score_audio(master, request);
+        const AudioRenderResult rendered = export_score_audio(impl_->context().audio(), master, request);
         AudioExportResult result;
         result.ok = rendered.ok;
         result.error = rendered.error;
@@ -1351,14 +1382,16 @@ RuntimeOptions MusicCore::runtime_options() const {
     impl_->check_owner();
     auto result = impl_->options;
     result.font_paths.clear();
-    for (const auto& font : runtime_fonts()) result.font_paths.push_back(font.path);
+    for (const auto& font : impl_->context().assets().fonts()) result.font_paths.push_back(font.path);
     return result;
 }
 
 RuntimeSoundFontInfo MusicCore::set_soundfont(const std::string& path) {
     try {
         impl_->check_owner();
-        auto frozen = freeze_runtime_soundfont(path);
+        // Selecting in the owner process must not start audio: set_soundfonts()
+        // initializes it eagerly. The worker applies that API to this retained copy.
+        auto frozen = impl_->context().assets().freezeSoundFont(path);
         // Allocate both copies before publishing the new selection.
         auto selected = frozen.path;
         auto option = frozen.path;
@@ -1373,14 +1406,26 @@ RuntimeSoundFontInfo MusicCore::set_soundfont(const std::string& path) {
 RuntimeFontInfo MusicCore::add_font(const std::string& path) {
     try {
         impl_->check_owner();
-        auto font = add_runtime_font(path);
+        // The legacy tool returns the retained file's metadata, which the public
+        // add_font result does not expose. Retain it through the owned context,
+        // then register that immutable copy through the public engine API.
+        auto font = impl_->context().assets().addFont(path);
+        auto added = impl_->engine->add_font(std::filesystem::u8path(font.path));
+        if (!added) throw CoreError(CoreError::Code::engine_failure, added.error().message);
         bool failed = false;
         for (auto& [id, document] : impl_->documents) {
             if (document.poisoned) continue;
             try {
-                document.project->masterScore()->doLayout();
-                for (const auto& excerpt : list_score_excerpts(document.project->masterScore()))
-                    select_score(document.project->masterScore(), excerpt.id)->doLayout();
+                // These legacy projects are not public Documents, so apply the
+                // same text and layout invalidation as Document::refresh_fonts.
+                for (auto* score : document.project->masterScore()->scoreList()) {
+                    score->scanElements([](mu::engraving::EngravingItem* item) {
+                        if (item->isTextBase()) mu::engraving::toTextBase(item)->mutldata()->layoutInvalid = true;
+                    });
+                    score->setLayoutAll();
+                    score->doLayout();
+                    score->update();
+                }
             } catch (...) {
                 document.poisoned = true;
                 failed = true;
