@@ -65,12 +65,23 @@ LANE_NAMES = [
 ]
 
 
-def check_preflight_binaries(build_dir: Path, exe_suffix: str) -> None:
+def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str]) -> None:
     if not build_dir.is_dir():
         sys.stderr.write(f"Error: build dir does not exist or is not a directory: {build_dir}\n")
         sys.exit(2)
     missing = []
-    for binary_name in EXPECTED_BINARIES:
+    requirements = {
+        "music_core": ["music_core_test"], "score_edit": ["score_edit_test"],
+        "score_audio": ["score_audio_test"], "score_positions": ["score_positions_test"],
+        "noqt_support": ["noqt_support_test"], "excerpts": ["excerpts_test"],
+        "assets": ["assets_test"], "archives": ["archive_test", "musescore-mcp"],
+        "async_session": ["musescore-mcp-test"], "golden": ["musescore-mcp", "semantic_dump"],
+        "semantic_check": [], "oracle_harness": [], "compat_corpus": ["semantic_dump"],
+        "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
+        "engine_audio": ["engine_audio_probe", "musescore-mcp"],
+    }
+    selected = {binary for lane in lanes for binary in requirements.get(lane, ["musescore-mcp"])}
+    for binary_name in sorted(selected):
         target = build_dir / f"{binary_name}{exe_suffix}"
         if not target.is_file():
             missing.append(target.name)
@@ -540,7 +551,6 @@ def main() -> None:
     exe_suffix = ".exe" if sys.platform == "win32" else ""
 
     # Pre-flight check 1: expected binaries in build dir
-    check_preflight_binaries(build_dir, exe_suffix)
 
     # Pre-flight check 2: git line endings and no UTF-8 BOM in both checkouts
     check_preflight_eol(repo_root)
@@ -558,6 +568,8 @@ def main() -> None:
                 sys.stderr.write(f"Error: Unknown lane: {name}\n")
                 sys.exit(1)
         selected_lanes = [lane for lane in LANE_NAMES if lane in requested]
+
+    check_preflight_binaries(build_dir, exe_suffix, selected_lanes)
 
     output.mkdir(parents=True, exist_ok=True)
     (output / "tmp").mkdir(parents=True, exist_ok=True)
