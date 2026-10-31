@@ -119,6 +119,27 @@ end
 if os.isdir(native_lib) then
     add_linkdirs(native_lib)
 end
+-- The engine's page renderer links cairo.  A bare checkout uses the system
+-- cairo; a host with no system cairo (linux-host) or a pinned conda cairo is given
+-- with --cairo_prefix, the same option and layout the engine's own xmake.lua
+-- accepts (<prefix>/include/cairo, <prefix>/lib).
+option("cairo_prefix")
+    set_default("")
+    set_showmenu(true)
+    set_description("cairo install prefix (default: the native environment or the system cairo)")
+option_end()
+
+local cairo_prefix = get_config("cairo_prefix")
+if cairo_prefix and cairo_prefix ~= "" then
+    cairo_prefix = path.absolute(cairo_prefix)
+    target("engrave")
+        add_sysincludedirs(path.join(cairo_prefix, "include"), path.join(cairo_prefix, "include", "cairo"))
+        add_linkdirs(path.join(cairo_prefix, "lib"), {public = true})
+        if not is_plat("windows") then
+            add_rpathdirs(path.join(cairo_prefix, "lib"))
+        end
+    target_end()
+end
 -- zlib comes from the native environment for every binary, the engine's tests
 -- included: the engine's zip container links it but leaves the choice to the
 -- including project.  cairo is linked by engrave itself.
