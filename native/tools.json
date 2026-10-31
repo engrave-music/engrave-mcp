@@ -509,7 +509,7 @@
     }
   },
   {
-    "description": "Read structure and source revision.",
+    "description": "Read structure and source revision; expected_revision guards the read.",
     "inputSchema": {
       "$defs": {
         "score": {
@@ -532,6 +532,11 @@
         "document": {
           "maxLength": 128,
           "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
+          "type": "string"
+        },
+        "expected_revision": {
+          "maxLength": 20,
+          "pattern": "^(0|[1-9][0-9]*)$",
           "type": "string"
         },
         "score": {

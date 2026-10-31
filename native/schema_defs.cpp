@@ -112,7 +112,7 @@ Json declared_tools() {
     input["oneOf"]={J{{"required",{"template_id"}},{"not",{{"required",{"template_path"}}}}},J{{"required",{"template_path"}},{"not",{{"required",{"template_id"}}}}}};
     tool("score_create","Create from exactly one engine template.",input,opened);
     tool("score_close","Destroy on owner thread; captured jobs remain independent.",object({{"document",doc}}),success(J::object()));
-    tool("score_outline","Read structure and source revision.",object({{"document",doc},{"score",score}},J::array({"document"})),success({{"revision",u},{"outline",ref("outline")}}));
+    tool("score_outline","Read structure and source revision; expected_revision guards the read.",object({{"document",doc},{"expected_revision",u},{"score",score}},J::array({"document"})),success({{"revision",u},{"outline",ref("outline")}}));
     J query=object({{"score",score},{"types",array(text)},{"first_measure",idx},{"measure_count",integer(1,128)},{"from_measure",eid},{"to_measure",eid},{"staves",array(idx)},{"voices",array(integer(0,3),4)},{"from_tick",f},{"to_tick",f},{"props",array(text)},{"layout_boxes",b},{"limit",integer(1,4096)},{"cursor",integer(0,4096)}},J::array());
     query["not"]={{"allOf",J::array({J{{"anyOf",J::array({J{{"required",{"first_measure"}}},J{{"required",{"measure_count"}}}})}},J{{"anyOf",J::array({J{{"required",{"from_measure"}}},J{{"required",{"to_measure"}}}})}}})}};
     tool("score_query","Queued reads; expected_revision guards pagination. Layout addresses are ephemeral.",one(J::array({

@@ -100,6 +100,8 @@ def check_cases(tools):
         ("score_close", {"document": doc}, True),
         ("score_close", {"document": "score-1"}, False),
         ("score_outline", {"document": doc, "score": {"excerpt": "A_A"}}, True),
+        ("score_outline", {"document": doc, "expected_revision": "3"}, True),
+        ("score_outline", {"document": doc, "expected_revision": 3}, False),
         ("score_query", {"document": doc, "mode": "elements", "expected_revision": "3"}, True),
         ("score_query", {"document": doc, "mode": "properties", "target": ref}, True),
         ("score_query", {"document": doc, "mode": "properties", "target": {"kind": "op", "op": 0, "item": 0}}, False),
