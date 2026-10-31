@@ -15,7 +15,7 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-002 | Historical A4 `engrave-4` "ASan clean" claim correction | Documented / Corrected | SOURCE-REVIEWED, EXECUTED | Corrects baseline provenance (was address-only check `detect_leaks=0`, not leak-clean) |
 | DEFECT-ENGRAVE-003 | Subnormal reverb-tail float divergence (C4) | Carried / Not adopted | SOURCE-REVIEWED (prior executed evidence) | Linux reverb tail performance penalty without FTZ/DAZ; bit-exactness preserved |
 | DEFECT-ENGRAVE-004 | Snapshot/batch rollback may move layout | Accepted contract | SOURCE-REVIEWED, REPORTED | Atomic batch rollback via snapshot reload does not promise bit-exact layout |
-| DEFECT-ENGRAVE-005 | Host asset staging must move to installer | Open | EXECUTED | `generate_resources.py --check` fails at `engrave-14`; A5 must use `install_assets.py` |
+| DEFECT-ENGRAVE-005 | Host asset staging must move to installer | Resolved 2026-11-01 (`b53ff3b`) | EXECUTED | Replaced retired QRC generator with engine installer; verified 345 files (28,380,646 B) |
 | DEFECT-ENGRAVE-006 | Phase C formal status | ACCEPTED 2026-11-01 (Astra), no must-fix | EXECUTED, SOURCE-REVIEWED | Phase C closed at `engrave-14`; the open leak (-001) and host packaging (-005) items carry into A5 |
 | DEFECT-ENGRAVE-007 | Parked API work | Parked | SOURCE-REVIEWED | Runtime font/SoundFont, exact positions, and excerpt export deferred to `a5/api-gaps` |
 | DEFECT-ENGRAVE-008 | Encoder finalization cannot report codec-internal failure | Carried / Open | SOURCE-REVIEWED | A codec failure during final flush can leave a truncated output reported as success |
@@ -76,12 +76,20 @@ Evidence levels used in this ledger:
 
 ### 5. Host asset staging must move to the installer (DEFECT-ENGRAVE-005)
 
-- **Status**: Open / Pending A5 host migration.
+- **Status**: Resolved 2026-11-01 (commit `b53ff3b`).
 - **Evidence Level**: EXECUTED.
-- **Description**: `python -B scripts/generate_resources.py --check` fails at `engrave-14` because `src/engraving/engraving.qrc` was retired in C7, while host `scripts/prepare.py` still calls that generator. The QRC lists are gone by design; A5 must stage runtime assets using the fork's `tools/install_assets.py` + `engrave/assets.json` (345 files, 28,380,646 bytes) before cutover.
-- **Impact**: Frozen v1 host resource staging cannot be regenerated against `engrave-14` without adaptation.
-- **Next Step**: Integrate `tools/install_assets.py` and verify packaging during A5 host cutover.
+- **Description**: Historical host asset staging relied on `scripts/generate_resources.py` parsing engine Qt `.qrc` files to produce `resources.json`. Those lists were retired in engine C7, causing `python -B scripts/generate_resources.py --check` to fail at `engrave-14`.
+- **Resolution**:
+  - Replaced `scripts/prepare.py` asset staging with integration on top of `vendor/musescore/tools/install_assets.py` and authoritative engine manifest `vendor/musescore/engrave/assets.json` (version 1, 345 files, 28,380,646 bytes total).
+  - Deleted retired `scripts/generate_resources.py` and `resources.json`; dropped legacy `.runtime/assets-manifest.json` generation.
+  - Implemented safe staging with temporary sibling directory and atomic swap-in to handle directory replacement safely on Windows without partial state.
+  - Verified clean staging (38.969 s, exit 0, prepared 345 files) and subsequent idempotent run (1.658 s, exit 0, verified 345 files).
+  - Verified installed `.runtime/assets` with `python -B vendor/musescore/tools/install_assets.py --verify .runtime/assets` (0.197 s, exit 0).
+  - Confirmed 345 files, 28,380,646 total bytes, and byte-identical match between `.runtime/assets/assets.json` and `vendor/musescore/engrave/assets.json`.
+  - Verified repair flow: file corruption detected and repaired back to green status (exit 0).
+  - Verified asset-consuming smoke check through `pixi run -e native python scripts/test_assets.py --binary build/xmake-windows/assets_test.exe --assets .runtime/assets --font .pixi/envs/native/fonts/Inconsolata-Regular.ttf --output artifacts/test-assets --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3` (exit 0).
 - **Related packaging limitation (SOURCE-REVIEWED, `tools/install_assets.py:57`)**: the installer reads `git cat-file HEAD:<source>`, not source-tree bytes, so it needs Git and a checkout with committed blobs; it is not a source-tarball installer. Keep that build-time requirement explicit, or add a hash-checked source-tree fallback when source archives become a distribution target. A5 should install/verify into a fresh versioned directory, stage its own external SoundFonts and native library dependencies, and use the manifest identity in packaging provenance: `Engine::create` checks only the instruments sentinel, so successful startup is not package verification.
+- **Observed host build status note (EXECUTED)**: incremental host build `pwsh -NoProfile -File notes/claude-scripts/build.ps1 musescore_mcp` still fails compilation against `engrave-14` due to unmigrated API call sites in `native/worker_protocol.cpp` and `native/music_core.cpp` (pre-Phase C signatures for `initialize_engine_audio`, `load_native_score`, etc.), carried into A5 host cutover.
 
 ### 6. Phase C formal status (DEFECT-ENGRAVE-006)
 

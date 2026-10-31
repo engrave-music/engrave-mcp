@@ -49,20 +49,18 @@ python scripts/prepare.py                 # 再校验并分发资源
 
 注意区分：只有上述库依赖由本仓库固定版本与校验和；xmake-repo 仍提供构建工具包（cmake、nasm、pkgconf）与仅用于开发测试道的 gtest，它们的 recipe 修订记录在每个已安装包的 `manifest.txt`（`repo.commit`）中，不进入发布产物（freetype 的可选 zlib/libpng/woff2 支持在 `add_requires()` 中全部关闭，因此不会额外引入 xmake-repo 的库依赖）。因此“所有输入都已固定校验和”的说法仅对这些库依赖成立，工具包不在此列。
 
-### 3.2 资源清单生成与资产分发 (Runtime Asset Staging)
-运行时资源清单 `resources.json` 由 `scripts/generate_resources.py` 从引擎的 Qt 资源清单（`src/engraving/engraving.qrc`、`src/engraving/data/fonts/*.qrc` 以及 MPE 的 `qt_add_resources` 配置块）外加一项显式历史回退样式（`legacy-style-defaults-v450.mss`）自动解析生成；另外收录乐谱模板，即 `share/templates/categories.json` 及其列出的每个模板目录（别名 `templates/...`，engrave 公共 API 的 `Engine::templates()` 与 `create_document()` 从这里读取）。对于 5.0 引擎，脚本支持 `--source-root` 参数以读取新的 MPE 路径（`muse/framework/mpe`）与 11 种制表谱字体（`fonts_Tabulature.qrc` 中的 `MuseScoreTab*.ttf`）：
-
-```powershell
-python scripts/generate_resources.py --source-root <path-to-engine>
-python scripts/generate_resources.py --check
-```
+### 3.2 引擎资产清单与运行时分发 (Runtime Asset Staging)
+引擎在 Phase C 移除了历史 Qt 资源（`.qrc`），改由引擎自身维护权威资产清单 `vendor/musescore/engrave/assets.json`（version 1，包含字体、样式、乐器定义、许可协议与乐谱模板，共 345 个文件，合计 28,380,646 字节）与配套安装校验工具 `vendor/musescore/tools/install_assets.py`。
 
 资产准备与分发：
-1. **主检出（production）**：`scripts/prepare.py` 会校验子模块，根据 `resources.json` 清单将资源从 Git blob 同步到 `.runtime/assets`。
-2. **5.0 / worktree 独立分发**：在多 worktree（如 `engrave/a2`）或测试独立引擎时，`.runtime` 可能是指向主检出的 Junction 或符号链接，**切勿直接修改或覆盖 `.runtime`**。应将资源同步到构建目录下的独立暂存目录（如 `build/scratch_assets`）：
+1. **主检出（production）**：`scripts/prepare.py` 作为宿主统一的资产准备与校验入口。它先校验 `vendor/musescore` 子模块状态与提交，随后使用引擎安装器验证 `.runtime/assets`。若资产目录缺失或文件哈希不匹配，则在临时目录完整构建后原子替换安装，并写入 `.runtime/assets/assets.json`；若已就绪且哈希完全匹配则跳过写入（保持幂等，退出码 0）。宿主不再解析 QRC，亦不再依赖 `resources.json` 与 `.runtime/assets-manifest.json`。
+2. **独立校验与自定义分发**：可直接调用引擎安装工具进行校验，或分发到构建目录下的独立暂存目录（在多 worktree 如 `engrave/a2` 或测试独立引擎时，**切勿直接修改或覆盖主检出的 `.runtime`**）：
    ```powershell
-   # 将 resources.json 中声明的资产复制到暂存目录
-   python -c "import json, shutil, pathlib; r=json.loads(pathlib.Path('resources.json').read_text('utf-8')); src=pathlib.Path('<engine_root>'); dst=pathlib.Path('build/scratch_assets'); [dst.joinpath(k).parent.mkdir(parents=True, exist_ok=True) or shutil.copy2(src/v, dst/k) for k, v in r.items()]"
+   # 校验已安装的资产目录是否与引擎清单一致
+   python -B vendor/musescore/tools/install_assets.py --verify .runtime/assets
+
+   # 安装到独立暂存目录
+   python -B vendor/musescore/tools/install_assets.py build/scratch_assets
    ```
    随后通过命令行将暂存路径传给二进制文件运行：
    ```powershell
