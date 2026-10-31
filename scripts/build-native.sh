@@ -15,4 +15,4 @@ pixi run --locked -e native xmake f -y -m release -o "$build_directory" \
     --cc="gcc@$PWD/.pixi/envs/native/bin/x86_64-conda-linux-gnu-cc" \
     --cxx="g++@$PWD/.pixi/envs/native/bin/x86_64-conda-linux-gnu-c++" \
     --ld="g++@$PWD/.pixi/envs/native/bin/x86_64-conda-linux-gnu-c++" "${extra_config[@]}"
-pixi run --locked -e native xmake build -y -j "$jobs" musescore_mcp musescore_mcp_test music_core_test registry_dump registry_check host_api_test
+pixi run --locked -e native xmake build -y -j "$jobs" musescore_mcp musescore_mcp_test music_core_test registry_dump registry_check host_api_test export_job_test
