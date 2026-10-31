@@ -1,14 +1,16 @@
-"""Verify the pinned engine submodule and prepare native assets.
+"""Verify the pinned engine submodule and stage/verify native assets via the engine installer.
 
 No C++ or CMake source transformation is performed by this production path.
 """
-import hashlib
-import json
-import subprocess
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "vendor/musescore"
+TOOLS = SOURCE / "tools"
 
 
 def verify_submodule():
@@ -37,51 +39,70 @@ def verify_submodule():
     return status[1:].split()[0]
 
 
-def read_asset(relative):
-    if relative.startswith("repo:"):
-        source = ROOT / relative[len("repo:"):]
-        if not source.is_file():
-            raise RuntimeError(f"Missing asset: {relative}")
-        return source.read_bytes()
-    # Read the committed blob so a CRLF worktree checkout cannot change staged text.
+def stage_assets(assets: Path) -> bool:
+    """Ensure assets directory matches the engine's authoritative manifest.
+
+    Returns True if assets were freshly staged or repaired, False if already verified.
+    """
+    sys.path.insert(0, str(TOOLS))
+    import install_assets
+
+    if assets.is_dir():
+        try:
+            install_assets.install(assets, verify=True)
+            return False
+        except Exception:
+            # Installed directory is absent, incomplete or outdated; repair below.
+            pass
+
+    runtime_dir = assets.parent
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    if not assets.exists():
+        install_assets.install(assets, verify=False)
+        return True
+
+    # Destination exists but failed verification. Build replacement safely in a temp dir
+    # and swap into place, leaving no partially published directory.
+    temp_parent = Path(tempfile.mkdtemp(prefix=".assets-build-", dir=runtime_dir))
     try:
-        return subprocess.check_output(
-            ["git", "-C", str(SOURCE), "cat-file", "blob", f"HEAD:{relative}"],
-        )
-    except subprocess.CalledProcessError as error:
-        raise RuntimeError(f"Missing asset in vendor/musescore: {relative}") from error
+        replacement = temp_parent / "assets"
+        install_assets.install(replacement, verify=False)
+        stale_parent = Path(tempfile.mkdtemp(prefix=".assets-stale-", dir=runtime_dir))
+        stale_backup = stale_parent / "assets"
+        assets.rename(stale_backup)
+        try:
+            replacement.rename(assets)
+        except Exception:
+            if stale_backup.exists() and not assets.exists():
+                stale_backup.rename(assets)
+            raise
+        finally:
+            shutil.rmtree(stale_parent, ignore_errors=True)
+    finally:
+        shutil.rmtree(temp_parent, ignore_errors=True)
+    return True
 
 
 def main():
     revision = verify_submodule()
-    import generate_resources  # same directory; resources.json must match the pinned qrc lists
-    if generate_resources.generate() != json.loads((ROOT / "resources.json").read_text(encoding="utf-8")):
-        raise RuntimeError("resources.json is out of date; run scripts/generate_resources.py")
-    files = json.loads((ROOT / "resources.json").read_text(encoding="utf-8-sig"))
     assets = ROOT / ".runtime/assets"
-    manifest_path = ROOT / ".runtime/assets-manifest.json"
-    previous = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
-    manifest = {}
-    for alias, relative in files.items():
-        data = read_asset(relative)
-        digest = hashlib.sha256(data).hexdigest()
-        target = assets / alias
-        if not target.is_file() or target.read_bytes() != data:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-        manifest[alias] = {"source": relative, "sha256": digest}
-    # Remove only files this script staged before (aliases dropped from resources.json);
-    # anything else under .runtime/assets is left alone.
-    for alias in sorted(set(previous) - set(manifest)):
-        stale = assets / alias
-        if stale.is_file() and not stale.is_symlink():
-            stale.unlink()
-            for parent in stale.parents:
-                if parent == assets or any(parent.iterdir()):
-                    break
-                parent.rmdir()
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"Verified vendor/musescore at {revision}; prepared {len(files)} native resources")
+    staged = stage_assets(assets)
+
+    # Clean up legacy .runtime/assets-manifest.json if present; assets.json inside
+    # .runtime/assets is the single authoritative manifest and nothing consumes the external file.
+    legacy_manifest = ROOT / ".runtime/assets-manifest.json"
+    if legacy_manifest.is_file():
+        legacy_manifest.unlink()
+
+    sys.path.insert(0, str(TOOLS))
+    import install_assets
+    import json
+    manifest = json.loads(install_assets.MANIFEST.read_bytes())
+    count = len(manifest["files"])
+
+    action = "prepared" if staged else "verified"
+    print(f"Verified vendor/musescore at {revision}; {action} {count} native resources")
 
 
 if __name__ == "__main__":
