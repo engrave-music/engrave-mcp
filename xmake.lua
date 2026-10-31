@@ -401,7 +401,9 @@ target("export_job_test")
     set_kind("binary")
     set_default(false)
     add_deps("muse_generated", "v2_store")
-    add_files(path.join(native_dir, "export_job_test.cpp"), path.join(native_dir, "api_output.cpp"))
+    add_files(path.join(native_dir, "export_job_test.cpp"), path.join(native_dir, "api_output.cpp"),
+        path.join(native_dir, "worker_v2.cpp"), path.join(native_dir, "background_job.cpp"),
+        path.join(native_dir, "export_job.cpp"))
     add_engine_flags()
     if is_plat("windows") then
         add_files(path.join(native_dir, "utf8.manifest"))

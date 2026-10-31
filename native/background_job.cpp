@@ -378,20 +378,44 @@ std::filesystem::path normalize_output_path(const std::filesystem::path& path) {
 
 namespace {
 std::mutex s_reserved_mutex;
-std::vector<std::filesystem::path> s_reserved_paths;
+struct Reservation { std::filesystem::path path; bool directory; };
+std::vector<Reservation> s_reserved_paths;
+
+bool contains_path(const std::filesystem::path& directory, const std::filesystem::path& path) {
+    const auto parent = directory.lexically_normal(), child = path.lexically_normal();
+    auto a = parent.begin(), b = child.begin();
+    for (; a != parent.end(); ++a, ++b) {
+        if (b == child.end() || !same_output_path(*a, *b)) return false;
+    }
+    return true;
+}
+bool conflicts(const Reservation& existing, const std::filesystem::path& path, bool directory) {
+    return same_output_path(existing.path, path)
+        || (existing.directory && contains_path(existing.path, path))
+        || (directory && contains_path(path, existing.path));
+}
 }
 
 void reserve_output_path(const std::filesystem::path& path) {
     if (path.empty()) return;
     std::lock_guard lock(s_reserved_mutex);
-    s_reserved_paths.push_back(path);
+    s_reserved_paths.push_back({path, false});
+}
+
+bool try_reserve_output_path(const std::filesystem::path& path, bool directory) {
+    if (path.empty()) return false;
+    std::lock_guard lock(s_reserved_mutex);
+    for (const auto& reserved : s_reserved_paths)
+        if (conflicts(reserved, path, directory)) return false;
+    s_reserved_paths.push_back({path, directory});
+    return true;
 }
 
 void release_output_path(const std::filesystem::path& path) {
     if (path.empty()) return;
     std::lock_guard lock(s_reserved_mutex);
     auto it = std::find_if(s_reserved_paths.begin(), s_reserved_paths.end(),
-        [&path](const auto& p) { return same_output_path(p, path); });
+        [&path](const auto& p) { return same_output_path(p.path, path); });
     if (it != s_reserved_paths.end()) s_reserved_paths.erase(it);
 }
 
@@ -399,7 +423,7 @@ bool is_output_path_reserved(const std::filesystem::path& path) {
     if (path.empty()) return false;
     std::lock_guard lock(s_reserved_mutex);
     for (const auto& reserved : s_reserved_paths) {
-        if (same_output_path(reserved, path)) return true;
+        if (conflicts(reserved, path, false)) return true;
     }
     return false;
 }

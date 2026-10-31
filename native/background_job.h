@@ -13,6 +13,8 @@ bool same_output_path(const std::filesystem::path& first, const std::filesystem:
 // canonical(parent) / filename.
 std::filesystem::path normalize_output_path(const std::filesystem::path& path);
 void reserve_output_path(const std::filesystem::path& path);
+// Atomically reserve a normalized file or an entire directory tree.
+bool try_reserve_output_path(const std::filesystem::path& path, bool directory);
 void release_output_path(const std::filesystem::path& path);
 bool is_output_path_reserved(const std::filesystem::path& path);
 

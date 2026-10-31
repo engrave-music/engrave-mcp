@@ -2,6 +2,7 @@
 #include "engrave/src/runtime/atomic_file.h"
 #include "engrave/src/audio/audio_output.h"
 #include "background_job.h"
+#include "worker_v2.h"
 #include "engrave/src/audio/engine_audio.h"
 #include <cstdint>
 #include <fstream>
@@ -283,7 +284,11 @@ Json worker_request_json(const ExportWorkerRequest& request) {
 int run_export_worker(const std::filesystem::path& request_path) noexcept {
     std::vector<std::filesystem::path> result_paths;
     try {
-        const auto request = parse_bounded_json(request_path, request_limit);
+        const auto request = parse_bounded_json(request_path, 4 * 1024 * 1024);
+        if (request.is_object() && request.value("version", 0) == 2)
+            return v2::run_worker(request_path);
+        if (std::filesystem::file_size(request_path) > request_limit)
+            throw std::invalid_argument("Worker request exceeds size limit");
         if (!request.is_object() || request.value("version", 0) != 1)
             throw std::invalid_argument("Unsupported worker request version");
         enforce_worker_parent(request.at("parentPid").get<std::uint64_t>());

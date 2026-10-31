@@ -70,6 +70,8 @@ engrave::AudioOptions effective_mix(engrave::Document& document, const ExportReq
                                    const RuntimeSnapshot& runtime) {
     auto result = request.audio_options;
     const auto defaults = engine_value(document.audio_tracks(result.score));
+    if (defaults.tracks.size() > 256)
+        throw detail::DecodeError{HostError{"ResourceLimit", "audio track count exceeds 256"}};
     result.master_volume_db = result.master_volume_db.value_or(defaults.master.volume_db);
     result.master_balance = result.master_balance.value_or(defaults.master.balance);
     std::set<std::int32_t> seen;
