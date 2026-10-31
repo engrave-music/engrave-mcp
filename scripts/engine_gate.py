@@ -53,9 +53,6 @@ def main():
             cmd = ['pwsh', '-NoProfile', '-File', a.mutex_wrapper, '-ProjectPath', a.engine_source,
                    '-Log', a.output / (name + '-mutex.log'), '-Command', ' '.join(map(str,args))]
         run(name, cmd, a.engine_source)
-    targets = ['engrave_api_test','engrave_handles_test','engrave_describe_test','engrave_read_test',
-               'engrave_ops_test','engrave_op_policy_test','engrave_gp_import_test','engrave_output_test',
-               'engrave_output_probe','example_embedder','engraving_playback_tests','mpe_tests']
     if not a.skip_build:
         config = ['f','-P','.','-y','-m','release','-o',a.build_dir,'--ccache=y']
         if a.cairo_prefix: config.append('--cairo_prefix='+str(a.cairo_prefix))

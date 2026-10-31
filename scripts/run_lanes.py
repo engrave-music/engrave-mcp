@@ -8,29 +8,14 @@ notes/a2/linux/run_all_a2_linux.sh (Linux).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import time
-
-EXPECTED_BINARIES = [
-    "archive_test",
-    "assets_test",
-    "engine_audio_probe",
-    "engraving_playback_tests",
-    "excerpts_test",
-    "mpe_tests",
-    "musescore-mcp",
-    "musescore-mcp-test",
-    "music_core_test",
-    "noqt_support_test",
-    "score_audio_test",
-    "score_edit_test",
-    "score_positions_test",
-    "semantic_dump",
-]
 
 LANE_NAMES = [
     "music_core",
@@ -215,15 +200,15 @@ def run_lane(
 
     if lane == "score_edit":
         cmd = [str(build_dir / f"score_edit_test{exe_suffix}"), str(assets)]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "score_audio":
         cmd = [str(build_dir / f"score_audio_test{exe_suffix}"), str(assets), str(engine_source)]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "score_positions":
         cmd = [str(build_dir / f"score_positions_test{exe_suffix}"), str(assets)]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "noqt_support":
         noqt_dir = output / "noqt-support"
@@ -553,7 +538,17 @@ def main() -> None:
     # Pre-flight check 1: expected binaries in build dir
 
     # Pre-flight check 2: git line endings and no UTF-8 BOM in both checkouts
-    check_preflight_eol(repo_root)
+    manifest = repo_root / "sha256.json"
+    if manifest.is_file():
+        # A frozen runner has no Git checkout. Verify its archived bytes instead.
+        for name, expected in json.loads(manifest.read_text(encoding="utf-8")).items():
+            path = (repo_root / name).resolve()
+            if not path.is_relative_to(repo_root) or not path.is_file():
+                raise SystemExit(f"Invalid archive member: {name}")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise SystemExit(f"Archive hash mismatch: {name}")
+    else:
+        check_preflight_eol(repo_root)
     check_preflight_eol(engine_source)
 
     # Validate --only lanes if requested
