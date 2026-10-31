@@ -84,7 +84,6 @@
     <Staff id="1">
       <VBox>
         <height>10</height>
-        <bottomGap>7</bottomGap>
         <leftMargin>5</leftMargin>
         <rightMargin>5</rightMargin>
         <topMargin>5</topMargin>

@@ -117,7 +117,7 @@
        "wedges": [
         {
          "number": "1",
-         "spread": 12.0,
+         "spread": 11.5,
          "type": "crescendo"
         }
        ]
@@ -170,8 +170,8 @@
        "notations": {
         "glissando_slides": [
          {
-          "kind": "glissando",
-          "line_type": "wavy",
+          "kind": "slide",
+          "line_type": "solid",
           "number": "1",
           "text": "gliss.",
           "type": "start"
@@ -202,8 +202,8 @@
        "notations": {
         "glissando_slides": [
          {
-          "kind": "glissando",
-          "line_type": "wavy",
+          "kind": "slide",
+          "line_type": "solid",
           "number": "1",
           "type": "stop"
          }
@@ -577,7 +577,7 @@
        "wedges": [
         {
          "number": "1",
-         "spread": 12.0,
+         "spread": 11.5,
          "type": "crescendo"
         }
        ]

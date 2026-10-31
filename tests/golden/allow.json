@@ -604,6 +604,799 @@
     "windows": "9c1f143d3e7400419d38f1d17890553747ba5d2aaefe2a13f507ba79874e8e47"
    },
    "step": "A2"
+  },
+  {
+   "fixture": "custom_part_name.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "f616012db343070d26e1e5672a4d94bc96962c2d52d76a0c4abc41d94e817dba"
+   },
+   "previous_sha256": {
+    "windows": "5d9cf221417aaaee7cb3862382a3caf929f9125cfab63e6eac78e7a9bc284c0f"
+   }
+  },
+  {
+   "fixture": "ghost_note.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "3602d61789df64d98c71a8cc1cb8c4a9a704b49a3f4c364eb89de628090dba9a"
+   },
+   "previous_sha256": {
+    "windows": "99a7eb9e7ba445d35027f6b9d453bcbbc17051af3b2b54b1c4c39ced601a9642"
+   }
+  },
+  {
+   "fixture": "ghost_note.mscx",
+   "output": "mscz.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "89d53b7647bf3843dcc5214e436fbb129cc007ae2459ab37c07d16c3a74d0d2d"
+   },
+   "previous_sha256": {
+    "windows": "81e46abe54314cf006eab6c2cdcde7cef55353dc2943a395681f93c74a63bcfb"
+   }
+  },
+  {
+   "fixture": "hairpins_and_repeats.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "f616012db343070d26e1e5672a4d94bc96962c2d52d76a0c4abc41d94e817dba"
+   },
+   "previous_sha256": {
+    "windows": "9cf59da6f85f6312d1eaf6862f5106383581c7af50a55638d7401d8fbd85a5cf"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "measurePositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "dbfe37b384127de051d294116470873cecff7dd0830c554afef929aa62559eb9"
+   },
+   "previous_sha256": {
+    "windows": "75ce774a621db56a64bdb7b88eea6d4843eb6e306ca2a1ac8b65730008c7f4dc"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "85eec01bbe04ca0407a24414a17db393caac1f5c5373333128c4570e2e0b6f9e"
+   },
+   "previous_sha256": {
+    "windows": "a937cd5d36353d647609b2b941923c69e0d4f6cdf5613f89446247c6f81c97a4"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "mscz.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "e60291aad5663bd818c70ad13e15b952a71947a9296909374042c618ee852b41"
+   },
+   "previous_sha256": {
+    "windows": "d210c287d3160efbf57c2b16bf480d91cab2e010defa97646ef5ca23f1cc14d6"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "musicxml-semantic.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "8661d79c9620100ff91d25522fbdb3477514de5d43383b05549980b4ab93df20"
+   },
+   "previous_sha256": {
+    "windows": "5e722d01d6ab048c33d91fa0655d9d0e9bffd46f52be7e4d49263671ee15e699"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "mxl.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "83a1778036bf5cc46e3e83246d5e4776a2f867db0fbb1bacb2fd114a500d2023"
+   },
+   "previous_sha256": {
+    "windows": "d193aa7934b3a4bc4b395c70b824b2ca84738a13d5be3181f5cc7376353ec6d7"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "page-0.png.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "487896049d6bea6cbe523826c70dac520b78764cf3ced1efc92b5acd0c2ecbf0"
+   },
+   "previous_sha256": {
+    "windows": "e2f1c4b2f1b3aa4ff7098f37cd8cd504f5481ec74defaf8236de2a0775e4af17"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "page-0.svg",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "27bb94b3b4eb103a4193fa24690d803e65b36975cbaf60afee1f873d4956e2a0"
+   },
+   "previous_sha256": {
+    "windows": "048ba668d533b76e4186652b5d22b2ed089b611efce9abdb9f00aed2dd2fdb46"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "score.mscx",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "9cf54cf72d780d94cebb83e2dc14adaf670fc2e339da1715c59535d6955194f0"
+   },
+   "previous_sha256": {
+    "windows": "d4da0c305de1c86badee3804cebb4502c49614fbcba172f0a91dbe6ba61bb9dc"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "score.musicxml",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "eac43033c32c13d4646ac726c446759b676db8df973c5236256ff3a51daa446c"
+   },
+   "previous_sha256": {
+    "windows": "847254672035ac9e6d3b19e0289e161596b159b9fbfdd3524f38f6038021c46b"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "score.pdf.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "f6c95f6525ac4e352a79e93a499e8ddfdef253439610dfa92d0366f759f24bdf"
+   },
+   "previous_sha256": {
+    "windows": "c5011e9652a9e748d6b5725c5d9edaff4af0952dd01628404544f684ba43ad83"
+   }
+  },
+  {
+   "fixture": "layout_elements.mscx",
+   "output": "segmentPositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "0db39e67b2bf60073b95eac3476b02a72d57e5eb9b3bb63181a269a046642bfc"
+   },
+   "previous_sha256": {
+    "windows": "1b747ace871125e6a3fc63388aaecf1f0d0e43abd446c8f4a8fe79843503375d"
+   }
+  },
+  {
+   "fixture": "lyrics.mscx",
+   "output": "measurePositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "579f24642d11ea0ef027d150cb63c3257d390a4f3f19cc0c0a8b1802e3596217"
+   },
+   "previous_sha256": {
+    "windows": "5bfb659efe13fb9c14c383ddacee3b00e19d3f85d2071e10439ddcec10aac773"
+   }
+  },
+  {
+   "fixture": "lyrics.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "5fedc5aa8a2e58e172548e6f72ff312f88f64c3fc498ffa217196f4918d7054a"
+   },
+   "previous_sha256": {
+    "windows": "6396cc68a8327bf315de43b8289cfeb57d1981df7dd0f46d812a37749d99998e"
+   }
+  },
+  {
+   "fixture": "lyrics.mscx",
+   "output": "mscz.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "4465cb91672a027b1eae0c32adf7cd254e3ae214595d0482e03a1b2b1f9a9f29"
+   },
+   "previous_sha256": {
+    "windows": "de5200e2144f1debc9b8d909a03ec3e6ad4f471541bb165129c762c8c876f098"
+   }
+  },
+  {
+   "fixture": "lyrics.mscx",
+   "output": "mxl.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "e3ce3b3d91783f3c5496fd71ec5afb782a37af06a1d983d58cd73e2a04122733"
+   },
+   "previous_sha256": {
+    "windows": "dcc79f1a8dd77f7fbdee2ff24d57ef9eb0d41b75a1faca4d93a311770b73323c"
+   }
+  },
+  {
+   "fixture": "lyrics.mscx",
+   "output": "page-0.png.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "1120a3d2c4bd374e9d992ee99c81df6bcfde7c199c9618f0ec8cd856321d37d2"
+   },
+   "previous_sha256": {
+    "windows": "9ec2400c3b90d548b19cc7939db305e05295e49f57d91bc5b114b916bf81fdc2"
+   }
+  },
+  {
+   "fixture": "lyrics.mscx",
+   "output": "page-0.svg",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "2aa48b16644d35e7e0554e6bd080595191e7269171ae719150054ba8bcbf0f3e"
+   },
+   "previous_sha256": {
+    "windows": "1ecc7304f19121132d453d9fd09011a8d16de77a0854463ba198ce9f9d632b5e"
+   }
+  },
+  {
+   "fixture": "lyrics.mscx",
+   "output": "score.musicxml",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "90b92b5fbbebd86af66446418348a15fed036392017f6192a2ab221e3a1f09be"
+   },
+   "previous_sha256": {
+    "windows": "5b4c58febe3016a8017085f1d82ca639b39bc7e4576640e8461bbbfa9dd9f12f"
+   }
+  },
+  {
+   "fixture": "lyrics.mscx",
+   "output": "score.pdf.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "73ac743ac545a26b11438479e413b38ff6f0e73e887615e27567f34d1c96a81e"
+   },
+   "previous_sha256": {
+    "windows": "a7ec1bcec88e9d33db95b031f319c4e72271a13ba3f2f85f631706a7179ffb82"
+   }
+  },
+  {
+   "fixture": "lyrics.mscx",
+   "output": "segmentPositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "b8fa3f9eb57961fb20713e10b253cf541fcb051f5c9a2b65b0d4590c65b20073"
+   },
+   "previous_sha256": {
+    "windows": "ad3d448293f4fc63d1a7b1daa2b232e6d5f28a1e2fd27ceb0fca863fdcff50e3"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "measurePositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "da9c66c82682bcbed8a711eaebdccfbbb10306e834fa22f2f23fe100c8161696"
+   },
+   "previous_sha256": {
+    "windows": "fcb72c65f5db56e11a8639a65f895e24badf222ea0c995fa7639210bbdfc0918"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "0bcadb804fc988facfa2dc06845aae3f342f3db765317586a33488ce8900fa06"
+   },
+   "previous_sha256": {
+    "windows": "909e22f8309cffff74f1d17bcd20bfdcd9bcd639b068733ea4a3ddce22af4242"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "mscz.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "39d74b0981212621c9b2a5def653ab8745286fbccff1a4fd3320969951f3973c"
+   },
+   "previous_sha256": {
+    "windows": "c8fb910303a5b6e5935a280a50ed7f40c6b1b3d9ea05349e631e11bd33cca463"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "mxl.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "d611a72e6f51d54791e4f5b27288fc82c0b73b2447b9589297dc94a850b4a3fb"
+   },
+   "previous_sha256": {
+    "windows": "1b0560f6cc556e75e9676b2669a55b544f4f49cbe6f06973316f1df9ae1919f2"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "page-0.png.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "9241faa60601c1835576022613715113547d1e19abd7ab714abac4c563f559af"
+   },
+   "previous_sha256": {
+    "windows": "29dc80396ffbcc63052c671e0c0b7794944adeef2de41f728841a79edde89eab"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "page-0.svg",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "75c2ca817082a721b6f9cd4420bfa515169c50b8299894b18e200e69a8316bed"
+   },
+   "previous_sha256": {
+    "windows": "cc196e0ab86e22bbfc1e73fdb7831bbea73ee6be84d67146b1dba693772fe48c"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "score.musicxml",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "b480e5362088fd267c95f7a91a978c541366d0e30b1c32f9533817d965797fa5"
+   },
+   "previous_sha256": {
+    "windows": "f05abcd83beecc8e46daf946ca6df9a4ebb89e7faca597854743bba2c533d354"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "score.pdf.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "eeb1d874b720fd38c6861cb5bfa9f325117c7ce24cc0f6336edfe01967a7da3a"
+   },
+   "previous_sha256": {
+    "windows": "d2fb0bfda6a81d0114708d3b2f8e4577ee8214c77da2fa54c6217cc3679b2d58"
+   }
+  },
+  {
+   "fixture": "repeat70.mscx",
+   "output": "segmentPositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "db792e7d399e93e8f6e2c84b90e86ff2e7ef8dbbcf3af92d374a961882513056"
+   },
+   "previous_sha256": {
+    "windows": "41cfe3864929189e567353350c755de360a0aa9bdd50555504b449aa11db0f7a"
+   }
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "output": "measurePositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "c3c65fc74f2d4692cae00ebfd7ca1eaef1da2f24fb0d98b942eddb3391b80bfc"
+   },
+   "previous_sha256": {
+    "windows": "0086dddbb29bbc21b62a5bb79337b2a1fa4ee65513a819ddd2be6a55efc4e0a8"
+   }
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "f0c4a8940ad74d065cc93af4ba70d70814e2c9a433152d2300c320cb72867b53"
+   },
+   "previous_sha256": {
+    "windows": "7aaa7ee50eea7f28db4aec3b5a9d400b6238da3038f1281ef55e83d4d0bf508c"
+   }
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "output": "mscz.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "dce13df4b2c6678fd4844af6693d8ab1cb2973a52aded875d5f81340164eadb4"
+   },
+   "previous_sha256": {
+    "windows": "80cda50e8edf955c53586bed86e199de4c21243e12319f5101302e8f03fa802d"
+   }
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "output": "mxl.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "177f1ae12b1f04034514fc0b3f3390737ca3594b6b5e1b472c49d37f6ae91813"
+   },
+   "previous_sha256": {
+    "windows": "5203370af6c81229e8bb5a5c6ceac95c2cb67283270db5079c4fc6c13f8476d2"
+   }
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "output": "page-0.png.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "c0a1a06ab4714a87c91bd29dfb692d6a01c7de7dfc8ad385acbb92173eaa67ce"
+   },
+   "previous_sha256": {
+    "windows": "198b8a9ffab32826be382217ccc9f4b657ac8c28517587f91dd3f4a436d96288"
+   }
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "output": "page-0.svg",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "6b1ec518abb2e382bf9f3b2702d184b0cb53e31d2b323e0ac198ac28d8ba676f"
+   },
+   "previous_sha256": {
+    "windows": "c17d341ed5935284534fd1a780b1d9ab819a9c0f27f8be92b8607e7d963c2b12"
+   }
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "output": "score.musicxml",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "ef6fa9537398a7be2b85504a939bc084d292eb9479cc20641e5fb17765b8c9e5"
+   },
+   "previous_sha256": {
+    "windows": "5f45ae532c403f761e7ce4ea3f43f5e8857e9e2a005934e4c82478e900281bbf"
+   }
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "output": "score.pdf.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "2588a5bd34063d365abb3efd81d9d84a3f70dcfe106cbf0543177e76dd9de55e"
+   },
+   "previous_sha256": {
+    "windows": "9ef390a6051bbc6963848fc480f677cf464bced6a1c2ad82e3a87b7c652c143e"
+   }
+  },
+  {
+   "fixture": "repeat71.mscx",
+   "output": "segmentPositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "5255cca29c8768d2bffa6134a8348aeca805e170c6ac9c5e0facc1db9852fede"
+   },
+   "previous_sha256": {
+    "windows": "e9db9d497e47879cc5c686e52318486e095754f1651e03ac3a6dd08985221802"
+   }
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "output": "measurePositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "da9c66c82682bcbed8a711eaebdccfbbb10306e834fa22f2f23fe100c8161696"
+   },
+   "previous_sha256": {
+    "windows": "fcb72c65f5db56e11a8639a65f895e24badf222ea0c995fa7639210bbdfc0918"
+   }
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "d4aa56e1b65e0e659dea5f466cd20dbc631a2bacc61d29435412a1d33acf075a"
+   },
+   "previous_sha256": {
+    "windows": "07ed0c6c4ee275be84137623a5731df56d4a2643a7cb94bee63a34e93b2961e5"
+   }
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "output": "mscz.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "8bdb838c3bd2d0e4584f62e9006133aca7c40b9459d3219a4a60a76268be57b9"
+   },
+   "previous_sha256": {
+    "windows": "168b14719bcf2d2d09713722358e90da2b394ae838a66568c8f4b10d429eee73"
+   }
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "output": "mxl.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "d1a43c2f4a6e6407a862074522e6945d1c2c07e0e31de8e0b1ab2eb497981c3c"
+   },
+   "previous_sha256": {
+    "windows": "433a03ccbdb74847637b93974ce5ea902a965dfcbc839c40da29b725dc1517f7"
+   }
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "output": "page-0.png.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "7542136a6374fe71c9fcf2ea161995ff2fe93c29aa8c7013d2773ec914d510ac"
+   },
+   "previous_sha256": {
+    "windows": "42a240446ca3a2904d65c04ac323d8258d680d0ea1588ce0c5bafca08004da9c"
+   }
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "output": "page-0.svg",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "65de118585db97403e4a768d2399e9abaff52867818264687d4ad0e37314a177"
+   },
+   "previous_sha256": {
+    "windows": "64be089dd231607f2807259258a6be8361c27ce2521bdb04ac07de45a9e663a2"
+   }
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "output": "score.musicxml",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "e2feadacf5828b58c7e2dc023442ae2cac1979c6de8d8385fce720bea2cfd907"
+   },
+   "previous_sha256": {
+    "windows": "4e6354b34150a9b16fcdb3a6515c2bcb3ce19bb7c2ed4050541349adfa03ca84"
+   }
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "output": "score.pdf.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "ce038813bae6f1b5f0fab4e74ab28a5dc956b4e01282bd84748c97b94646cfe2"
+   },
+   "previous_sha256": {
+    "windows": "462942feca682b597ad5c9c78e6846803e40c03ec728d4f91eb1b43f0b418ba3"
+   }
+  },
+  {
+   "fixture": "repeat72.mscx",
+   "output": "segmentPositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "db792e7d399e93e8f6e2c84b90e86ff2e7ef8dbbcf3af92d374a961882513056"
+   },
+   "previous_sha256": {
+    "windows": "41cfe3864929189e567353350c755de360a0aa9bdd50555504b449aa11db0f7a"
+   }
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "output": "measurePositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "72df6153819da79c2a294e276bb9acddd4616690a8c0c9b9c33f79304b9569f9"
+   },
+   "previous_sha256": {
+    "windows": "c76e481ae3b96b0184fbe8ada09e541d2e5f7e123d451a9a162d063379e3e7d4"
+   }
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "4aff67f6a48b97159105194266bccb02a4772dbdf3f3cd3fb6098a6e800cd009"
+   },
+   "previous_sha256": {
+    "windows": "be255c3ecde0687cede83553c84213da4942dee797d6a9555c499c5fae29d8c5"
+   }
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "output": "mxl.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "d8537b29cf926cf72bda24961028d1917559b71b265cd65aa6f9e4b52c856d6f"
+   },
+   "previous_sha256": {
+    "windows": "765571bf51873928b6b49e0d589866b3b286a7e0bffc7fcafe80f53028ea977a"
+   }
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "output": "page-0.png.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "1c36606394df8d0735fcb5f6e475c73609616e2ae2a08de05b95ca6fde1d4a71"
+   },
+   "previous_sha256": {
+    "windows": "cb8103348b163936f3fb5fb70648111bb79bbf7c93d8fed19f0bf9beecc6c603"
+   }
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "output": "page-0.svg",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "d3111077e06d215f94e0d1b972ceb938bd305911f826945c6b7bc18e37ddc83e"
+   },
+   "previous_sha256": {
+    "windows": "79505f944f36637acd67c3c2d6459e0afee7859875e0881dfccc5885105dbcf5"
+   }
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "output": "score.musicxml",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "17771f2f1d12888ba57299cc83ed5aeabf6725e830bf8e089d659893bc47b66a"
+   },
+   "previous_sha256": {
+    "windows": "89360bf11a8f6cfe9b3340120c1efb669ace2e778aa229a8c7e1b028fb459b47"
+   }
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "output": "score.pdf.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "042a74702e0f5ee89f2eccf43ea7eb2729885be085c07491b06ac830667fd174"
+   },
+   "previous_sha256": {
+    "windows": "d2c6f65014e04a17db632e7712450478e15c47972f2c15bd1eb31447107db5b9"
+   }
+  },
+  {
+   "fixture": "repeat_with_2_voltas.mscx",
+   "output": "segmentPositions.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "dcf62cf928ec1b1493b7cb52ad5c3b2eec9f3244ab72dc62c92b8e9789091430"
+   },
+   "previous_sha256": {
+    "windows": "5c6a681527c80cca0ecc2674dd4baf62911d3d8a594b055334b52aa01c060759"
+   }
+  },
+  {
+   "fixture": "slurs.mscz",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "ee4972f2396624195c10d10571fc3edfdac659c3eae44b5c005b90cec959c37a"
+   },
+   "previous_sha256": {
+    "windows": "2a9ca773b5dd853076defbbbb8e1cdd19287b0b5e7cdf774b415ecf41fc0fcfa"
+   }
+  },
+  {
+   "fixture": "tab_grace_prebend.mscx",
+   "output": "metadata.json",
+   "kind": "different",
+   "step": "A4 drop-pre-4.6",
+   "reason": "One-time baseline-engine upgrade of pre-4.6 fixture; current-format reload changes writer metadata, serialized defaults and layout rounding. Captured with engrave-4 before reader deletion.",
+   "sha256": {
+    "windows": "54434151a35c72ed5989e41cbfe9e77bc47db41377eb3792d8f99461beba26b6"
+   },
+   "previous_sha256": {
+    "windows": "c514bc0072eccdd165c791070acecc6dd140a97963653f7ff3a26aa4807f9063"
+   }
   }
  ]
 }
