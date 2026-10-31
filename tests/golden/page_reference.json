@@ -3273,7 +3273,17 @@
       }
     }
   },
-  "count_exceptions": [],
+  "count_exceptions": [
+    {
+      "page": "layout_elements.mscx/page-0.svg",
+      "svg_sha256": "dc52d8bc657935a349f7d8d36755cb36078e3175c09809a3e6d4e168be2db23f",
+      "counts": {
+        "paths": 184,
+        "total_uses": 286
+      },
+      "reason": "One-time pre-4.6 fixture upgrade with complete styles. The retained engrave-4 baseline independently emits 184 paths and 286 uses after current-format reload (formerly 183 and 288); the SVG hash is also pinned in allow.json. Other page, glyph and PNG checks remain unchanged."
+    }
+  ],
   "png_capture": {
     "version": "4.7.6",
     "binary": "C:/path/to/musescore-mcp/build/xmake-windows/musescore-mcp.exe",
