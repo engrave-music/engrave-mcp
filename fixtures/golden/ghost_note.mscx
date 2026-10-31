@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="4.10">
-  <programVersion>4.2.0</programVersion>
-  <programRevision></programRevision>
+<museScore version="5.00">
+  <programVersion>5.0.0</programVersion>
+  <programRevision>804d836</programRevision>
   <Score>
+    <eid>I32lQAjazt_D2uR5po5SAD</eid>
     <Division>480</Division>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
@@ -24,14 +25,16 @@
     <metaTag name="workNumber"></metaTag>
     <metaTag name="workTitle"></metaTag>
     <Part id="1">
-      <Staff id="1">
-        <linkedTo>2</linkedTo>
+      <eid>GbOLfyTAvoK_TJugW3ORJNF</eid>
+      <Staff>
+        <eid>+S5bqHUTacJ_kkF+flQ0K+N</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
         </Staff>
-      <Staff id="2">
-        <linkedTo>1</linkedTo>
+      <Staff>
+        <eid>Vi/ByUsYcHM_vr90wHFjhiO</eid>
+        <linkedTo>+S5bqHUTacJ_kkF+flQ0K+N</linkedTo>
         <StaffType group="tablature">
           <name>tab6StrSimple</name>
           <lines>6</lines>
@@ -42,7 +45,8 @@
           <durationFontName>MuseScore Tab Modern</durationFontName>
           <durationFontSize>15</durationFontSize>
           <durationFontY>0</durationFontY>
-          <fretFontName>MuseScore Tab Sans</fretFontName>
+          <fretUseTextStyle>0</fretUseTextStyle>
+          <fretPresetIdx>0</fretPresetIdx>
           <fretFontSize>9</fretFontSize>
           <fretFontY>0</fretFontY>
           <linesThrough>0</linesThrough>
@@ -55,10 +59,11 @@
           <useNumbers>1</useNumbers>
           </StaffType>
         </Staff>
-      <trackName>Guitar</trackName>
       <Instrument id="guitar-steel">
-        <longName>Guitar</longName>
-        <shortName>dist.guit.</shortName>
+        <InstrumentLabel>
+          <longName>Guitar</longName>
+          <shortName>dist.guit.</shortName>
+          </InstrumentLabel>
         <trackName></trackName>
         <transposeDiatonic>-7</transposeDiatonic>
         <transposeChromatic>-12</transposeChromatic>
@@ -113,37 +118,46 @@
     <Staff id="1">
       <VBox>
         <height>10</height>
+        <sizeIsSpatiumDependent>1</sizeIsSpatiumDependent>
+        <eid>c6tHdJvzx2H_4gSsxqD1K1B</eid>
         <Text>
           <style>composer</style>
+          <eid>kdEV0KTc3GC_l9zVS5KyihD</eid>
           <text>Music by Muse</text>
           </Text>
         <Text>
           <style>poet</style>
+          <eid>jirQRYAjWAL_X/hJImJ9K/K</eid>
           <text>Words by Matt Bellamy</text>
           </Text>
         </VBox>
       <Measure>
+        <eid>rHJzti74zTF_yDy/JTAV+WN</eid>
         <voice>
           <KeySig>
+            <eid>gZcUdhG/MsO_yMUJKzLvBEI</eid>
             <concertKey>0</concertKey>
             </KeySig>
           <TimeSig>
+            <eid>cKUWCg2JNzO_oCNm0iy6tsE</eid>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
           <Dynamic>
             <subtype>f</subtype>
             <velocity>96</velocity>
+            <eid>w8W05t+L8ZK_Rk5O3jXKAGB</eid>
             </Dynamic>
           <Tempo>
             <tempo>2.25</tempo>
+            <eid>W1f7PYZR5vG_vq82U/sLa+L</eid>
             <text><sym>metNoteQuarterUp</sym> = 135</text>
             </Tempo>
           <Chord>
-            <linkedMain/>
+            <eid>P4CUx3haMVD_Pkb67PfDZEP</eid>
             <durationType>quarter</durationType>
             <Note>
-              <linkedMain/>
+              <eid>0t2bZKKH0TM_3ZjWEYjxEQK</eid>
               <pitch>59</pitch>
               <tpc>19</tpc>
               <fret>19</fret>
@@ -151,32 +165,49 @@
               </Note>
             </Chord>
           <Chord>
-            <linkedMain/>
+            <eid>KoPevpvoxPK_eRLxwzuk8oD</eid>
             <durationType>quarter</durationType>
             <Note>
-              <linkedMain/>
-              <Symbol>
-                <name>noteheadParenthesisLeft</name>
-                <linkedMain/>
-                </Symbol>
-              <Symbol>
-                <name>noteheadParenthesisRight</name>
-                <linkedMain/>
-                </Symbol>
+              <eid>zOT2ffCPfQK_ERkwN2ilk/</eid>
+              <parentheses>both</parentheses>
               <pitch>57</pitch>
               <tpc>17</tpc>
               <fret>17</fret>
               <string>5</string>
               <ghost>1</ghost>
               </Note>
+            <NoteParenGroup>
+              <Parenthesis>
+                <eid>BCspC/SwzbH_AozE5B+kQuH</eid>
+                </Parenthesis>
+              <Parenthesis>
+                <horizontalDirection>right</horizontalDirection>
+                <eid>9/7QvpvsOBJ_1RoXLw/0ErG</eid>
+                </Parenthesis>
+              <Notes>
+                <NoteEID>zOT2ffCPfQK_ERkwN2ilk/</NoteEID>
+                </Notes>
+              </NoteParenGroup>
+            <NoteParenGroup>
+              <Parenthesis>
+                <eid>mrv7t+AJ/JM_6JIsOwwSiaB</eid>
+                </Parenthesis>
+              <Parenthesis>
+                <horizontalDirection>right</horizontalDirection>
+                <eid>ulhE3glKiWE_DuapBFnU4IG</eid>
+                </Parenthesis>
+              <Notes>
+                <NoteEID>zOT2ffCPfQK_ERkwN2ilk/</NoteEID>
+                </Notes>
+              </NoteParenGroup>
             </Chord>
           <Rest>
-            <linkedMain/>
+            <eid>OKC+Ds0/hxE_l52ZojG2EHD</eid>
             <durationType>half</durationType>
             </Rest>
           <BarLine>
             <subtype>end</subtype>
-            <linkedMain/>
+            <eid>G8M4ID43CmJ_VIkUWq/MfrJ</eid>
             </BarLine>
           </voice>
         </Measure>
@@ -185,12 +216,12 @@
       <Measure>
         <voice>
           <Chord>
-            <linked>
-              </linked>
+            <eid>V+5xBbQ+asO_SI8/URYLZDG</eid>
+            <linkedTo>P4CUx3haMVD_Pkb67PfDZEP</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <linked>
-                </linked>
+              <eid>Rb8NOn1ceVJ_DAnzM1zz5ZF</eid>
+              <linkedTo>0t2bZKKH0TM_3ZjWEYjxEQK</linkedTo>
               <pitch>59</pitch>
               <tpc>19</tpc>
               <fret>19</fret>
@@ -198,38 +229,43 @@
               </Note>
             </Chord>
           <Chord>
-            <linked>
-              </linked>
+            <eid>JPSZNH/x0VK_6a25gh3KVpJ</eid>
+            <linkedTo>KoPevpvoxPK_eRLxwzuk8oD</linkedTo>
             <durationType>quarter</durationType>
             <Note>
-              <linked>
-                </linked>
-              <Symbol>
-                <name>noteheadParenthesisLeft</name>
-                <linked>
-                  </linked>
-                </Symbol>
-              <Symbol>
-                <name>noteheadParenthesisRight</name>
-                <linked>
-                  </linked>
-                </Symbol>
+              <eid>gaxtnlAdFPK_yvLO/EgdjLK</eid>
+              <linkedTo>zOT2ffCPfQK_ERkwN2ilk/</linkedTo>
+              <parentheses>both</parentheses>
               <pitch>57</pitch>
               <tpc>17</tpc>
               <fret>17</fret>
               <string>5</string>
               <ghost>1</ghost>
               </Note>
+            <NoteParenGroup>
+              <Parenthesis>
+                <eid>HV6nEpkmbgF_BM6/bvpBgxN</eid>
+                <linkedTo>mrv7t+AJ/JM_6JIsOwwSiaB</linkedTo>
+                </Parenthesis>
+              <Parenthesis>
+                <horizontalDirection>right</horizontalDirection>
+                <eid>TC5VO6juD7H_0MVdXh6pUKL</eid>
+                <linkedTo>ulhE3glKiWE_DuapBFnU4IG</linkedTo>
+                </Parenthesis>
+              <Notes>
+                <NoteEID>gaxtnlAdFPK_yvLO/EgdjLK</NoteEID>
+                </Notes>
+              </NoteParenGroup>
             </Chord>
           <Rest>
-            <linked>
-              </linked>
+            <eid>4TfWFDhDEYI_hJ5zsLtc5/N</eid>
+            <linkedTo>OKC+Ds0/hxE_l52ZojG2EHD</linkedTo>
             <durationType>half</durationType>
             </Rest>
           <BarLine>
             <subtype>end</subtype>
-            <linked>
-              </linked>
+            <eid>hglvN241g/B_pIHBVAY3VzI</eid>
+            <linkedTo>G8M4ID43CmJ_VIkUWq/MfrJ</linkedTo>
             </BarLine>
           </voice>
         </Measure>
