@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Public C++ boundary gate. See docs/dev/c0-gate.md for coverage and invocation."""
+from __future__ import annotations
+import argparse
+import json
+import hashlib
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+import zipfile
+import golden as g
+from test_a4_output import compare, describe_render, describe_audio_file, probe_command
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    for name in ('engine-source', 'build-dir', 'assets', 'soundfont', 'output'):
+        p.add_argument('--' + name, type=Path, required=True)
+    p.add_argument('--cairo-prefix', type=Path)
+    p.add_argument('--mutex-wrapper', type=Path)
+    p.add_argument('--jobs', type=int, default=8)
+    p.add_argument('--skip-build', action='store_true', help='diagnostic rerun only')
+    p.add_argument('--dual-capture', type=Path, help='old golden lane actual directory')
+    a = p.parse_args()
+    for key, value in vars(a).items():
+        if isinstance(value, Path): setattr(a, key, value.resolve())
+    if (a.output/'actual').exists() or (a.output/'raw').exists():
+        raise RuntimeError('Use a fresh output directory; retained captures must never mask missing outputs')
+    a.output.mkdir(parents=True, exist_ok=True)
+    platform = 'windows' if sys.platform == 'win32' else 'linux'
+    suffix = '.exe' if platform == 'windows' else ''
+    if a.cairo_prefix:
+        os.environ['PATH'] = str(a.cairo_prefix / 'bin') + os.pathsep + os.environ.get('PATH', '')
+    records = []
+    start = time.monotonic()
+    def run(name, command, cwd=None):
+        command = list(map(str, command))
+        t = time.monotonic()
+        with (a.output / (name + '.log')).open('wb') as log:
+            r = subprocess.run(command, cwd=cwd or ROOT, stdout=log, stderr=subprocess.STDOUT, timeout=1800)
+        records.append(dict(name=name, command=command, seconds=round(time.monotonic()-t,3), exit=r.returncode))
+        (a.output / 'timings.json').write_text(json.dumps(records, indent=2)+'\n', encoding='utf-8')
+        print(f'{name}: {r.returncode} ({records[-1]["seconds"]}s)', flush=True)
+        if r.returncode: raise RuntimeError(f'{name}: see {a.output / (name + ".log")}')
+    def xmake(name, args):
+        cmd = ['xmake', *args]
+        if platform == 'windows':
+            if not a.mutex_wrapper: raise RuntimeError('--mutex-wrapper required on Windows')
+            cmd = ['pwsh', '-NoProfile', '-File', a.mutex_wrapper, '-ProjectPath', a.engine_source,
+                   '-Log', a.output / (name + '-mutex.log'), '-Command', ' '.join(map(str,args))]
+        run(name, cmd, a.engine_source)
+    targets = ['engrave_api_test','engrave_handles_test','engrave_describe_test','engrave_read_test',
+               'engrave_ops_test','engrave_op_policy_test','engrave_gp_import_test','engrave_output_test',
+               'engrave_output_probe','example_embedder','engraving_playback_tests','mpe_tests']
+    if not a.skip_build:
+        config = ['f','-P','.','-y','-m','release','-o',a.build_dir,'--ccache=y']
+        if a.cairo_prefix: config.append('--cairo_prefix='+str(a.cairo_prefix))
+        if platform == 'linux':
+            prefix = a.cairo_prefix
+            config += ['--cc='+str(prefix/'bin/x86_64-conda-linux-gnu-gcc'),
+                       '--cxx='+str(prefix/'bin/x86_64-conda-linux-gnu-g++')]
+        xmake('configure',config)
+        xmake('build',['build','-P','.','-y','-j'+str(a.jobs),'c0_gate'])
+    forbidden = re.compile(r'\bmuse::|\bmu::|\bkors\b|\bnlohmann\b|\bQt\b|\bQ[A-Z]\w*\b|#\s*include\s*[<"](?:muse/|framework/|engraving/|nlohmann/)')
+    for header in (a.engine_source/'engrave/include/engrave').rglob('*.h'):
+        if forbidden.search(header.read_text(encoding='utf-8')): raise RuntimeError(f'public header leak: {header}')
+    asset = '--assets='+str(a.assets)
+    corpus = '--corpus='+str(ROOT/'fixtures/golden')
+    run('sine',[sys.executable, ROOT/'scripts/make_sine_soundfont.py', a.output/'sine.sf2'])
+    suites = {
+      'engrave_api_test':[asset], 'engrave_handles_test':[asset,corpus],
+      'engrave_describe_test':[asset,'--python='+sys.executable,ROOT/'fixtures'],
+      'engrave_read_test':[asset,'--corpus='+str(ROOT/'fixtures')],
+      'engrave_ops_test':[asset,corpus], 'engrave_op_policy_test':[],
+      'engrave_gp_import_test':[asset],
+      'engrave_output_test':[asset,corpus,'--corpus='+str(ROOT/'fixtures/audio'),
+                             '--soundfont='+str(a.soundfont),'--soundfont='+str(a.output/'sine.sf2')]}
+    for name, args in suites.items():
+        cwd = a.output/name
+        cwd.mkdir(exist_ok=True)
+        run(name,[a.build_dir/(name+suffix),*args],cwd)
+    run('playback',[sys.executable,ROOT/'scripts/test_upstream_gtest.py','--bin-dir',a.build_dir,
+        '--assets',a.assets,'--engraving-data',a.engine_source/'src/engraving/tests','--output',a.output/'gtest'])
+    for name in ('score_edit_test','score_audio_test','score_positions_test'):
+        run(name,[a.build_dir/(name+suffix),a.assets,*([a.engine_source] if name == 'score_audio_test' else [])])
+    run('excerpts',[sys.executable,ROOT/'scripts/test_excerpts.py','--binary',a.build_dir/('excerpts_test'+suffix),
+        '--assets',a.assets,'--output',a.output/'excerpts'])
+    run('archives',[sys.executable,ROOT/'scripts/test_archives.py','--binary',a.build_dir/('archive_test'+suffix),
+        '--output',a.output/'archives'])
+    font = Path('C:/Windows/Fonts/arial.ttf') if platform == 'windows' else a.cairo_prefix/'fonts/DejaVuSans.ttf'
+    run('assets',[sys.executable,ROOT/'scripts/test_assets.py','--binary',a.build_dir/('assets_test'+suffix),
+        '--assets',a.assets,'--font',font,'--soundfont',a.soundfont,'--output',a.output/'assets'])
+    run('compat-semantics',[sys.executable,ROOT/'scripts/test_compat_corpus.py','--binary',a.build_dir/('semantic_dump'+suffix),'--resources',a.assets,'--output',a.output/'compat-semantics'])
+    run('engine-audio',[sys.executable,ROOT/'scripts/test_engine_audio.py','--engine-only','--bin-dir',a.build_dir,'--resources',a.assets,'--soundfont',a.soundfont,'--engine-source',a.engine_source,'--output',a.output/'engine-audio'])
+    run('oracle-controls',[sys.executable,ROOT/'scripts/test_oracle_harness.py'])
+    sources = sorted((ROOT/'fixtures/golden').glob('*')) + [ROOT/'fixtures/evening.musicxml']
+    sources = [s for s in sources if s.suffix in {'.mscx','.mscz','.musicxml','.mxl','.mid','.gp'}]
+    compat = sorted((ROOT/'tests/compat-corpus').rglob('*.mscz'))
+    run('embedder',[a.build_dir/('example_embedder'+suffix),a.assets,*sources,*compat])
+    for source in compat:
+        run('compat-'+source.stem, probe_command(a.build_dir/('engrave_output_probe'+suffix),a.assets,[a.soundfont],'export',source,a.output/'compat'/source.stem))
+    counts = dict(identical=0,allowed=0,different=0,**{'missing-golden':0})
+    dual = dict(identical=0,allowed=0,different=0,**{'missing-golden':0})
+    allow = g.load_allow(ROOT/'tests/golden/allow.json')
+    if not sources or len(compat) != 25:
+        raise RuntimeError('incomplete supported corpus (expected 25 compat scores)')
+    for source in sources:
+        raw = a.output/'raw'/source.name
+        out = a.output/'actual'/source.name
+        raw.mkdir(parents=True,exist_ok=True); out.mkdir(parents=True,exist_ok=True)
+        probe = a.build_dir/('engrave_output_probe'+suffix)
+        for mode in ('export','render','audio'):
+            run(source.name+'-'+mode,probe_command(probe,a.assets,[a.soundfont],mode,source,raw/'score.wav' if mode=='audio' else raw))
+        with zipfile.ZipFile(raw/'score.mscz') as archive:
+            master = next(n for n in archive.namelist() if n.endswith('.mscx') and '/' not in n)
+            (raw/'score.mscx').write_bytes(archive.read(master))
+        dump = subprocess.check_output([str(a.build_dir/('semantic_dump'+suffix)),str(a.assets),str(raw/'score.mscz')],timeout=120)
+        g.write_json(out/'semantic.json',json.loads(dump))
+        names = ['semantic.json'] + describe_render(raw,out)+describe_audio_file(raw/'score.wav',out)
+        for name, value in [('score.mscx',g.normalize_mscx(g.read_text(raw/'score.mscx'))),
+                            ('score.musicxml',g.normalize_musicxml(g.read_text(raw/'score.musicxml')))]:
+            g.write_text(out/name,value); names.append(name)
+        for name, value in [('mscz.json',g.describe_mscz(raw/'score.mscz')),
+                            ('mxl.json',g.describe_mxl(raw/'score.mxl')),
+                            ('midi.json',g.describe_midi((raw/'score.mid').read_bytes()))]:
+            g.write_json(out/name,value); names.append(name)
+        expected_svg = {p.name for p in (ROOT/'tests/golden'/platform/source.name).glob('page-*.svg')}
+        if {n for n in names if n.endswith('.svg')} != expected_svg:
+            raise RuntimeError(f'{source.name}: SVG page coverage changed')
+        compare(ROOT/'tests/golden'/platform,source.name,out,names,allow,platform,counts)
+        if a.dual_capture: compare(a.dual_capture,source.name,out,names,[],platform,dual)
+    run('semantic-cross-check',[sys.executable,ROOT/'scripts/check_semantic_dump.py',a.output/'actual'])
+    inputs = [a.soundfont, ROOT/'tests/golden/allow.json', *sources, *compat]
+    provenance = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
+    report = dict(provenance=provenance, counts=counts,dual=dual,seconds=round(time.monotonic()-start,3),
+                  engine=subprocess.check_output(['git','-C',str(a.engine_source),'rev-parse','HEAD'],text=True).strip())
+    (a.output/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+    if any(c[k] for c in (counts,dual) for k in ('different','missing-golden')): return 1
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main())
