@@ -1,28 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<museScore version="2.07">
-  <programVersion>2.1.0</programVersion>
-  <programRevision>3543170</programRevision>
+<museScore version="5.00">
+  <programVersion>5.0.0</programVersion>
+  <programRevision>804d836</programRevision>
   <Score>
-    <LayerTag id="0" tag="default"></LayerTag>
-    <currentLayer>0</currentLayer>
-    <Synthesizer>
-      </Synthesizer>
+    <eid>+yl4X6b/b+G_bwb5I5IjpvH</eid>
     <Division>480</Division>
-    <Style>
-      <showMeasureNumber>0</showMeasureNumber>
-      <showFooter>0</showFooter>
-      <page-layout>
-        <page-height>283.465</page-height>
-        <page-width>566.929</page-width>
-        <page-margins type="both">
-          <left-margin>11.3386</left-margin>
-          <right-margin>11.3386</right-margin>
-          <top-margin>0</top-margin>
-          <bottom-margin>0</bottom-margin>
-          </page-margins>
-        </page-layout>
-      <Spatium>1.764</Spatium>
-      </Style>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
     <showFrames>1</showFrames>
@@ -39,32 +21,31 @@
     <metaTag name="translator"></metaTag>
     <metaTag name="workNumber"></metaTag>
     <metaTag name="workTitle"></metaTag>
-    <PageList>
-      <Page>
-        <System>
-          </System>
-        </Page>
-      </PageList>
-    <Part>
-      <Staff id="1">
-        <StaffType group="pitched">
-          <name>stdNormal</name>
-          </StaffType>
-        <bracket type="-1" span="0"/>
-        </Staff>
-      <Staff id="2">
+    <Part id="1">
+      <eid>FgWKxA8pg3B_uQVM2jIvAOH</eid>
+      <Staff>
+        <eid>OXEC2LKx7FP_f/DM2CV96dN</eid>
         <StaffType group="pitched">
           <name>stdNormal</name>
           </StaffType>
         </Staff>
-      <trackName>Piano</trackName>
-      <Instrument>
-        <shortName>Pno.</shortName>
+      <Staff>
+        <eid>VV/1LPvdmWO_LjG5XCMkpNM</eid>
+        <StaffType group="pitched">
+          <name>stdNormal</name>
+          </StaffType>
+        <defaultClef>F</defaultClef>
+        </Staff>
+      <Instrument id="piano">
+        <InstrumentLabel>
+          <shortName>Pno.</shortName>
+          </InstrumentLabel>
         <trackName>Piano</trackName>
         <minPitchP>21</minPitchP>
         <maxPitchP>108</maxPitchP>
         <minPitchA>21</minPitchA>
         <maxPitchA>108</maxPitchA>
+        <instrumentId>keyboard.piano</instrumentId>
         <Articulation>
           <velocity>100</velocity>
           <gateTime>70</gateTime>
@@ -88,83 +69,97 @@
         </Instrument>
       </Part>
     <Staff id="1">
-      <Measure number="1">
-        <Clef>
-          <concertClefType>G</concertClefType>
-          <transposingClefType>G</transposingClefType>
-          </Clef>
-        <TimeSig>
-          <sigN>4</sigN>
-          <sigD>4</sigD>
-          <showCourtesySig>1</showCourtesySig>
-          </TimeSig>
-        <Chord>
-          <durationType>whole</durationType>
-          <Lyrics>
-            <text>12321</text>
-            </Lyrics>
-          <Note>
-            <pitch>72</pitch>
-            <tpc>14</tpc>
-            </Note>
-          </Chord>
+      <Measure>
+        <eid>P+yBXrgvCHP_xP7H6iXQYlO</eid>
+        <voice>
+          <TimeSig>
+            <eid>3tgXUg5c20G_tW/DA49o6sI</eid>
+            <sigN>4</sigN>
+            <sigD>4</sigD>
+            </TimeSig>
+          <Chord>
+            <eid>Hl0xO3apq7K_0G2wXT3Y1+P</eid>
+            <durationType>whole</durationType>
+            <Lyrics>
+              <eid>oqmDWgVr/TO_UwbWMuIgd9I</eid>
+              <text>12321</text>
+              </Lyrics>
+            <Note>
+              <eid>A3gmaRsRE_VcE/bUrmj5L</eid>
+              <pitch>72</pitch>
+              <tpc>14</tpc>
+              </Note>
+            </Chord>
+          </voice>
         </Measure>
-      <Measure number="2">
-        <Chord>
-          <durationType>whole</durationType>
-          <Lyrics>
-            <text>12321</text>
-            </Lyrics>
-          <StemDirection>down</StemDirection>
-          <Note>
-            <pitch>60</pitch>
-            <tpc>14</tpc>
-            </Note>
-          </Chord>
-        <BarLine>
-          <subtype>end</subtype>
-          <span>1</span>
-          </BarLine>
+      <Measure>
+        <eid>KSBpkec7kaI_G4Z2cjWj3oN</eid>
+        <voice>
+          <Chord>
+            <eid>NngH8sqhUnH_78jW/5jnPDN</eid>
+            <durationType>whole</durationType>
+            <Lyrics>
+              <eid>TpZr9qMSqWP_3tF4Q5GxDYJ</eid>
+              <text>12321</text>
+              </Lyrics>
+            <StemDirection>down</StemDirection>
+            <Note>
+              <eid>9gVR2hq8Z/N_UtJvCOLGgDP</eid>
+              <pitch>60</pitch>
+              <tpc>14</tpc>
+              </Note>
+            </Chord>
+          <BarLine>
+            <subtype>end</subtype>
+            <eid>IMZwkVBebLM_xQvMG6ezvWB</eid>
+            </BarLine>
+          </voice>
         </Measure>
       </Staff>
     <Staff id="2">
-      <Measure number="1">
-        <Clef>
-          <concertClefType>F</concertClefType>
-          <transposingClefType>F</transposingClefType>
-          </Clef>
-        <TimeSig>
-          <sigN>4</sigN>
-          <sigD>4</sigD>
-          <showCourtesySig>1</showCourtesySig>
-          </TimeSig>
-        <Chord>
-          <durationType>whole</durationType>
-          <Lyrics>
-            <text>12321</text>
-            </Lyrics>
-          <Note>
-            <pitch>48</pitch>
-            <tpc>14</tpc>
-            </Note>
-          </Chord>
+      <Measure>
+        <voice>
+          <TimeSig>
+            <eid>u5Ka4xIIyOD_emzHpmBmc/M</eid>
+            <sigN>4</sigN>
+            <sigD>4</sigD>
+            </TimeSig>
+          <Chord>
+            <eid>YVvSOjFtuZM_NpnAyzBDniN</eid>
+            <durationType>whole</durationType>
+            <Lyrics>
+              <eid>bVa307Y4DbO_XBrpPWTGUU</eid>
+              <text>12321</text>
+              </Lyrics>
+            <Note>
+              <eid>nJpvGbNk3VC_qkaHusY65OE</eid>
+              <pitch>48</pitch>
+              <tpc>14</tpc>
+              </Note>
+            </Chord>
+          </voice>
         </Measure>
-      <Measure number="2">
-        <Chord>
-          <durationType>whole</durationType>
-          <Lyrics>
-            <text>12321</text>
-            </Lyrics>
-          <StemDirection>up</StemDirection>
-          <Note>
-            <pitch>60</pitch>
-            <tpc>14</tpc>
-            </Note>
-          </Chord>
-        <BarLine>
-          <subtype>end</subtype>
-          <span>1</span>
-          </BarLine>
+      <Measure>
+        <voice>
+          <Chord>
+            <eid>DzUn5bIbLkP_MkLG09yRQSJ</eid>
+            <durationType>whole</durationType>
+            <Lyrics>
+              <eid>s1WoRjZtlkG_z130XQTPQpP</eid>
+              <text>12321</text>
+              </Lyrics>
+            <StemDirection>up</StemDirection>
+            <Note>
+              <eid>3j3MHdL3XmP_rV6AHZyHDGM</eid>
+              <pitch>60</pitch>
+              <tpc>14</tpc>
+              </Note>
+            </Chord>
+          <BarLine>
+            <subtype>end</subtype>
+            <eid>p0AiN3vjjAP_WfOZdNDVPFM</eid>
+            </BarLine>
+          </voice>
         </Measure>
       </Staff>
     </Score>
