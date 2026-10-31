@@ -1643,6 +1643,7 @@ async def test_mcp_level_integration(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Acceptance test suite for MuseScore 4 audio engine")
+    parser.add_argument("--engine-only", action="store_true", help="Run fork audio assertions without the frozen MCP host or dense benchmark")
     parser.add_argument("--bin-dir", type=Path, default=None, help="Directory containing build executables")
     parser.add_argument("--binary", type=Path, default=None, help="Path to musescore-mcp executable")
     parser.add_argument("--resources", type=Path, default=ROOT / ".runtime" / "assets", help="Path to assets")
@@ -1715,6 +1716,8 @@ def main() -> int:
         ("mcp_integration", mcp_integration),
         ("cross_platform", cross_platform),
     ]
+    if args.engine_only:
+        checks = [(name, check) for name, check in checks if name not in {"dense_performance", "mcp_integration", "cross_platform"}]
     code = run_audio_checks(checks, evidence)
 
     evidence_path = out_dir / "evidence.json"

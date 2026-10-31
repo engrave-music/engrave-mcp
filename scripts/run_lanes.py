@@ -8,29 +8,14 @@ notes/a2/linux/run_all_a2_linux.sh (Linux).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import time
-
-EXPECTED_BINARIES = [
-    "archive_test",
-    "assets_test",
-    "engine_audio_probe",
-    "engraving_playback_tests",
-    "excerpts_test",
-    "mpe_tests",
-    "musescore-mcp",
-    "musescore-mcp-test",
-    "music_core_test",
-    "noqt_support_test",
-    "score_audio_test",
-    "score_edit_test",
-    "score_positions_test",
-    "semantic_dump",
-]
 
 LANE_NAMES = [
     "music_core",
@@ -65,12 +50,23 @@ LANE_NAMES = [
 ]
 
 
-def check_preflight_binaries(build_dir: Path, exe_suffix: str) -> None:
+def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str]) -> None:
     if not build_dir.is_dir():
         sys.stderr.write(f"Error: build dir does not exist or is not a directory: {build_dir}\n")
         sys.exit(2)
     missing = []
-    for binary_name in EXPECTED_BINARIES:
+    requirements = {
+        "music_core": ["music_core_test"], "score_edit": ["score_edit_test"],
+        "score_audio": ["score_audio_test"], "score_positions": ["score_positions_test"],
+        "noqt_support": ["noqt_support_test"], "excerpts": ["excerpts_test"],
+        "assets": ["assets_test"], "archives": ["archive_test", "musescore-mcp"],
+        "async_session": ["musescore-mcp-test"], "golden": ["musescore-mcp", "semantic_dump"],
+        "semantic_check": [], "oracle_harness": [], "compat_corpus": ["semantic_dump"],
+        "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
+        "engine_audio": ["engine_audio_probe", "musescore-mcp"],
+    }
+    selected = {binary for lane in lanes for binary in requirements.get(lane, ["musescore-mcp"])}
+    for binary_name in sorted(selected):
         target = build_dir / f"{binary_name}{exe_suffix}"
         if not target.is_file():
             missing.append(target.name)
@@ -204,15 +200,15 @@ def run_lane(
 
     if lane == "score_edit":
         cmd = [str(build_dir / f"score_edit_test{exe_suffix}"), str(assets)]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "score_audio":
         cmd = [str(build_dir / f"score_audio_test{exe_suffix}"), str(assets), str(engine_source)]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "score_positions":
         cmd = [str(build_dir / f"score_positions_test{exe_suffix}"), str(assets)]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "noqt_support":
         noqt_dir = output / "noqt-support"
@@ -540,10 +536,19 @@ def main() -> None:
     exe_suffix = ".exe" if sys.platform == "win32" else ""
 
     # Pre-flight check 1: expected binaries in build dir
-    check_preflight_binaries(build_dir, exe_suffix)
 
     # Pre-flight check 2: git line endings and no UTF-8 BOM in both checkouts
-    check_preflight_eol(repo_root)
+    manifest = repo_root / "sha256.json"
+    if manifest.is_file():
+        # A frozen runner has no Git checkout. Verify its archived bytes instead.
+        for name, expected in json.loads(manifest.read_text(encoding="utf-8")).items():
+            path = (repo_root / name).resolve()
+            if not path.is_relative_to(repo_root) or not path.is_file():
+                raise SystemExit(f"Invalid archive member: {name}")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise SystemExit(f"Archive hash mismatch: {name}")
+    else:
+        check_preflight_eol(repo_root)
     check_preflight_eol(engine_source)
 
     # Validate --only lanes if requested
@@ -558,6 +563,8 @@ def main() -> None:
                 sys.stderr.write(f"Error: Unknown lane: {name}\n")
                 sys.exit(1)
         selected_lanes = [lane for lane in LANE_NAMES if lane in requested]
+
+    check_preflight_binaries(build_dir, exe_suffix, selected_lanes)
 
     output.mkdir(parents=True, exist_ok=True)
     (output / "tmp").mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,19 @@
 # MuseScore fork
 
+## C0 gate pin (2026-10-31)
+
+The `engrave/c0` implementation branch pins `bdbb77f87ae6e59e979e2f62e9d4336fd7bcc027`,
+annotated tag `engrave-c0-gate` on fork branch `c0/gate`. It descends from
+`engrave-5` (`23c743d339`), retaining that pin's upstream/framework provenance.
+Only test capture/build closure and verified Linux conversion render hashes change;
+production engine sources are identical to engrave-5. Both host gates executed green,
+and all 211 overlapping public artifacts equal the exact-pin v1 host captures.
+See [C0 usage and coverage](c0-gate.md) and [Linux hash transitions](c0-linux-transitions.json).
+The v1 host targets are opt-in; its binaries and replay runner are preserved under ignored
+`artifacts/frozen-v1/`. The historical sync rules and older pin descriptions below
+are not the C0 engine validation workflow.
+
+
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/musescore` (shallow, fetched by SHA). webmscore and the
 `patches/*.patch` queue are retired; the last executable pre-fork state is the local
