@@ -75,7 +75,8 @@ def main():
       'engrave_ops_test':[asset,corpus], 'engrave_op_policy_test':[],
       'engrave_gp_import_test':[asset], 'engrave_mnx_import_test':[asset],
       'engrave_output_test':[asset,corpus,'--corpus='+str(ROOT/'fixtures/audio'),
-                             '--soundfont='+str(a.soundfont),'--soundfont='+str(a.output/'sine.sf2')]}
+                             '--soundfont='+str(a.soundfont),'--soundfont='+str(a.output/'sine.sf2')],
+      'diagnostics_test':[],'io_boundary_test':[]}
     for name, args in suites.items():
         cwd = a.output/name
         cwd.mkdir(exist_ok=True)
@@ -91,6 +92,9 @@ def main():
     font = Path('C:/Windows/Fonts/arial.ttf') if platform == 'windows' else a.cairo_prefix/'fonts/DejaVuSans.ttf'
     run('assets',[sys.executable,ROOT/'scripts/test_assets.py','--binary',a.build_dir/('assets_test'+suffix),
         '--assets',a.assets,'--font',font,'--soundfont',a.soundfont,'--output',a.output/'assets'])
+    run('asset-manifest',[sys.executable,'-B',a.engine_source/'tools/install_assets.py','--verify',a.assets])
+    run('asset-installer',[sys.executable,'-B',a.engine_source/'tools/test_install_assets.py'],
+        cwd=a.engine_source/'tools')
     run('compat-semantics',[sys.executable,ROOT/'scripts/test_compat_corpus.py','--binary',a.build_dir/('semantic_dump'+suffix),'--resources',a.assets,'--output',a.output/'compat-semantics'])
     run('engine-audio',[sys.executable,ROOT/'scripts/test_engine_audio.py','--engine-only','--bin-dir',a.build_dir,'--resources',a.assets,'--soundfont',a.soundfont,'--engine-source',a.engine_source,'--output',a.output/'engine-audio'])
     run('oracle-controls',[sys.executable,ROOT/'scripts/test_oracle_harness.py'])
