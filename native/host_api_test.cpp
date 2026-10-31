@@ -101,6 +101,9 @@ int main(int argc,char** argv) {
 
         auto elements=ok(*host,"score_query",{{"document",doc},{"mode","elements"},{"query",{{"limit",1}}}});
         require(!elements.at("elements").empty(),"element query is empty");
+        require(elements.at("total").get<std::size_t>()>1 && elements.at("next_cursor")==1,"query did not expose its next page");
+        auto next_page=ok(*host,"score_query",{{"document",doc},{"mode","elements"},{"expected_revision","1"},{"query",{{"limit",1},{"cursor",1}}}});
+        require(next_page.at("elements").size()==1 && next_page.at("elements").at(0).at("id")!=elements.at("elements").at(0).at("id"),"pagination did not advance");
         ok(*host,"score_query",{{"document",doc},{"mode","properties"},{"target",idref(measure)}});
         ok(*host,"score_query",{{"document",doc},{"mode","audio_tracks"}});
         ok(*host,"score_describe",{{"scope","types"}});
@@ -256,6 +259,7 @@ int main(int argc,char** argv) {
         error(*host,"score_edit",{{"document",poison_doc},{"ops",Json::array({style})}},"Poisoned");
         ok(*host,"score_close",{{"document",poison_doc}});
 
+        const auto revision_before_assets=ok(*host,"score_outline",{{"document",doc}}).at("revision");
         auto font_info=ok(*host,"runtime_info",{{"action","add_font"},{"path",path_text(add_font_input)}});
         require(font_info.at("fonts").size()==2,"runtime font missing");
         auto duplicate_font=ok(*host,"runtime_info",{{"action","add_font"},{"path",path_text(add_font_input)}});
@@ -275,8 +279,7 @@ int main(int argc,char** argv) {
         ok(*host,"runtime_info",{{"action","set_soundfonts"},{"files",Json::array()}});
         require(fs::exists(initial_sf) && fs::exists(selected_path),"previous snapshots lost retained files");
         auto still_open=ok(*host,"score_outline",{{"document",doc}});
-        const auto revision=still_open.at("revision");
-        require(ok(*host,"score_outline",{{"document",doc}}).at("revision")==revision,"runtime assets changed document revision");
+        require(still_open.at("revision")==revision_before_assets,"runtime assets changed document revision");
         // Keep a document open: HostApi's destructor must close it before Engine.
         host.reset();
         require(fs::exists(initial_font) && fs::exists(initial_sf) && fs::exists(new_font) && fs::exists(selected_path),"snapshots did not outlive host");
