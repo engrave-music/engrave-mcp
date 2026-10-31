@@ -73,7 +73,7 @@ def main():
       'engrave_describe_test':[asset,'--python='+sys.executable,ROOT/'fixtures'],
       'engrave_read_test':[asset,'--corpus='+str(ROOT/'fixtures')],
       'engrave_ops_test':[asset,corpus], 'engrave_op_policy_test':[],
-      'engrave_gp_import_test':[asset],
+      'engrave_gp_import_test':[asset], 'engrave_mnx_import_test':[asset],
       'engrave_output_test':[asset,corpus,'--corpus='+str(ROOT/'fixtures/audio'),
                              '--soundfont='+str(a.soundfont),'--soundfont='+str(a.output/'sine.sf2')]}
     for name, args in suites.items():
@@ -95,7 +95,10 @@ def main():
     run('engine-audio',[sys.executable,ROOT/'scripts/test_engine_audio.py','--engine-only','--bin-dir',a.build_dir,'--resources',a.assets,'--soundfont',a.soundfont,'--engine-source',a.engine_source,'--output',a.output/'engine-audio'])
     run('oracle-controls',[sys.executable,ROOT/'scripts/test_oracle_harness.py'])
     sources = sorted((ROOT/'fixtures/golden').glob('*')) + [ROOT/'fixtures/evening.musicxml']
-    sources = [s for s in sources if s.suffix in {'.mscx','.mscz','.musicxml','.mxl','.mid','.gp'}]
+    sources += [a.engine_source/'src/importexport/mnx/tests/data'/name for name in (
+        'engine/two-notes.mnx', 'project_examples/tupletSimple.mnx',
+        'project_examples/percussionKit.mnx', 'project_examples/graceArps.mnx')]
+    sources = [s for s in sources if s.suffix in {'.mscx','.mscz','.musicxml','.mxl','.mid','.gp','.mnx'}]
     compat = sorted((ROOT/'tests/compat-corpus').rglob('*.mscz'))
     run('embedder',[a.build_dir/('example_embedder'+suffix),a.assets,*sources,*compat])
     for source in compat:
