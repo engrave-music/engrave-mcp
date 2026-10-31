@@ -428,6 +428,15 @@ int main(int argc, char** argv) {
         });
         require(bool(visited) && multipage.has_value(), visited ? "multipage capture missing" : visited.error().message);
         {
+            const auto output = scratch / "oversized-request"; fs::create_directory(output);
+            auto oversized = *multipage;
+            oversized.runtime.options.fonts.assign(1100, fs::path(std::string(4096, 'a')));
+            auto job = submit(jobs, std::move(oversized), output);
+            auto status = wait_job(jobs, job.job);
+            require(status.state == JobState::Failed && status.error && status.error->code == "ResourceLimit" &&
+                    fs::is_empty(output), "oversized worker request was not rejected cleanly");
+        }
+        {
             JobLimits limits; limits.output_bytes = 64;
             ExportJobs limited(limits);
             const auto output = scratch / "small-output"; fs::create_directory(output);

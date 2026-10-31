@@ -123,7 +123,10 @@ void start(Shared& shared, Job& job) {
     const auto& payload = job.snapshot.request.kind == ExportKind::Score ? job.snapshot.captured_score_bytes :
                           job.snapshot.request.kind == ExportKind::Positions ? job.snapshot.captured_positions_json : job.snapshot.mscz;
     write_file(job.directory / "payload", payload);
-    write_file(job.directory / "request.json", worker_request(job.snapshot, job.directory, job.staging, shared.limits.output_bytes).dump());
+    const auto request = worker_request(job.snapshot, job.directory, job.staging, shared.limits.output_bytes).dump();
+    if (request.size() > worker_request_limit)
+        throw Failure{{"ResourceLimit", "worker request exceeds byte limit"}};
+    write_file(job.directory / "request.json", request);
     job.process = std::make_unique<WorkerProcess>(current_executable_path(), job.directory / "request.json", job.directory / "worker.log");
     job.status.state = JobState::Running; ++shared.running;
 }

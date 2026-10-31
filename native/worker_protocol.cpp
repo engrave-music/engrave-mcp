@@ -284,7 +284,7 @@ Json worker_request_json(const ExportWorkerRequest& request) {
 int run_export_worker(const std::filesystem::path& request_path) noexcept {
     std::vector<std::filesystem::path> result_paths;
     try {
-        const auto request = parse_bounded_json(request_path, 4 * 1024 * 1024);
+        const auto request = parse_bounded_json(request_path, v2::worker_request_limit);
         if (request.is_object() && request.value("version", 0) == 2)
             return v2::run_worker(request_path);
         if (std::filesystem::file_size(request_path) > request_limit)
