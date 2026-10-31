@@ -1,26 +1,20 @@
 # MuseScore fork
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
-submodule `vendor/musescore` (shallow, fetched by SHA). webmscore and the
-`patches/*.patch` queue are retired; the last executable pre-fork state is the local
-tag `pre-fork-baseline` (`f8e7d26`). The superproject pins `mcp-4.7.6-4` until phase A2.
+submodule `vendor/musescore` (shallow, pinned by SHA with an `engrave-<n>` tag per pin).
+The current pin is `engrave-14` (`ab9e33c39b`).
 
-The fork's development line is `main`, rebased onto unreleased MuseScore 5.0 as a hard
-fork (`engrave`). It is merge-only: never rebased, and never force-pushed. As verified
-and accepted on 2026-10-29 (A1 close-out), `main` stands at commit `0adbf67ed7`
-(hardened `tools/sync-upstream.py` and 29-step test suite), based on:
-- Upstream MuseScore `0ea613f`
-- Commit `ca2b19d2ea` ("engrave: TRIM list and tools/sync-upstream.py")
-- Merge `7150f2b05e` ("Absorb muse_framework ecdc6e7 at muse/ (subtree)", second parent
-  framework commit `ecdc6e7`).
+The fork operates as a forward-only hard fork. Its ancestral upstream provenance
+terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
+framework `da3885cb`). Since `upstream-final`, development on `main` moves forward strictly
+via normal reviewed feature merges and commits, with no scheduled upstream merges and no
+force-pushes or rebases of published history. Reference branches `upstream/musescore`
+and `upstream/muse-framework` are frozen. Upstream fixes arrive only by cherry-pick/adapt
+with upstream SHA, framework origin if applicable, technical rationale, and focused test
+evidence.
 
-`main` was fast-forward pushed to GitHub; no force push was used.
-
-Mirror branches track upstream history without local modifications:
-- `upstream/musescore`: upstream `main` (`0ea613f`).
-- `upstream/muse-framework`: full `muse_framework` history (7917 commits, tip `ecdc6e7`).
-
-The old branches `mcp/v4.7.5`, `mcp/v4.7.6` and their `mcp-*` tags are frozen history.
+For governance details, see [Rules (Hard-Fork Governance)](#rules-hard-fork-governance).
+For all milestone pins and commit history, see [Ledger: main](#ledger-main).
 
 ## Engine build
 
@@ -74,6 +68,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 The superproject's `.gitmodules` now tracks `branch = main`.
 
 ## History: mcp/v4.7.x (frozen)
+
+webmscore and the `patches/*.patch` queue are retired; the last executable pre-fork state is the local tag `pre-fork-baseline` (`f8e7d26`). The branches `mcp/v4.7.5` and `mcp/v4.7.6` and their `mcp-*` tags represent frozen pre-hard-fork history.
 
 ### `mcp/v4.7.5` (base `v4.7.5` = `3654226c`), tag `mcp-4.7.5-1` = `e70fdef0`
 
