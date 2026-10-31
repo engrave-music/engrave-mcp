@@ -299,6 +299,16 @@ target("v2_registry")
     add_files(path.join(native_dir, "registry.cpp"), path.join(native_dir, "schema_defs.cpp"))
 target_end()
 
+-- The S2 store is linked without changing the v1 dispatcher. S4 will bind it.
+target("v2_store")
+    set_kind("static")
+    set_default(false)
+    add_deps("engrave", "v2_registry")
+    add_includedirs(path.join(source_root, "engrave", "include"))
+    add_files(path.join(native_dir, "api_json.cpp"), path.join(native_dir, "api_edit_json.cpp"),
+        path.join(native_dir, "host_api.cpp"))
+target_end()
+
 target("registry_dump")
     set_kind("binary")
     set_default(false)
@@ -343,11 +353,13 @@ local function add_host_binary(name, basename)
         set_kind("binary")
         set_default(false)
         set_basename(basename)
-        add_deps("muse_generated", "host_generated", "music_core", "v2_registry")
+        add_deps("muse_generated", "host_generated", "music_core", "v2_registry", "v2_store")
         add_files(path.join(native_dir, "*.cpp"))
         remove_files(path.join(native_dir, "music_core.cpp"), path.join(native_dir, "composition.cpp"),
             path.join(native_dir, "*_test.cpp"), path.join(native_dir, "registry.cpp"),
-            path.join(native_dir, "schema_defs.cpp"), path.join(native_dir, "registry_dump.cpp"))
+            path.join(native_dir, "schema_defs.cpp"), path.join(native_dir, "registry_dump.cpp"),
+            path.join(native_dir, "api_json.cpp"), path.join(native_dir, "api_edit_json.cpp"),
+            path.join(native_dir, "host_api.cpp"))
         add_engine_flags()
         add_packages("asio")
         if is_plat("windows") then
@@ -368,6 +380,17 @@ target("music_core_test")
     set_default(false)
     add_deps("muse_generated", "host_generated", "music_core")
     add_files(path.join(native_dir, "music_core_test.cpp"))
+    add_engine_flags()
+    if is_plat("windows") then
+        add_files(path.join(native_dir, "utf8.manifest"))
+    end
+target_end()
+
+target("host_api_test")
+    set_kind("binary")
+    set_default(false)
+    add_deps("muse_generated", "v2_store")
+    add_files(path.join(native_dir, "host_api_test.cpp"))
     add_engine_flags()
     if is_plat("windows") then
         add_files(path.join(native_dir, "utf8.manifest"))

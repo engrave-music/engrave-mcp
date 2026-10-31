@@ -1,4 +1,8 @@
-param([int]$Jobs = 12, [string]$BuildDirectory = 'build/xmake-windows')
+param(
+    [int]$Jobs = 12,
+    [string]$BuildDirectory = 'build/xmake-windows',
+    [string[]]$Targets = @('musescore_mcp', 'musescore_mcp_test', 'music_core_test', 'registry_dump', 'registry_check', 'host_api_test')
+)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $projectRoot
@@ -18,6 +22,6 @@ try {
     if ($LASTEXITCODE) { throw 'xmake input validation failed' }
     & xmake f -y -m release -o $BuildDirectory
     if ($LASTEXITCODE) { throw 'Native configuration failed' }
-    & xmake build -y -j $Jobs musescore_mcp
+    & xmake build -y -j $Jobs @Targets
     if ($LASTEXITCODE) { throw 'Native build failed' }
 } finally { Pop-Location }

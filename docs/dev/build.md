@@ -68,7 +68,7 @@ python scripts/prepare.py                 # 再校验并分发资源
    build/assets_test.exe build/scratch_assets artifacts/assets_test <test_font_path>
    ```
 
-xmake 的生成目标在各自构建目录写入框架配置与工具定义（引擎的 `muse_generated` 写 `muse_framework_config.h`，宿主的 `host_generated` 写 `tool_schema.inc`）；增量构建重新检查 `native/legacy_tools.json`（S1 的 v1 线上定义；v2 定义由独立的 `registry_dump` 生成到 `native/tools.json`），内容未变时保留时间戳。引擎各模块源码通过 `xmake/engrave.lua` 中的目录通配符（folder globs）直接按模块目录引入，不再维护静态源码清单与清单生成器；新增源码文件落入对应模块目录即自动参与编译。
+xmake 的生成目标在各自构建目录写入版本信息与工具定义（引擎的 `muse_generated` 写 `engrave_version.h`，宿主的 `host_generated` 写 `tool_schema.inc`）；增量构建重新检查 `native/legacy_tools.json`（S1 的 v1 线上定义；v2 定义由独立的 `registry_dump` 生成到 `native/tools.json`），内容未变时保留时间戳。引擎各模块源码通过 `xmake/engrave.lua` 中的目录通配符（folder globs）直接按模块目录引入，不再维护静态源码清单与清单生成器；新增源码文件落入对应模块目录即自动参与编译。
 
 引擎适配层（原 `native/` 下 `noqt_support`、`score_engine`、`engine_audio` 的源码）自 A4 S1 起位于引擎检出的 `engrave/src/<area>/`（`runtime`、`io`、`render`、`audio`、`score`），由引擎构建中的静态库 target `engrave` 以目录通配符编译；其回归测试、探针（`*_test`、`semantic_dump`、`noqt_probe`、`engine_audio_probe`、`audio_engine_link_check`）与上游 gtest 套件的测试框架位于 `engrave/tests/`，target 定义在引擎的 `xmake/tests.lua`。本仓库 `native/` 只保留 MCP 宿主（`main`、`mcp_transport`、`async_session`、`background_job`、`worker_protocol`、`noqt_engine`、`music_core`、`composition`、`tools.json`）；`music_core` 链接 `engrave`，并以 `"<area>/<file>.h"` 形式包含其内部头文件（A5 之前的特权客户端）。zlib 与 Cairo 由包含方提供：本仓库取自 pixi `native` 环境；引擎单独构建时 zlib 使用固定版本包，Cairo 使用系统包或 `--cairo_prefix=<prefix>`。宿主自身的 `xmake.lua` 也接受 `--cairo_prefix=<prefix>`（`<prefix>/include/cairo`、`<prefix>/lib`，非 Windows 平台写入 rpath），在 linux-host 这类没有系统 Cairo 的机器上配置宿主时必须传入该参数。所有二进制的名称与输出位置（`$(builddir)` 下）不变。
 
@@ -88,6 +88,14 @@ pixi run -e native python scripts/test_xmake_incremental.py --binary build/xmake
 pwsh -NoProfile -File notes/claude-scripts/build.ps1 musescore_mcp
 ```
 *(日常开发可使用 `./scripts/build-native.ps1 -Jobs 12`。)*
+
+包装脚本默认同时构建 `musescore_mcp`、`musescore_mcp_test`、`music_core_test`、
+`registry_dump`、`registry_check` 和 `host_api_test`；可用 `-Targets` 指定子集。
+S2 的独立验收（必须在原生 DLL 目录已加入 PATH 的环境中运行）：
+
+```powershell
+.pixi/envs/native/python.exe scripts/test_host_api.py --binary build/xmake-windows/host_api_test.exe --resources .runtime/assets --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 --replacement-soundfont tests/engine_audio/sine.sf2 --output notes/a5/s2
+```
 
 构建系统支持通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认指向 `vendor/musescore`），并提供 `releasedbg` 模式用于带符号排错与性能分析。
 
@@ -140,7 +148,7 @@ Linux 构建与验证现已常态化运行于 Linux x86_64 宿主机器（`ssh <
 pixi install -e native --locked
 pixi run --locked -e native python scripts/bootstrap.py --soundfont
 pixi run --locked -e native python scripts/prepare.py
-bash scripts/build-native.sh 8
+bash scripts/build-native.sh 8 build/xmake-linux "$HOME/OSS/musescore-mcp-a4s1/.pixi/envs/native"
 pixi run --locked -e native python scripts/package_linux.py --binary build/xmake-linux/musescore-mcp --output artifacts/linux-next
 ```
 
