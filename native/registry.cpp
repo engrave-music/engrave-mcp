@@ -41,11 +41,7 @@ Json tools_json() {
     return tools;
 }
 void validate_handlers(const HandlerTable& handlers) {
-    std::set<Handler> bound;
-    for(auto handler:handlers) {
-        if(!handler) throw std::logic_error("unbound v2 handler");
-        if(!bound.insert(handler).second) throw std::logic_error("duplicate v2 handler");
-    }
+    for(auto handler:handlers) if(!handler) throw std::logic_error("unbound v2 handler");
 }
 void validate_registry() {
     auto tools=tools_json();

@@ -30,9 +30,9 @@ int main() {
             missing[i] = nullptr;
             rejects([&] { validate_handlers(missing); });
         }
-        auto duplicate = bound;
-        duplicate[1] = duplicate[0];
-        rejects([&] { validate_handlers(duplicate); });
+        auto shared = bound;
+        shared[1] = shared[0];
+        validate_handlers(shared); // Different IDs may use the same callable.
         require(find_tool("score_export")->scheduling == Scheduling::ExportJob, "wrong export scheduling");
         require(find_tool("runtime_job")->scheduling == Scheduling::JobManager, "wrong job scheduling");
         require(find_tool("unknown") == nullptr, "unknown tool resolved");
