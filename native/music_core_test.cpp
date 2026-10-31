@@ -1,6 +1,8 @@
 #include "music_core.h"
+#include "draw/fontmetrics.h"
 #include <nlohmann/json.hpp>
 
+#include <cmath>
 #include <fstream>
 #include <filesystem>
 #include <iostream>
@@ -15,6 +17,17 @@ using namespace music;
 
 void expect(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
+}
+
+std::string read_file(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    expect(bool(stream), "Cannot read test input");
+    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+}
+
+std::string utf8(const std::filesystem::path& path) {
+    const auto value = path.u8string();
+    return {value.begin(), value.end()};
 }
 
 Composition make_composition() {
@@ -87,9 +100,10 @@ using namespace music;
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 2) throw std::invalid_argument("Usage: music_core_test ASSETS");
+        if (argc != 2 && argc != 4)
+            throw std::invalid_argument("Usage: music_core_test ASSETS [SOUNDFONT REPLACEMENT_SOUNDFONT]");
 
-        MusicCore core(RuntimeOptions{argv[1], ""});
+        MusicCore core(RuntimeOptions{argv[1], argc == 4 ? argv[2] : ""});
 
         const auto created = core.create(make_composition());
         expect(created.id.value == 1, "First document id is not 1");
@@ -237,8 +251,76 @@ int main(int argc, char** argv) {
         expect(std::filesystem::u8path(runtime.resources_path).is_absolute(),
                "Runtime resources path is not absolute");
         expect(runtime.font_paths.empty(), "Runtime font paths are not initially empty");
+        if (argc == 4) {
+            expect(!runtime.soundfont.empty(), "Startup SoundFont was not selected");
+            expect(std::filesystem::u8path(runtime.soundfont) != std::filesystem::absolute(std::filesystem::u8path(argv[2])),
+                   "Startup SoundFont was not retained independently");
+            expect(read_file(std::filesystem::u8path(runtime.soundfont)) == read_file(std::filesystem::u8path(argv[2])),
+                   "Retained startup SoundFont differs from the supplied file");
+        }
         expect(document_id_from_string("score-42").value == 42, "Document id parser mismatch");
         expect(document_id_to_string(DocumentId{42}) == "score-42", "Document id formatter mismatch");
+
+        // Keep a master and an excerpt open while replacing a missing font face.
+        // Measure both cached advances and exported layouts before and after.
+        auto font_score = read_file("fixtures/golden/linked_parts.mscx");
+        const auto frame = font_score.find("<height>10</height>");
+        expect(frame != std::string::npos, "Font layout fixture has no title frame");
+        font_score.insert(frame, "<Text><style>title</style><text><font face=\"Petaluma Script\"/>MMMWWWiii012345</text></Text>");
+        const std::string old_excerpt = "<text>Flute</text>";
+        const auto excerpt_text = font_score.find(old_excerpt);
+        expect(excerpt_text != std::string::npos, "Font layout fixture has no excerpt title");
+        font_score.replace(excerpt_text, old_excerpt.size(),
+                           "<text><font face=\"Petaluma Script\"/>MMMWWWiii012345</text>");
+        const auto font_doc = core.open(font_score, InputFormat::Mscx);
+        const auto parts = core.excerpts(font_doc.id);
+        expect(!parts.excerpts.empty(), "Font layout fixture has no excerpts");
+        ExportOptions part_options;
+        part_options.excerpt_id = parts.excerpts.front().id;
+        const auto master_before = core.export_bytes(font_doc.id, ExportFormat::Svg).bytes;
+        const auto part_before = core.export_bytes(font_doc.id, ExportFormat::Svg, part_options).bytes;
+
+        muse::draw::Font face(muse::draw::Font::FontFamily(std::string("Petaluma Script")), muse::draw::Font::Type::Text);
+        face.setPointSizeF(12);
+        const muse::draw::FontMetrics metrics(face);
+        const auto text = muse::String::fromUtf8("MMMWWWiii012345");
+        const double advance_before = metrics.horizontalAdvance(text);
+        const auto font_file = std::filesystem::u8path(argv[1]) / "fonts/petaluma/PetalumaScript.otf";
+        const auto font = core.add_font(utf8(font_file));
+        const double advance_after = metrics.horizontalAdvance(text);
+        expect(font.family == "Petaluma Script" && !font.content_hash.empty(), "Runtime font metadata mismatch");
+        expect(advance_before > 0 && advance_after > 0 && std::abs(advance_after - advance_before) > 0.01,
+               "Runtime font did not invalidate the cached fallback advance");
+        expect(core.export_bytes(font_doc.id, ExportFormat::Svg).bytes != master_before,
+               "Runtime font did not relayout the master score");
+        expect(core.export_bytes(font_doc.id, ExportFormat::Svg, part_options).bytes != part_before,
+               "Runtime font did not relayout the excerpt");
+        expect(core.describe(font_doc.id).revision == font_doc.revision, "Runtime font changed the score revision");
+        const auto again = core.add_font(utf8(font_file));
+        expect(again.id == font.id && again.path == font.path, "Runtime font did not deduplicate");
+        expect(core.runtime_options().font_paths == std::vector<std::string>{font.path},
+               "Runtime font selection was not forwarded to workers");
+
+        if (argc == 4) {
+            const auto first = core.set_soundfont(argv[3]);
+            expect(core.runtime_options().soundfont == first.path && first.path != runtime.soundfont,
+                   "Runtime SoundFont did not change selection");
+            bool invalid_soundfont_rejected = false;
+            try { (void)core.set_soundfont(std::string(argv[3]) + ".missing"); }
+            catch (const CoreError&) { invalid_soundfont_rejected = true; }
+            expect(invalid_soundfont_rejected && core.runtime_options().soundfont == first.path,
+                   "Invalid SoundFont changed the selection");
+            const auto restored = core.set_soundfont(argv[2]);
+            expect(restored.path == runtime.soundfont && core.runtime_options().soundfont == runtime.soundfont,
+                   "SoundFont reselection lost the retained startup copy");
+            bool audio_not_initialized = false;
+            try { (void)core.export_audio(font_doc.id, ExportFormat::Wav, "unused.wav"); }
+            catch (const CoreError& error) { audio_not_initialized = error.code() == CoreError::engine_failure; }
+            expect(audio_not_initialized, "SoundFont selection initialized audio in the owner process");
+        }
+        core.close(font_doc.id);
+        std::cout << "runtime font advances and master/excerpt relayout checks passed\n";
+        if (argc == 4) std::cout << "runtime SoundFont selection checks passed\n";
 
         const auto edited = core.create(make_long_composition());
         const EditContext first_context{Revision{1}, "operation-a"};

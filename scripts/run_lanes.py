@@ -56,7 +56,7 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         sys.exit(2)
     missing = []
     requirements = {
-        "music_core": ["music_core_test"], "score_edit": ["score_edit_test"],
+        "music_core": ["music_core_test", "musescore-mcp"], "score_edit": ["score_edit_test"],
         "score_audio": ["score_audio_test"], "score_positions": ["score_positions_test"],
         "noqt_support": ["noqt_support_test"], "excerpts": ["excerpts_test"],
         "assets": ["assets_test"], "archives": ["archive_test", "musescore-mcp"],
@@ -195,7 +195,14 @@ def run_lane(
     )
 
     if lane == "music_core":
-        cmd = [str(build_dir / f"music_core_test{exe_suffix}"), str(assets)]
+        cmd = [str(build_dir / f"music_core_test{exe_suffix}"), str(assets), str(soundfont),
+               str(repo_root / "tests/engine_audio/sine.sf2")]
+        code = subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        if code:
+            return code
+        cmd = [py, str(repo_root / "scripts/test_runtime_assets_mcp.py"),
+               "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"), "--resources", str(assets),
+               "--soundfont", str(soundfont), "--output", str(output / "runtime-assets")]
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "score_edit":
