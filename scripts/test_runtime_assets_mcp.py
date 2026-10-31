@@ -42,10 +42,12 @@ async def run(args):
 
     async with Client(args.binary, args.resources, args.soundfont, out) as client:
         document = (await client.tool("score_open", {"path": str(score_path)}))["documentId"]
-        before_path, after_path = out / "before.svg", out / "after.svg"
+        control_path, before_path, after_path = out / "control.svg", out / "before.svg", out / "after.svg"
+        control = await client.tool("score_export_start", {
+            "documentId": document, "format": "svg", "path": str(control_path)})
+        assert (await client.terminal(control))["state"] == "completed"
         before = await client.tool("score_export_start", {
             "documentId": document, "format": "svg", "path": str(before_path)})
-        assert (await client.terminal(before))["state"] == "completed"
 
         font = await client.tool("runtime_add_font", {"path": str(font_input)})
         assert font["family"] == "Petaluma Script" and font["contentHash"] == fingerprint(font_input.read_bytes())
@@ -55,7 +57,9 @@ async def run(args):
         font_input.write_bytes(b"invalid font")
         after = await client.tool("score_export_start", {
             "documentId": document, "format": "svg", "path": str(after_path)})
+        assert (await client.terminal(before))["state"] == "completed"
         assert (await client.terminal(after))["state"] == "completed"
+        assert before_path.read_bytes() == control_path.read_bytes(), "Job lost its captured fonts"
         assert before_path.read_bytes() != after_path.read_bytes()
         assert Path(font["path"]).read_bytes() == font_source.read_bytes()
         await client.tool("score_close", {"documentId": document})
@@ -87,7 +91,7 @@ async def run(args):
 
     assert not Path(font["path"]).exists(), "Retained font survived host shutdown"
     assert not Path(selected["path"]).exists(), "Retained SoundFont survived host shutdown"
-    print(json.dumps({"status": "passed", "font_worker_relayout": True,
+    print(json.dumps({"status": "passed", "font_worker_relayout": True, "captured_font": True,
                       "soundfont_worker_selection": True, "captured_soundfont": True,
                       "invalid_soundfont_rollback": True, "retained_files_cleaned": True}))
 
