@@ -17,10 +17,10 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-004 | Snapshot/batch rollback may move layout | Accepted contract | SOURCE-REVIEWED, REPORTED | Atomic batch rollback via snapshot reload does not promise bit-exact layout |
 | DEFECT-ENGRAVE-005 | Host asset staging must move to installer | Resolved 2026-11-01 (`b53ff3b`) | EXECUTED | Replaced retired QRC generator with engine installer; verified 345 files (28,380,646 B) |
 | DEFECT-ENGRAVE-006 | Phase C formal status | ACCEPTED 2026-11-01 (Astra), no must-fix | EXECUTED, SOURCE-REVIEWED | Phase C closed at `engrave-14`; the open leak (-001) and host packaging (-005) items carry into A5 |
-| DEFECT-ENGRAVE-007 | Parked API work | Parked | SOURCE-REVIEWED | Runtime font/SoundFont, exact positions, and excerpt export deferred to `a5/api-gaps` |
+| DEFECT-ENGRAVE-007 | Parked API work | IMPLEMENTED at `engrave-15`; host adoption open | SOURCE-REVIEWED | Engine API has runtime fonts/SoundFonts, exact positions and excerpt export; the host still has to use them (-011) |
 | DEFECT-ENGRAVE-008 | Encoder finalization cannot report codec-internal failure | Carried / Open | SOURCE-REVIEWED | A codec failure during final flush can leave a truncated output reported as success |
 | DEFECT-ENGRAVE-009 | Audio storage errors lose public IO classification | Carried / Open | SOURCE-REVIEWED | Disk-full or open/close failure surfaces as an engine exception instead of an actionable `Io` result |
-| DEFECT-ENGRAVE-010 | Routine engine gate does not execute the new boundary tests | Carried / Open | SOURCE-REVIEWED | A green gate cannot detect regressions covered only by diagnostics, IO-boundary, installer or manifest assertions |
+| DEFECT-ENGRAVE-010 | Routine engine gate does not execute the new boundary tests | RESOLVED 2026-11-01 (`1fb47a7`) | SOURCE-REVIEWED | Gate now runs diagnostics, IO-boundary, installer and manifest checks; both hosts green at `bfe86bd` |
 | DEFECT-ENGRAVE-011 | Host adapter layer predates engine C5-C8 and does not compile | Open / A5 cutover | EXECUTED | The `native/` host still targets the pre-C5 engine surface, so the MCP host cannot be built at `engrave-14` |
 
 ## Details
@@ -102,11 +102,11 @@ Evidence levels used in this ledger:
 
 ### 7. Parked API work (DEFECT-ENGRAVE-007)
 
-- **Status**: Parked / Pending `a5/api-gaps`.
-- **Evidence Level**: SOURCE-REVIEWED.
-- **Description**: Runtime font/SoundFont changes, exact measure/segment positions, and excerpt score-file export remain required, to be implemented on the cleaned boundary as `a5/api-gaps`.
-- **Impact**: Excerpt export, runtime font configuration, and exact geometry are not yet exposed on the cleaned engine API boundary.
-- **Next Step**: Implement on branch `a5/api-gaps` against `engrave-14` with standard pin, test, and golden governance.
+- **Status**: IMPLEMENTED at `engrave-15`; host adoption still open.
+- **Evidence Level**: SOURCE-REVIEWED, with the gate executed on both hosts.
+- **Description**: Runtime font/SoundFont changes, exact measure/segment positions, and excerpt score-file export were required additions on the cleaned engine boundary. `engrave-15` (`28e6c8ffb6`, merge of `a5/api-gaps-14` at `bfe86bd090`, tree-identical) provides `Engine::add_font`/`Engine::set_soundfonts` with font-metric and layout invalidation, `Document::positions` (1200-DPI page-local geometry, repeat-expanded event times, revision-preserving), and excerpt export through `ExportOptions::score` for MSCX, MSCZ, MusicXML, MXL and MIDI with link remapping and style/metadata handling.
+- **Impact**: The engine API no longer blocks excerpt export, runtime font configuration or exact geometry. The MCP host still calls the pre-C5 asset and audio entry points, so it cannot use these additions until the adapter port in `DEFECT-ENGRAVE-011` lands.
+- **Next Step**: Adopt the three additions in the host port (do not reintroduce the removed module-global asset functions); keep the pin, golden and ledger governance for the host cutover.
 
 ### 8. Encoder finalization cannot report codec-internal failure (DEFECT-ENGRAVE-008)
 
@@ -131,6 +131,7 @@ Evidence levels used in this ledger:
 - **Description**: `xmake/tests.lua` lists `diagnostics_test` and `io_boundary_test` as dependencies of the `c0_gate` target, but `scripts/engine_gate.py` (from `:74` on) never launches them, nor the installer tests or manifest verification. A green routine gate therefore cannot detect regressions covered only by those assertions. Phase C closeout itself is unaffected: those tests were executed separately and reported for this tag.
 - **Impact**: The gate's regression coverage is narrower than its target graph implies, so future engine pins could pass while those boundaries regress.
 - **Next Step**: Add the missing suites to a durable gate entrypoint before the next engine pin, and verify the manifest against the asset directory actually supplied to the build; keep the artifact comparator and its allowances unchanged.
+- **Resolution (2026-11-01)**: `scripts/engine_gate.py` now executes `diagnostics_test` and `io_boundary_test`, runs the engine installer's unit tests (`tools/test_install_assets.py`), and verifies the supplied asset directory against `engrave/assets.json` (`tools/install_assets.py --verify`) as separate `asset-manifest` and `asset-installer` steps; `docs/dev/c0-gate.md` records the wider set. Commit `1fb47a7` (superproject). EXECUTED: the steps passed on Windows (gate exit 0) and on linux-host (gate exit 0) when validating `a5/api-gaps-14` = tree of `engrave-15`. The artifact comparator and allowances were not touched.
 
 ### 11. Host adapter layer predates engine C5-C8 and does not compile (DEFECT-ENGRAVE-011)
 
