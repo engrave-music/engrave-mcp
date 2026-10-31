@@ -6,6 +6,7 @@ import asyncio
 import json
 from pathlib import Path
 import shutil
+import zlib
 
 import numpy as np
 import soundfile as sf
@@ -14,6 +15,10 @@ from test_async_session import Client
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def fingerprint(data):
+    return f"crc32:{zlib.crc32(data):08x}:{len(data)}"
 
 
 async def run(args):
@@ -43,7 +48,7 @@ async def run(args):
         assert (await client.terminal(before))["state"] == "completed"
 
         font = await client.tool("runtime_add_font", {"path": str(font_input)})
-        assert font["family"] == "Petaluma Script" and font["contentHash"]
+        assert font["family"] == "Petaluma Script" and font["contentHash"] == fingerprint(font_input.read_bytes())
         assert Path(font["path"]).read_bytes() == font_input.read_bytes()
         again = await client.tool("runtime_add_font", {"path": str(font_input)})
         assert again["id"] == font["id"] and again["path"] == font["path"]
@@ -65,7 +70,8 @@ async def run(args):
         captured = await client.tool("score_export_start", {
             "documentId": audio_doc, "format": "wav", "path": str(captured_path)})
         selected = await client.tool("runtime_set_soundfont", {"path": str(soundfont_input)})
-        assert selected["contentHash"] and Path(selected["path"]).read_bytes() == soundfont_input.read_bytes()
+        assert selected["contentHash"] == fingerprint(soundfont_input.read_bytes())
+        assert Path(selected["path"]).read_bytes() == soundfont_input.read_bytes()
         soundfont_input.write_bytes(b"invalid soundfont")
         await client.tool("score_export", {"documentId": audio_doc, "format": "wav", "path": str(sine_path)})
         assert (await client.terminal(captured))["state"] == "completed"
@@ -79,9 +85,11 @@ async def run(args):
         assert again_path.read_bytes() == sine_path.read_bytes(), "Invalid SoundFont changed the selection"
         await client.tool("score_close", {"documentId": audio_doc})
 
+    assert not Path(font["path"]).exists(), "Retained font survived host shutdown"
+    assert not Path(selected["path"]).exists(), "Retained SoundFont survived host shutdown"
     print(json.dumps({"status": "passed", "font_worker_relayout": True,
                       "soundfont_worker_selection": True, "captured_soundfont": True,
-                      "invalid_soundfont_rollback": True}))
+                      "invalid_soundfont_rollback": True, "retained_files_cleaned": True}))
 
 
 if __name__ == "__main__":
