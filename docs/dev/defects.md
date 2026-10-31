@@ -16,8 +16,11 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-003 | Subnormal reverb-tail float divergence (C4) | Carried / Not adopted | SOURCE-REVIEWED (prior executed evidence) | Linux reverb tail performance penalty without FTZ/DAZ; bit-exactness preserved |
 | DEFECT-ENGRAVE-004 | Snapshot/batch rollback may move layout | Accepted contract | SOURCE-REVIEWED, REPORTED | Atomic batch rollback via snapshot reload does not promise bit-exact layout |
 | DEFECT-ENGRAVE-005 | Host asset staging must move to installer | Open | EXECUTED | `generate_resources.py --check` fails at `engrave-14`; A5 must use `install_assets.py` |
-| DEFECT-ENGRAVE-006 | Phase C formal status | Implementation complete / Formal acceptance PENDING | EXECUTED, SOURCE-REVIEWED | Formal closeout pending doc corrections, this ledger, and GPT-6 Astra review |
+| DEFECT-ENGRAVE-006 | Phase C formal status | ACCEPTED 2026-11-01 (Astra), no must-fix | EXECUTED, SOURCE-REVIEWED | Phase C closed at `engrave-14`; the open leak (-001) and host packaging (-005) items carry into A5 |
 | DEFECT-ENGRAVE-007 | Parked API work | Parked | SOURCE-REVIEWED | Runtime font/SoundFont, exact positions, and excerpt export deferred to `a5/api-gaps` |
+| DEFECT-ENGRAVE-008 | Encoder finalization cannot report codec-internal failure | Carried / Open | SOURCE-REVIEWED | A codec failure during final flush can leave a truncated output reported as success |
+| DEFECT-ENGRAVE-009 | Audio storage errors lose public IO classification | Carried / Open | SOURCE-REVIEWED | Disk-full or open/close failure surfaces as an engine exception instead of an actionable `Io` result |
+| DEFECT-ENGRAVE-010 | Routine engine gate does not execute the new boundary tests | Carried / Open | SOURCE-REVIEWED | A green gate cannot detect regressions covered only by diagnostics, IO-boundary, installer or manifest assertions |
 
 ## Details
 
@@ -44,6 +47,7 @@ Evidence levels used in this ledger:
 - **Blind Spots**: The 24-command test set includes a Python fixture generator; the isolated embedder TU and external system libraries (e.g. Cairo) were not all instrumented.
 - **Impact**: The long-lived A5 host (one engine per process, owner-thread calls, repeated open/create/close of documents) is not proven leak-clean. Do not attempt a quick "fix" by adding unconditional deletes: `InstrumentList` holds raw pointers and `Part::clone()` copies that list.
 - **Next Step**: Focused ownership investigation plus a repeated open/create/close leak regression suite before treating the long-lived A5 host as leak-clean or release-ready.
+- **Reviewer agreement**: the Astra phase review (`notes/cleanup/c8/REVIEW-ASTRA.md`) concurs that the repeated-create delta is operationally relevant, that `EngineContext` owning services does not resolve raw DOM ownership, and that recycling export worker processes cannot protect the resident document store.
 
 ### 2. Historical correction: the A4 `engrave-4` "ASan clean" claim (DEFECT-ENGRAVE-002)
 
@@ -77,17 +81,15 @@ Evidence levels used in this ledger:
 - **Description**: `python -B scripts/generate_resources.py --check` fails at `engrave-14` because `src/engraving/engraving.qrc` was retired in C7, while host `scripts/prepare.py` still calls that generator. The QRC lists are gone by design; A5 must stage runtime assets using the fork's `tools/install_assets.py` + `engrave/assets.json` (345 files, 28,380,646 bytes) before cutover.
 - **Impact**: Frozen v1 host resource staging cannot be regenerated against `engrave-14` without adaptation.
 - **Next Step**: Integrate `tools/install_assets.py` and verify packaging during A5 host cutover.
+- **Related packaging limitation (SOURCE-REVIEWED, `tools/install_assets.py:57`)**: the installer reads `git cat-file HEAD:<source>`, not source-tree bytes, so it needs Git and a checkout with committed blobs; it is not a source-tarball installer. Keep that build-time requirement explicit, or add a hash-checked source-tree fallback when source archives become a distribution target. A5 should install/verify into a fresh versioned directory, stage its own external SoundFonts and native library dependencies, and use the manifest identity in packaging provenance: `Engine::create` checks only the instruments sentinel, so successful startup is not package verification.
 
 ### 6. Phase C formal status (DEFECT-ENGRAVE-006)
 
-- **Status**: Implementation complete, formal acceptance PENDING.
+- **Status**: ACCEPTED 2026-11-01 by the GPT-6 Astra phase review, with no must-fix items.
 - **Evidence Level**: EXECUTED, SOURCE-REVIEWED.
-- **Description**: Phase C (C0–C8) implementation is complete and gate-green at `ab9e33c39b` on both Windows and physical Linux `linux-host` (Terra re-ran both full gates at the exact tag: Windows 213 identical / 38 hash-allowed / 0 different / 0 missing; Linux 186 / 65 / 0 / 0; 124 commands, zero failures). However, Terra's closeout review verdict is: REJECT formal Phase C closeout for now (`notes/cleanup/c8/REVIEW-TERRA.md`). Closeout requires:
-  1. Governance documentation correction pass (completed in this cycle).
-  2. A durable, tracked in-repository defect record (this document).
-  3. The separate GPT-6 Astra phase review, which has not yet been performed.
-- **Impact**: Phase C cannot be represented as formally accepted until the Astra phase review is completed and accepted.
-- **Next Step**: Submit documentation correction pass for the GPT-6 Astra phase review.
+- **Description**: Phase C (C0–C8) implementation is complete and gate-green at `ab9e33c39b` on both Windows and physical Linux `linux-host` (Terra re-ran both full gates at the exact tag: Windows 213 identical / 38 hash-allowed / 0 different / 0 missing; Linux 186 / 65 / 0 / 0; 124 commands, zero failures). Terra's closeout review initially rejected formal acceptance pending a governance-documentation correction, a tracked defect record and the Astra phase review (`notes/cleanup/c8/REVIEW-TERRA.md`); the first two were completed in `33d9ef7`/`a2d72ac`, and the Astra review then returned ACCEPT for formal closeout with no must-fix items (`notes/cleanup/c8/REVIEW-ASTRA.md`).
+- **Impact**: Phase C is formally closed at `engrave-14`. That accepts the cleanup boundary only: it is not a statement of long-lived host release readiness or universal codec/importer correctness. The leak (-001) and host packaging (-005) defects stay open, and -008/-009/-010 were added by the Astra review.
+- **Next Step**: Carry -001, -005, -007, -008, -009 and -010 into A5 as explicit work items; the Astra review requires -009 to be resolved before A5's public error mapping is finalized and -010 before the next engine pin.
 
 ### 7. Parked API work (DEFECT-ENGRAVE-007)
 
@@ -96,3 +98,27 @@ Evidence levels used in this ledger:
 - **Description**: Runtime font/SoundFont changes, exact measure/segment positions, and excerpt score-file export remain required, to be implemented on the cleaned boundary as `a5/api-gaps`.
 - **Impact**: Excerpt export, runtime font configuration, and exact geometry are not yet exposed on the cleaned engine API boundary.
 - **Next Step**: Implement on branch `a5/api-gaps` against `engrave-14` with standard pin, test, and golden governance.
+
+### 8. Encoder finalization cannot report codec-internal failure (DEFECT-ENGRAVE-008)
+
+- **Status**: Carried / Open.
+- **Evidence Level**: SOURCE-REVIEWED.
+- **Description**: Final flush failures are discarded on the way out of the audio export path. `muse/framework/audio/engine/internal/export/soundtrackwriter.cpp:107` calls `end()` from deferred cleanup and ignores its result; `abstractaudioencoder.h:46` exposes a byte count rather than a status; `flacencoder.cpp:169` ignores `finish()`, `oggencoder.cpp:123` ignores drain status, `mp3encoder.cpp:123` does not propagate negative flush results, and `aacencoder.cpp:236` breaks on non-EOF errors without exposing them. `engine_audio.cpp:733` does check file close and sticky device errors, so filesystem failures are caught, but a codec error discarded inside the encoder cannot be recovered there.
+- **Impact**: A codec failure during finalization can leave a nonempty, truncated output reported as successful. No such failure was reproduced, and a zero byte count is not evidence of failure (several encoders return zero on success). These encoder files are unchanged since `engrave-6`, so this is retained debt, not a C4/C7 regression.
+- **Next Step**: Give finalization an explicit status-bearing result that preserves the first encode/finalize error, and add injected finalization-failure plus subsequent-render tests.
+
+### 9. Audio storage errors lose public IO classification (DEFECT-ENGRAVE-009)
+
+- **Status**: Carried / Open.
+- **Evidence Level**: SOURCE-REVIEWED.
+- **Description**: `engrave/src/audio/engine_audio.cpp:718` and `:739` classify output open/write/close failure as `EngineFailure`, and `engrave/src/api/audio.cpp:288` throws for that category, while the same public method returns `ErrorCode::Io` for unusable cache directories and readback failures. A disk-full or unwritable-output failure can therefore surface as an engine exception instead of an actionable IO result. Sticky stream errors are not silently treated as success; they are misclassified. The public mapping is unchanged since C0 apart from explicit context passing.
+- **Impact**: A5 cannot classify storage failures reliably, which matters for host error mapping and for reporting partial outputs.
+- **Next Step**: Add an internal IO failure category and map it to `Io`, keeping exception propagation from the caller's `ByteSink`; land this before A5's public error mapping is finalized and cover it with a public-boundary failure test.
+
+### 10. Routine engine gate does not execute the new boundary tests (DEFECT-ENGRAVE-010)
+
+- **Status**: Carried / Open.
+- **Evidence Level**: SOURCE-REVIEWED.
+- **Description**: `xmake/tests.lua` lists `diagnostics_test` and `io_boundary_test` as dependencies of the `c0_gate` target, but `scripts/engine_gate.py` (from `:74` on) never launches them, nor the installer tests or manifest verification. A green routine gate therefore cannot detect regressions covered only by those assertions. Phase C closeout itself is unaffected: those tests were executed separately and reported for this tag.
+- **Impact**: The gate's regression coverage is narrower than its target graph implies, so future engine pins could pass while those boundaries regress.
+- **Next Step**: Add the missing suites to a durable gate entrypoint before the next engine pin, and verify the manifest against the asset directory actually supplied to the build; keep the artifact comparator and its allowances unchanged.
