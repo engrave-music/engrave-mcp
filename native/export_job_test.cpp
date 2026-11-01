@@ -258,6 +258,7 @@ int main(int argc, char** argv) {
                 const auto& data = captured->captured_positions_json;
                 const std::string json(reinterpret_cast<const char*>(data.data()), data.size());
                 require(Json::parse(json) == encode(*direct), "positions capture differs");
+                require(json == encode(*direct).dump(), "positions JSON byte layout changed");
                 require(!direct->elements.empty() && !direct->events.empty(), "positions are empty");
                 auto result = run_snapshot(*captured);
                 require(result.size() == 1 && result[0] == data, "worker positions differ");

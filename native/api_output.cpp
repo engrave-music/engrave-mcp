@@ -39,8 +39,9 @@ std::vector<std::byte> position_json(const engrave::Positions& positions, const 
         const auto* data = reinterpret_cast<const std::byte*>(part.data());
         result.insert(result.end(), data, data + part.size());
     };
-    append("{\"page_size\":{\"width\":" + Json(positions.page_width).dump() +
-           ",\"height\":" + Json(positions.page_height).dump() + "},\"elements\":[");
+    // Match the sorted object-key order of encode(positions).dump(), while
+    // avoiding construction of its full intermediate JSON object tree.
+    append("{\"elements\":[");
     bool first = true;
     for (const auto& e : positions.elements) {
         if (!first) append(","); first = false;
@@ -51,7 +52,8 @@ std::vector<std::byte> position_json(const engrave::Positions& positions, const 
         if (!first) append(","); first = false;
         append(Json{{"elid", e.elid}, {"position", e.position}}.dump());
     }
-    append("]}");
+    append("],\"page_size\":{\"height\":" + Json(positions.page_height).dump() +
+           ",\"width\":" + Json(positions.page_width).dump() + "}}");
     return result;
 }
 
