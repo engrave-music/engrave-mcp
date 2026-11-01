@@ -13,6 +13,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('binary', 'resources', 'soundfont', 'output'):
         p.add_argument('--'+name, type=Path, required=True)
+    p.add_argument('--tempo', type=int, choices=(150, 300), default=300,
+                   help='Use 150 on faster hosts to keep real rendering past the watchdog window')
     a = p.parse_args()
     out = a.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -24,8 +26,8 @@ def main():
         for m in range(1, 257):
             attributes = ('<attributes><divisions>480</divisions><time><beats>4</beats><beat-type>4</beat-type></time>'
                           '<clef><sign>G</sign><line>2</line></clef></attributes>'
-                          '<direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>300</per-minute>'
-                          '</metronome></direction-type><sound tempo="300"/></direction>') if m == 1 else ''
+                          f'<direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>{a.tempo}</per-minute>'
+                          f'</metronome></direction-type><sound tempo="{a.tempo}"/></direction>') if m == 1 else ''
             measures.append(f'<measure number="{m}">{attributes}{notes}</measure>')
         parts.append(f'<part id="P{p}">{"".join(measures)}</part>')
     part_list = ''.join(f'<score-part id="P{p}"><part-name>Part {p}</part-name><midi-instrument id="I{p}"><midi-channel>{p}</midi-channel><midi-program>1</midi-program></midi-instrument></score-part>' for p in range(1, 13))
