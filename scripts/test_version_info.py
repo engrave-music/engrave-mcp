@@ -19,12 +19,6 @@ SVG = "{http://www.w3.org/2000/svg}"
 XLINK = "{http://www.w3.org/1999/xlink}href"
 
 
-def score_document():
-    return {"title": "Version Test", "tempo": 120, "parts": [
-        {"name": "Piano", "midiProgram": 1,
-         "measures": [{"notes": [{"pitches": [60], "ticks": 1920}]}]}]}
-
-
 def expected_platform():
     if sys.platform.startswith("win"):
         return "Microsoft Windows"
@@ -124,11 +118,21 @@ async def run(args):
                 return response.structured_content if response.structured_content is not None \
                     else json.loads(response.content[0].text)
 
-            created = await call("score_create", {"score": score_document()})
-            document = {"documentId": created["documentId"]}
+            async def export(document, fmt, path, action='run'):
+                render = fmt == 'svg'
+                if render: path.mkdir(exist_ok=True)
+                return await call('score_export', {'document': document, 'action': action,
+                    'kind': 'render' if render else 'score', 'options': {'format': fmt},
+                    'destination': {'kind': 'directory' if render else 'file', 'path': str(path)}})
+
+            async def outline_version(document):
+                return (await call('score_outline', {'document': document}))['outline']['mscore_version']
+
+            created = await call("score_create", {"template_id": "Treble_Clef", "title": "Version Test"})
+            document = created['document']
 
             mscx_path = out / "created.mscx"
-            await call("score_export", {**document, "format": "mscx", "path": str(mscx_path)})
+            await export(document, 'mscx', mscx_path)
             mscx = ET.parse(mscx_path).getroot()
             version = mscx.findtext("programVersion")
             revision = mscx.findtext("programRevision") or ""
@@ -144,21 +148,18 @@ async def run(args):
             report["mscx"] = {"programVersion": version, "programRevision": revision,
                               "engineRevision": engine_rev, "platform": platform}
 
-            metadata_path = out / "metadata.json"
-            await call("score_export", {**document, "format": "metadata", "path": str(metadata_path)})
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             # Like MuseScore Studio, only writing a file stamps the version; a created
             # score has none and the MSCX export above must not change the document.
-            assert metadata["mscoreVersion"] == "", metadata.get("mscoreVersion")
-            report["metadata"] = {"mscoreVersion": metadata["mscoreVersion"]}
+            assert await outline_version(document) == ''
+            report["metadata"] = {"mscoreVersion": await outline_version(document)}
 
             musicxml_path = out / "created.musicxml"
-            await call("score_export", {**document, "format": "musicxml", "path": str(musicxml_path)})
+            await export(document, 'musicxml', musicxml_path)
             musicxml = ET.parse(musicxml_path).getroot()
             software = musicxml.findtext("identification/encoding/software")
             assert software == f"MuseScore Studio {expected_version}", software
             report["musicxml"] = {"software": software}
-            await call("score_close", document)
+            await call("score_close", {'document': document})
 
             # The fixture records programVersion 4.5.0, so the unedited $v header
             # shows the file's version; editing marks the score dirty and the
@@ -173,61 +174,54 @@ async def run(args):
                 fixture_mscx_path = patched_fixture
 
             fixture = await call("score_open", {"path": str(fixture_mscx_path)})
-            fixture_document = {"documentId": fixture["documentId"]}
+            fixture_document = fixture['document']
 
             # Exporting MSCZ stamps the running program's version into the open
             # score in Writer::writeScore; the export must stay read-only.
-            fixture_metadata_before = out / "header-metadata-before.json"
-            await call("score_export", {**fixture_document, "format": "metadata",
-                                        "path": str(fixture_metadata_before)})
-            metadata_before = json.loads(fixture_metadata_before.read_text(encoding="utf-8"))
-            assert metadata_before["mscoreVersion"] == "4.5.0", metadata_before.get("mscoreVersion")
+            metadata_before = await outline_version(fixture_document)
+            assert metadata_before == '4.5.0', metadata_before
 
             fixture_mscz = out / "header.mscz"
-            await call("score_export", {**fixture_document, "format": "mscz", "path": str(fixture_mscz)})
+            await export(fixture_document, 'mscz', fixture_mscz)
 
-            fixture_metadata_after = out / "header-metadata-after.json"
-            await call("score_export", {**fixture_document, "format": "metadata",
-                                        "path": str(fixture_metadata_after)})
-            metadata_after = json.loads(fixture_metadata_after.read_text(encoding="utf-8"))
-            assert metadata_after["mscoreVersion"] == "4.5.0", metadata_after.get("mscoreVersion")
+            metadata_after = await outline_version(fixture_document)
+            assert metadata_after == '4.5.0', metadata_after
 
-            # The background worker reloads a snapshot serialized by that same
-            # writer; it must apply the source document's version too.
-            fixture_metadata_background = out / "header-metadata-background.json"
-            job = await call("score_export_start", {**fixture_document, "format": "metadata",
-                                                    "path": str(fixture_metadata_background)})
+            # Metadata-file export was removed in v2. The queued MSCZ export
+            # still must not alter the owner document's source version.
+            job = await export(fixture_document, 'mscz', out / 'header-background.mscz', 'start')
             deadline = time.monotonic() + 60
-            while job["state"] not in ("completed", "failed", "cancelled"):
+            status = (await call('runtime_job', {'action': 'get', 'job': job['job']}))['status']
+            while status["state"] not in ("succeeded", "failed", "cancelled"):
                 assert time.monotonic() < deadline, f"background metadata export stalled: {job}"
                 await asyncio.sleep(0.02)
-                job = await call("score_job_get", {"jobId": job["jobId"]})
-            assert job["state"] == "completed", job
-            metadata_background = json.loads(fixture_metadata_background.read_text(encoding="utf-8"))
-            assert metadata_background["mscoreVersion"] == "4.5.0", \
-                metadata_background.get("mscoreVersion")
-            report["fixture_metadata"] = {"before_mscz": metadata_before["mscoreVersion"],
-                                          "after_mscz": metadata_after["mscoreVersion"],
-                                          "background": metadata_background["mscoreVersion"]}
+                status = (await call('runtime_job', {'action': 'get', 'job': job['job']}))['status']
+            assert status["state"] == "succeeded", status
+            metadata_background = await outline_version(fixture_document)
+            assert metadata_background == '4.5.0', metadata_background
+            report["fixture_metadata"] = {"before_mscz": metadata_before,
+                                          "after_mscz": metadata_after,
+                                          "background": metadata_background}
 
-            before_svg = out / "header-before.svg"
-            await call("score_export", {**fixture_document, "format": "svg", "path": str(before_svg),
-                                        "page": 0})
+            before_dir = out / 'header-before'
+            await export(fixture_document, 'svg', before_dir)
+            before_svg = before_dir / 'page-0001.svg'
             header_before, footer_before_low, footer_before_high = version_runs(before_svg)
+            # Known v2 failure: DEFECT-ENGRAVE-014. Keep the original expected
+            # source-version behavior so this lane detects its eventual fix.
             assert header_before == footer_before_low, "unedited $v must show the file version"
             assert header_before != footer_before_high, "unedited $v already shows the app version"
 
-            region = await call("score_query_region", {**fixture_document, "partIndex": 0,
-                                                       "firstMeasure": 0, "measureCount": 1})
-            notes = region["notes"]
+            region = await call('score_query', {'document': fixture_document, 'mode': 'elements',
+                'query': {'types': ['Note'], 'first_measure': 0, 'measure_count': 1, 'props': ['pitch']}})
+            notes = region['elements']
             assert notes, "fixture has no note to edit"
-            await call("score_set_pitches", {**fixture_document, "baseRevision": region["revision"],
-                                            "operationId": "version-header-edit-1",
-                                            "changes": [{"noteId": notes[0]["id"],
-                                                         "pitch": notes[0]["pitch"] + 2}]})
-            after_svg = out / "header-after.svg"
-            await call("score_export", {**fixture_document, "format": "svg", "path": str(after_svg),
-                                        "page": 0})
+            await call('score_edit', {'document': fixture_document, 'expected_revision': region['revision'],
+                'ops': [{'op': 'set_pitch', 'note': {'kind': 'id', 'id': notes[0]['id']},
+                         'pitch': int(notes[0]['props'][0]['value']['value']) + 2}]})
+            after_dir = out / 'header-after'
+            await export(fixture_document, 'svg', after_dir)
+            after_svg = after_dir / 'page-0001.svg'
             header_after, footer_after_low, footer_after_high = version_runs(after_svg)
             assert header_after != header_before, "edited $v did not change"
             assert header_after == footer_after_high, "edited $v does not match the 4.7.6 reference"
@@ -238,15 +232,13 @@ async def run(args):
 
             # Excerpt generation serializes and reloads the document as well; the
             # reload must keep the source file's stamps, not the writer's.
-            await call("score_generate_excerpts", fixture_document)
-            fixture_metadata_excerpts = out / "header-metadata-excerpts.json"
-            await call("score_export", {**fixture_document, "format": "metadata",
-                                        "path": str(fixture_metadata_excerpts)})
-            metadata_excerpts = json.loads(fixture_metadata_excerpts.read_text(encoding="utf-8"))
-            assert metadata_excerpts["mscoreVersion"] == "4.5.0", \
-                metadata_excerpts.get("mscoreVersion")
-            report["fixture_metadata"]["after_excerpts"] = metadata_excerpts["mscoreVersion"]
-            await call("score_close", fixture_document)
+            outline = (await call('score_outline', {'document': fixture_document}))['outline']
+            await call('score_edit', {'document': fixture_document, 'ops': [{'op': 'generate_excerpts',
+                'parts': [{'kind': 'id', 'id': part['id']} for part in outline['parts']]}]})
+            metadata_excerpts = await outline_version(fixture_document)
+            assert metadata_excerpts == '4.5.0', metadata_excerpts
+            report["fixture_metadata"]["after_excerpts"] = metadata_excerpts
+            await call("score_close", {'document': fixture_document})
 
     assert "ERROR:" not in (out / "stderr.log").read_text(encoding="utf-8"), "Engine errors in stderr.log"
     report["status"] = "passed"

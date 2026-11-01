@@ -24,6 +24,7 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-011 | Host adapter layer predates engine C5-C8 and does not compile | RESOLVED 2026-11-01 (Windows + linux-host) | EXECUTED | The v1 host builds and its runtime assets, workers and MCP smoke pass against `engrave-15` on both hosts; public-document cutover remains A5 S2+ work |
 | DEFECT-ENGRAVE-012 | Snapshot-based render is not bit-identical to direct render | Accepted limitation | EXECUTED | Export jobs render a captured MSCZ snapshot, so render output can differ from a direct in-process render |
 | DEFECT-ENGRAVE-013 | Pitch edits can leave a mismatched tie without a diagnostic | Carried / Open | SOURCE-REVIEWED, EXECUTED | An exported mismatched tie may not survive MusicXML reimport |
+| DEFECT-ENGRAVE-014 | Snapshot rendering changes an unedited score's version header | Carried / Open | SOURCE-REVIEWED, EXECUTED | A rendered `$v` header can show the current engine version instead of the source version |
 
 ## Details
 
@@ -163,3 +164,12 @@ Evidence levels used in this ledger:
 - **Executed evidence**: `scripts/test_linked_tie.py` opens `fixtures/golden/linked_parts.mscx`, whose first tied notes are B4 (`I_I` and `L_L`). Changing only `I_I` to D5 changes its linked copies and returns no diagnostic; MusicXML contains a D5 start and B4 stop. On MXL reimport, the connection is lost and the start becomes a `let-ring`. In a fresh document, setting both ends to D5 in one batch preserves the tie after the same MXL round trip. This observes the specified independent-note edit and the consequence of exporting an invalid tie; it does not establish behavior for every tie form or format.
 - **Impact**: Clients editing a tie must coordinate both endpoints or risk an undiagnosed loss on interchange. The retired v1 pitch-edit projection rejected partial tied-note edits; v2 does not retain that protection.
 - **Next Step**: Decide an engine-level contract for detecting and diagnosing or preventing mismatched ties, including multi-operation batches and linked excerpts, and add public-boundary tests. Until then, retain the focused v2 reproduction and do not claim partial tied-note edits round-trip safely.
+
+### 14. Snapshot rendering changes an unedited score's version header (DEFECT-ENGRAVE-014)
+
+- **Status**: Carried / Open at `engrave-15`; the strict v2 `version_info` test fails.
+- **Evidence Level**: SOURCE-REVIEWED, EXECUTED (Windows, v2 wire).
+- **Description**: `capture_export` in `native/api_output.cpp` serializes render jobs to MSCZ and the worker reopens that snapshot. Serialization stamps the running engine version; the v2 worker does not restore the original score's version or edit state. The v1 worker protocol carried source version fields separately. The public engine API exposes `Outline::mscore_version` but provides no operation to restore the captured version and dirty state to the reloaded worker document.
+- **Executed evidence**: `scripts/test_version_info.py` opens `fixtures/version/header.mscx`, which has file format 4.70 and program version 4.5.0. The owner-thread outline still reports 4.5.0 before and after both run and start exports. The unedited v2 SVG's `$v` header nevertheless matches the 5.0.0 footer rather than the 4.5.0 footer, so the retained assertion fails. A diagnostic run also observed that the header already matches 5.0.0 before the pitch edit and remains so afterward; MSCX stamps, MusicXML software, platform, and source outline versions passed. This is a content difference, not the geometric tolerance in `DEFECT-ENGRAVE-012`.
+- **Impact**: Users can receive a rendered score whose version macro differs from the live document, even though the export reports success and the captured revision is unchanged.
+- **Next Step**: Add a public engine snapshot/restore contract that preserves the state relevant to rendering, or adopt a reviewed host design that does so without relying on private engine internals. Keep the strict header assertion and do not mask the difference by changing the expected result or regenerating goldens.
