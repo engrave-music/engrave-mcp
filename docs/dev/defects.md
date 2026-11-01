@@ -33,6 +33,7 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-020 | Snapshot pins fell through to legacy allowances | Resolved | SOURCE-REVIEWED, EXECUTED | A snapshot pin takes precedence over an older direct-engine allowance |
 | DEFECT-ENGRAVE-021 | Runtime font cache breaks Linux audio monitoring | Resolved | SOURCE-REVIEWED, EXECUTED | The audio monitor counts only regular engine audio cache files |
 | DEFECT-ENGRAVE-022 | No-repeat audio projected using repeat-expanded duration | Resolved for the reproduced rejection | SOURCE-REVIEWED, EXECUTED | The worker uses the matching end time when exposed and otherwise does not reject on the expanded estimate |
+| DEFECT-ENGRAVE-024 | 4.70 cannot represent part EIDs | Accepted format limitation | EXECUTED, SOURCE-REVIEWED | Shared-part downgrades keep numeric part IDs but cannot write part EIDs; every representable element EID is preserved |
 | DEFECT-ENGRAVE-023 | Stave-sharing labels are lost on 5.00 open/export | RESOLVED at `engrave-21` (2026-11-02) | EXECUTED | Labels now survive 5.00 ingest, export and reopen; the 5.00 output of label-bearing scores changes by design and no golden covers one |
 
 ## Details
@@ -256,3 +257,10 @@ such engine contract or change is introduced here.
 - **Impact**: This is data loss on an ordinary 5.00 open/export round trip, and it makes the phase-B warning contract unimplementable for this feature: a writer cannot warn about an object that is already gone from the DOM. Downgrading such a score cannot report what was lost, which is exactly the case the warning channel exists for.
 - **Next step**: Retain the stave-sharing labels through ingestion and the 5.00 writer (preferred), or reject the document on open with a diagnostic when the engine cannot represent them. Either route needs a reopen test and a phase-B fixture update; do not paper over it with a writer-side warning.
 - **Resolution (`engrave-21`, commit `542d3261ad`)**: the labels are now retained through 5.00 ingestion and export, and reopen tests confirm both labels survive. This intentionally changes the 5.00 output of a label-bearing score; no pinned golden covers such a score, and the ordinary 5.00 controls remain byte-identical apart from the recorded program revision. The phase-B `B470_STAVE_SHARING_LABEL_DROPPED` warning is therefore now emitted for the 4.70 export of a score that actually has a label, which is the case the warning existed for. EXECUTED on Windows and linux-host.
+
+### 24. 4.70 cannot represent part EIDs (DEFECT-ENGRAVE-024)
+
+- **Status**: Accepted format limitation, scoped in the phase-B contract.
+- **Evidence**: **EXECUTED** in the B5/B6 fixtures and the ngrave-23 regression: a shared-part downgrade keeps all four numeric Part ids 1–4, four ordinary parts reopen, and all four source part EIDs are absent. The 4.70 Part reader/writer has numeric ids and no interoperable part-EID field, so no private extension was invented.
+- **Impact**: "IDs retained" in the earlier B1 wording overstated the contract for parts. Every representable element EID (score, staff, measure, clef, time signature, chord, note, spanner, …) is preserved; part EIDs are the documented exception. A consumer that keys parts by EID must fall back to the numeric part id in 4.70 files.
+- **Next step**: Keep docs/dev/phase-b-features.md as the authority for which IDs survive; revisit only if a future 4.70 writer gains an interoperable part-identity field.
