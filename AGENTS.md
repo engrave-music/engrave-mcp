@@ -29,11 +29,14 @@ fork is a hard fork (one last upstream sync, then cherry-picks only).
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
-- Worker models: Opus 5.5, GPT-6 Astra, GPT-6.1 Terra, DeepSeek Flash and Gemini 3.8 Flash.
-  Pick the cheapest model likely to finish a task in one pass, and escalate on a stall rather
-  than retrying. Hard rules: Terra only at reasoning effort max, in fast mode (fast mode is for Terra only, never Astra); DeepSeek via Pi
+- Worker models: GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Astra, Opus 5.5, DeepSeek Flash and
+  Gemini 3.8 Flash. Pick the cheapest model likely to finish a task in one pass, and escalate on a stall rather
+  than retrying. Default implementation worker: GPT-6.1 Sol (stronger and more token-efficient than
+  Terra for implementation). Default step reviewer and validation worker: GPT-6.1 Terra; keep
+  Terra reviews independent of the Sol worker that wrote the code. Hard rules: Terra only at
+  reasoning effort max, in fast mode (fast mode is for Terra only, never Astra); DeepSeek via Pi
   `opencode-go/deepseek-v4.1-flash` (the paid `deepseek/deepseek-flash` only while opencode-go
-  is down); no GPT-6.1 Sol.
+  is down).
 - Reviews: each roadmap step (A1, A2, ...) ends with a full Terra validation; each phase
   (A, I, B) gets a final GPT-6 Astra review before it is accepted, looking for remaining
   defects and poor implementation approaches across the phase. GPT reviews over-flag: triage
