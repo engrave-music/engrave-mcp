@@ -311,554 +311,162 @@ def inspect_wav_audio(path: Path) -> dict:
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Test native MuseScore MCP export options")
-    parser.add_argument("--binary", type=Path, default=Path(os.environ.get("MUSIC_MCP_BINARY", ROOT / "build/windows/musescore-mcp.exe")),
-                        help="Path to musescore-mcp executable")
-    parser.add_argument("--output", type=Path, default=Path(os.environ.get("MUSIC_MCP_OUTPUT", ROOT / "artifacts/test-export-options")),
-                        help="Output directory for test artifacts")
-    parser.add_argument("--soundfont", type=Path, default=None,
-                        help="Optional soundfont path for WAV export")
-    parser.add_argument("--resources", type=Path, default=None,
-                        help="Optional resources directory containing instruments.xml")
+    import base64
+    from v2_client import Client
+    from test_native_edit import fixture
+    from PIL import Image
+
+    parser = argparse.ArgumentParser(description='V2 score, render and audio export options')
+    parser.add_argument('--binary', type=Path, required=True)
+    parser.add_argument('--resources', type=Path, required=True)
+    parser.add_argument('--soundfont', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-
-    binary = args.binary.resolve()
-    out_dir = args.output.resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    soundfont_path = args.soundfont.resolve() if args.soundfont else None
-    if soundfont_path and not soundfont_path.is_file():
-        parser.error("SoundFont does not exist")
-
-    protocol_errors: list[str] = []
-
-    class ProtocolLog(logging.Handler):
-        def emit(self, record):
-            if record.levelno >= logging.ERROR:
-                protocol_errors.append(record.getMessage())
-
-    logging.getLogger("mcp.client.stdio").addHandler(ProtocolLog())
-
-    child_env = dict(os.environ)
-    if os.environ.get("MUSIC_MCP_CLEAN_ENV"):
-        if os.name == "nt":
-            child_env = {
-                "SystemRoot": os.environ["SystemRoot"],
-                "PATH": str(Path(os.environ["SystemRoot"]) / "System32"),
-                "TEMP": os.environ["TEMP"],
-                "TMP": os.environ["TMP"],
-            }
-        else:
-            child_env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
-
-    child_args = []
-    if soundfont_path:
-        child_args += ["--soundfont", str(soundfont_path)]
-    if args.resources and args.resources.is_dir():
-        child_args += ["--resources", str(args.resources.resolve())]
-    elif os.environ.get("MUSIC_MCP_RESOURCES"):
-        child_args += ["--resources", os.environ["MUSIC_MCP_RESOURCES"]]
-
-    params = StdioServerParameters(command=str(binary), args=child_args, env=child_env, cwd=str(out_dir))
-
-    report = {
-        "status": "running",
-        "binary": str(binary),
-        "soundfont_supplied": bool(soundfont_path),
-        "calls": [],
-        "evidence": {},
-    }
-    started = time.perf_counter()
-
-    # Base multi-part score for general exports
-    test_score = {
-        "title": "Export Options Suite / 选项套件",
-        "tempo": 120,
-        "parts": [
-            {"name": "Violin", "midiProgram": 41, "measures": [bar(67, 69, 71, 74), bar(72, 71, 69, 67)]},
-            {"name": "Piano", "midiProgram": 1, "measures": [
-                {"notes": [{"pitches": [48, 55, 60], "ticks": 1920}]},
-                {"notes": [{"pitches": [50, 57, 62], "ticks": 1920}]},
-            ]},
-            {"name": "Cello", "midiProgram": 43, "measures": [bar(48, 48, 55, 55), bar(50, 50, 57, 57)]},
-        ],
-    }
-
-    with (out_dir / "stderr.log").open("w", encoding="utf-8") as errors:
-        async with stdio_client(params, errlog=errors) as (read, write):
-            async with ClientSession(read, write) as session:
-                init_result = await session.initialize()
-                report["protocol_version"] = init_result.protocol_version
-
-                async def call(tool_name: str, arguments: dict, expect_error: bool = False) -> dict | None:
-                    response = await session.call_tool(tool_name, arguments)
-                    assert bool(response.is_error) == expect_error, f"Tool {tool_name} error mismatch: {response}"
-                    report["calls"].append({"tool": tool_name, "error": bool(response.is_error)})
-                    payload = response.structured_content
-                    if payload is None and response.content and hasattr(response.content[0], "text"):
-                        try:
-                            payload = json.loads(response.content[0].text)
-                        except Exception:
-                            payload = {"text": response.content[0].text}
-                    return payload
-
-                # Create test document
-                created = await call("score_create", {"score": test_score})
-                doc_id = created["documentId"]
-                doc_identity = {"documentId": doc_id}
-
-                # Retrieve baseline representation
-                baseline = await call("score_get", doc_identity)
-                orig_xml_path = out_dir / "original.musicxml"
-                orig_xml_path.write_text(baseline["musicxml"], encoding="utf-8")
-                orig_notes, orig_measures = canonical_notes(orig_xml_path)
-
-                # =========================================================================
-                # 1. New score_export MSCX uncompressed XML export & import roundtrip
-                # =========================================================================
-                mscx_path = out_dir / "score.mscx"
-                export_mscx_res = await call("score_export", {**doc_identity, "format": "mscx", "path": str(mscx_path)})
-                assert mscx_path.is_file() and mscx_path.stat().st_size > 0, "MSCX file not created"
-                assert export_mscx_res["bytes"] == mscx_path.stat().st_size
-
-                mscx_content = mscx_path.read_text(encoding="utf-8")
-                mscx_tree = ET.fromstring(mscx_content)
-                assert mscx_tree.tag == "museScore", f"MSCX root tag was {mscx_tree.tag}, expected museScore"
-                assert mscx_tree.find("Score") is not None, "MSCX missing Score element"
-
-                # Import the exported MSCX back via score_open
-                opened_mscx = await call("score_open", {"path": str(mscx_path)})
-                mscx_doc_id = opened_mscx["documentId"]
-                reopened_mscx = await call("score_get", {"documentId": mscx_doc_id})
-                reopened_xml_path = out_dir / "reopened_mscx.musicxml"
-                reopened_xml_path.write_text(reopened_mscx["musicxml"], encoding="utf-8")
-                reopened_notes, reopened_measures = canonical_notes(reopened_xml_path)
-
-                assert orig_notes == reopened_notes, "Musical notes altered during MSCX export/import roundtrip"
-                assert orig_measures == reopened_measures, "Measure counts altered during MSCX roundtrip"
-                await call("score_close", {"documentId": mscx_doc_id})
-
-                report["evidence"]["mscx_roundtrip"] = {
-                    "bytes": mscx_path.stat().st_size,
-                    "root_element": mscx_tree.tag,
-                    "version": mscx_tree.get("version"),
-                    "parts": len(orig_measures),
-                    "measures_per_part": orig_measures,
-                    "note_events": len(orig_notes),
-                    "roundtrip_exact_match": True,
-                }
-
-                # =========================================================================
-                # 2. PNG DPI sizing 72 vs 144
-                # =========================================================================
-                png_72_path = out_dir / "score_72dpi.png"
-                png_144_path = out_dir / "score_144dpi.png"
-
-                await call("score_export", {**doc_identity, "format": "png", "pngDpi": 72, "path": str(png_72_path)})
-                await call("score_export", {**doc_identity, "format": "png", "pngDpi": 144, "path": str(png_144_path)})
-
-                w72, h72 = read_png_dimensions(png_72_path)
-                w144, h144 = read_png_dimensions(png_144_path)
-
-                assert w72 > 0 and h72 > 0, f"Invalid 72 DPI dimensions: {w72}x{h72}"
-                assert abs(w144 - 2 * w72) <= 1, f"Expected 144 DPI width ~2x 72 DPI: got {w144} vs {w72}"
-                assert abs(h144 - 2 * h72) <= 1, f"Expected 144 DPI height ~2x 72 DPI: got {h144} vs {h72}"
-
-                report["evidence"]["png_dpi"] = {
-                    "dpi_72_dimensions": {"width": w72, "height": h72, "bytes": png_72_path.stat().st_size},
-                    "dpi_144_dimensions": {"width": w144, "height": h144, "bytes": png_144_path.stat().st_size},
-                    "width_ratio": round(w144 / w72, 3),
-                    "height_ratio": round(h144 / h72, 3),
-                }
-
-                # =========================================================================
-                # 3. Transparent alpha vs opaque white background
-                # =========================================================================
-                png_trans_path = out_dir / "score_transparent.png"
-                png_opaque_path = out_dir / "score_opaque.png"
-
-                await call("score_export", {**doc_identity, "format": "png", "transparent": True, "path": str(png_trans_path)})
-                await call("score_export", {**doc_identity, "format": "png", "transparent": False, "path": str(png_opaque_path)})
-
-                alpha_trans = inspect_png_alpha(png_trans_path)
-                alpha_opaque = inspect_png_alpha(png_opaque_path)
-
-                assert alpha_trans["has_transparency"], f"Transparent PNG had no transparent pixels: {alpha_trans}"
-                assert alpha_trans["min_alpha"] < 255, f"Transparent PNG minimum alpha is {alpha_trans['min_alpha']}"
-                assert not alpha_opaque["has_transparency"], f"Opaque PNG contains transparent pixels: {alpha_opaque}"
-                assert alpha_opaque["min_alpha"] == 255 and alpha_opaque["max_alpha"] == 255, (
-                    f"Opaque PNG alphas not completely 255: {alpha_opaque}"
-                )
-
-                report["evidence"]["png_transparency"] = {
-                    "transparent_png": alpha_trans,
-                    "opaque_png": alpha_opaque,
-                }
-
-                # =========================================================================
-                # 4. SVG and PNG drawPageBackground option accepts
-                # =========================================================================
-                svg_nobg_path = out_dir / "score_nobg.svg"
-                svg_withbg_path = out_dir / "score_withbg.svg"
-                png_nobg_path = out_dir / "score_nobg.png"
-                png_withbg_path = out_dir / "score_withbg.png"
-
-                await call("score_export", {**doc_identity, "format": "svg", "drawPageBackground": False, "path": str(svg_nobg_path)})
-                await call("score_export", {**doc_identity, "format": "svg", "drawPageBackground": True, "path": str(svg_withbg_path)})
-                await call("score_export", {**doc_identity, "format": "png", "drawPageBackground": False, "path": str(png_nobg_path)})
-                await call("score_export", {**doc_identity, "format": "png", "drawPageBackground": True, "path": str(png_withbg_path)})
-
-                svg_nobg_tree = ET.parse(svg_nobg_path).getroot()
-                svg_withbg_tree = ET.parse(svg_withbg_path).getroot()
-                assert svg_nobg_tree.tag.endswith("svg"), "score_nobg.svg invalid root"
-                assert svg_withbg_tree.tag.endswith("svg"), "score_withbg.svg invalid root"
-                def white_paths(root):
-                    return sum(e.tag.endswith("path") and e.get("fill", "").replace(" ", "")
-                               == "rgb(100%,100%,100%)" for e in root.iter())
-                assert white_paths(svg_withbg_tree) > white_paths(svg_nobg_tree)
-                from PIL import Image
-                with Image.open(png_withbg_path) as image:
-                    assert image.convert("RGBA").getpixel((0, 0)) == (255, 255, 255, 255)
-                with Image.open(png_nobg_path) as image:
-                    assert image.convert("RGBA").getpixel((0, 0))[3] == 0
-                with Image.open(png_opaque_path) as image:
-                    assert image.convert("RGBA").getpixel((0, 0)) == (255, 255, 255, 255)
-
-                svg_nobg_bytes = svg_nobg_path.read_bytes()
-                svg_withbg_bytes = svg_withbg_path.read_bytes()
-
-                assert png_nobg_path.stat().st_size > 0 and png_withbg_path.stat().st_size > 0
-
-                report["evidence"]["background_options"] = {
-                    "svg_nobg_bytes": len(svg_nobg_bytes),
-                    "svg_withbg_bytes": len(svg_withbg_bytes),
-                    "png_nobg_bytes": png_nobg_path.stat().st_size,
-                    "png_withbg_bytes": png_withbg_path.stat().st_size,
-                }
-
-                # =========================================================================
-                # 5. Invalid options type / out-of-format / range leave destination sentinel
-                #    unchanged and session survives
-                # =========================================================================
-                invalid_cases = [
-                    # Invalid types
-                    ("type_pngDpi_str", {"format": "png", "pngDpi": "high"}),
-                    ("type_pngDpi_bool", {"format": "png", "pngDpi": True}),
-                    ("type_transparent_str", {"format": "png", "transparent": "false"}),
-                    ("type_drawPageBackground_str", {"format": "svg", "drawPageBackground": "yes"}),
-                    ("type_expandRepeats_num", {"format": "midi", "expandRepeats": 123}),
-                    ("type_exportRPNs_str", {"format": "midi", "exportRPNs": "false"}),
-                    # Out-of-format options
-                    ("out_of_format_pngDpi_svg", {"format": "svg", "pngDpi": 144}),
-                    ("out_of_format_pngDpi_midi", {"format": "midi", "pngDpi": 144}),
-                    ("out_of_format_transparent_svg", {"format": "svg", "transparent": False}),
-                    ("out_of_format_transparent_midi", {"format": "midi", "transparent": False}),
-                    ("out_of_format_drawPageBackground_midi", {"format": "midi", "drawPageBackground": True}),
-                    ("out_of_format_drawPageBackground_musicxml", {"format": "musicxml", "drawPageBackground": True}),
-                    ("out_of_format_expandRepeats_png", {"format": "png", "expandRepeats": True}),
-                    ("out_of_format_exportRPNs_png", {"format": "png", "exportRPNs": True}),
-                    ("out_of_format_page_midi", {"format": "midi", "page": 0}),
-                    # Out-of-range options
-                    ("out_of_range_pngDpi_too_low", {"format": "png", "pngDpi": 35}),
-                    ("out_of_range_pngDpi_too_high", {"format": "png", "pngDpi": 1201}),
-                    ("out_of_range_page_negative", {"format": "svg", "page": -1}),
-                    ("out_of_range_page_beyond_pages", {"format": "svg", "page": 999}),
-                    # Mix format restrictions (wav/flac/ogg/mp3 only)
-                    ("out_of_format_mix_svg", {"format": "svg", "mix": {"master": {"volumeDb": 0.0}}}),
-                    ("out_of_format_mix_png", {"format": "png", "mix": {"master": {"volumeDb": 0.0}}}),
-                    ("out_of_format_mix_midi", {"format": "midi", "mix": {"master": {"volumeDb": 0.0}}}),
-                    ("out_of_format_mix_musicxml", {"format": "musicxml", "mix": {"master": {"volumeDb": 0.0}}}),
-                    ("out_of_format_mix_pdf", {"format": "pdf", "mix": {"master": {"volumeDb": 0.0}}}),
-                    ("out_of_format_mix_mscz", {"format": "mscz", "mix": {"master": {"volumeDb": 0.0}}}),
-                    # Mix range restrictions
-                    ("out_of_range_mix_master_volumeDb_high", {"format": "wav", "mix": {"master": {"volumeDb": 24.1}}}),
-                    ("out_of_range_mix_master_volumeDb_low", {"format": "wav", "mix": {"master": {"volumeDb": -120.1}}}),
-                    ("out_of_range_mix_master_balance_high", {"format": "wav", "mix": {"master": {"balance": 1.1}}}),
-                    ("out_of_range_mix_master_balance_low", {"format": "wav", "mix": {"master": {"balance": -1.1}}}),
-                    ("out_of_range_mix_track_volumeDb_high", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "volumeDb": 24.1}]}}),
-                    ("out_of_range_mix_track_volumeDb_low", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "volumeDb": -120.1}]}}),
-                    ("out_of_range_mix_track_balance_high", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "balance": 1.1}]}}),
-                    ("out_of_range_mix_track_balance_low", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "balance": -1.1}]}}),
-                    ("out_of_range_mix_trackId_negative", {"format": "wav", "mix": {"tracks": [{"trackId": -1}]}}),
-                    # Mix unknown / forbidden keys
-                    ("unknown_key_mix_root", {"format": "wav", "mix": {"unknownProp": True}}),
-                    ("unknown_key_mix_master", {"format": "wav", "mix": {"master": {"unknownProp": True}}}),
-                    ("forbidden_key_mix_master_solo", {"format": "wav", "mix": {"master": {"solo": True}}}),
-                    ("forbidden_key_mix_master_muted", {"format": "wav", "mix": {"master": {"muted": True}}}),
-                    ("forbidden_key_mix_track_forceMute", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "forceMute": True}]}}),
-                    ("forbidden_key_mix_track_output", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "output": {}}]}}),
-                    ("unknown_key_mix_track", {"format": "wav", "mix": {"tracks": [{"trackId": 0, "unknownProp": 1}]}}),
-                    # Semantic mix rejections: duplicate and unknown trackIds
-                    ("duplicate_trackId_mix", {"format": "wav", "mix": {"tracks": [{"trackId": 0}, {"trackId": 0}]}}),
-                    ("unknown_trackId_mix", {"format": "wav", "mix": {"tracks": [{"trackId": 999999}]}}),
-                ]
-
-                sentinel_evidence = []
-                for case_name, bad_opts in invalid_cases:
-                    sentinel_file = out_dir / f"sentinel_{case_name}.dat"
-                    sentinel_payload = f"SENTINEL_UNCHANGED_CONTENT_{case_name}".encode("utf-8")
-                    sentinel_file.write_bytes(sentinel_payload)
-
-                    # Export attempt must fail with expect_error=True
-                    export_args = {**doc_identity, "path": str(sentinel_file), **bad_opts}
-                    await call("score_export", export_args, expect_error=True)
-
-                    # Sentinel file MUST NOT be modified or replaced
-                    actual_sentinel = sentinel_file.read_bytes()
-                    assert actual_sentinel == sentinel_payload, (
-                        f"Destination sentinel was modified for case {case_name}!"
-                    )
-
-                    # MCP Session MUST survive: verify immediate valid call
-                    alive_check = await call("score_get", doc_identity)
-                    assert alive_check["documentId"] == doc_id, f"Session lost document state after {case_name}"
-
-                    sentinel_evidence.append({
-                        "case": case_name,
-                        "options": bad_opts,
-                        "sentinel_preserved": True,
-                        "session_survived": True,
-                    })
-
-                report["evidence"]["invalid_options_sentinel_preservation"] = {
-                    "total_cases_tested": len(sentinel_evidence),
-                    "all_sentinels_preserved": True,
-                    "session_survived_all": True,
-                    "cases": sentinel_evidence,
-                }
-
-                # =========================================================================
-                # 6. MIDI expandRepeats with 2-measure MusicXML repeat fixture
-                # =========================================================================
-                opened_repeat = await call("score_open", {"musicxml": REPEAT_FIXTURE_MUSICXML})
-                repeat_doc_id = opened_repeat["documentId"]
-                repeat_identity = {"documentId": repeat_doc_id}
-
-                midi_expanded_path = out_dir / "repeat_expanded.mid"
-                midi_unexpanded_path = out_dir / "repeat_unexpanded.mid"
-
-                await call("score_export", {**repeat_identity, "format": "midi", "expandRepeats": True, "path": str(midi_expanded_path)})
-                await call("score_export", {**repeat_identity, "format": "midi", "expandRepeats": False, "path": str(midi_unexpanded_path)})
-
-                midi_expanded = parse_midi_file(midi_expanded_path.read_bytes())
-                midi_unexpanded = parse_midi_file(midi_unexpanded_path.read_bytes())
-
-                count_exp, notes_exp = count_note_on_events(midi_expanded)
-                count_unexp, notes_unexp = count_note_on_events(midi_unexpanded)
-
-                assert count_exp > count_unexp, (
-                    f"expandRepeats=True must produce more Note-On events: got {count_exp} vs {count_unexp}"
-                )
-                assert count_exp == 2 * count_unexp, (
-                    f"Expected 2-measure repeat to double Note-Ons: got {count_exp} vs {count_unexp}"
-                )
-
-                repeat_evidence = {
-                    "note_ons_expanded": count_exp,
-                    "note_ons_unexpanded": count_unexp,
-                    "ratio": count_exp / count_unexp if count_unexp else None,
-                    "expanded_pitches": [n["pitch"] for n in notes_exp],
-                    "unexpanded_pitches": [n["pitch"] for n in notes_unexp],
-                }
-
-                # Also test WAV expandRepeats if soundfont is supplied
-                if soundfont_path:
-                    wav_exp_path = out_dir / "repeat_expanded.wav"
-                    wav_unexp_path = out_dir / "repeat_unexpanded.wav"
-                    await call("score_export", {**repeat_identity, "format": "wav", "expandRepeats": True, "path": str(wav_exp_path)})
-                    await call("score_export", {**repeat_identity, "format": "wav", "expandRepeats": False, "path": str(wav_unexp_path)})
-
-                    wav_exp_info = inspect_wav_audio(wav_exp_path)
-                    wav_unexp_info = inspect_wav_audio(wav_unexp_path)
-
-                    assert wav_exp_info["duration_seconds"] > wav_unexp_info["duration_seconds"] + 3.5, (
-                        f"WAV repeat expanded duration ({wav_exp_info['duration_seconds']}s) "
-                        f"not longer than unexpanded ({wav_unexp_info['duration_seconds']}s)"
-                    )
-                    repeat_evidence["wav_audio"] = {
-                        "expanded_duration": wav_exp_info["duration_seconds"],
-                        "unexpanded_duration": wav_unexp_info["duration_seconds"],
-                    }
-
-                await call("score_close", repeat_identity)
-                report["evidence"]["midi_expand_repeats"] = repeat_evidence
-
-                # =========================================================================
-                # 7. MIDI RPN true vs false actual bytes differ and pitch bend parameter
-                #    configuration is verified via parsed events
-                # =========================================================================
-                rpn_true_path = out_dir / "score_rpn_true.mid"
-                rpn_false_path = out_dir / "score_rpn_false.mid"
-
-                await call("score_export", {**doc_identity, "format": "midi", "exportRPNs": True, "path": str(rpn_true_path)})
-                await call("score_export", {**doc_identity, "format": "midi", "exportRPNs": False, "path": str(rpn_false_path)})
-
-                rpn_true_bytes = rpn_true_path.read_bytes()
-                rpn_false_bytes = rpn_false_path.read_bytes()
-
-                assert rpn_true_bytes != rpn_false_bytes, (
-                    "MIDI files exported with exportRPNs=True and exportRPNs=False must differ in bytes"
-                )
-
-                parsed_rpn_true = parse_midi_file(rpn_true_bytes)
-                parsed_rpn_false = parse_midi_file(rpn_false_bytes)
-
-                rpns_in_true = extract_rpn_controllers(parsed_rpn_true)
-                rpns_in_false = extract_rpn_controllers(parsed_rpn_false)
-
-                # Upstream exportmidi.cpp writes pitch bend sensitivity (RPN 00 00 = 12 semitones)
-                # and resets RPN to 127 127 when exportRPNs is True.
-                assert len(rpns_in_true) > 0, "exportRPNs=True must emit RPN controller messages"
-                assert len(rpns_in_false) == 0, f"exportRPNs=False must not emit RPN messages: {rpns_in_false}"
-
-                # Assert pitch bend sensitivity parameter message structure:
-                # CC 100=0 (LRPN), CC 101=0 (HRPN), CC 6=12 (HDATA)
-                pitch_bend_sens_found = any(
-                    ev["controller"] == 6 and ev["value"] == 12 for ev in rpns_in_true
-                )
-                assert pitch_bend_sens_found, "Pitch bend sensitivity data entry (CC 6 = 12) not found in RPN events"
-
-                # Assert underlying musical Note-On events remain identical
-                _, notes_rpn_true = count_note_on_events(parsed_rpn_true)
-                _, notes_rpn_false = count_note_on_events(parsed_rpn_false)
-                assert [(n["tick"], n["channel"], n["pitch"]) for n in notes_rpn_true] == [
-                    (n["tick"], n["channel"], n["pitch"]) for n in notes_rpn_false
-                ], "Musical Note-On events changed between RPN export options"
-
-                report["evidence"]["rpn_export"] = {
-                    "bytes_differ": True,
-                    "rpn_true_bytes_count": len(rpn_true_bytes),
-                    "rpn_false_bytes_count": len(rpn_false_bytes),
-                    "rpn_controllers_emitted_when_true": len(rpns_in_true),
-                    "rpn_controllers_emitted_when_false": len(rpns_in_false),
-                    "pitch_bend_sensitivity_verified": True,
-                    "note_events_identical": True,
-                }
-
-                # =========================================================================
-                # 8. WAV forwarding only if soundfont supplied
-                # =========================================================================
-                wav_path = out_dir / "score.wav"
-                if soundfont_path:
-                    wav_res = await call("score_export", {**doc_identity, "format": "wav", "path": str(wav_path)})
-                    assert wav_path.is_file() and wav_path.stat().st_size > 0
-                    assert wav_res["bytes"] == wav_path.stat().st_size
-
-                    wav_info = inspect_wav_audio(wav_path)
-                    report["evidence"]["wav_export"] = {
-                        "executed": True,
-                        "soundfont_used": str(soundfont_path),
-                        "audio": wav_info,
-                    }
-                else:
-                    sentinel_wav = out_dir / "sentinel_wav_nosoundfont.dat"
-                    sentinel_wav.write_bytes(b"SENTINEL_WAV_NO_SOUNDFONT")
-                    await call("score_export", {**doc_identity, "format": "wav", "path": str(sentinel_wav)}, expect_error=True)
-                    assert sentinel_wav.read_bytes() == b"SENTINEL_WAV_NO_SOUNDFONT"
-                    survived = await call("score_get", doc_identity)
-                    assert survived["documentId"] == doc_id
-                    report["evidence"]["wav_export"] = {
-                        "executed": False,
-                        "reason": "soundfont not supplied",
-                        "error_cleanly_rejected": True,
-                        "sentinel_preserved": True,
-                        "session_survived": True,
-                    }
-
-                # =========================================================================
-                # 9. Metadata export with tracks populated from score and consistent with mix
-                # =========================================================================
-                meta_path = out_dir / "score_metadata.json"
-                meta_res = await call("score_export", {**doc_identity, "format": "metadata", "path": str(meta_path)})
-                assert meta_path.is_file() and meta_path.stat().st_size > 0
-                assert meta_res["bytes"] == meta_path.stat().st_size
-                meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
-                assert "tracks" in meta_data, "Metadata JSON must contain 'tracks'"
-                assert isinstance(meta_data["tracks"], list) and len(meta_data["tracks"]) > 0, (
-                    "Metadata 'tracks' must not be empty"
-                )
-                first_meta_track = meta_data["tracks"][0]
-                for required_key in ("trackId", "name", "partId", "instrumentId", "volumeDb", "balance", "solo", "muted", "forceMute"):
-                    assert required_key in first_meta_track, f"Metadata track missing required field {required_key}"
-                report["evidence"]["metadata_export"] = {
-                    "executed": True,
-                    "tracks_count": len(meta_data["tracks"]),
-                    "first_track": first_meta_track,
-                }
-
-                # =========================================================================
-                # 10. Metadata tracks available for a 16-part score (>15 parts supported)
-                # =========================================================================
-                # score_create caps the composition contract at 15 parts, so the
-                # 16-part case is imported exactly as a client would encounter it.
-                part_names = [f"Part {index + 1}" for index in range(16)]
-                part_list_xml = "".join(
-                    f'<score-part id="P{index + 1}"><part-name>{name}</part-name></score-part>'
-                    for index, name in enumerate(part_names)
-                )
-                part_bodies = "".join(
-                    f'<part id="P{index + 1}"><measure number="1"><attributes><divisions>1</divisions>'
-                    '<time><beats>4</beats><beat-type>4</beat-type></time>'
-                    '<clef><sign>G</sign><line>2</line></clef></attributes>'
-                    '<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration>'
-                    '<type>quarter</type></note>'
-                    '<note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration>'
-                    '<type>quarter</type></note>'
-                    '<note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration>'
-                    '<type>quarter</type></note>'
-                    '<note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration>'
-                    '<type>quarter</type></note></measure></part>'
-                    for index in range(16)
-                )
-                sixteen_part_xml = (
-                    '<?xml version="1.0" encoding="UTF-8"?>'
-                    '<score-partwise version="4.0"><part-list>'
-                    + part_list_xml + '</part-list>' + part_bodies + '</score-partwise>'
-                )
-                large_doc = await call("score_open", {"musicxml": sixteen_part_xml})
-                large_identity = {"documentId": large_doc["documentId"]}
-                large_get = await call("score_get", large_identity)
-                large_tracks = large_get["metadata"].get("tracks", [])
-                assert len(large_tracks) == 16, (
-                    f"16-part metadata tracks must contain 16 tracks, got {len(large_tracks)}"
-                )
-                large_meta_path = out_dir / "sixteen_parts_metadata.json"
-                large_meta_job = await call(
-                    "score_export_start",
-                    {**large_identity, "format": "metadata", "path": str(large_meta_path)},
-                )
-                deadline = time.monotonic() + 60
-                large_meta_state = None
-                while time.monotonic() < deadline:
-                    large_meta_state = await call("score_job_get", {"jobId": large_meta_job["jobId"]})
-                    if large_meta_state["state"] in ("completed", "failed", "cancelled"):
-                        break
-                    await asyncio.sleep(0.02)
-                assert large_meta_state is not None and large_meta_state["state"] == "completed", large_meta_state
-                bg_meta_tracks = json.loads(large_meta_path.read_text(encoding="utf-8"))["tracks"]
-                assert len(bg_meta_tracks) == 16, f"Background 16-part tracks count {len(bg_meta_tracks)} != 16"
-                await call("score_close", large_identity)
-                report["evidence"]["sixteen_part_metadata"] = {
-                    "executed": True,
-                    "score_get_succeeded": True,
-                    "tracks_count": 16,
-                    "background_metadata": "completed",
-                }
-
-                # Clean up main document
-                await call("score_close", doc_identity)
-
-    assert not protocol_errors, f"Protocol errors during run: {protocol_errors}"
-    stderr_log = (out_dir / "stderr.log").read_text(encoding="utf-8")
-    assert "ERROR:" not in stderr_log, f"Native engine reported ERROR in stderr: {stderr_log}"
-
-    report["seconds"] = round(time.perf_counter() - started, 3)
-    report["status"] = "passed"
-
-    evidence_json = out_dir / "export_options_evidence.json"
-    evidence_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(json.dumps({k: v for k, v in report.items() if k != "calls"}, indent=2))
-
-
-if __name__ == "__main__":
+    out = args.output.resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    evidence = {}
+
+    async with Client(args, out) as client:
+        async def open_xml(xml):
+            return (await client.tool('score_open', {'data': base64.b64encode(xml.encode()).decode(),
+                                                     'format': 'musicxml'}))['document']
+        async def export(doc, kind, options, name, action='run'):
+            fmt = options.get('format')
+            directory = kind == 'render' and fmt in ('svg', 'png')
+            destination = out / name
+            if directory: destination.mkdir(exist_ok=True)
+            result = await client.tool('score_export', {'document': doc, 'action': action, 'kind': kind,
+                'options': options, 'destination': {'kind': 'directory' if directory else 'file', 'path': str(destination)}})
+            if action == 'start':
+                status = await client.terminal(result['job'])
+                assert status['state'] == 'succeeded', status
+                artifacts = status['artifacts']
+            else: artifacts = result['artifacts']
+            assert artifacts and all(Path(item['path']).stat().st_size == int(item['size']) > 0 for item in artifacts)
+            return [Path(item['path']) for item in artifacts]
+
+        doc = await open_xml(fixture())
+        revision = (await client.tool('score_outline', {'document': doc}))['revision']
+        original = (await export(doc, 'score', {'format': 'musicxml'}, 'original.musicxml'))[0]
+        original_notes, original_measures = canonical_notes(original)
+        mscx = (await export(doc, 'score', {'format': 'mscx'}, 'score.mscx'))[0]
+        assert ET.parse(mscx).getroot().tag == 'museScore'
+        reopened = (await client.tool('score_open', {'path': str(mscx)}))['document']
+        reopened_xml = (await export(reopened, 'score', {'format': 'musicxml'}, 'reopened.musicxml'))[0]
+        assert canonical_notes(reopened_xml) == (original_notes, original_measures)
+        await client.tool('score_close', {'document': reopened})
+        evidence['mscx_roundtrip'] = True
+
+        def png(name, **options):
+            return export(doc, 'render', {'format': 'png', 'first_page': 0, 'last_page': 0, **options}, name)
+        p72 = (await png('png72', dpi=72))[0]
+        p144 = (await png('png144', dpi=144))[0]
+        w72,h72 = read_png_dimensions(p72)
+        w144,h144 = read_png_dimensions(p144)
+        assert w72 > 0 and h72 > 0 and abs(w144 - 2*w72) <= 1 and abs(h144 - 2*h72) <= 1
+        transparent = (await png('transparent', transparent=True))[0]
+        opaque = (await png('opaque', transparent=False))[0]
+        assert inspect_png_alpha(transparent)['has_transparency']
+        assert not inspect_png_alpha(opaque)['has_transparency']
+        nobg = (await png('nobg', background=False))[0]
+        withbg = (await png('withbg', background=True))[0]
+        with Image.open(nobg) as image: assert image.convert('RGBA').getpixel((0,0))[3] == 0
+        with Image.open(withbg) as image: assert image.convert('RGBA').getpixel((0,0)) == (255,255,255,255)
+        with Image.open(opaque) as image: assert image.convert('RGBA').getpixel((0,0)) == (255,255,255,255)
+        svg_nobg = (await export(doc, 'render', {'format': 'svg', 'first_page': 0, 'last_page': 0, 'background': False}, 'svg-nobg'))[0]
+        svg_withbg = (await export(doc, 'render', {'format': 'svg', 'first_page': 0, 'last_page': 0, 'background': True}, 'svg-withbg'))[0]
+        def white_paths(path):
+            return sum(e.tag.endswith('path') and e.get('fill','').replace(' ','') == 'rgb(100%,100%,100%)'
+                       for e in ET.parse(path).getroot().iter())
+        assert white_paths(svg_withbg) > white_paths(svg_nobg)
+        evidence['render'] = {'dpi72': [w72,h72], 'dpi144': [w144,h144], 'alpha_and_background': True}
+
+        bad_cases = [
+            ('render', {'format':'png','dpi':'high'}), ('render', {'format':'png','dpi':True}),
+            ('render', {'format':'png','transparent':'false'}), ('render', {'format':'svg','background':'yes'}),
+            ('score', {'format':'midi','midi_expand_repeats':123}), ('score', {'format':'midi','midi_rpns':'false'}),
+            ('render', {'format':'svg','dpi':144}), ('score', {'format':'midi','dpi':144}),
+            ('render', {'format':'svg','transparent':False}), ('score', {'format':'midi','transparent':False}),
+            ('score', {'format':'midi','background':True}), ('score', {'format':'musicxml','background':True}),
+            ('render', {'format':'png','midi_expand_repeats':True}), ('render', {'format':'png','midi_rpns':True}),
+            ('score', {'format':'midi','first_page':0}), ('render', {'format':'png','dpi':35}),
+            ('render', {'format':'png','dpi':1201}), ('render', {'format':'svg','first_page':-1}),
+            ('render', {'format':'svg','first_page':999}),
+        ]
+        for kind, fmt in [('render','svg'),('render','png'),('score','midi'),('score','musicxml'),('render','pdf'),('score','mscz')]:
+            bad_cases.append((kind, {'format':fmt,'master_volume_db':0}))
+        for key, val in [('master_volume_db',24.1),('master_volume_db',-120.1),('master_balance',1.1),('master_balance',-1.1)]:
+            bad_cases.append(('audio', {'format':'wav',key:val}))
+        for key,val in [('volume_db',24.1),('volume_db',-120.1),('balance',1.1),('balance',-1.1),('forceMute',True),('output',{}),('unexpected',1)]:
+            bad_cases.append(('audio', {'format':'wav','tracks':[{'track':0,key:val}]}))
+        bad_cases.extend([('audio', {'format':'wav','tracks':[{'track':-1}]}),
+                          ('audio', {'format':'wav','unexpected':True}),
+                          ('audio', {'format':'wav','master':{'unexpected':True}}),
+                          ('audio', {'format':'wav','master_solo':True}),
+                          ('audio', {'format':'wav','master_mute':True}),
+                          ('audio', {'format':'wav','tracks':[{'track':0},{'track':0}]}),
+                          ('audio', {'format':'wav','tracks':[{'track':999999}]})])
+        for i,(kind,options) in enumerate(bad_cases):
+            directory = kind == 'render' and options['format'] in ('svg','png')
+            target = out / f'sentinel-{i}'
+            if directory:
+                target.mkdir(exist_ok=True)
+                sentinel = target / 'keep'
+            else: sentinel = target
+            sentinel.write_bytes(b'unchanged')
+            await client.tool('score_export', {'document':doc,'action':'run','kind':kind,'options':options,
+                'destination':{'kind':'directory' if directory else 'file','path':str(target)}}, error=True)
+            assert sentinel.read_bytes() == b'unchanged'
+            if directory: assert {x.name for x in target.iterdir()} == {'keep'}
+            assert (await client.tool('score_outline', {'document':doc}))['revision'] == revision
+        evidence['invalid_options'] = len(bad_cases)
+
+        repeat = await open_xml(REPEAT_FIXTURE_MUSICXML)
+        expanded = (await export(repeat,'score',{'format':'midi','midi_expand_repeats':True},'expanded.mid'))[0]
+        unexpanded = (await export(repeat,'score',{'format':'midi','midi_expand_repeats':False},'unexpanded.mid'))[0]
+        count_exp,_ = count_note_on_events(parse_midi_file(expanded.read_bytes()))
+        count_unexp,_ = count_note_on_events(parse_midi_file(unexpanded.read_bytes()))
+        assert count_exp == 2*count_unexp and count_unexp > 0
+        wav_exp = (await export(repeat,'audio',{'format':'wav','use_repeats':True},'expanded.wav'))[0]
+        wav_unexp = (await export(repeat,'audio',{'format':'wav','use_repeats':False},'unexpanded.wav'))[0]
+        assert inspect_wav_audio(wav_exp)['duration_seconds'] > inspect_wav_audio(wav_unexp)['duration_seconds'] + 3.5
+        await client.tool('score_close', {'document':repeat})
+        evidence['repeat_note_ons'] = [count_exp,count_unexp]
+
+        rpn_on = (await export(doc,'score',{'format':'midi','midi_rpns':True},'rpn-on.mid'))[0]
+        rpn_off = (await export(doc,'score',{'format':'midi','midi_rpns':False},'rpn-off.mid'))[0]
+        assert rpn_on.read_bytes() != rpn_off.read_bytes()
+        on,off = parse_midi_file(rpn_on.read_bytes()),parse_midi_file(rpn_off.read_bytes())
+        rpns_on,rpns_off = extract_rpn_controllers(on),extract_rpn_controllers(off)
+        assert rpns_on and not rpns_off and any(e['controller']==6 and e['value']==12 for e in rpns_on)
+        _,notes_on = count_note_on_events(on)
+        _,notes_off = count_note_on_events(off)
+        assert [(n['tick'],n['channel'],n['pitch']) for n in notes_on] == [(n['tick'],n['channel'],n['pitch']) for n in notes_off]
+        evidence['rpn_controllers'] = [len(rpns_on),len(rpns_off)]
+        wav = (await export(doc,'audio',{'format':'wav'},'score.wav'))[0]
+        evidence['wav'] = inspect_wav_audio(wav)
+        info = await client.tool('score_query', {'document':doc,'mode':'audio_tracks'})
+        assert len(info['audio_tracks']['tracks']) == len((await client.tool('score_outline', {'document':doc}))['outline']['parts'])
+        await client.tool('score_close', {'document':doc})
+
+        parts = ''.join(f'<score-part id="P{i}"><part-name>Part {i}</part-name></score-part>' for i in range(1,17))
+        bodies = ''.join(f'<part id="P{i}"><measure number="1"><attributes><divisions>1</divisions>'
+            '<time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>'
+            '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note>'
+            '</measure></part>' for i in range(1,17))
+        large = await open_xml('<score-partwise version="4.0"><part-list>'+parts+'</part-list>'+bodies+'</score-partwise>')
+        assert len((await client.tool('score_query', {'document':large,'mode':'audio_tracks'}))['audio_tracks']['tracks']) == 16
+        native = (await export(large,'score',{'format':'mscz'},'sixteen.mscz',action='start'))[0]
+        restored = (await client.tool('score_open', {'path':str(native)}))['document']
+        assert len((await client.tool('score_query', {'document':restored,'mode':'audio_tracks'}))['audio_tracks']['tracks']) == 16
+        await client.tool('score_close', {'document':restored})
+        await client.tool('score_close', {'document':large})
+        evidence['sixteen_part_tracks'] = 16
+
+    evidence['status'] = 'passed'
+    (out/'export_options_evidence.json').write_text(json.dumps(evidence,indent=2),encoding='utf-8')
+    print(json.dumps(evidence))
+
+
+if __name__ == '__main__':
     asyncio.run(asyncio.wait_for(main(), timeout=180))

@@ -812,6 +812,12 @@ excerpt mix settings, multi-instrument tracks and run/start parity. The removed
 v1 metadata-track projection remains covered only by the explicitly named v1
 baseline client; it is not a live v2 capability.
 
+The migrated `export_options` checks MSCX/MusicXML note round trips, PNG DPI,
+alpha and background, SVG background, 43 invalid options with destination
+preservation, MIDI repeat and RPN output, repeat-expanded audio, and 16-part
+track queries including after an asynchronous MSCZ export. The removed v1
+metadata-file assertions remain executable in `test_legacy_export_options.py`.
+
 ## Roadmap-engrave A4 S0: engine build in the fork (2026-10-30)
 
 The engine's xmake build moved into the fork (`engrave` `a4/s0-build`, tip
