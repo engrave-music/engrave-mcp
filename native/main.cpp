@@ -1,10 +1,13 @@
-#include "engine.h"
 #include "mcp_transport.h"
 #include "async_session.h"
 #include "background_job.h"
+#include "registry.h"
 #include "worker_protocol.h"
+#include <chrono>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <thread>
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
@@ -12,8 +15,17 @@
 
 int main(int argc, char** argv) {
     try {
-        if (argc == 3 && std::string(argv[1]) == "--worker")
-            return music::run_export_worker(std::filesystem::absolute(std::filesystem::u8path(argv[2])));
+        if (argc == 3 && std::string(argv[1]) == "--worker") {
+            const auto request = std::filesystem::absolute(std::filesystem::u8path(argv[2]));
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+            // Deterministic queue/cancellation tests; absent from the production host.
+            std::ifstream in(request, std::ios::binary);
+            const auto data = music::Json::parse(in);
+            if (data.at("export").at("destination").at("path").get<std::string>().find(".test-slow") != std::string::npos)
+                std::this_thread::sleep_for(std::chrono::seconds(4));
+#endif
+            return music::run_export_worker(request);
+        }
 #ifdef _WIN32
         if (_setmode(_fileno(stdin), _O_BINARY) == -1 || _setmode(_fileno(stdout), _O_BINARY) == -1)
             throw std::runtime_error("Cannot configure binary stdio");
@@ -24,27 +36,23 @@ int main(int argc, char** argv) {
             else if (std::string(argv[i]) == "--resources" && i + 1 < argc) resources = argv[++i];
             else throw std::invalid_argument("Usage: musescore-mcp [--soundfont FILE.sf2|FILE.sf3] [--resources DIR]");
         }
-        music::AsyncSession session(music::RuntimeOptions{resources, soundfont}, music::current_executable_path());
+        engrave::EngineOptions options;
+        options.resources = resources.empty() ? music::current_executable_path().parent_path() / "assets"
+                                              : std::filesystem::absolute(std::filesystem::u8path(resources));
+        if (!soundfont.empty()) options.soundfonts.push_back(std::filesystem::absolute(std::filesystem::u8path(soundfont)));
+        music::AsyncSession session(std::move(options));
         return music::serve_stdio_async([] {
-            auto tools = music::Json::parse(music::Engine::tools_json());
+            auto tools = music::v2::tools_json();
 #ifdef MUSIC_ASYNC_TEST_HOOKS
             tools.push_back({{"name", "test_owner_state"}, {"description", "Test-only owner-thread state"},
                              {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
             tools.push_back({{"name", "test_owner_sleep"}, {"description", "Test-only owner-thread stall"},
                              {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
-            tools.push_back({{"name", "test_poison_document"}, {"description", "Test-only poison document"},
-                             {"inputSchema", {{"type", "object"},
-                                              {"properties", {{"documentId", {{"type", "string"}}}}},
-                                              {"required", {"documentId"}},
-                                              {"additionalProperties", false}}}});
 #endif
             return tools;
         },
             [&](std::string name, music::Json args) { return session.call(std::move(name), std::move(args)); },
             [&] {
-                // A synchronous audio export may be waiting on its worker on the
-                // owner thread; terminate it before shutdown joins that thread.
-                music::request_worker_shutdown();
                 session.shutdown();
             });
     } catch (const std::exception& e) {

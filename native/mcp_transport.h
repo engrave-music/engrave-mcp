@@ -14,16 +14,12 @@ using Json = nlohmann::json;
 
 // Structured, transport-independent failure raised by AsyncSession (or any
 // tool implementation) when a call has a stable machine-readable code. The
-// transport serialises it as an MCP tool error with a structuredContent.error
-// object and a legacy text content item. Details must be JSON-serialisable.
+// transport serialises it as a v2 error envelope and a bounded text item.
 class ToolCallError : public std::runtime_error {
 public:
-    ToolCallError(std::string code,
-                  std::string message,
-                  Json details = Json::object());
+    ToolCallError(std::string code, std::string message);
 
     std::string code;
-    Json details;
 };
 
 using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json)>;

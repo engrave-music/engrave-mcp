@@ -10,13 +10,13 @@ PROTOCOL_VERSION = "2025-11-25"
 EXPECTED_TOOLS = [
     tool["name"]
     for tool in json.loads(
-        (Path(__file__).resolve().parents[1] / "native/legacy_tools.json").read_text(encoding="utf-8")
+        (Path(__file__).resolve().parents[1] / "native/tools.json").read_text(encoding="utf-8")
     )
 ]
 EXPECTED_RESPONSE_IDS = [None, None, None, None, None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 EXPECTED_RESPONSE_COUNT = 15
 TIMEOUT_SECONDS = 45
-OVERSIZED_LINE_BYTES = 8 * 1024 * 1024 + 10
+OVERSIZED_LINE_BYTES = 4 * 1024 * 1024 + 10
 DEFAULT_VALIDATION_PATH = Path("artifacts") / "transport-validation.json"
 
 
@@ -41,9 +41,7 @@ def _run_server(exe: str, payload: str) -> dict:
     try:
         completed = subprocess.run(
             [exe] + (["--resources", os.environ["MUSIC_MCP_RESOURCES"]] if os.environ.get("MUSIC_MCP_RESOURCES") else []),
-            input=payload,
-            text=True,
-            encoding="utf-8",
+            input=payload.encode("utf-8"),
             timeout=TIMEOUT_SECONDS,
             capture_output=True,
         )
@@ -231,6 +229,8 @@ def _check_main_responses(failures: list[str], responses: list[dict]) -> list[st
             if not isinstance(tools, list):
                 failures.append("id 3 (tools/list): tools is not an array")
             else:
+                expected_schema = json.loads((Path(__file__).resolve().parents[1] / "native/tools.json").read_text(encoding="utf-8"))
+                _check(failures, tools == expected_schema, "id 3 (tools/list): registry schemas differ")
                 for position, tool in enumerate(tools, 1):
                     if not isinstance(tool, dict):
                         failures.append(
@@ -268,7 +268,7 @@ def _check_main_responses(failures: list[str], responses: list[dict]) -> list[st
         (2, -32600, "tools/list before initialized"),
         (5, -32602, "unknown tool"),
         (6, -32602, "tools/call missing name"),
-        (7, -32602, "tools/call arguments array"),
+        (7, -32602, "tools/call non-string name"),
         (8, -32601, "unknown method"),
         (9, -32600, "repeated initialize"),
     )
@@ -399,7 +399,7 @@ def main() -> int:
                 "jsonrpc": "2.0",
                 "id": 7,
                 "method": "tools/call",
-                "params": {"name": "score_open", "arguments": []},
+                "params": {"name": 7, "arguments": {}},
             }
         ),
         _compact({"jsonrpc": "2.0", "id": 8, "method": "transport/unknown"}),
@@ -429,12 +429,11 @@ def main() -> int:
 
     oversized_line = '"' + ("a" * (OVERSIZED_LINE_BYTES - 2)) + '"'
     oversized_line_bytes = len(oversized_line.encode("utf-8"))
-    oversized_input = (
-        oversized_line
-        + "\n"
-        + _compact({"jsonrpc": "2.0", "id": 99, "method": "ping"})
-        + "\n"
-    )
+    boundary_prefix = '{"jsonrpc":"2.0","id":99,"method":"ping","params":{"padding":"'
+    boundary_suffix = '"}}'
+    boundary_line = boundary_prefix + "a" * (4 * 1024 * 1024 - len(boundary_prefix) - len(boundary_suffix)) + boundary_suffix
+    assert len(boundary_line.encode("utf-8")) == 4 * 1024 * 1024
+    oversized_input = oversized_line + "\n" + boundary_line + "\n"
 
     failures: list[str] = []
     tool_names: list[str] = []

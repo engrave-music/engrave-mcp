@@ -71,7 +71,10 @@ int main(int argc,char** argv) {
         fs::copy_file(original_sf,sf_input);
         { std::ofstream f(invalid_sf,std::ios::binary); f << "not a soundfont"; }
         engrave::EngineOptions options; options.resources=assets; options.fonts={font_input}; options.soundfonts={sf_input};
-        auto made=HostApi::create(options); require(bool(made),made?"":made.error().message);
+        music::v2::JobLimits configured;
+        configured.queue_capacity=3; configured.snapshot_bytes=123456; configured.output_bytes=234567;
+        configured.deadline=std::chrono::milliseconds(3456);
+        auto made=HostApi::create(options,configured); require(bool(made),made?"":made.error().message);
         auto host=std::move(*made);
         auto initial=host->capture_runtime(); require(bool(initial),"initial capture failed");
         require(initial->asset_lease && initial->options.fonts.size()==1 && initial->options.soundfonts.size()==1,"startup assets absent");
@@ -84,6 +87,11 @@ int main(int argc,char** argv) {
 
         auto info=ok(*host,"runtime_info",Json::object());
         require(info.at("tool_revision")=="2" && !info.at("templates").empty(),"runtime catalogue is empty");
+        const auto& limits=info.at("limits");
+        require(limits.at("queue_capacity")==3 && limits.at("snapshot_bytes")=="123456" &&
+                limits.at("output_bytes")=="234567" && limits.at("deadline_ms")==3456 &&
+                limits.at("export_workers")==2 && limits.at("transport_request_bytes")==4194304 &&
+                limits.at("worker_request_bytes")==4194304,"runtime limits differ from configuration");
         auto created=ok(*host,"score_create",{{"template_id","Treble_Clef"},{"title","Store test"}});
         auto doc=created.at("document").get<std::string>(); require(created.at("revision")=="1","new revision differs from 1");
         auto outline=ok(*host,"score_outline",{{"document",doc},{"expected_revision","1"}});

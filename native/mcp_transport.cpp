@@ -58,11 +58,9 @@
 namespace music {
 
 ToolCallError::ToolCallError(std::string error_code,
-                             std::string message,
-                             Json error_details)
+                             std::string message)
     : std::runtime_error(std::move(message)),
-      code(std::move(error_code)),
-      details(std::move(error_details)) {}
+      code(std::move(error_code)) {}
 
 namespace {
 
@@ -1129,7 +1127,7 @@ private:
 
         case ReaderEvent::Kind::Oversize:
             co_return co_await send_error(
-                nullptr, -32700, "Parse error: line exceeds 8 MiB limit");
+                nullptr, -32700, "Parse error: line exceeds 4 MiB limit");
 
         case ReaderEvent::Kind::Error:
             try {
@@ -1376,11 +1374,6 @@ private:
                 std::string tool_name = params["name"].get<std::string>();
                 Json arguments = Json::object();
                 if (params.contains("arguments")) {
-                    if (!params["arguments"].is_object()) {
-                        co_return co_await send_error(
-                            id, -32602,
-                            "Invalid params: arguments must be an object");
-                    }
                     arguments = params["arguments"];
                 }
 
@@ -1566,7 +1559,6 @@ private:
         FailureDelivery delivery = FailureDelivery::None;
         std::string error_code;
         std::string error_message;
-        Json error_details;
 
         try {
             Json payload = co_await call_tool_(std::move(name), std::move(arguments));
@@ -1583,10 +1575,10 @@ private:
                 maybe_finish_graceful();
                 co_return;
             }
-            if (!payload.is_object()) {
+            if (!payload.is_object() || !payload.contains("ok") || !payload["ok"].is_boolean()) {
                 co_await deliver_tool_error(
-                    call, "internal_error",
-                    "Tool result must be an object", Json::object());
+                    call, "EngineFailure",
+                    "Tool result must be an envelope with a boolean ok field");
                 co_return;
             }
 
@@ -1602,12 +1594,15 @@ private:
                 delivery = FailureDelivery::ToolError;
                 error_code = error.code;
                 error_message = error.what();
-                error_details = error.details;
             }
         } catch (const std::system_error& error) {
             if (call->cancel_requested &&
                 is_operation_aborted_code(error)) {
                 delivery = FailureDelivery::Cancelled;
+            } else if (is_operation_aborted_code(error)) {
+                delivery = FailureDelivery::ToolError;
+                error_code = "Cancelled";
+                error_message = "Session is shutting down";
             } else {
                 delivery = FailureDelivery::Generic;
                 error_message = error.what();
@@ -1632,8 +1627,7 @@ private:
             break;
         case FailureDelivery::ToolError:
             co_await deliver_tool_error(
-                call, std::move(error_code), std::move(error_message),
-                std::move(error_details));
+                call, std::move(error_code), std::move(error_message));
             break;
         case FailureDelivery::Generic:
             co_await deliver_generic_error(call, std::move(error_message));
@@ -1657,30 +1651,21 @@ private:
 
         Json result = Json::object();
         result["content"] = Json::array({std::move(content_item)});
+        result["isError"] = payload.contains("ok") && payload["ok"] == false;
         result["structuredContent"] = std::move(payload);
-        result["isError"] = false;
         return result;
     }
 
     static Json make_tool_error_result(const std::string& code,
-                                       const std::string& message,
-                                       const Json& details,
-                                       bool structured) {
+                                       const std::string& message) {
         Json content_item = Json::object();
         content_item["type"] = "text";
-        content_item["text"] = message;
+        const auto bounded_message = message.substr(0, 16384);
+        content_item["text"] = bounded_message;
 
         Json result = Json::object();
         result["content"] = Json::array({std::move(content_item)});
-        if (structured) {
-            result["structuredContent"] = {
-                {"error", {
-                    {"code", code},
-                    {"message", message},
-                    {"details", details}
-                }}
-            };
-        }
+        result["structuredContent"] = {{"ok", false}, {"error", {{"code", code}, {"message", bounded_message}}}};
         result["isError"] = true;
         return result;
     }
@@ -1698,15 +1683,10 @@ private:
             co_await send_result_status(call->id, std::move(result));
         if (status == WireStatus::TooLarge &&
             !fatal_.load(std::memory_order_acquire)) {
-            Json details = {
-                {"limit_bytes", kMaxResponseBytes},
-                {"operation_may_have_completed", true}
-            };
             Json fallback = make_tool_error_result(
-                "resource_limit",
+                "ResourceLimit",
                 "Tool response exceeds the 16 MiB transport limit; "
-                "the requested operation may already have completed.",
-                details, true);
+                "the requested operation may already have completed.");
             const WireStatus fallback_status =
                 co_await send_result_status(call->id, std::move(fallback));
             if (fallback_status == WireStatus::TooLarge) {
@@ -1723,8 +1703,7 @@ private:
 
     asio::awaitable<void> deliver_tool_error(const CallStatePtr& call,
                                              std::string code,
-                                             std::string message,
-                                             Json details) {
+                                             std::string message) {
         if (call->responded || fatal_.load(std::memory_order_acquire)) {
             call->responded = true;
             erase_inflight(call);
@@ -1733,18 +1712,15 @@ private:
         }
         call->responded = true;
 
-        Json result = make_tool_error_result(
-            code, message, details, true);
+        Json result = make_tool_error_result(code, message);
         const WireStatus status =
             co_await send_result_status(call->id, std::move(result));
         if (status == WireStatus::TooLarge &&
             !fatal_.load(std::memory_order_acquire)) {
-            // Even an error payload can exceed the budget if a tool supplied
-            // huge details. Fall back to a tiny bounded resource error.
+            // Fall back to a tiny bounded resource error.
             Json fallback = make_tool_error_result(
-                "resource_limit",
-                "Tool error details exceed the 16 MiB transport limit.",
-                Json{{"limit_bytes", kMaxResponseBytes}}, true);
+                "ResourceLimit",
+                "Tool error exceeds the 16 MiB transport limit.");
             if (co_await send_result_status(call->id, std::move(fallback)) ==
                 WireStatus::TooLarge) {
                 fatal_shutdown("tool error response exceeded 16 MiB");
@@ -1769,10 +1745,8 @@ private:
         if (message.empty()) {
             message = "Unknown application error";
         }
-        // Preserve the legacy generic tool-error shape: legacy text content
-        // and isError, without a structured error object.
         Json result = make_tool_error_result(
-            "internal_error", message, Json::object(), false);
+            "EngineFailure", message);
         const WireStatus status =
             co_await send_result_status(call->id, std::move(result));
         if (status == WireStatus::TooLarge) {

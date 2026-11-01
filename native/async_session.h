@@ -4,12 +4,12 @@
 #include <memory>
 #include <string>
 #include <nlohmann/json.hpp>
+#include <engrave/engine.h>
 namespace music {
-struct RuntimeOptions;
 // Invoke on the session I/O thread. A separate owning OS thread contains the engine.
 class AsyncSession {
 public:
-    AsyncSession(RuntimeOptions options, std::filesystem::path executable);
+    explicit AsyncSession(engrave::EngineOptions options);
     ~AsyncSession();
     AsyncSession(const AsyncSession&) = delete;
     AsyncSession& operator=(const AsyncSession&) = delete;
