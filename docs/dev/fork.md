@@ -89,6 +89,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 
 | `engrave-26` | `fd25d800bf` | `32f0a26e5b` | `da3885cb` | Interruptible 4.70 conversion (`feat/write470-cancel`, `0ed6e4d9a9`; this merge has its tree): the converted XML polls the capture cancellation callback every ≤4 KiB, so a client cancel or deadline aborts mid-conversion with `Cancelled` and publishes nothing, while the working/output budgets stay enforced. The host's request cancellation reaches that callback; eight host cases observed the abort at serialization unit 2, destinations stayed absent, `-32800`/`DeadlineExceeded` were returned as documented, and a following export in the same session succeeded. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
 
+| `engrave-27` | `c0b6eee825` | `32f0a26e5b` | `da3885cb` | Build portability (`fix/climits`, `5ef76556a5`; this merge has its tree): the translation units that used integer-limit macros now include `<climits>` directly, so a canonical Linux build needs no `-include climits` workaround. No behaviour change. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
+
 The superproject's `.gitmodules` now tracks `branch = main`.
 
 ## History: mcp/v4.7.x (frozen)
