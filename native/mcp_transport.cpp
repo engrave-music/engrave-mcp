@@ -87,8 +87,6 @@ constexpr std::size_t kMaxOutputMessages = 256u;
 // structuredContent, keeping the authoritative structured result intact.
 constexpr std::size_t kMaxLegacyTextBytes = 4u * 1024u * 1024u;
 
-constexpr int kPollMilliseconds = 5;
-
 constexpr int kReadError = -1;
 constexpr int kReadEof = 0;
 constexpr int kReadStopped = -2;
@@ -190,6 +188,11 @@ public:
           shutdown_(shutdown),
           work_(asio::make_work_guard(ioc)) {
         inflight_.reserve(kMaxInflightCalls);
+#if !defined(_WIN32)
+        if (::pipe2(reader_wake_, O_CLOEXEC | O_NONBLOCK) != 0) {
+            throw std::system_error(errno, std::generic_category(), "stdin wake pipe");
+        }
+#endif
     }
 
     Session(const Session&) = delete;
@@ -199,6 +202,9 @@ public:
         stop_threads();
 #if defined(_WIN32)
         close_os_handles();
+#else
+        ::close(reader_wake_[0]);
+        ::close(reader_wake_[1]);
 #endif
     }
 
@@ -217,6 +223,15 @@ public:
         request_writer_abort();
         if (reader_thread_.joinable()) {
             reader_thread_.request_stop();
+#if defined(_WIN32)
+            // CancelSynchronousIo can race the reader entering ReadFile. Retry
+            // only during teardown until the thread exits; normal reads block
+            // without timers or polling. The thread handle stays valid to join.
+            HANDLE thread = reader_thread_.native_handle();
+            while (::WaitForSingleObject(thread, 1) == WAIT_TIMEOUT) {
+                ::CancelSynchronousIo(thread);
+            }
+#endif
             reader_thread_.join();
         }
         if (writer_thread_.joinable()) {
@@ -275,6 +290,9 @@ private:
         if (handle != nullptr) {
             ::CancelSynchronousIo(handle);
         }
+#else
+        const char wake = 1;
+        while (::write(reader_wake_[1], &wake, 1) < 0 && errno == EINTR) {}
 #endif
     }
 
@@ -418,107 +436,29 @@ private:
                    const std::stop_token& stop,
                    std::string& error) {
 #if defined(_WIN32)
-        const int fd = _fileno(stdin);
-        bool pipe_mode = false;
-        HANDLE handle = INVALID_HANDLE_VALUE;
-
-        const auto raw = _get_osfhandle(fd);
-        if (raw >= 0) {
-            handle = reinterpret_cast<HANDLE>(raw);
-            pipe_mode = ::GetFileType(handle) == FILE_TYPE_PIPE;
+        const auto raw = _get_osfhandle(_fileno(stdin));
+        if (raw == -1) {
+            error = "invalid stdin handle";
+            return kReadError;
         }
-
-        if (pipe_mode) {
-            for (;;) {
-                if (stop.stop_requested() ||
-                    stop_reader_.load(std::memory_order_acquire)) {
-                    return kReadStopped;
-                }
-
-                DWORD available = 0;
-                if (!::PeekNamedPipe(handle, nullptr, 0, nullptr, &available, nullptr)) {
-                    const DWORD last_error = ::GetLastError();
-                    if (last_error == ERROR_BROKEN_PIPE ||
-                        last_error == ERROR_PIPE_NOT_CONNECTED ||
-                        last_error == ERROR_HANDLE_EOF) {
-                        return kReadEof;
-                    }
-                    if (last_error == ERROR_INVALID_HANDLE ||
-                        last_error == ERROR_INVALID_FUNCTION) {
-                        // Fall back to a blocking CRT read below.
-                        break;
-                    }
-                    error = "PeekNamedPipe failed with error " +
-                        std::to_string(static_cast<unsigned long>(last_error));
-                    return kReadError;
-                }
-
-                if (available > 0) {
-                    const std::size_t wanted =
-                        static_cast<std::size_t>(available) < capacity
-                            ? static_cast<std::size_t>(available)
-                            : capacity;
-                    const unsigned int want = static_cast<unsigned int>(wanted);
-                    const int n = _read(fd, buffer, want);
-                    if (n < 0) {
-                        if (stop.stop_requested() ||
-                            stop_reader_.load(std::memory_order_acquire)) {
-                            return kReadStopped;
-                        }
-                        if (errno == EINTR) {
-                            continue;
-                        }
-                        if (errno == EAGAIN) {
-                            std::this_thread::sleep_for(
-                                std::chrono::milliseconds(kPollMilliseconds));
-                            continue;
-                        }
-                        error = "stdin read failed: " +
-                            std::error_code(errno, std::generic_category()).message();
-                        return kReadError;
-                    }
-                    if (n == 0) {
-                        return kReadEof;
-                    }
-                    return n;
-                }
-
-                // Pipe polling is deliberately short: cancellation and EOF
-                // must be observed promptly even when stdin is idle.
-                std::this_thread::sleep_for(
-                    std::chrono::milliseconds(kPollMilliseconds));
-            }
+        if (stop.stop_requested() || stop_reader_.load(std::memory_order_acquire)) {
+            return kReadStopped;
         }
-
-        for (;;) {
-            if (stop.stop_requested() ||
-                stop_reader_.load(std::memory_order_acquire)) {
-                return kReadStopped;
-            }
-
-            constexpr std::size_t max_read = 0x7fffffffu;
-            const std::size_t wanted = capacity < max_read ? capacity : max_read;
-            const unsigned int want = static_cast<unsigned int>(wanted);
-            const int n = _read(fd, buffer, want);
-            if (n < 0) {
-                if (stop.stop_requested() ||
-                    stop_reader_.load(std::memory_order_acquire)) {
-                    return kReadStopped;
-                }
-                if (errno == EINTR) {
-                    continue;
-                }
-                if (errno == EAGAIN) {
-                    std::this_thread::sleep_for(
-                        std::chrono::milliseconds(kPollMilliseconds));
-                    continue;
-                }
-                error = "stdin read failed: " +
-                    std::error_code(errno, std::generic_category()).message();
-                return kReadError;
-            }
-            return n;
+        DWORD count = 0;
+        if (::ReadFile(reinterpret_cast<HANDLE>(raw), buffer,
+                       static_cast<DWORD>(capacity), &count, nullptr)) {
+            return static_cast<int>(count);
         }
+        const DWORD code = ::GetLastError();
+        if (stop.stop_requested() || stop_reader_.load(std::memory_order_acquire)) {
+            return kReadStopped;
+        }
+        if (code == ERROR_BROKEN_PIPE || code == ERROR_PIPE_NOT_CONNECTED ||
+            code == ERROR_HANDLE_EOF) {
+            return kReadEof;
+        }
+        error = "stdin ReadFile failed with error " + std::to_string(code);
+        return kReadError;
 #else
         for (;;) {
             if (stop.stop_requested() ||
@@ -526,12 +466,10 @@ private:
                 return kReadStopped;
             }
 
-            struct pollfd descriptor;
-            descriptor.fd = STDIN_FILENO;
-            descriptor.events = static_cast<short>(POLLIN);
-            descriptor.revents = 0;
-
-            const int ready = ::poll(&descriptor, 1, 100);
+            struct pollfd descriptors[2] = {
+                {STDIN_FILENO, POLLIN, 0}, {reader_wake_[0], POLLIN, 0}
+            };
+            const int ready = ::poll(descriptors, 2, -1);
             if (ready < 0) {
                 if (errno == EINTR) {
                     continue;
@@ -540,14 +478,14 @@ private:
                     std::error_code(errno, std::generic_category()).message();
                 return kReadError;
             }
-            if (ready == 0) {
-                continue;
+            if (descriptors[1].revents != 0) {
+                return kReadStopped;
             }
-            if ((descriptor.revents & (POLLERR | POLLNVAL)) != 0) {
+            if ((descriptors[0].revents & (POLLERR | POLLNVAL)) != 0) {
                 error = "stdin poll reported an error";
                 return kReadError;
             }
-            if ((descriptor.revents & (POLLIN | POLLHUP)) == 0) {
+            if ((descriptors[0].revents & (POLLIN | POLLHUP)) == 0) {
                 continue;
             }
 
@@ -776,7 +714,7 @@ private:
                     descriptor.fd = STDOUT_FILENO;
                     descriptor.events = static_cast<short>(POLLOUT);
                     descriptor.revents = 0;
-                    const int ready = ::poll(&descriptor, 1, kPollMilliseconds);
+                    const int ready = ::poll(&descriptor, 1, 5);
                     if (ready < 0 && errno == EINTR) {
                         continue;
                     }
@@ -1927,6 +1865,7 @@ private:
     std::atomic<void*> reader_handle_{nullptr};
     std::atomic<void*> writer_handle_{nullptr};
 #if !defined(_WIN32)
+    int reader_wake_[2] = {-1, -1};
     int original_stdout_flags_ = -1;
 #endif
 };
