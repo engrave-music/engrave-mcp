@@ -27,6 +27,10 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-014 | Snapshot rendering changes an unedited score's version header | Resolved by contract | SOURCE-REVIEWED, EXECUTED | The owner keeps the source version; a written and reopened snapshot and its render report the writer version |
 | DEFECT-ENGRAVE-015 | Snapshot render drift exceeds the S3 example | Accepted limitation, exact outputs pinned | SOURCE-REVIEWED, EXECUTED | Fourteen measured outputs differ beyond the original small-drift limits |
 | DEFECT-ENGRAVE-016 | Writer numeric precision in save/reopen | Carried / Open | SOURCE-REVIEWED, EXECUTED | Serialized dimensions can lose precision and alter subsequent output |
+| DEFECT-ENGRAVE-017 | Output schemas inherited request bounds | Resolved | SOURCE-REVIEWED, EXECUTED | Imported text and edited track counts are no longer rejected by successful-response schemas |
+| DEFECT-ENGRAVE-018 | Snapshot materialization exceeds pre-admission accounting | Partially mitigated / Open | SOURCE-REVIEWED, EXECUTED | Provisional capacity, destination and payload reservations precede capture, but the pinned API cannot bound or interrupt the allocation during capture |
+| DEFECT-ENGRAVE-019 | Audio temporary output can exceed its byte budget | Partially mitigated / Open | SOURCE-REVIEWED, EXECUTED | Settings-aware estimates and sampled cache termination reduce exposure, but sampling is not a hard filesystem quota |
+| DEFECT-ENGRAVE-020 | Snapshot pins fell through to legacy allowances | Resolved | SOURCE-REVIEWED, EXECUTED | A snapshot pin takes precedence over an older direct-engine allowance |
 
 ## Details
 
@@ -205,3 +209,25 @@ such engine contract or change is introduced here.
 - **Evidence Level**: SOURCE-REVIEWED, EXECUTED (Windows, `engrave-16`).
 - **Description**: Snapshot serialization rounds render-relevant dimensions, including the approximately 0.001 pt A4 page-height change in the S3 tests and the near-integer page size in the drums S5 fixture. The latter crosses the PNG renderer's `ceil` boundary after reopening. Save/reopen also reproduces the individually measured pixel and geometry drift in [the census](a5-output-census.json); the page-size rounding alone does not prove the cause of every content movement.
 - **Next Step**: Independently investigate and improve writer numeric precision with round-trip tests that preserve dimension values and compare direct and reopened renders. Preserve explicit format/version compatibility, async snapshot isolation and the current pinned baselines when evaluating the change.
+
+### 17. Output schemas inherited request bounds (DEFECT-ENGRAVE-017)
+
+- **Status**: Resolved by `2b63260`.
+- **Evidence**: **EXECUTED** on Windows: `test_output_schema_boundaries.py` validates actual successful responses for an imported 5,000-character title, 5,000-character part name and 66,000-character lyric, plus an edited score with 261 audio tracks. It separately checks synthetic oversized result arrays against the schema. The generated registry schema passed `--write` and `--check`; input schemas were compared with `a8b030e` and did not change. **SOURCE-REVIEWED**: the derivation and remaining bounds are in [the output bound table](a5-output-schema-bounds.md).
+
+### 18. Snapshot materialization exceeds pre-admission accounting (DEFECT-ENGRAVE-018)
+
+- **Status**: Partially mitigated by `e95248f`; open for an actual capture-time byte bound and interruptible capture.
+- **Evidence**: **EXECUTED** on Windows: the async capture counter remains unchanged for a full queue, a reserved destination and an invalid parent; job tests exercise empty and reserved budgets, concurrent reservations, deadline checks, release and shutdown. **SOURCE-REVIEWED**: a reservation accounts for the remaining budget before capture and shrinks after capture, but `Document::export_score` and `Document::positions` return fully materialized objects without bounded sinks or cancellation. An oversized result can therefore allocate beyond the reservation before it is rejected; an expiring capture is rejected only after it returns. See [the registry limits](a5-registry.md).
+- **Next step**: Provide an engine-supported bounded/cancellable capture boundary, or an equivalent isolation mechanism that can stop serialization before the reserved bytes are exceeded. Exercise it with a genuinely oversized score; do not describe the reservation counter as a hard bound on in-progress allocations.
+
+### 19. Audio temporary output can exceed its byte budget (DEFECT-ENGRAVE-019)
+
+- **Status**: Partially mitigated by `e0091f3`; open for a hard temporary-file quota.
+- **Evidence**: **EXECUTED** on Windows: a 64-byte worker limit returned `ResourceLimit` with a sampled cache peak of 0 bytes and no staged artifact. For the same 43-second rounded outline, 16-bit WAV and 128-kbps MP3 succeeded under budgets that rejected 24-bit WAV and 512-kbps MP3 before creating audio. A test worker growing a cache was terminated by the job manager and published nothing. **SOURCE-REVIEWED**: the estimate uses the selected settings; cache monitoring samples approximately every 5 ms and may overshoot, and a manually invoked private worker has no manager watchdog. The engine still writes its complete cache file before invoking the public sink.
+- **Next step**: Supply a quota-enforcing file device or equivalent OS-backed per-worker disk limit that cannot overshoot between samples. Account for the coexistence of the cache and staged output and verify cleanup and failure classification on both platforms.
+
+### 20. Snapshot pins fell through to legacy allowances (DEFECT-ENGRAVE-020)
+
+- **Status**: Resolved by `8a5794e`.
+- **Evidence**: **EXECUTED** on Windows: the oracle harness exercises both `pedal.mscx` SVG and PDF entries using their real recorded migration and A3 allowance hashes. With marker bytes mapped to those hashes, each older allowance passes without a v2 snapshot pin and fails with the pin; the pinned host hash passes and a missing output fails. **SOURCE-REVIEWED**: the full comparator and v2 overlap check apply snapshot precedence before equality or older allowances. Existing audio tolerances and other allowances are unchanged.
