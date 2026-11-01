@@ -1,0 +1,379 @@
+{
+ "schema": 1,
+ "metadata": {
+  "arranger": "",
+  "composer": "Composer / arranger",
+  "copyright": "",
+  "lyricist": "",
+  "movementNumber": "",
+  "movementTitle": "",
+  "source": "",
+  "subtitle": "Subtitle",
+  "translator": "",
+  "workNumber": "",
+  "workTitle": "Untitled score"
+ },
+ "tempoMap": [
+  [
+   0,
+   120.0
+  ]
+ ],
+ "playbackOrder": [
+  [
+   0,
+   1920,
+   0
+  ]
+ ],
+ "parts": [
+  {
+   "id": "1",
+   "partName": "Flute",
+   "longName": "Flute",
+   "shortName": "Fl.",
+   "instrumentId": "flute",
+   "show": true,
+   "transpose": [
+    0,
+    0
+   ],
+   "staves": [
+    {
+     "index": 0,
+     "group": "pitched",
+     "lines": 5,
+     "invisible": false
+    },
+    {
+     "index": 1,
+     "group": "pitched",
+     "lines": 5,
+     "invisible": false
+    }
+   ]
+  }
+ ],
+ "measures": [
+  {
+   "tick": 0,
+   "ticks": 1920,
+   "timesig": "4/4",
+   "startRepeat": false,
+   "endRepeat": 0
+  }
+ ],
+ "signatures": [
+  {
+   "type": "KeySig",
+   "tick": 0,
+   "staff": 0,
+   "value": 0,
+   "key": 0
+  },
+  {
+   "type": "KeySig",
+   "tick": 0,
+   "staff": 1,
+   "value": 0,
+   "key": 0
+  },
+  {
+   "type": "TimeSig",
+   "tick": 0,
+   "staff": 0,
+   "value": "4/4"
+  },
+  {
+   "type": "TimeSig",
+   "tick": 0,
+   "staff": 1,
+   "value": "4/4"
+  }
+ ],
+ "events": [
+  [
+   [
+    {
+     "kind": "chord",
+     "tick": 0,
+     "ticks": 480,
+     "duration": "quarter",
+     "grace": "none",
+     "notes": [
+      {
+       "pitch": 71,
+       "tpc1": 19,
+       "tpc2": 19,
+       "head": "normal",
+       "headType": "auto",
+       "tieTo": [
+        480,
+        0,
+        71
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "chord",
+     "tick": 480,
+     "ticks": 480,
+     "duration": "quarter",
+     "grace": "none",
+     "notes": [
+      {
+       "pitch": 71,
+       "tpc1": 19,
+       "tpc2": 19,
+       "head": "normal",
+       "headType": "auto"
+      }
+     ]
+    },
+    {
+     "kind": "rest",
+     "tick": 960,
+     "ticks": 960,
+     "duration": "half"
+    }
+   ],
+   [],
+   [],
+   []
+  ],
+  [
+   [
+    {
+     "kind": "chord",
+     "tick": 0,
+     "ticks": 480,
+     "duration": "quarter",
+     "grace": "none",
+     "notes": [
+      {
+       "pitch": 71,
+       "tpc1": 19,
+       "tpc2": 19,
+       "head": "normal",
+       "headType": "auto",
+       "tieTo": [
+        480,
+        4,
+        71
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "chord",
+     "tick": 480,
+     "ticks": 480,
+     "duration": "quarter",
+     "grace": "none",
+     "notes": [
+      {
+       "pitch": 71,
+       "tpc1": 19,
+       "tpc2": 19,
+       "head": "normal",
+       "headType": "auto"
+      }
+     ]
+    },
+    {
+     "kind": "rest",
+     "tick": 960,
+     "ticks": 960,
+     "duration": "half"
+    }
+   ],
+   [],
+   [],
+   []
+  ]
+ ],
+ "annotations": [],
+ "segmentElements": [],
+ "spanners": [],
+ "excerpts": [
+  {
+   "name": "Flute",
+   "partIds": [
+    "1"
+   ],
+   "score": {
+    "parts": [
+     {
+      "id": "1",
+      "partName": "Flute",
+      "longName": "Flute",
+      "shortName": "Fl.",
+      "instrumentId": "flute",
+      "show": true,
+      "transpose": [
+       0,
+       0
+      ],
+      "staves": [
+       {
+        "index": 0,
+        "group": "pitched",
+        "lines": 5,
+        "invisible": false
+       },
+       {
+        "index": 1,
+        "group": "pitched",
+        "lines": 5,
+        "invisible": false
+       }
+      ]
+     }
+    ],
+    "measures": [
+     {
+      "tick": 0,
+      "ticks": 1920,
+      "timesig": "4/4",
+      "startRepeat": false,
+      "endRepeat": 0
+     }
+    ],
+    "signatures": [
+     {
+      "type": "KeySig",
+      "tick": 0,
+      "staff": 0,
+      "value": 0,
+      "key": 0
+     },
+     {
+      "type": "KeySig",
+      "tick": 0,
+      "staff": 1,
+      "value": 0,
+      "key": 0
+     },
+     {
+      "type": "TimeSig",
+      "tick": 0,
+      "staff": 0,
+      "value": "4/4"
+     },
+     {
+      "type": "TimeSig",
+      "tick": 0,
+      "staff": 1,
+      "value": "4/4"
+     }
+    ],
+    "events": [
+     [
+      [
+       {
+        "kind": "chord",
+        "tick": 0,
+        "ticks": 480,
+        "duration": "quarter",
+        "grace": "none",
+        "notes": [
+         {
+          "pitch": 71,
+          "tpc1": 19,
+          "tpc2": 19,
+          "head": "normal",
+          "headType": "auto",
+          "tieTo": [
+           480,
+           0,
+           71
+          ]
+         }
+        ]
+       },
+       {
+        "kind": "chord",
+        "tick": 480,
+        "ticks": 480,
+        "duration": "quarter",
+        "grace": "none",
+        "notes": [
+         {
+          "pitch": 71,
+          "tpc1": 19,
+          "tpc2": 19,
+          "head": "normal",
+          "headType": "auto"
+         }
+        ]
+       },
+       {
+        "kind": "rest",
+        "tick": 960,
+        "ticks": 960,
+        "duration": "half"
+       }
+      ],
+      [],
+      [],
+      []
+     ],
+     [
+      [
+       {
+        "kind": "chord",
+        "tick": 0,
+        "ticks": 480,
+        "duration": "quarter",
+        "grace": "none",
+        "notes": [
+         {
+          "pitch": 71,
+          "tpc1": 19,
+          "tpc2": 19,
+          "head": "normal",
+          "headType": "auto",
+          "tieTo": [
+           480,
+           4,
+           71
+          ]
+         }
+        ]
+       },
+       {
+        "kind": "chord",
+        "tick": 480,
+        "ticks": 480,
+        "duration": "quarter",
+        "grace": "none",
+        "notes": [
+         {
+          "pitch": 71,
+          "tpc1": 19,
+          "tpc2": 19,
+          "head": "normal",
+          "headType": "auto"
+         }
+        ]
+       },
+       {
+        "kind": "rest",
+        "tick": 960,
+        "ticks": 960,
+        "duration": "half"
+       }
+      ],
+      [],
+      [],
+      []
+     ]
+    ],
+    "annotations": [],
+    "segmentElements": [],
+    "spanners": []
+   }
+  }
+ ]
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "code": "B470_STAVE_SHARING_LABEL_DROPPED",
+    "message": "Stave-sharing label was removed.",
+    "object": {
+      "kind": "stave_sharing_label",
+      "id": "H_H"
+    }
+  },
+  {
+    "code": "B470_STAVE_SHARING_LABEL_DROPPED",
+    "message": "Stave-sharing label was removed.",
+    "object": {
+      "kind": "stave_sharing_label",
+      "id": "I_I"
+    }
+  }
+]

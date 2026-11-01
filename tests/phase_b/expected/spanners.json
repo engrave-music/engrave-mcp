@@ -1,0 +1,128 @@
+{
+ "schema": 1,
+ "metadata": {
+  "arranger": "",
+  "composer": "Composer / arranger",
+  "copyright": "",
+  "lyricist": "",
+  "movementNumber": "",
+  "movementTitle": "",
+  "source": "",
+  "translator": "",
+  "workNumber": "",
+  "workTitle": "Version header fixture"
+ },
+ "tempoMap": [
+  [
+   0,
+   120.0
+  ]
+ ],
+ "playbackOrder": [
+  [
+   0,
+   1920,
+   0
+  ]
+ ],
+ "parts": [
+  {
+   "id": "1",
+   "partName": "Piano",
+   "longName": "Piano",
+   "shortName": "Pno.",
+   "instrumentId": "piano",
+   "show": true,
+   "transpose": [
+    0,
+    0
+   ],
+   "staves": [
+    {
+     "index": 0,
+     "group": "pitched",
+     "lines": 5,
+     "invisible": false
+    }
+   ]
+  }
+ ],
+ "measures": [
+  {
+   "tick": 0,
+   "ticks": 1920,
+   "timesig": "4/4",
+   "startRepeat": false,
+   "endRepeat": 0
+  }
+ ],
+ "signatures": [
+  {
+   "type": "Clef",
+   "tick": 0,
+   "staff": 0,
+   "value": "G"
+  },
+  {
+   "type": "TimeSig",
+   "tick": 0,
+   "staff": 0,
+   "value": "4/4"
+  }
+ ],
+ "events": [
+  [
+   [
+    {
+     "kind": "chord",
+     "tick": 0,
+     "ticks": 960,
+     "duration": "half",
+     "grace": "none",
+     "notes": [
+      {
+       "pitch": 60,
+       "tpc1": 14,
+       "tpc2": 14,
+       "head": "normal",
+       "headType": "auto"
+      }
+     ]
+    },
+    {
+     "kind": "chord",
+     "tick": 960,
+     "ticks": 960,
+     "duration": "half",
+     "grace": "none",
+     "notes": [
+      {
+       "pitch": 64,
+       "tpc1": 18,
+       "tpc2": 18,
+       "head": "normal",
+       "headType": "auto"
+      }
+     ]
+    }
+   ],
+   [],
+   [],
+   []
+  ]
+ ],
+ "annotations": [],
+ "segmentElements": [],
+ "spanners": [
+  {
+   "type": "Pedal",
+   "tick": 0,
+   "tick2": 960,
+   "track": 0,
+   "track2": 0,
+   "anchor": 0,
+   "beginText": "<sym>keyboardPedalPed</sym>"
+  }
+ ],
+ "excerpts": []
+}

@@ -1,0 +1,10 @@
+[
+  {
+    "code": "B470_INVALID_TIE",
+    "message": "Cannot write 4.70: tied notes have different pitches.",
+    "object": {
+      "kind": "tie",
+      "id": "H_H"
+    }
+  }
+]

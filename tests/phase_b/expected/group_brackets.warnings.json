@@ -1,0 +1,18 @@
+[
+  {
+    "code": "B470_GROUP_BRACKET_DROPPED",
+    "message": "Group bracket was removed.",
+    "object": {
+      "kind": "group_bracket",
+      "id": "B_B:1"
+    }
+  },
+  {
+    "code": "B470_GROUP_BRACKET_DROPPED",
+    "message": "Group bracket was removed.",
+    "object": {
+      "kind": "group_bracket",
+      "id": "B_B:2"
+    }
+  }
+]

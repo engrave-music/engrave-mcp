@@ -1,0 +1,18 @@
+[
+  {
+    "code": "B470_PAGE_LOCK_DROPPED",
+    "message": "Page lock was removed.",
+    "object": {
+      "kind": "page_lock",
+      "id": "C_C..C_C"
+    }
+  },
+  {
+    "code": "B470_PAGE_LOCK_DROPPED",
+    "message": "Page lock was removed.",
+    "object": {
+      "kind": "page_lock",
+      "id": "H_H..H_H"
+    }
+  }
+]

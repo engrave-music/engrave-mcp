@@ -1,0 +1,18 @@
+[
+  {
+    "code": "B470_SHARED_PART_DROPPED",
+    "message": "Shared-part mapping was removed; its staves and content were retained as ordinary parts.",
+    "object": {
+      "kind": "shared_part",
+      "id": "P_P"
+    }
+  },
+  {
+    "code": "B470_SHARED_PART_DROPPED",
+    "message": "Shared-part mapping was removed; its staves and content were retained as ordinary parts.",
+    "object": {
+      "kind": "shared_part",
+      "id": "R_R"
+    }
+  }
+]

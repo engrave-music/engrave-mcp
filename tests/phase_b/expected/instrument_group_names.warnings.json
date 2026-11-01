@@ -1,0 +1,10 @@
+[
+  {
+    "code": "B470_INSTRUMENT_GROUP_NAME_DROPPED",
+    "message": "Instrument group-name override was removed.",
+    "object": {
+      "kind": "part",
+      "id": "P_P"
+    }
+  }
+]

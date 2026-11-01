@@ -1,0 +1,224 @@
+{
+  "schema": 1,
+  "oracle_archive_sha256": "b915ae9f4ec2fdbfd5fc0edd4be19c3d9026f4e154174967b47556915ac719fa",
+  "oracle_binary_sha256": "f6d9ee1e826e27074cb2a9481987ddbd9318544e9c3586dc16ab534c3fd7fe8a",
+  "oracle_tag": "mcp-4.7.6-4",
+  "writer_reference": "engrave-19",
+  "warnings": {
+    "B470_SHARED_PART_DROPPED": "Shared-part mapping was removed; its staves and content were retained as ordinary parts.",
+    "B470_STAVE_SHARING_LABEL_DROPPED": "Stave-sharing label was removed.",
+    "B470_PAGE_LOCK_DROPPED": "Page lock was removed.",
+    "B470_GROUP_BRACKET_DROPPED": "Group bracket was removed.",
+    "B470_INSTRUMENT_GROUP_NAME_DROPPED": "Instrument group-name override was removed.",
+    "B470_INVALID_TIE": "Cannot write 4.70: tied notes have different pitches.",
+    "B470_UNSUPPORTED_FEATURE": "Cannot write 4.70: the source feature has no defined downgrade.",
+    "B470_UNSUPPORTED_TARGET": "Cannot write the requested score version."
+  },
+  "cases": [
+    {
+      "id": "notes",
+      "category": "preserved",
+      "source": "notes.mscx",
+      "source_sha256": "fc14e423fd9a2e111466eb779a6d8360a2f283ce62b90e7e16d7cdb01ff2729e",
+      "oracle_input": "notes.mscx",
+      "oracle_input_sha256": "fc14e423fd9a2e111466eb779a6d8360a2f283ce62b90e7e16d7cdb01ff2729e",
+      "expected_semantics": "expected/notes.json",
+      "expected_semantics_sha256": "7b09916a332701f546f92f342c479f6e6aa5551fe1fd6efb55f847f0718e18e0",
+      "warnings": "expected/notes.warnings.json",
+      "warnings_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "id": "names",
+      "category": "preserved",
+      "source": "names.mscx",
+      "source_sha256": "fc14e423fd9a2e111466eb779a6d8360a2f283ce62b90e7e16d7cdb01ff2729e",
+      "oracle_input": "names.mscx",
+      "oracle_input_sha256": "fc14e423fd9a2e111466eb779a6d8360a2f283ce62b90e7e16d7cdb01ff2729e",
+      "expected_semantics": "expected/names.json",
+      "expected_semantics_sha256": "7b09916a332701f546f92f342c479f6e6aa5551fe1fd6efb55f847f0718e18e0",
+      "warnings": "expected/names.warnings.json",
+      "warnings_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "id": "ids",
+      "category": "preserved",
+      "source": "ids.mscx",
+      "source_sha256": "fc14e423fd9a2e111466eb779a6d8360a2f283ce62b90e7e16d7cdb01ff2729e",
+      "oracle_input": "ids.mscx",
+      "oracle_input_sha256": "fc14e423fd9a2e111466eb779a6d8360a2f283ce62b90e7e16d7cdb01ff2729e",
+      "expected_semantics": "expected/ids.json",
+      "expected_semantics_sha256": "7b09916a332701f546f92f342c479f6e6aa5551fe1fd6efb55f847f0718e18e0",
+      "warnings": "expected/ids.warnings.json",
+      "warnings_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "xml_checks": {
+        "eids": [
+          "A_A",
+          "B_B",
+          "C_C",
+          "D_D",
+          "E_E",
+          "F_F",
+          "G_G"
+        ]
+      }
+    },
+    {
+      "id": "brackets",
+      "category": "preserved",
+      "source": "brackets.mscx",
+      "source_sha256": "6341edaefe61735adb44e1108bdb934b0670f1ace7ae497b7aceac20b19e6cd9",
+      "oracle_input": "brackets.mscx",
+      "oracle_input_sha256": "6341edaefe61735adb44e1108bdb934b0670f1ace7ae497b7aceac20b19e6cd9",
+      "expected_semantics": "expected/brackets.json",
+      "expected_semantics_sha256": "9f3711acdddaf5498d7e4fe1737e61bff812a947f262fb4ebfb3ba2534802b02",
+      "warnings": "expected/brackets.warnings.json",
+      "warnings_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "xml_checks": {
+        "ordinary_bracket": {
+          "staff_eid": "B_B",
+          "type": "brace",
+          "span": 2,
+          "column": 0
+        }
+      }
+    },
+    {
+      "id": "excerpts",
+      "category": "preserved",
+      "source": "excerpts.mscx",
+      "source_sha256": "ff1906f984761d0b274c569c12cca8850ac817ac193c2e043048a1a23a0f3b1b",
+      "oracle_input": "excerpts.mscx",
+      "oracle_input_sha256": "ff1906f984761d0b274c569c12cca8850ac817ac193c2e043048a1a23a0f3b1b",
+      "expected_semantics": "expected/excerpts.json",
+      "expected_semantics_sha256": "993640408d91fa75d284926183822e55bf5613d2d9bcf9c3fb3934b4863b9de3",
+      "warnings": "expected/excerpts.warnings.json",
+      "warnings_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "id": "ties",
+      "category": "preserved",
+      "source": "ties.mscx",
+      "source_sha256": "284e740114d5e52669161320b9f597197f0452b0e831eba588144f44a0754ffd",
+      "oracle_input": "ties.mscx",
+      "oracle_input_sha256": "284e740114d5e52669161320b9f597197f0452b0e831eba588144f44a0754ffd",
+      "expected_semantics": "expected/ties.json",
+      "expected_semantics_sha256": "f05f3d417846b413cbfb5104cf7091ebd5e30e3f16747cccb258435b8e60277f",
+      "warnings": "expected/ties.warnings.json",
+      "warnings_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "id": "ties_paired_edit",
+      "category": "preserved",
+      "source": "ties_paired_edit.mscx",
+      "source_sha256": "77957c9de1a6063ce2117077f2b48d762bf1b4207a5fd005cbe1c324d36f159c",
+      "oracle_input": "ties_paired_edit.mscx",
+      "oracle_input_sha256": "77957c9de1a6063ce2117077f2b48d762bf1b4207a5fd005cbe1c324d36f159c",
+      "expected_semantics": "expected/ties_paired_edit.json",
+      "expected_semantics_sha256": "6e43eb03d32c632af00656880094d8e417e7f5e02b2c3778edf4e95c6a8b7e76",
+      "warnings": "expected/ties_paired_edit.warnings.json",
+      "warnings_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "id": "spanners",
+      "category": "preserved",
+      "source": "spanners.mscx",
+      "source_sha256": "1bd602154d55aef26503012c873ad31a2e620b761d9b829219f7d01399edae8c",
+      "oracle_input": "spanners.mscx",
+      "oracle_input_sha256": "1bd602154d55aef26503012c873ad31a2e620b761d9b829219f7d01399edae8c",
+      "expected_semantics": "expected/spanners.json",
+      "expected_semantics_sha256": "38743965a6fda417c25a6b08f20008efaf49829bc5ec6cf56fcea5c2fdc0f4d0",
+      "warnings": "expected/spanners.warnings.json",
+      "warnings_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "id": "ties_mismatched",
+      "category": "rejected",
+      "source": "ties_mismatched.mscx",
+      "source_sha256": "7cc6f860dd656cd360da71d013e4231217bb8c2ab803be4fd53a1e834fbbca91",
+      "oracle_input": "ties_mismatched.mscx",
+      "oracle_input_sha256": "7cc6f860dd656cd360da71d013e4231217bb8c2ab803be4fd53a1e834fbbca91",
+      "expected_semantics": "expected/ties_mismatched.json",
+      "expected_semantics_sha256": "aaaed20792ee2bc656e3dac324f8310f8ec26a5ea016291b638ea6b6b1291456",
+      "warnings": "expected/ties_mismatched.warnings.json",
+      "warnings_sha256": "2a4273f99624e022f9def2ca4853de560e459ab476e55d4a68b949937fa5ed61"
+    },
+    {
+      "id": "shared_parts",
+      "category": "degraded",
+      "source": "shared_parts.source.mscx",
+      "source_sha256": "ce61ee4b480454471e8003940c974b79fed820794b6cfd38ae9e25aea86f5f52",
+      "oracle_input": "shared_parts.target.mscx",
+      "oracle_input_sha256": "55013147213c74433d390db47f52c84892ae4671be7b88851410c6868248be03",
+      "expected_semantics": "expected/shared_parts.json",
+      "expected_semantics_sha256": "63596b2f9c94ae8c2b9870f898095280e13092ff37abdbd81925bd3eab45e0b9",
+      "warnings": "expected/shared_parts.warnings.json",
+      "warnings_sha256": "c5ed597633aa15a867552c30f018a99b1de7d1f30929c0641450b2ad7077a313",
+      "source_oracle": "expected/shared_parts.source-oracle.json",
+      "source_oracle_sha256": "76744272d2a671a37da5d6df7c346d11f7af76d8b697af7cb8aaf9bfabfc44a4"
+    },
+    {
+      "id": "stave_labels",
+      "category": "degraded",
+      "source": "stave_labels.source.mscx",
+      "source_sha256": "6ec6458c05f9174d3b59d11ff74ab0366d3dca9c2e1f1a6e9a157bcdb1db7dd0",
+      "oracle_input": "stave_labels.target.mscx",
+      "oracle_input_sha256": "fc14e423fd9a2e111466eb779a6d8360a2f283ce62b90e7e16d7cdb01ff2729e",
+      "expected_semantics": "expected/stave_labels.json",
+      "expected_semantics_sha256": "7b09916a332701f546f92f342c479f6e6aa5551fe1fd6efb55f847f0718e18e0",
+      "warnings": "expected/stave_labels.warnings.json",
+      "warnings_sha256": "dc85afe9e5b95c7a873cfb03af98f5d5f595af97b964dd4ee9fc645dcd316d50",
+      "source_oracle": "expected/stave_labels.source-oracle.json",
+      "source_oracle_sha256": "76744272d2a671a37da5d6df7c346d11f7af76d8b697af7cb8aaf9bfabfc44a4"
+    },
+    {
+      "id": "page_locks",
+      "category": "degraded",
+      "source": "page_locks.source.mscx",
+      "source_sha256": "534c4bc9e782a7f9742b62be981b9132bdc54bbb29e7bce878f2d7b98cba7b08",
+      "oracle_input": "page_locks.target.mscx",
+      "oracle_input_sha256": "900896fc0a337ac3a95397909de089f2290f927e3fdbdc2d98ff049d99fd68aa",
+      "expected_semantics": "expected/page_locks.json",
+      "expected_semantics_sha256": "7ec43c0ef2f039fda9ff6b297a05d044408e12c90b968aec8ce9d78c50f31691",
+      "warnings": "expected/page_locks.warnings.json",
+      "warnings_sha256": "bac77f73373b754cf1527fadab40d07aba0c9b88f481e53ad5b38d6c3cfcc7f7",
+      "source_oracle": "expected/page_locks.source-oracle.json",
+      "source_oracle_sha256": "76744272d2a671a37da5d6df7c346d11f7af76d8b697af7cb8aaf9bfabfc44a4"
+    },
+    {
+      "id": "group_brackets",
+      "category": "degraded",
+      "source": "group_brackets.source.mscx",
+      "source_sha256": "670717cc0c7b8b57e3af9e2fce119d86a38a2dd2871764c3bf8aff662f0de5c4",
+      "oracle_input": "group_brackets.target.mscx",
+      "oracle_input_sha256": "6341edaefe61735adb44e1108bdb934b0670f1ace7ae497b7aceac20b19e6cd9",
+      "expected_semantics": "expected/group_brackets.json",
+      "expected_semantics_sha256": "9f3711acdddaf5498d7e4fe1737e61bff812a947f262fb4ebfb3ba2534802b02",
+      "warnings": "expected/group_brackets.warnings.json",
+      "warnings_sha256": "ddb5aabbfdf8717ed1323dabf67f474b1c31103b0aa6ff3a569a60c0d5b07d69",
+      "source_oracle": "expected/group_brackets.source-oracle.json",
+      "source_oracle_sha256": "76744272d2a671a37da5d6df7c346d11f7af76d8b697af7cb8aaf9bfabfc44a4",
+      "xml_checks": {
+        "ordinary_bracket": {
+          "staff_eid": "B_B",
+          "type": "brace",
+          "span": 2,
+          "column": 0
+        }
+      }
+    },
+    {
+      "id": "instrument_group_names",
+      "category": "degraded",
+      "source": "instrument_group_names.source.mscx",
+      "source_sha256": "0d95956e5c12fcf2da06c9f6452e183d4a9a822f9c36c2a5212d1e5e4ec31824",
+      "oracle_input": "instrument_group_names.target.mscx",
+      "oracle_input_sha256": "fc14e423fd9a2e111466eb779a6d8360a2f283ce62b90e7e16d7cdb01ff2729e",
+      "expected_semantics": "expected/instrument_group_names.json",
+      "expected_semantics_sha256": "7b09916a332701f546f92f342c479f6e6aa5551fe1fd6efb55f847f0718e18e0",
+      "warnings": "expected/instrument_group_names.warnings.json",
+      "warnings_sha256": "b82ac204446a05126cc26389977b711e9898739b73fa791996caffdbaf443e92",
+      "source_oracle": "expected/instrument_group_names.source-oracle.json",
+      "source_oracle_sha256": "76744272d2a671a37da5d6df7c346d11f7af76d8b697af7cb8aaf9bfabfc44a4"
+    }
+  ]
+}

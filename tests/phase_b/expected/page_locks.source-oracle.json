@@ -1,0 +1,6 @@
+{
+  "exit": 1,
+  "stdout": "",
+  "stderr": "semantic_dump: [2007] This file was saved using a newer version of MuseScore Studio. Please visit <a href=\"https://musescore.org\">MuseScore.org</a> to obtain the latest version.\n",
+  "oracle_binary_sha256": "f6d9ee1e826e27074cb2a9481987ddbd9318544e9c3586dc16ab534c3fd7fe8a"
+}
