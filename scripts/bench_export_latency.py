@@ -131,8 +131,23 @@ def main():
             for row in report["warm"]:
                 if row["mode"]==mode and row["fixture"]==fixture:
                     key=str((out/(row["format"]+("-all" if row["all_pages"] else ""))).resolve()).replace("\\","/")
-                    matches=[x for x in phases if x["destination"]==key]
+                    matches=[x for x in phases if x["destination"]==key and x["mode"]==mode]
+                    # Each non-edit row has one excluded warmup. Pair samples
+                    # by request order; job_wait encloses isolated worker phases.
+                    if row["format"] != "post-edit.pdf": matches = matches[1:]
+                    assert len(matches) == len(row["samples_ms"]), (row, len(matches))
                     row["server_samples"]=matches
+                    if mode == "isolated":
+                        workers = [x for x in phases if x["destination"]==key and x["mode"]=="isolated-job"]
+                        row["worker_samples"] = workers if row["format"] == "post-edit.pdf" else workers[1:]
+                    server = []
+                    for event in matches:
+                        event_phases = event["phases_ms"]
+                        names = ("owner_dispatch", "capture", "job_wait", "response") if mode == "isolated" else event_phases.keys()
+                        server.append(sum(event_phases.get(name, 0) for name in names))
+                    row["server_ms"] = summary(server)
+                    row["residual_samples_ms"] = [client-engine for client, engine in zip(row["samples_ms"], server)]
+                    row["residual_ms"] = summary(row["residual_samples_ms"])
             samples=[]
             cold_phases=[]
             for i in range(a.cold):
