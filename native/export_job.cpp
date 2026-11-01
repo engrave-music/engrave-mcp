@@ -245,6 +245,8 @@ void coordinator(std::shared_ptr<Shared> shared) {
                 if (job->cancel || job->timeout) {
                     finish(*shared, *job, job->cancel ? JobState::Cancelled : JobState::Failed,
                            HostError{job->cancel ? "Cancelled" : "DeadlineExceeded", job->cancel ? "job cancelled" : "job deadline exceeded"});
+                } else if (job->snapshot.capture_error) {
+                    finish(*shared, *job, JobState::Failed, *job->snapshot.capture_error);
                 } else if (shared->running < export_worker_count) {
                     try { start(*shared, *job); }
                     catch (const Failure& e) { finish(*shared, *job, JobState::Failed, e.error); }
@@ -470,6 +472,7 @@ Result<JobStatus> ExportJobs::submit(Reservation reservation, ExportSnapshot sna
         job->status.job = "job-" + shared->session + "-" + std::to_string(++shared->next);
         job->status.source_revision = job->snapshot.source_revision;
         job->status.snapshot_budget_enforced = job->snapshot.snapshot_budget_enforced;
+        job->status.export_warnings = job->snapshot.export_warnings;
         JobStatus status = job->status;
         while (shared->order.size() >= retained_jobs) {
             auto oldest = std::find_if(shared->order.begin(), shared->order.end(), [&](const auto& id) { return terminal(shared->jobs.at(id)->status.state); });
@@ -504,6 +507,7 @@ Result<JobStatus> ExportJobs::cancel(std::string_view id) {
 Json encode(const JobStatus& status) {
     Json artifacts = Json::array(); for (const auto& a : status.artifacts) artifacts.push_back(encode(a));
     return {{"job", status.job}, {"state", state_name(status.state)}, {"source_revision", std::to_string(status.source_revision)},
-            {"artifacts", std::move(artifacts)}, {"error", status.error ? error_envelope(*status.error).at("error") : Json(nullptr)}};
+            {"artifacts", std::move(artifacts)}, {"export_warnings", encode(status.export_warnings)},
+            {"error", status.error ? error_envelope(*status.error).at("error") : Json(nullptr)}};
 }
 } // namespace music::v2

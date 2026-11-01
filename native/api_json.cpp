@@ -314,13 +314,27 @@ Json encode(const engrave::Capabilities& c) {
         case engrave::AudioFormat::Aac:return "aac"; } throw std::logic_error("unknown AudioFormat"); };
     return {{"engine_version",c.engine_version},{"import_formats",mapped(c.import_formats,[&](auto f){return Json(format(f));})},{"export_formats",mapped(c.export_formats,[&](auto f){return Json(format(f));})},{"render_formats",mapped(c.render_formats,[&](auto f){return Json(render(f));})},{"audio_formats",mapped(c.audio_formats,[&](auto f){return Json(audio(f));})},{"soundfonts",mapped(c.soundfonts,[](const auto& p){return Json(detail::path_text(p));})},{"audio_sample_rate",c.audio_sample_rate}};
 }
-HostError api_error(const engrave::Error& e) { return {std::string(engrave::to_string(e.code)),e.message,e.op_index}; }
+Json encode(const std::vector<engrave::ExportWarning>& warnings) {
+    Json result = Json::array();
+    for (const auto& warning : warnings) {
+        Json item = {{"code", warning.code}, {"message", warning.message}};
+        if (warning.object) item["object"] = engrave::to_string(*warning.object);
+        result.push_back(std::move(item));
+    }
+    return result;
+}
+HostError api_error(const engrave::Error& e) {
+    HostError result{std::string(engrave::to_string(e.code)),e.message,e.op_index};
+    result.export_warnings = e.export_warnings;
+    return result;
+}
 Json error_envelope(const HostError& e) {
     Json err={{"code",e.code},{"message",e.message}};
     if (e.op_index) err["op_index"]=*e.op_index;
     if (e.document) err["document"]=*e.document;
     if (e.current_revision) err["current_revision"]=std::to_string(*e.current_revision);
     if (!e.published_artifacts.empty()) err["published_artifacts"]=e.published_artifacts;
+    if (!e.export_warnings.empty()) err["export_warnings"]=encode(e.export_warnings);
     return {{"ok",false},{"error",err}};
 }
 } // namespace music::v2

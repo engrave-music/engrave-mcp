@@ -33,6 +33,9 @@ struct ExportSnapshot {
     RuntimeSnapshot runtime;
     std::vector<std::byte> mscz;
     std::vector<std::byte> captured_score_bytes;
+    std::vector<engrave::ExportWarning> export_warnings;
+    // A writer refusal is captured so start callers receive a queryable failed job.
+    std::optional<HostError> capture_error;
     std::vector<std::byte> captured_positions_json;
     // False only when bounded MIDI capture was rejected by the engine and the
     // legacy unbounded capture was used. Retained bytes are still charged.

@@ -12,6 +12,7 @@ struct JobStatus {
     std::uint64_t source_revision=0;
     bool snapshot_budget_enforced=true;
     std::vector<Artifact> artifacts;
+    std::vector<engrave::ExportWarning> export_warnings;
     std::optional<HostError> error;
 };
 // S3 implementation. Thread-safe facade for S4; only owned snapshots cross it.

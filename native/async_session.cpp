@@ -133,7 +133,7 @@ Json run_result(const JobStatus& status) {
     Json artifacts = Json::array();
     for (const auto& artifact : status.artifacts) artifacts.push_back(encode(artifact));
     return {{"ok", true}, {"action", "run"}, {"source_revision", std::to_string(status.source_revision)},
-            {"artifacts", std::move(artifacts)}};
+            {"artifacts", std::move(artifacts)}, {"export_warnings", encode(status.export_warnings)}};
 }
 }
 

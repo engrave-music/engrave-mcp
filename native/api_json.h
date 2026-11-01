@@ -18,6 +18,7 @@ struct HostError {
     std::optional<std::string> document;
     std::optional<std::uint64_t> current_revision;
     std::vector<std::string> published_artifacts;
+    std::vector<engrave::ExportWarning> export_warnings;
 };
 template<class T> using Result = std::expected<T,HostError>;
 Result<engrave::Batch> decode_batch(const Json& ops);
@@ -39,6 +40,7 @@ Json encode(const engrave::Capabilities&);
 Json encode(const engrave::TemplateInfo&);
 Json encode(const engrave::Diagnostic&);
 Json error_envelope(const HostError&);
+Json encode(const std::vector<engrave::ExportWarning>&);
 HostError api_error(const engrave::Error&);
 
 // Deliberately no primary definition: any new Op alternative breaks compilation.

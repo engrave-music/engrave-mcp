@@ -164,6 +164,7 @@ Result<ExportRequest> decode_export(const Json& j) {
             o.score = selection; o.format = score_format(options.at("format").get<std::string>());
             assign_if(options, "midi_expand_repeats", o.midi_expand_repeats);
             assign_if(options, "midi_rpns", o.midi_rpns);
+            assign_if(options, "native_version", o.native_version);
         } else if (kind == "render") {
             result.kind = ExportKind::Render;
             auto& o = result.render_options;
@@ -223,14 +224,21 @@ Result<ExportSnapshot> capture_export(engrave::Document& document, RuntimeSnapsh
         if (request.kind == ExportKind::Score) {
             auto options = request.score_options;
             options.capture = capture;
-            auto result = document.export_score(options);
+            auto result = document.export_score_with_warnings(options);
             if (!result && result.error().code == engrave::ErrorCode::Unsupported && options.format == engrave::Format::Midi) {
                 check_capture_cancelled(capture);
                 options.capture = {};
                 snapshot.snapshot_budget_enforced = false;
-                result = document.export_score(options);
+                result = document.export_score_with_warnings(options);
             }
-            snapshot.captured_score_bytes = engine_value(std::move(result));
+            if (!result && result.error().code == engrave::ErrorCode::Unsupported) {
+                snapshot.capture_error = api_error(result.error());
+                snapshot.export_warnings = result.error().export_warnings;
+            } else {
+                auto output = engine_value(std::move(result));
+                snapshot.captured_score_bytes = std::move(output.bytes);
+                snapshot.export_warnings = std::move(output.warnings);
+            }
             check_capture_cancelled(capture);
         } else if (request.kind == ExportKind::Positions) {
             auto positions = engine_value(document.positions(request.position_kind, request.position_score, capture));
