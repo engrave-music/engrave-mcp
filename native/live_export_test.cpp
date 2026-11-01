@@ -15,11 +15,12 @@ std::vector<std::byte> read(const fs::path& p) {
 }
 int main(int argc, char** argv) {
     try {
-        if (argc != 3) throw std::runtime_error("usage: live_export_test RESOURCES OUTPUT");
+        if (argc != 4 || std::string(argv[1]) != "--partial-write")
+            throw std::runtime_error("partial: no content comparison; use scripts/test_live_export.py --direct-binary BINARY (file-writing mode: live_export_test --partial-write RESOURCES OUTPUT)");
         engrave::EngineOptions options;
-        options.resources = fs::absolute(fs::u8path(argv[1])); options.deterministic_ids = true;
+        options.resources = fs::absolute(fs::u8path(argv[2])); options.deterministic_ids = true;
         auto engine = value(engrave::Engine::create(options));
-        auto root = fs::absolute(fs::u8path(argv[2])); fs::create_directories(root);
+        auto root = fs::absolute(fs::u8path(argv[3])); fs::create_directories(root);
         std::vector<fs::directory_entry> fixtures;
         for (const auto& entry : fs::directory_iterator("fixtures/golden")) fixtures.push_back(entry);
         fixtures.emplace_back("fixtures/evening.musicxml");
@@ -65,7 +66,7 @@ int main(int argc, char** argv) {
                 } else if (read(path)!=expected) throw std::runtime_error("direct byte mismatch: "+fixture.path().string()+"/"+fmt);
             }
         }
-        std::cout << "live direct byte comparisons passed\n";
-        return 0;
+        std::cout << "partial: no content comparison for PDF/MSCZ; run scripts/test_live_export.py\n";
+        return 3;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

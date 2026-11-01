@@ -1,7 +1,8 @@
 """M1 routing, revisions, cancellation, atomic publication, multi-page exports.
 
 Use --binary engrave-mcp-test for the deterministic owner-queue cancellation seam.
-Direct engine byte comparisons additionally run in export_job_test.
+This is the complete entry point: --direct-binary is required. The native
+--partial-write mode returns 3 and leaves PDF/MSCZ comparison to this wrapper.
 """
 import argparse
 import os
@@ -20,16 +21,32 @@ def main():
     p.add_argument("--binary",type=Path,required=True)
     p.add_argument("--resources",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
-    p.add_argument("--direct-binary",type=Path,help="also run native direct oracle and restoration pins")
+    p.add_argument("--direct-binary",type=Path,required=True,help="native partial writer; this wrapper completes its comparisons")
     a=p.parse_args()
     a.output=a.output.resolve()
-    if a.direct_binary:
-        oracle=a.output/"direct"
-        subprocess.run([str(a.direct_binary.resolve()),str(a.resources.resolve()),str(oracle)],check=True)
-        from golden import describe_pdf
-        for folder in oracle.iterdir():
-            if folder.is_dir():
-                assert describe_pdf(folder/"direct.pdf")==describe_pdf(folder/"pdf"),folder
+    # A bare invocation must fail closed, before touching resources/output.
+    bare=subprocess.run([str(a.direct_binary.resolve()),str(a.resources.resolve()),
+                         str(a.output/"bare")],capture_output=True,text=True)
+    if bare.returncode == 0 or "partial: no content comparison" not in bare.stderr:
+        raise RuntimeError("native standalone invocation did not fail closed")
+    oracle=a.output/"direct"
+    partial=subprocess.run([str(a.direct_binary.resolve()),"--partial-write",
+                            str(a.resources.resolve()),str(oracle)],capture_output=True,text=True)
+    if partial.returncode != 3 or "partial: no content comparison" not in partial.stdout:
+        raise RuntimeError(f"partial writer contract failed: {partial.returncode} {partial.stdout} {partial.stderr}")
+    from golden import describe_pdf
+    folders=[folder for folder in oracle.iterdir() if folder.is_dir()]
+    if not folders: raise RuntimeError("empty direct oracle")
+    for folder in folders:
+        if describe_pdf(folder/"direct.pdf") != describe_pdf(folder/"pdf"):
+            raise RuntimeError(f"PDF content mismatch: {folder}")
+        with zipfile.ZipFile(folder/"direct.mscz") as left, zipfile.ZipFile(folder/"mscz") as right:
+            if sorted(left.namelist()) != sorted(right.namelist()):
+                raise RuntimeError(f"MSCZ member mismatch: {folder}")
+            for name in left.namelist():
+                if left.read(name) != right.read(name):
+                    raise RuntimeError(f"MSCZ content mismatch: {folder}/{name}")
+    if sys.platform == "win32":
         subprocess.run([sys.executable,str(ROOT/"scripts/test_live_golden.py"),"--output",str(oracle)],check=True)
     results={}
     for mode in (None,"isolated","live"):
@@ -118,6 +135,6 @@ def main():
     for fmt in ("mscz","mscx","musicxml","mxl","midi","positions"):
         assert results["live"][fmt]==results["isolated"][fmt],fmt
     (a.output/"comparison.json").write_text(json.dumps(results,indent=2))
-    print("live export passed; render hash differences retained in comparison.json")
+    print(f"complete: live export passed; {len(folders)} PDF/MSCZ pairs compared; render hash differences retained in comparison.json")
 
 if __name__=="__main__": main()
