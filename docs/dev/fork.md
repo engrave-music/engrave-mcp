@@ -85,6 +85,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 
 | `engrave-24` | `51db3ae00b` | `32f0a26e5b` | `da3885cb` | Phase B identity hardening (`test/warning-identity`, `7f659c8ec0`; this merge has its tree): twelve negative warning-identity cases — empty kind, empty id, sentinel id, malformed range key, malformed bracket key, garbage and incomplete locator — reject as `InvalidArgument` with no output in both formats, so a meaningless warning can never be published. Test-only; no production behaviour change. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
 
+| `engrave-25` | `ac0876b0e4` | `32f0a26e5b` | `da3885cb` | 4.70 excerpt selection (`feat/write470-excerpt`, `82ffad2d1b`; this merge has its tree): a named excerpt now exports as a standalone genuine 4.70 score in MSCX and MSCZ — `excerpts.mscx` `v_v` and `linked_parts.mscx` `v_v` both export with `[]` warnings, retain their body/notes/grace ties/names/links, and were reopened successfully by the preserved oracle and re-exported by the verified old Windows 4.7.6 host (the old host's own MSCX export drops nested excerpts; MSCZ retains them). The 5.00 writer and master conversion mapping are unchanged. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
+
 The superproject's `.gitmodules` now tracks `branch = main`.
 
 ## History: mcp/v4.7.x (frozen)
