@@ -509,6 +509,7 @@ def run_lane(
             "--soundfont", str(soundfont),
             "--engine-source", str(engine_source),
             "--output", str(output / "engine-audio"),
+            "--cross-platform-captures", str(output / "audio-cross-platform"),
             *audio_args,
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
