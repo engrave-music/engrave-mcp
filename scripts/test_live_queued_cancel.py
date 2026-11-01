@@ -3,11 +3,10 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-import queue
 import time
 import soundfile as sf
 import numpy as np
-from bench_export_latency import Client, ROOT
+from bench_export_latency import Client
 
 
 def main():
@@ -43,10 +42,10 @@ def main():
         running = c.send('tools/call', args(running_path))
         time.sleep(.6)
         queued = c.send('tools/call', args(queued_path))
+        c.rpc('ping', {})  # Let the tool coroutine register its queued dispatch.
         cancel_start = time.perf_counter()
         c.send('notifications/cancelled', {'requestId':queued}, True)
-        # Preserve all responses: the benchmark Client intentionally discards
-        # unmatched IDs, which would hide a duplicate or out-of-order result.
+        # Inspect every response directly to detect duplicates and wrong IDs.
         response = c.q.get(timeout=10)
         result.update(cancel_seconds=time.perf_counter()-cancel_start, queued_response=response)
         if response.get('error', {}).get('code') == -32603:
@@ -59,6 +58,7 @@ def main():
         # immediate capacity release while the real owner remains busy.
         for i in range(80):
             ident = c.send('tools/call', args(queued_path))
+            c.rpc('ping', {})
             c.send('notifications/cancelled', {'requestId':ident}, True)
             reply = c.q.get(timeout=3)
             assert reply.get('id') == ident and reply.get('error', {}).get('code') == -32800, reply
@@ -73,6 +73,10 @@ def main():
         result['sha256'] = hashlib.sha256(running_path.read_bytes()).hexdigest()
         assert not queued_path.exists()
         assert not list(out.rglob('.musescore-job-*'))
+        reference = out/'reference.wav'
+        c.tool('score_export', args(reference)['arguments'])
+        assert hashlib.sha256(reference.read_bytes()).hexdigest() == result['sha256']
+        result['matches_uncancelled_reference'] = True
         # Reusing exactly the cancelled destination proves no reservation remains.
         retry = args(queued_path)['arguments']
         retry.update(kind='score', options={'format':'mscx'})
@@ -88,7 +92,8 @@ def main():
             assert reply.get('id') == ident, reply
             assert reply.get('error', {}).get('code') == -32800 or reply.get('result', {}).get('structuredContent', {}).get('ok'), reply
         c.tool('score_outline', {'document':doc})
-        assert c.q.empty(), 'duplicate response'
+        assert c.q.empty() and not c.pending, 'duplicate response'
+        assert not list(out.rglob('.musescore-job-*'))
         result['passed'] = True
     finally:
         if c.p.poll() is None: c.close()
