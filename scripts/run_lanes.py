@@ -582,6 +582,7 @@ def main() -> None:
     parser.add_argument("--phase-b-oracle-executable", type=Path, help="Extracted Linux 4.7.6 semantic_dump")
     parser.add_argument("--phase-b-oracle-assets", type=Path, help="Extracted 4.7.6 oracle assets")
     parser.add_argument("--phase-b-writer-results", type=Path, help="Actual write470 result directories")
+    parser.add_argument("--phase-b-live-edits", action="store_true", help="Include live tie-edit companion in producer lane")
     parser.add_argument("--phase-b-producer", action="store_true", help="Real MCP source-to-oracle producer")
     parser.add_argument("--host-binary", type=Path, help="Producer MCP executable")
     parser.add_argument("--host-sha256", help="Required expected producer binary SHA-256")
@@ -635,7 +636,7 @@ def main() -> None:
     phase_b_args: list[str] = []
     phase_b_requested = (args.phase_b_oracle_archive, args.phase_b_oracle_executable,
                          args.phase_b_oracle_assets, args.phase_b_baseline,
-                         args.phase_b_writer_results, args.phase_b_producer, args.phase_b_oracle_ssh, args.host_binary, args.host_sha256)
+                         args.phase_b_writer_results, args.phase_b_producer, args.phase_b_live_edits, args.phase_b_oracle_ssh, args.host_binary, args.host_sha256)
     if "phase_b_oracle" not in selected_lanes and any(phase_b_requested):
         parser.error("phase B options require selecting --only phase_b_oracle")
     if "phase_b_oracle" in selected_lanes:
@@ -648,6 +649,10 @@ def main() -> None:
                         "--oracle-assets", args.phase_b_oracle_assets.as_posix()]
         if args.phase_b_oracle_ssh:
             phase_b_args += ["--oracle-ssh", args.phase_b_oracle_ssh]
+        if args.phase_b_live_edits and not args.phase_b_producer:
+            parser.error("--phase-b-live-edits requires --phase-b-producer")
+        if args.phase_b_live_edits:
+            phase_b_args += ["--live-edits"]
         if args.phase_b_producer:
             if not args.host_binary or not args.host_sha256:
                 parser.error("producer requires --host-binary and --host-sha256")
