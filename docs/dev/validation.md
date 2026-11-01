@@ -800,8 +800,11 @@ owns the current byte-view and Unicode stream/seek boundary checks.
 existing comparator and allow-list and found one unapproved MSCX difference;
 the source and evidence are described in [webmscore-parity.md](webmscore-parity.md).
 The strict v2 version-header assertion also fails as tracked in
-`DEFECT-ENGRAVE-014`. The full v2 lane migration and full lane run remain open;
-no new goldens or allowances were written.
+`DEFECT-ENGRAVE-014`. The migrated round-trip runner executed 23 cases: 13
+passed, and 10 failed the preserved MSCX text comparison on save/reopen style
+or excerpt-name differences; historical loss hashes were not changed. The full
+v2 lane migration and full lane run remain open; no new goldens or allowances
+were written.
 
 ## Roadmap-engrave A4 S0: engine build in the fork (2026-10-30)
 

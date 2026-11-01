@@ -856,9 +856,9 @@ class RoundTripRunner:
         else:
             result["failures"].extend((f"{phase}:{p}", f"{va!r} vs {vb!r}") for p, va, vb in diffs[:40])
 
-    async def execute_case(self, case_id: str, fixture_ref: str, doc_id: str, excerpt_id: int = -1) -> dict[str, Any]:
+    async def execute_case(self, case_id: str, fixture_ref: str, doc_id: str, excerpt_id: str | None = None) -> dict[str, Any]:
         out = self.output_dir
-        prefix = f"{case_id}_{excerpt_id}" if excerpt_id >= 0 else case_id
+        prefix = case_id
         result: dict[str, Any] = {
             "case": case_id, "fixture": fixture_ref, "excerptId": excerpt_id,
             "status": "passed", "mscz_roundtrip": "passed", "mscz_text": "passed",
@@ -868,9 +868,10 @@ class RoundTripRunner:
 
         # 1. Export MSCX of D (A)
         path_A = out / f"{prefix}_A.mscx"
-        exp_args: dict[str, Any] = {"documentId": doc_id, "format": "mscx", "path": str(path_A)}
-        if excerpt_id >= 0:
-            exp_args["excerptId"] = excerpt_id
+        exp_args: dict[str, Any] = {"document": doc_id, "action": "run", "kind": "score",
+            "options": {"format": "mscx"}, "destination": {"kind": "file", "path": str(path_A)}}
+        if excerpt_id is not None:
+            exp_args["options"]["score"] = {"excerpt": excerpt_id}
         err, _ = await self.call("score_export", exp_args)
         if err:
             result["status"] = "failed"
@@ -880,7 +881,7 @@ class RoundTripRunner:
 
         # 2. MSCZ round trip -> B
         path_mscz = out / f"{prefix}.mscz"
-        exp_args["format"], exp_args["path"] = "mscz", str(path_mscz)
+        exp_args["options"]["format"], exp_args["destination"]["path"] = "mscz", str(path_mscz)
         await self.must("score_export", exp_args)
 
         err, opened_B = await self.call("score_open", {"path": str(path_mscz)})
@@ -888,34 +889,40 @@ class RoundTripRunner:
             result["status"] = "failed"
             result["failures"].append(("open_mscz", f"Failed to reopen MSCZ: {opened_B}"))
             return result
-        doc_B = opened_B["documentId"]
+        doc_B = opened_B["document"]
         path_B = out / f"{prefix}_B.mscx"
         try:
-            await self.must("score_export", {"documentId": doc_B, "format": "mscx", "path": str(path_B)})
+            await self.must("score_export", {"document": doc_B, "action": "run", "kind": "score",
+                "options": {"format": "mscx"}, "destination": {"kind": "file", "path": str(path_B)}})
 
             # Check excerpts preservation on reopened MSCZ of master scores
-            if excerpt_id < 0:
-                err_orig, exc_orig = await self.call("score_list_excerpts", {"documentId": doc_id})
-                orig_excs = exc_orig.get("excerpts", []) if not err_orig and isinstance(exc_orig, dict) else []
+            if excerpt_id is None:
+                err_orig, exc_orig = await self.call("score_outline", {"document": doc_id})
+                if err_orig or not isinstance(exc_orig, dict):
+                    result["mscz_roundtrip"], result["status"] = "failed", "failed"
+                    result["failures"].append(("mscz_excerpts", f"score_outline on source failed: {exc_orig}"))
+                orig_excs = exc_orig.get("outline", {}).get("excerpts", []) if not err_orig and isinstance(exc_orig, dict) else []
                 if orig_excs:
-                    err_b_exc, exc_b = await self.call("score_list_excerpts", {"documentId": doc_B})
+                    err_b_exc, exc_b = await self.call("score_outline", {"document": doc_B})
                     if err_b_exc or not isinstance(exc_b, dict):
                         result["mscz_roundtrip"], result["status"] = "failed", "failed"
-                        result["failures"].append(("mscz_excerpts", f"score_list_excerpts on doc_B failed: {exc_b}"))
+                        result["failures"].append(("mscz_excerpts", f"score_outline on doc_B failed: {exc_b}"))
                     else:
-                        b_excs = exc_b.get("excerpts", [])
+                        b_excs = exc_b.get("outline", {}).get("excerpts", [])
                         if len(orig_excs) != len(b_excs):
                             result["mscz_roundtrip"], result["status"] = "failed", "failed"
                             result["failures"].append(("mscz_excerpts:count", f"{len(orig_excs)} vs {len(b_excs)}"))
-                        elif [e.get("title") for e in orig_excs] != [e.get("title") for e in b_excs]:
+                        elif [e.get("name") for e in orig_excs] != [e.get("name") for e in b_excs]:
                             result["mscz_roundtrip"], result["status"] = "failed", "failed"
-                            result["failures"].append(("mscz_excerpts:titles", f"{[e.get('title') for e in orig_excs]} vs {[e.get('title') for e in b_excs]}"))
+                            result["failures"].append(("mscz_excerpts:titles", f"{[e.get('name') for e in orig_excs]} vs {[e.get('name') for e in b_excs]}"))
                         else:
                             for idx, (e_a, e_b) in enumerate(zip(orig_excs, b_excs)):
                                 p_exc_a = out / f"{prefix}_exc_{idx}_A.mscx"
                                 p_exc_b = out / f"{prefix}_exc_{idx}_B.mscx"
-                                await self.must("score_export", {"documentId": doc_id, "excerptId": e_a["id"], "format": "mscx", "path": str(p_exc_a)})
-                                await self.must("score_export", {"documentId": doc_B, "excerptId": e_b["id"], "format": "mscx", "path": str(p_exc_b)})
+                                for document, excerpt, path in ((doc_id, e_a['id'], p_exc_a), (doc_B, e_b['id'], p_exc_b)):
+                                    await self.must('score_export', {'document': document, 'action': 'run', 'kind': 'score',
+                                        'options': {'format': 'mscx', 'score': {'excerpt': excerpt}},
+                                        'destination': {'kind': 'file', 'path': str(path)}})
                                 sem_exc_a = parse_mscx(p_exc_a.read_text("utf-8"))
                                 sem_exc_b = parse_mscx(p_exc_b.read_text("utf-8"))
                                 exc_diffs = diff_data(sem_exc_a, sem_exc_b)
@@ -923,7 +930,7 @@ class RoundTripRunner:
                                     result["mscz_roundtrip"], result["status"] = "failed", "failed"
                                     result["failures"].extend([("mscz_excerpts:" + p, f"A={va!r} vs B={vb!r}") for p, va, vb in exc_diffs[:40]])
         finally:
-            await self.call("score_close", {"documentId": doc_B})
+            await self.call("score_close", {"document": doc_B})
 
         sem_B = parse_mscx(path_B.read_text("utf-8"))
         if self.self_test and case_id == "create_edit" and sem_B["events"].get("1", {}).get(0):
@@ -942,7 +949,7 @@ class RoundTripRunner:
 
         # 3. MusicXML round trip -> C
         path_xml1 = out / f"{prefix}_1.musicxml"
-        exp_args["format"], exp_args["path"] = "musicxml", str(path_xml1)
+        exp_args["options"]["format"], exp_args["destination"]["path"] = "musicxml", str(path_xml1)
         await self.must("score_export", exp_args)
 
         err, opened_C = await self.call("score_open", {"path": str(path_xml1)})
@@ -950,14 +957,15 @@ class RoundTripRunner:
             result["musicxml_roundtrip"], result["status"] = "failed", "failed"
             result["failures"].append(("open_musicxml", str(opened_C)))
             return result
-        doc_C = opened_C["documentId"]
+        doc_C = opened_C["document"]
         path_C = out / f"{prefix}_C.mscx"
         path_xml2 = out / f"{prefix}_2.musicxml"
         try:
-            await self.must("score_export", {"documentId": doc_C, "format": "mscx", "path": str(path_C)})
-            await self.must("score_export", {"documentId": doc_C, "format": "musicxml", "path": str(path_xml2)})
+            for fmt, path in (('mscx', path_C), ('musicxml', path_xml2)):
+                await self.must('score_export', {'document': doc_C, 'action': 'run', 'kind': 'score',
+                    'options': {'format': fmt}, 'destination': {'kind': 'file', 'path': str(path)}})
         finally:
-            await self.call("score_close", {"documentId": doc_C})
+            await self.call("score_close", {"document": doc_C})
 
         sem_C = parse_mscx(path_C.read_text("utf-8"))
         self.check_phase(result, fixture_ref, "musicxml",
@@ -972,9 +980,10 @@ class RoundTripRunner:
             return result
         path_D = out / f"{prefix}_D.mscx"
         try:
-            await self.must("score_export", {"documentId": opened_D["documentId"], "format": "mscx", "path": str(path_D)})
+            await self.must('score_export', {'document': opened_D['document'], 'action': 'run', 'kind': 'score',
+                'options': {'format': 'mscx'}, 'destination': {'kind': 'file', 'path': str(path_D)}})
         finally:
-            await self.call("score_close", {"documentId": opened_D["documentId"]})
+            await self.call("score_close", {"document": opened_D["document"]})
         self.check_phase(result, fixture_ref, "idempotence",
                          diff_data(sem_C, parse_mscx(path_D.read_text("utf-8"))))
 
@@ -1008,32 +1017,36 @@ async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: 
                 runner = RoundTripRunner(session, output_dir, self_test, no_losses)
 
                 # Case 1: create+edit
-                created_fixture = ROOT / "fixtures/golden/created.json"
-                score_data = json.loads(created_fixture.read_text("utf-8"))
-                err, res = await runner.call("score_create", {"score": score_data})
+                err, res = await runner.call("score_create", {"template_id": "Treble_Clef", "title": "Round trip"})
                 if err:
                     runner_report["cases"].append({
-                        "case": "create_edit", "fixture": "created.json", "status": "failed",
+                        "case": "create_edit", "fixture": "template:Treble_Clef", "status": "failed",
                         "losses": [], "failures": [("score_create", str(res))],
                     })
                 else:
-                    doc_create = res["documentId"]
+                    doc_create = res["document"]
                     try:
-                        rep_meas = {"notes": [{"pitches": [p], "ticks": 480} for p in (76, 74, 72, 71)]}
-                        await runner.must("score_replace_measures", {
-                            "documentId": doc_create, "partIndex": 0, "startMeasure": 1, "measures": [rep_meas],
-                        })
-                        q = await runner.must("score_query_region", {
-                            "documentId": doc_create, "partIndex": 0, "firstMeasure": 0, "measureCount": 1,
-                        })
-                        await runner.must("score_set_pitches", {
-                            "documentId": doc_create, "baseRevision": q["revision"], "operationId": "roundtrip-edit-1",
-                            "changes": [{"noteId": q["notes"][0]["id"], "pitch": 68}],
-                        })
-                        rep1 = await runner.execute_case("create_edit", "created.json", doc_create)
+                        await runner.must('score_edit', {'document': doc_create,
+                            'ops': [{'op': 'insert_measures', 'count': 1}]})
+                        outline = await runner.must('score_outline', {'document': doc_create})
+                        measures = outline['outline']['measures']
+                        assert len(measures) >= 2
+                        for measure, pitches in zip(measures[:2], ((60, 62, 64, 65), (76, 74, 72, 71))):
+                            for beat, value in enumerate(pitches):
+                                tick = Fraction(int(measure['tick']['num']), int(measure['tick']['den'])) + Fraction(beat, 4)
+                                await runner.must('score_edit', {'document': doc_create, 'ops': [{
+                                    'op': 'enter_notes', 'at': {'kind': 'segment', 'measure': measure['id'],
+                                        'staff': 0, 'voice': 0, 'tick': {'num': str(tick.numerator), 'den': str(tick.denominator)},
+                                        'segment_kind': 'ChordRest'},
+                                    'duration': {'num': '1', 'den': '4'}, 'pitches': [{'pitch': value}]}]})
+                        q = await runner.must('score_query', {'document': doc_create, 'mode': 'elements',
+                            'query': {'types': ['Note'], 'first_measure': 0, 'measure_count': 1}})
+                        await runner.must('score_edit', {'document': doc_create, 'expected_revision': q['revision'],
+                            'ops': [{'op': 'set_pitch', 'note': {'kind': 'id', 'id': q['elements'][0]['id']}, 'pitch': 68}]})
+                        rep1 = await runner.execute_case("create_edit", "template:Treble_Clef", doc_create)
                         runner_report["cases"].append(rep1)
                     finally:
-                        await runner.call("score_close", {"documentId": doc_create})
+                        await runner.call("score_close", {"document": doc_create})
 
                 # Case 2: import all golden fixtures except created.json / README.md, + evening.musicxml
                 golden_dir = ROOT / "fixtures/golden"
@@ -1049,27 +1062,27 @@ async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: 
                                                        "losses": [], "failures": [("score_open", str(opened))]})
                         continue
 
-                    doc = opened["documentId"]
+                    doc = opened["document"]
                     try:
                         rep = await runner.execute_case(cid, path.name, doc)
                         runner_report["cases"].append(rep)
                         if path.name == "linked_parts.mscx":
                             # Case 3: excerpts for linked_parts.mscx
-                            err_exc, exc_data = await runner.call("score_list_excerpts", {"documentId": doc})
+                            err_exc, exc_data = await runner.call("score_outline", {"document": doc})
                             if err_exc or not isinstance(exc_data, dict):
                                 runner_report["cases"].append({
                                     "case": f"excerpts_{path.stem}", "fixture": path.name, "status": "failed",
-                                    "losses": [], "failures": [("score_list_excerpts", str(exc_data))],
+                                    "losses": [], "failures": [("score_outline", str(exc_data))],
                                 })
                             else:
-                                for exc in exc_data.get("excerpts", []):
+                                for index, exc in enumerate(exc_data['outline']['excerpts']):
                                     eid = exc["id"]
                                     rep_exc = await runner.execute_case(
-                                        f"excerpt_{path.stem}_{eid}", f"{path.name}:excerpt:{eid}", doc, excerpt_id=eid,
+                                        f"excerpt_{path.stem}_{index}", f"{path.name}:excerpt:{index}", doc, excerpt_id=eid,
                                     )
                                     runner_report["cases"].append(rep_exc)
                     finally:
-                        await runner.call("score_close", {"documentId": doc})
+                        await runner.call("score_close", {"document": doc})
 
     elapsed = round(time.perf_counter() - t0, 3)
     runner_report["elapsed_seconds"] = elapsed
