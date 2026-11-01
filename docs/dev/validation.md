@@ -777,13 +777,22 @@ attributing an older lane result to the v2 host.
 
 ### A5 S5 migration evidence and open checks
 
+**Version contract, EXECUTED on Windows:** `version_info` opens the 4.5.0
+fixture, verifies its owner outline stays 4.5.0 after synchronous and
+background exports, rendering and excerpt generation, and reads 5.0.0 from
+both written MSCZ files. Reopening each file reports 5.0.0 in its outline and
+its rendered `$v` header. Rendering the unedited or edited owner likewise
+shows the written snapshot's 5.0.0. Exports write the current format version;
+that snapshot version is not the owner's source provenance. No live API
+schema changed. See `DEFECT-ENGRAVE-014`.
+
 The `engrave-16` follow-up and the current v2 comparison policy are in
 [a5-outputs.md](a5-outputs.md); the 78-output classification is in its linked
 machine-readable census. **EXECUTED, Windows:** the new-pin round trip passed
 23/23 and the focused golden overlap passed after independently verified,
-hash-pinned v2 migrations. The full golden comparison still has fourteen
-out-of-bound render outputs, and the strict rendered-page and version checks
-remain open under `DEFECT-ENGRAVE-015` and `DEFECT-ENGRAVE-014`. The earlier
+hash-pinned v2 migrations. At that follow-up the full golden comparison still
+had fourteen out-of-bound render outputs, and the rendered-page and version
+checks failed; the version contract above resolves the latter. The earlier
 S5 results below are retained as historical evidence, not current counts.
 
 **EXECUTED, Windows:** the v2 runner subset `music_core`, `host_api`,
@@ -808,8 +817,8 @@ owns the current byte-view and Unicode stream/seek boundary checks.
 **EXECUTED, Windows:** the focused v2 golden overlap comparison retains the
 existing comparator and allow-list and found one unapproved MSCX difference;
 the source and evidence are described in [webmscore-parity.md](webmscore-parity.md).
-The strict v2 version-header assertion also fails as tracked in
-`DEFECT-ENGRAVE-014`. The migrated round-trip runner executed 23 cases: 13
+The then-strict v2 version-header assertion also failed before the contract
+decision in `DEFECT-ENGRAVE-014`. The migrated round-trip runner executed 23 cases: 13
 passed, and 10 failed the preserved MSCX text comparison on save/reopen style
 or excerpt-name differences; historical loss hashes were not changed. No new
 goldens or allowances were written.

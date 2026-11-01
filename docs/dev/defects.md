@@ -24,7 +24,7 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-011 | Host adapter layer predates engine C5-C8 and does not compile | RESOLVED 2026-11-01 (Windows + linux-host) | EXECUTED | The v1 host builds and its runtime assets, workers and MCP smoke pass against `engrave-15` on both hosts; public-document cutover remains A5 S2+ work |
 | DEFECT-ENGRAVE-012 | Snapshot-based render is not bit-identical to direct render | Accepted limitation | EXECUTED | Export jobs render a captured MSCZ snapshot, so render output can differ from a direct in-process render |
 | DEFECT-ENGRAVE-013 | Pitch edits can leave a mismatched tie without a diagnostic | Carried / Open | SOURCE-REVIEWED, EXECUTED | An exported mismatched tie may not survive MusicXML reimport |
-| DEFECT-ENGRAVE-014 | Snapshot rendering changes an unedited score's version header | Carried / Open | SOURCE-REVIEWED, EXECUTED | A rendered `$v` header can show the current engine version instead of the source version |
+| DEFECT-ENGRAVE-014 | Snapshot rendering changes an unedited score's version header | Resolved by contract | SOURCE-REVIEWED, EXECUTED | The owner keeps the source version; a written and reopened snapshot and its render report the writer version |
 
 ## Details
 
@@ -170,12 +170,11 @@ Evidence levels used in this ledger:
 
 ### 14. Snapshot rendering changes an unedited score's version header (DEFECT-ENGRAVE-014)
 
-- **Status**: Carried / Open at `engrave-16`; the strict v2 `version_info` test fails.
+- **Status**: Resolved by contract at `engrave-16`.
 - **Evidence Level**: SOURCE-REVIEWED, EXECUTED (Windows, v2 wire and public engine probe).
 - **Mechanism**: `capture_export` in `native/api_output.cpp` writes an MSCZ snapshot and the worker opens it. The engine's `Writer::writeScore` writes the running application's `programVersion` and revision into the archive; `export_native_score` restores the owner's in-memory version fields afterwards, but cannot undo the stamp in the serialized bytes. On rendering, `HeaderFooterLayout` expands `$v` to the running version for a dirty score and to `mscoreVersion()` for a clean score. The reopened worker document therefore has the snapshot's 5.0.0 provenance, while the untouched owner still has the source's 4.5.0. The v1 worker protocol carried source version fields separately; the current public engine API exposes `Outline::mscore_version` but no operation to restore source version, revision, file version and dirty state on the reloaded worker document.
-- **Executed evidence**: `scripts/test_version_info.py` opens `fixtures/version/header.mscx` (file format 4.70, program version 4.5.0). The owner outline remains 4.5.0 after both run and start exports. A direct public-engine render of the unedited source shows 4.5.0; a public MSCZ export contains `<programVersion>5.0.0</programVersion>`, and a public render of that reopened archive shows 5.0.0, as does the v2 worker. Thus the snapshot result is faithful to the archive's writing version, but it is not the unedited source's last-saved version. This is a content and provenance difference, not the geometry tolerance in `DEFECT-ENGRAVE-012`.
-- **Impact**: Users can receive a rendered score whose version macro differs from the live document, even though the export reports success and the captured revision is unchanged.
-- **Expected behavior / next step**: A render advertised as the captured unedited document should show the source's 4.5.0; a render explicitly advertised as the saved snapshot would correctly show 5.0.0 and must not be represented as source provenance. Choose a public snapshot/restore contract or a reviewed host design that preserves this distinction without private engine internals. Keep the strict header assertion until that decision and implementation; do not mask the difference by changing the expected result.
+- **Executed evidence**: On Windows, `scripts/test_version_info.py` opens `fixtures/version/header.mscx` (file format 4.70, program version 4.5.0). The owner outline remains 4.5.0 after synchronous and background MSCZ exports, rendering and excerpt generation. Both written archives contain `<programVersion>5.0.0</programVersion>`; both reopen with outline version 5.0.0, and their renders show 5.0.0. The unedited and edited owner renders also show 5.0.0 because rendering uses a written snapshot. Earlier direct public-engine probes showed 4.5.0 for the unedited source and 5.0.0 for the reopened archive.
+- **Contract**: Exports write the current format version. The owner retains its in-memory source version; a written/reopened snapshot and every render through that snapshot report the written version. The render's version is not evidence that the original source file was saved by that version. This content/provenance distinction is separate from the geometry limitation in `DEFECT-ENGRAVE-012`.
 
 ### 15. Snapshot render drift exceeds the accepted bounds (DEFECT-ENGRAVE-015)
 

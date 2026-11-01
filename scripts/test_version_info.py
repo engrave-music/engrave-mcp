@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -161,9 +162,8 @@ async def run(args):
             report["musicxml"] = {"software": software}
             await call("score_close", {'document': document})
 
-            # The fixture records programVersion 4.5.0, so the unedited $v header
-            # shows the file's version; editing marks the score dirty and the
-            # header must switch to the running application version.
+            # The fixture records programVersion 4.5.0. The owner retains that
+            # source version, but exports render a newly written MSCZ snapshot.
             fixture_mscx_path = ROOT / "fixtures/version/header.mscx"
             if expected_version != "4.7.6":
                 fixture_content = fixture_mscx_path.read_text(encoding="utf-8")
@@ -176,8 +176,7 @@ async def run(args):
             fixture = await call("score_open", {"path": str(fixture_mscx_path)})
             fixture_document = fixture['document']
 
-            # Exporting MSCZ stamps the running program's version into the open
-            # score in Writer::writeScore; the export must stay read-only.
+            # Both synchronous and background exports must leave the owner alone.
             metadata_before = await outline_version(fixture_document)
             assert metadata_before == '4.5.0', metadata_before
 
@@ -203,14 +202,37 @@ async def run(args):
                                           "after_mscz": metadata_after,
                                           "background": metadata_background}
 
+            # Each archive is stamped by the writer. Reopen both archives and
+            # render them: their outlines and $v headers describe the written
+            # snapshot, not the owner document's source provenance.
+            snapshot_versions = {}
+            for label, path in (("run", fixture_mscz),
+                                ("start", out / 'header-background.mscz')):
+                with zipfile.ZipFile(path) as archive:
+                    written_version = ET.fromstring(archive.read('score.mscx')).findtext('programVersion')
+                assert written_version == expected_version, (label, written_version)
+                reopened = (await call('score_open', {'path': str(path)}))['document']
+                reopened_version = await outline_version(reopened)
+                assert reopened_version == expected_version, (label, reopened_version)
+                snapshot_dir = out / f'header-snapshot-{label}'
+                await export(reopened, 'svg', snapshot_dir)
+                header, footer_low, footer_high = version_runs(snapshot_dir / 'page-0001.svg')
+                assert header == footer_high, f"{label} snapshot render must show the written version"
+                assert header != footer_low, f"{label} snapshot render still shows the source version"
+                snapshot_versions[label] = {"archive_programVersion": written_version,
+                                            "reopened_mscoreVersion": reopened_version,
+                                            "rendered_header": expected_version}
+                await call('score_close', {'document': reopened})
+            report["snapshots"] = snapshot_versions
+            assert await outline_version(fixture_document) == '4.5.0'
+
             before_dir = out / 'header-before'
             await export(fixture_document, 'svg', before_dir)
             before_svg = before_dir / 'page-0001.svg'
             header_before, footer_before_low, footer_before_high = version_runs(before_svg)
-            # Known v2 failure: DEFECT-ENGRAVE-014. Keep the original expected
-            # source-version behavior so this lane detects its eventual fix.
-            assert header_before == footer_before_low, "unedited $v must show the file version"
-            assert header_before != footer_before_high, "unedited $v already shows the app version"
+            assert header_before == footer_before_high, "owner render must show the written snapshot version"
+            assert header_before != footer_before_low, "owner render must not show the source version"
+            assert await outline_version(fixture_document) == '4.5.0'
 
             region = await call('score_query', {'document': fixture_document, 'mode': 'elements',
                 'query': {'types': ['Note'], 'first_measure': 0, 'measure_count': 1, 'props': ['pitch']}})
@@ -223,15 +245,14 @@ async def run(args):
             await export(fixture_document, 'svg', after_dir)
             after_svg = after_dir / 'page-0001.svg'
             header_after, footer_after_low, footer_after_high = version_runs(after_svg)
-            assert header_after != header_before, "edited $v did not change"
-            assert header_after == footer_after_high, "edited $v does not match the 4.7.6 reference"
-            assert header_after != footer_after_low, "edited $v still matches the 4.5.0 reference"
+            assert header_after == header_before, "editing changed the written snapshot version header"
+            assert header_after == footer_after_high, "edited $v does not match the written version"
+            assert header_after != footer_after_low, "edited $v still matches the source version"
             report["svg_header"] = {"encoding": "cairo-glyph-paths",
-                                    "unedited_matches": "file programVersion (4.5.0)",
-                                    "edited_matches": f"MUSE_APP_VERSION ({expected_version})"}
+                                    "unedited_snapshot": expected_version,
+                                    "edited_snapshot": expected_version}
 
-            # Excerpt generation serializes and reloads the document as well; the
-            # reload must keep the source file's stamps, not the writer's.
+            # Excerpt generation must also preserve the owner source version.
             outline = (await call('score_outline', {'document': fixture_document}))['outline']
             await call('score_edit', {'document': fixture_document, 'ops': [{'op': 'generate_excerpts',
                 'parts': [{'kind': 'id', 'id': part['id']} for part in outline['parts']]}]})
