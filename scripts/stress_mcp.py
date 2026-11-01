@@ -78,21 +78,33 @@ def main():
                 assert json.loads(lines.get(timeout=10))["error"]["code"] == -32600
                 assert json.loads(lines.get(timeout=10))["error"]["code"] == -32700
                 exchange("ping")
-                score = {"parts": [{"name": "Piano", "midiProgram": 1, "measures": [
-                    {"notes": [{"pitches": [60, 64, 67], "ticks": 1920}]}]}]}
                 samples = []
                 for iteration in range(120):
-                    doc = call("score_create", {"score": score})
+                    doc = call("score_create", {"template_id": "Treble_Clef"})['document']
+                    outline = call('score_outline', {'document': doc})['outline']
+                    if len(outline['measures']) > 1:
+                        call('score_edit', {'document': doc, 'ops': [{'op': 'remove_measures',
+                            'first': {'kind': 'id', 'id': outline['measures'][1]['id']},
+                            'last': {'kind': 'id', 'id': outline['measures'][-1]['id']}}]})
+                        outline = call('score_outline', {'document': doc})['outline']
+                    assert len(outline['measures']) == 1
+                    measure = outline['measures'][0]
+                    call('score_edit', {'document': doc, 'ops': [{'op': 'enter_notes',
+                        'at': {'kind': 'segment', 'measure': measure['id'], 'staff': 0, 'voice': 0,
+                               'tick': measure['tick'], 'segment_kind': 'ChordRest'},
+                        'duration': {'num': '1', 'den': '1'},
+                        'pitches': [{'pitch': p} for p in (60, 64, 67)]}]})
                     if iteration % 10 == 9:
                         fmt = "wav" if soundfont else "pdf"
-                        call("score_export", {"documentId": doc["documentId"], "format": fmt,
-                                              "path": str(OUT / f"cycle.{fmt}")})
-                    call("score_close", {"documentId": doc["documentId"]})
+                        call('score_export', {'document': doc, 'action': 'run',
+                            'kind': 'audio' if soundfont else 'render', 'options': {'format': fmt},
+                            'destination': {'kind': 'file', 'path': str((OUT / f'cycle.{fmt}').resolve())}})
+                    call("score_close", {"document": doc})
                     if iteration % 10 == 9: samples.append({"cycle": iteration + 1, "private_bytes": memory(process)})
                 growth = samples[-1]["private_bytes"] - samples[3]["private_bytes"]
                 (OUT / f"memory-{soundfont}.json").write_text(json.dumps(samples, indent=2), encoding="utf-8")
                 assert growth < 16 * 1024 * 1024, f"Memory grew after warmup: {growth}"
-                call("score_create", {"score": {"title": "\ufffe", **score}}, error=True)
+                call("score_create", {"template_id": "Treble_Clef", "title": "\ufffe"}, error=True)
                 call("score_open", {"path": "missing-♯-乐谱.musicxml"}, error=True)
                 exchange("ping")
                 process.stdin.close()
