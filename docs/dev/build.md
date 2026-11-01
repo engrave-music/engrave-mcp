@@ -68,11 +68,11 @@ python scripts/prepare.py                 # 再校验并分发资源
    build/assets_test.exe build/scratch_assets artifacts/assets_test <test_font_path>
    ```
 
-xmake 的生成目标在各自构建目录写入版本信息与工具定义（引擎的 `muse_generated` 写 `engrave_version.h`，宿主的 `host_generated` 写 `tool_schema.inc`）；增量构建重新检查 `native/legacy_tools.json`（S1 的 v1 线上定义；v2 定义由独立的 `registry_dump` 生成到 `native/tools.json`），内容未变时保留时间戳。引擎各模块源码通过 `xmake/engrave.lua` 中的目录通配符（folder globs）直接按模块目录引入，不再维护静态源码清单与清单生成器；新增源码文件落入对应模块目录即自动参与编译。
+xmake 的 `muse_generated` 在构建目录写入引擎版本信息；宿主 v2 定义由独立的 `registry_dump` 生成到 `native/tools.json`，`registry_check` 检查生成结果和处理器。`native/legacy_tools.json` 只属于历史 v1 基线，不参与生产构建。引擎各模块源码通过 `xmake/engrave.lua` 中的目录通配符直接引入。
 
-引擎适配层（原 `native/` 下 `noqt_support`、`score_engine`、`engine_audio` 的源码）自 A4 S1 起位于引擎检出的 `engrave/src/<area>/`（`runtime`、`io`、`render`、`audio`、`score`），由引擎构建中的静态库 target `engrave` 以目录通配符编译；其回归测试、探针（`*_test`、`semantic_dump`、`noqt_probe`、`engine_audio_probe`、`audio_engine_link_check`）与上游 gtest 套件的测试框架位于 `engrave/tests/`，target 定义在引擎的 `xmake/tests.lua`。本仓库 `native/` 只保留 MCP 宿主（`main`、`mcp_transport`、`async_session`、`background_job`、`worker_protocol`、`noqt_engine`、`music_core`、`composition`、`tools.json`）；`music_core` 链接 `engrave`，并以 `"<area>/<file>.h"` 形式包含其内部头文件（A5 之前的特权客户端）。zlib 与 Cairo 由包含方提供：本仓库取自 pixi `native` 环境；引擎单独构建时 zlib 使用固定版本包，Cairo 使用系统包或 `--cairo_prefix=<prefix>`。宿主自身的 `xmake.lua` 也接受 `--cairo_prefix=<prefix>`（`<prefix>/include/cairo`、`<prefix>/lib`，非 Windows 平台写入 rpath），在 linux-host 这类没有系统 Cairo 的机器上配置宿主时必须传入该参数。所有二进制的名称与输出位置（`$(builddir)` 下）不变。
+引擎适配层与其回归测试、探针位于 fork，由 `engrave` 及 `xmake/tests.lua` 构建。本仓库 `native/` 的生产代码和测试都只能包含 `engrave/...` 公共引擎头文件；`native_include_check` 在构建宿主目标前检查这一规则，lane runner 的源码预检也执行它。v2 store、registry、worker、job manager 与 transport 不再链接 v1 facade。zlib 与 Cairo 由包含方提供：本仓库取自 pixi `native` 环境；宿主 `xmake.lua` 接受 `--cairo_prefix=<prefix>`（`<prefix>/include/cairo`、`<prefix>/lib`，非 Windows 平台写入 rpath），linux-host 构建须传入该参数。
 
-Windows 和 Linux 已验证长 UTF-8 schema 的完整传递、修改 schema 只重编译 `noqt_engine.cpp`，以及恢复后的无变化构建不编译/链接。生成器分块编码字符串，避免 MSVC 单个字符串长度限制。验收命令：
+增量测试检查长 UTF-8 registry 描述、修改 schema 只重编译 `schema_defs.cpp`，以及恢复后的无变化构建不编译/链接。验收命令：
 
 ```powershell
 pixi run -e native python scripts/test_xmake_incremental.py --binary build/xmake-windows/musescore-mcp.exe --output artifacts/xmake-incremental
@@ -89,8 +89,8 @@ pwsh -NoProfile -File notes/claude-scripts/build.ps1 musescore_mcp
 ```
 *(日常开发可使用 `./scripts/build-native.ps1 -Jobs 12`。)*
 
-包装脚本默认同时构建 `musescore_mcp`、`musescore_mcp_test`、`music_core_test`、
-`registry_dump`、`registry_check` 和 `host_api_test`；可用 `-Targets` 指定子集。
+包装脚本默认同时构建 `musescore_mcp`、`musescore_mcp_test`、`registry_dump`、
+`registry_check`、`host_api_test` 和 `export_job_test`；可用 `-Targets` 指定子集。
 S2 的独立验收（必须在原生 DLL 目录已加入 PATH 的环境中运行）：
 
 ```powershell

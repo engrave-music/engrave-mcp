@@ -81,7 +81,7 @@ constexpr std::size_t kOutputBudgetBytes = 48u * 1024u * 1024u;
 constexpr std::size_t kMaxOutputMessages = 256u;
 
 // Successful results carry the payload both as legacy text and as
-// structuredContent. Duplicating a large (e.g. ~8 MiB score_get) payload
+// structuredContent. Duplicating a large query payload
 // would exceed the 16 MiB wire cap even though the structured payload itself
 // fits. Above this threshold the legacy text becomes a short pointer to
 // structuredContent, keeping the authoritative structured result intact.

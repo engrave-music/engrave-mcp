@@ -2,6 +2,26 @@
 
 本文件记录可复核结果；临时日志和 agent 完整输出留在忽略的 `notes/`。
 
+## A5 S6: public host boundary
+
+**SOURCE-REVIEWED:** the v1 facade, composition adapter, synchronous transport
+entry point and v1 worker protocol are removed from the active build. All
+`native/` sources, including tests, use only public `engrave/...` engine headers;
+`native_include_check` enforces the boundary before host builds and the lane
+preflight checks it for source checkouts. The historical v1 scripts and
+`native/legacy_tools.json` remain separate from production. See
+[webmscore-parity.md](webmscore-parity.md) for the retired `music_core` lane's
+replacement coverage, and [defects.md](defects.md) for the host poison-test
+limit.
+
+**EXECUTED, Windows during cutover:** the host build and focused `host_api`,
+`export_job`, `runtime_assets`, `async_session`, `tool_schema`, `transport`
+and `mcp_smoke` lanes passed. `export_job` exercises v2 worker dispatch and
+rejection of v1, oversized and deeply nested requests. The expanded
+`runtime_assets` lane also passed after adding excerpt font-relayout coverage.
+Full-run and physical-Linux evidence is recorded separately for the final
+commit; a Linux build alone is compilation evidence, not a lane pass.
+
 ## Windows / Qt 原生基线
 
 `artifacts/native-006`：固定上游引擎导入三声部、每声部 16 小节的 fixture，
