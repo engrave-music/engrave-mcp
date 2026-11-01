@@ -69,7 +69,8 @@ def worker(args, source, audio_options, limit, expected):
             produced = 0
         assert not list(cache.glob("*")), "temporary audio survived worker exit"
         return {"limit": limit, "observed_cache_peak": peak, "exit": exit_code,
-                "result": "success" if result["ok"] else result["error"]["code"], "output_bytes": produced}
+                "result": "success" if result["ok"] else result["error"]["code"], "output_bytes": produced,
+                "message": "" if result["ok"] else result["error"]["message"]}
 
 
 def main():

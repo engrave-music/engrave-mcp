@@ -249,8 +249,22 @@ int run_worker(const fs::path& request_path) noexcept {
             } else {
                 if (request.audio_options.sample_rate && request.audio_options.sample_rate != options.audio_sample_rate)
                     throw Failure{{"Unsupported", "audio sample rate differs from the engine rate"}};
-                const auto duration = value(document->outline(request.audio_options.score)).duration;
-                if (projected_audio_bytes(request.audio_options, duration, options.audio_sample_rate) > limit)
+                const auto selected = value(document->outline(request.audio_options.score));
+                std::optional<double> duration;
+                if (request.audio_options.use_repeats) {
+                    duration = selected.duration;
+                } else {
+                    // Audio length always follows the master score, including for excerpts.
+                    const auto master = request.audio_options.score.excerpt ? value(document->outline()) : selected;
+                    try {
+                        const auto positions = document->positions(engrave::PositionKind::Measure);
+                        if (positions) duration = unexpanded_audio_seconds(master, *positions);
+                    } catch (const std::runtime_error&) {
+                        // Some layouts/timings cannot be represented by the public
+                        // position API. Do not reject using the expanded duration.
+                    }
+                }
+                if (duration && projected_audio_bytes(request.audio_options, *duration, options.audio_sample_rate) > limit)
                     throw Failure{{"ResourceLimit", "projected audio exceeds output byte limit"}};
                 std::ofstream out(stage / "output", std::ios::binary | std::ios::trunc);
                 if (!out) throw Failure{{"Io", "cannot open staged audio"}};

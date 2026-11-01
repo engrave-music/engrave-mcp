@@ -32,6 +32,7 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-019 | Audio temporary output can exceed its byte budget | Partially mitigated / Open | SOURCE-REVIEWED, EXECUTED | Settings-aware estimates and sampled cache termination reduce exposure, but sampling is not a hard filesystem quota |
 | DEFECT-ENGRAVE-020 | Snapshot pins fell through to legacy allowances | Resolved | SOURCE-REVIEWED, EXECUTED | A snapshot pin takes precedence over an older direct-engine allowance |
 | DEFECT-ENGRAVE-021 | Runtime font cache breaks Linux audio monitoring | Resolved | SOURCE-REVIEWED, EXECUTED | The audio monitor counts only regular engine audio cache files |
+| DEFECT-ENGRAVE-022 | No-repeat audio projected using repeat-expanded duration | Resolved for the reproduced rejection | SOURCE-REVIEWED, EXECUTED | The worker uses the matching end time when exposed and otherwise does not reject on the expanded estimate |
 
 ## Details
 
@@ -227,6 +228,7 @@ such engine contract or change is introduced here.
 - **Status**: Partially mitigated by `e0091f3`; open for a hard temporary-file quota.
 - **Evidence**: **EXECUTED** on Windows: a 64-byte worker limit returned `ResourceLimit` with a sampled cache peak of 0 bytes and no staged artifact. For the same 43-second rounded outline, 16-bit WAV and 128-kbps MP3 succeeded under budgets that rejected 24-bit WAV and 512-kbps MP3 before creating audio. A test worker growing a cache was terminated by the job manager and published nothing. **SOURCE-REVIEWED**: the estimate uses the selected settings; the 5-ms monitor interval is a polling target, not a maximum overshoot. Scheduling, filesystem work and other coordinator work can delay sampling, and no finite maximum overshoot has been established. A manually invoked private worker has no manager watchdog. The engine still writes its complete cache file before invoking the public sink, and the cache and staged copy can coexist.
 - **Next step**: Supply a quota-enforcing file device or equivalent OS-backed per-worker disk limit that cannot overshoot between samples. Account for the coexistence of the cache and staged output and verify cleanup and failure classification on both platforms.
+- **Projection limitation**: With repeats disabled the public API cannot always provide the renderer's end time; when the unexpanded end is not an identifiable expanded measure boundary, early projection is omitted and the sampled monitor and sink remain the guards. See -022 and [the registry limits](a5-registry.md).
 
 ### 20. Snapshot pins fell through to legacy allowances (DEFECT-ENGRAVE-020)
 
@@ -238,3 +240,9 @@ such engine contract or change is introduced here.
 - **Status**: Resolved. The A5 re-review (`notes/a5/s8/REVIEW-TERRA-2.md`, section 3.A) reproduced an `Is a directory` worker failure after a runtime font was registered.
 - **Resolution**: The monitor sums only regular, non-symlink direct children of the worker cache whose names start with `engrave-audio-`, the pinned engine's encoded-audio filename prefix. It does not recurse, count runtime font directories, unrelated cache files, symlinks, sockets or other non-regular entries. The worker separately limits the staged output; the monitor does not sum that copy with the cache file.
 - **Evidence**: **EXECUTED** on Windows: live host WAV exports without a font and after `runtime_info` registers Petaluma Script both succeed under the default budget; a manager test ignores unrelated entries and stops a growing named audio cache file. **SOURCE-REVIEWED**: the pinned engine writes its encoded temporary audio as an `engrave-audio-<pid>-<index>.<format>` direct child of its cache directory. The polling limitation remains open in -019.
+
+### 22. No-repeat audio projected using repeat-expanded duration (DEFECT-ENGRAVE-022)
+
+- **Status**: Resolved for the false rejection reproduced in the A5 re-review (`notes/a5/s8/REVIEW-TERRA-2.md`, section 3.B).
+- **Resolution**: Repeat-enabled exports retain the expanded outline estimate. For repeat-disabled exports, the worker uses the engine's expanded-timeline position at the unexpanded end tick when the public measure positions identify that boundary; otherwise it skips early projection instead of using the wrong duration. The sampled cache guard and sink limit still apply. This fallback is a remaining limitation of -019, not an exact preflight for every score.
+- **Evidence**: **EXECUTED** on Windows: the 1,000-repeat fixture now produces a 2,469,646-byte WAV under the default limit without repeats and is rejected with repeats enabled. At four repeats, both modes render and their WAV projections are 180,450 bytes above the encoded sizes, within the documented rounding/header margin; a limit one byte below each projection is rejected. **SOURCE-REVIEWED**: the pinned renderer derives the unexpanded end tick from `repeatList(false)` but converts it using the expanded tempo timeline. The public positions API supplies the time only at exported measure starts and can omit a one-to-one measure mapping.

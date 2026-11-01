@@ -1,15 +1,19 @@
 #pragma once
 
 #include <engrave/audio.h>
+#include <engrave/output.h>
+#include <engrave/query.h>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <vector>
 
 namespace music::v2 {
 // Estimate the same stereo encoding settings used by the public engine API.
-// Outline duration is rounded to the nearest second and always includes
-// repeats. Add half a second for that rounding and the engine's three-second
-// render tail. Lossy bitrates are nominal, not strict codec bounds.
+// Duration is either the nearest-second expanded outline or a millisecond
+// position on the expanded timeline. Add half a second for rounding and the
+// engine's three-second render tail. Lossy bitrates are nominal, not bounds.
 inline std::uint64_t projected_audio_bytes(const engrave::AudioOptions& options,
                                            double score_seconds, std::int32_t sample_rate) noexcept {
     if (!std::isfinite(score_seconds) || score_seconds < 0 || sample_rate <= 0)
@@ -30,5 +34,51 @@ inline std::uint64_t projected_audio_bytes(const engrave::AudioOptions& options,
     if (bytes >= static_cast<long double>(std::numeric_limits<std::uint64_t>::max()))
         return std::numeric_limits<std::uint64_t>::max();
     return static_cast<std::uint64_t>(std::ceil(bytes));
+}
+
+// The renderer uses repeatList(false).ticks() for the unexpanded end, but
+// converts it with the expanded tempo timeline. The public API does not expose
+// that conversion directly. A measure position at the same unrolled tick is
+// the engine's own millisecond-rounded conversion; use it only when every
+// laid-out measure maps one-to-one to the outline and the end is a boundary.
+// Otherwise the caller must omit this projection and rely on the cache guard.
+inline std::optional<double> unexpanded_audio_seconds(const engrave::Outline& outline,
+                                                        const engrave::Positions& positions) {
+    constexpr std::int64_t ticks_per_whole = 1920; // pinned engine: 480 ticks per quarter
+    const auto ticks = [](const engrave::Fraction& value) -> std::optional<std::int64_t> {
+        if (value.num < 0 || value.den <= 0 ||
+            value.num > std::numeric_limits<std::int64_t>::max() / ticks_per_whole) return {};
+        const auto scaled = value.num * ticks_per_whole;
+        if (scaled % value.den) return {};
+        return scaled / value.den;
+    };
+    if (outline.measures.empty() || positions.elements.size() != outline.measures.size() ||
+        positions.events.empty()) return {};
+    std::vector<std::int64_t> lengths;
+    lengths.reserve(outline.measures.size());
+    std::int64_t end = 0;
+    for (std::size_t i = 0; i < outline.measures.size(); ++i) {
+        const auto start = ticks(outline.measures[i].tick);
+        const auto length = ticks(outline.measures[i].duration);
+        if (!start || !length || *start != end || *length <= 0 ||
+            *length > std::numeric_limits<std::int32_t>::max() - end ||
+            positions.elements[i].id != static_cast<std::int32_t>(i)) return {};
+        end += *length;
+        lengths.push_back(*length);
+    }
+    std::int64_t unrolled = 0;
+    std::int32_t previous_time = -1;
+    for (const auto& event : positions.events) {
+        if (event.elid < 0 || static_cast<std::size_t>(event.elid) >= lengths.size() ||
+            event.position < 0 || event.position < previous_time) return {};
+        if (unrolled == end) return static_cast<double>(event.position) / 1000.0;
+        const auto length = lengths[static_cast<std::size_t>(event.elid)];
+        if (length > end - unrolled) return {};
+        unrolled += length;
+        previous_time = event.position;
+    }
+    // The expanded and unexpanded timelines end at the same tick.
+    if (unrolled == end) return outline.duration;
+    return {};
 }
 }

@@ -166,6 +166,24 @@ int main(int argc, char** argv) {
             const auto mp3_128 = projected_audio_bytes(settings, 10, 44100);
             settings.bitrate_kbps = 512;
             require(projected_audio_bytes(settings, 10, 44100) > mp3_128, "lossy projection ignores bitrate");
+
+            engrave::Outline outline;
+            outline.duration = 12;
+            outline.measures.resize(2);
+            outline.measures[0].tick = {0, 1}; outline.measures[0].duration = {1, 1};
+            outline.measures[1].tick = {1, 1}; outline.measures[1].duration = {1, 1};
+            engrave::Positions positions;
+            positions.elements.resize(2); positions.elements[0].id = 0; positions.elements[1].id = 1;
+            positions.events = {{0, 0}, {1, 2100}, {0, 4700}, {1, 6800}, {0, 9400}};
+            require(unexpanded_audio_seconds(outline, positions) == 4.7,
+                    "unexpanded end did not use the engine's expanded tempo timeline");
+            positions.elements.pop_back();
+            require(!unexpanded_audio_seconds(outline, positions), "collapsed measures produced a guessed duration");
+            positions.elements.resize(2); positions.elements[1].id = 1;
+            outline.measures[0].duration = {3, 4}; outline.measures[1].tick = {3, 4};
+            outline.measures[1].duration = {1, 1};
+            positions.events = {{0, 0}, {0, 1500}, {1, 3000}};
+            require(!unexpanded_audio_seconds(outline, positions), "mid-measure end produced a guessed duration");
         }
         require(argc == 4, "usage: export_job_test ASSETS SOUNDFONT OUTPUT_DIR");
         const auto output_dir = fs::absolute(fs::u8path(argv[3])); fs::create_directories(output_dir);
@@ -241,6 +259,8 @@ int main(int argc, char** argv) {
         auto repeated = host->open({{"path", path_text(fs::absolute("fixtures/golden/repeat70.mscx"))}});
         require(repeated.at("ok").get<bool>(), repeated.dump());
         const auto repeated_id = repeated.at("document").get<std::string>();
+        std::optional<ExportSnapshot> repeat_audio, plain_audio;
+        std::uint64_t repeat_projection = 0, plain_projection = 0;
         auto repeat_req = request(repeated_id, "positions", {{"position_kind", "measure"}});
         auto repeat_check = host->with_document(repeated_id, 1, [&](engrave::Document& document) -> Result<void> {
             auto snapshot = capture_export(document, *runtime, repeat_req);
@@ -259,6 +279,26 @@ int main(int argc, char** argv) {
             return {};
         });
         require(bool(repeat_check), repeat_check ? "" : repeat_check.error().message);
+        auto audio_check = host->with_document(repeated_id, 1, [&](engrave::Document& document) -> Result<void> {
+            auto outline = document.outline();
+            if (!outline) return std::unexpected(api_error(outline.error()));
+            auto positions = document.positions(engrave::PositionKind::Measure);
+            if (!positions) return std::unexpected(api_error(positions.error()));
+            const auto plain_seconds = unexpanded_audio_seconds(*outline, *positions);
+            require(plain_seconds.has_value(), "repeat fixture has no unexpanded boundary");
+            auto plain = request(repeated_id, "audio", {{"format", "wav"}, {"use_repeats", false}});
+            auto expanded = request(repeated_id, "audio", {{"format", "wav"}, {"use_repeats", true}});
+            plain_projection = projected_audio_bytes(plain.audio_options, *plain_seconds, options.audio_sample_rate);
+            repeat_projection = projected_audio_bytes(expanded.audio_options, outline->duration, options.audio_sample_rate);
+            require(plain_projection < repeat_projection, "repeat fixture does not separate the projections");
+            auto a = capture_export(document, *runtime, plain);
+            if (!a) return std::unexpected(a.error());
+            auto b = capture_export(document, *runtime, expanded);
+            if (!b) return std::unexpected(b.error());
+            plain_audio = std::move(*a); repeat_audio = std::move(*b);
+            return {};
+        });
+        require(bool(audio_check), audio_check ? "" : audio_check.error().message);
         require(host->close({{"document", repeated_id}}).at("ok").get<bool>(), "repeat fixture close failed");
         auto audio_doc = host->open({{"path", path_text(fs::absolute("fixtures/audio/mix.mscz"))}});
         require(audio_doc.at("ok").get<bool>(), audio_doc.dump());
@@ -388,6 +428,29 @@ int main(int argc, char** argv) {
         require(!decode_export(invalid), "overflow revision accepted");
 
         const auto scratch = music::create_private_directory(output_dir);
+        {
+            JobLimits limits; limits.output_bytes = plain_projection;
+            ExportJobs bounded(limits);
+            const auto plain_path = scratch / "repeat-off-bounded.wav";
+            const auto repeated_path = scratch / "repeat-on-rejected.wav";
+            auto plain = submit(bounded, *plain_audio, plain_path);
+            require(wait_job(bounded, plain.job).state == JobState::Succeeded &&
+                    fs::file_size(plain_path) <= plain_projection, "bounded no-repeat job failed");
+            auto repeated = submit(bounded, *repeat_audio, repeated_path);
+            const auto rejected = wait_job(bounded, repeated.job);
+            require(rejected.state == JobState::Failed && rejected.error && rejected.error->code == "ResourceLimit" &&
+                    rejected.error->message.find("projected audio") != std::string::npos && !fs::exists(repeated_path),
+                    "bounded repeated job did not use the expanded projection");
+        }
+        {
+            JobLimits limits; limits.output_bytes = repeat_projection;
+            ExportJobs bounded(limits);
+            const auto path = scratch / "repeat-on-bounded.wav";
+            auto repeated = submit(bounded, *repeat_audio, path);
+            require(wait_job(bounded, repeated.job).state == JobState::Succeeded &&
+                    fs::file_size(path) <= repeat_projection, "expanded job failed at its projected budget");
+        }
+        plain_audio.reset(); repeat_audio.reset();
         struct Cleanup { fs::path p; ~Cleanup() { std::error_code ec; fs::remove_all(p, ec); } } cleanup{scratch};
         {
             JobLimits limits; limits.output_bytes = 4096;
