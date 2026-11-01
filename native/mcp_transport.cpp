@@ -1459,7 +1459,8 @@ private:
         try {
             call = std::make_shared<CallState>();
             call->id = id;
-            call->live_export = live_export_ && name == "score_export" && arguments.value("action", "") == "run";
+            call->live_export = live_export_ && name == "score_export" && arguments.is_object() &&
+                arguments.contains("action") && arguments["action"] == "run";
             call->cancel = std::make_shared<asio::cancellation_signal>();
             inflight_.push_back(call);
         } catch (...) {
