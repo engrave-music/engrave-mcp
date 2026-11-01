@@ -22,6 +22,8 @@ Tests:
 from __future__ import annotations
 
 import copy
+import contextlib
+import io
 import json
 from pathlib import Path
 import sys
@@ -37,6 +39,38 @@ import check_semantic_dump as csd
 import golden
 from test_rendered_page import TestPngInkControls, TestRenderedPageControls, TestSvgGeometry
 from test_roundtrip import parse_mscx
+
+
+class TestV2GoldenInventory(unittest.TestCase):
+    def test_only_retired_metadata_is_excluded_and_index_still_gates(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline, actual, output = root / "baseline", root / "actual", root / "report"
+            (baseline / "score").mkdir(parents=True)
+            (actual / "score").mkdir(parents=True)
+            output.mkdir()
+            (baseline / "score/metadata.json").write_text('{"pages":1}\n', encoding="utf-8")
+            (baseline / "score/score.mscx").write_text("score\n", encoding="utf-8")
+            (actual / "score/score.mscx").write_text("score\n", encoding="utf-8")
+            golden.build_index(baseline)
+
+            def compare():
+                with contextlib.redirect_stdout(io.StringIO()):
+                    code = golden.compare_trees(baseline, actual, [], output, "windows")
+                return code, json.loads((output / "report.json").read_text(encoding="utf-8"))
+
+            code, report = compare()
+            self.assertEqual(code, 0)
+            self.assertEqual(report["counts"]["legacyOnly"], 1)
+            self.assertEqual(report["fixtures"]["score"]["metadata.json"]["status"], "v1-only")
+            (actual / "score/score.mscx").unlink()
+            code, report = compare()
+            self.assertEqual(code, 1)
+            self.assertEqual(report["counts"]["missing"], 1)
+            (baseline / "score/metadata.json").write_text("tampered\n", encoding="utf-8")
+            code, report = compare()
+            self.assertEqual(code, 1)
+            self.assertGreater(report["counts"]["index"], 0)
 
 
 class TestSemanticCheckerMutations(unittest.TestCase):

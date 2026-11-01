@@ -15,8 +15,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from golden import (EDIT_SCENARIOS, FIXTURE_DIR, call_tool, export, fixture_files,
-                    read_text)
+from golden import (EDIT_SCENARIOS, FIXTURE_DIR, apply_edit_scenario, export, fixture_files,
+                    open_fixture, required)
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from test_compat_corpus import digest, semantic_dump, write_json
@@ -65,39 +65,14 @@ def features(source: Path, edit: bool, score: Path, semantic: dict) -> list[str]
     return sorted(found)
 
 
-async def required(session, tool: str, arguments: dict):
-    result, error = await call_tool(session, tool, arguments)
-    if error:
-        raise RuntimeError(f"{tool}: {error}")
-    return result
-
-
 async def capture_one(session, source: Path, name: str, scenario: dict | None,
                       target: Path, binary: Path, resources: Path, provenance: dict) -> dict:
-    if source.name == "created.json":
-        opened = await required(session, "score_create", {"score": json.loads(read_text(source))})
-    else:
-        opened = await required(session, "score_open", {"path": str(source.resolve())})
-    identity = {"documentId": opened["documentId"]}
+    opened = await open_fixture(session, source)
+    identity = {"document": opened["document"]}
     try:
         if scenario:
-            if scenario.get("generate"):
-                await required(session, "score_generate_excerpts", identity)
-            if scenario["tool"] == "score_set_pitches":
-                view = await required(session, "score_query_region", {
-                    **identity, "partIndex": scenario["part"], "firstMeasure": 0,
-                    "measureCount": scenario["measures"]})
-                notes = [note for note in view["notes"] if not note["tied"]][:scenario["notes"]]
-                if len(notes) != scenario["notes"]:
-                    raise RuntimeError(f"{name}: expected {scenario['notes']} editable notes")
-                revision = view["revision"] if "revision" in view else view["score"]["revision"]
-                arguments = {**identity, "baseRevision": revision, "operationId": name,
-                             "changes": [{"noteId": note["id"],
-                                          "pitch": note["pitch"] + scenario["delta"]}
-                                         for note in notes]}
-            else:
-                arguments = {**identity, **scenario["arguments"]}
-            await required(session, scenario["tool"], arguments)
+            with tempfile.TemporaryDirectory(prefix="compat-edit-") as raw:
+                await apply_edit_scenario(session, identity, name, scenario, Path(raw))
         score = target / f"{name}.mscz"
         error = await export(session, identity, "mscz", score)
         if error:

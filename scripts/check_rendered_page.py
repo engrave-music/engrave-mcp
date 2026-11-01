@@ -670,8 +670,8 @@ def png_issues(actual, reference):
 async def capture_pages(binary, resources, soundfont, output):
     """Capture the golden harness's SVGs and master page-0 PNGs through MCP."""
     from golden import (ClientSession, GENERATE_EXCERPTS, StdioServerParameters,
-                        call_tool, export, fixture_files, normalize_svg, stdio_client,
-                        write_text)
+                        call_tool, export, fixture_files, generate_excerpts, normalize_svg,
+                        open_fixture, required, stdio_client, write_text)
 
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
@@ -688,26 +688,11 @@ async def capture_pages(binary, resources, soundfont, output):
                 for source in fixture_files():
                     folder = output / source.name
                     folder.mkdir()
-                    if source.name == "created.json":
-                        payload, error = await call_tool(
-                            session, "score_create", {"score": json.loads(source.read_text(encoding="utf-8"))})
-                    else:
-                        payload, error = await call_tool(session, "score_open", {"path": str(source.resolve())})
-                    if error:
-                        raise ValueError(f"{source.name}: score open: {error}")
-                    identity = {"documentId": payload["documentId"]}
+                    payload = await open_fixture(session, source)
+                    identity = {"document": payload["document"]}
                     try:
-                        metadata_path = folder / "metadata.json"
-                        error = await export(session, identity, "metadata", metadata_path)
-                        if error:
-                            raise ValueError(f"{source.name}: metadata export: {error}")
-                        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-                        pages = metadata.get("pages")
-                        if pages is None:
-                            info, error = await call_tool(session, "score_get", identity)
-                            if error:
-                                raise ValueError(f"{source.name}: score get: {error}")
-                            pages = info.get("pages", 0)
+                        outline = await required(session, "score_outline", identity)
+                        pages = outline["outline"]["pages"]
                         for index in range(int(pages)):
                             path = folder / f"page-{index}.svg"
                             error = await export(session, identity, "svg", path, page=index)
@@ -718,22 +703,17 @@ async def capture_pages(binary, resources, soundfont, output):
                         if error:
                             raise ValueError(f"{source.name}: PNG page 0: {error}")
                         if source.name in GENERATE_EXCERPTS:
-                            _, error = await call_tool(session, "score_generate_excerpts", identity)
-                            if error:
-                                raise ValueError(f"{source.name}: generate excerpts: {error}")
-                        excerpts, error = await call_tool(session, "score_list_excerpts", identity)
-                        if error:
-                            raise ValueError(f"{source.name}: list excerpts: {error}")
-                        for excerpt in excerpts.get("excerpts", []):
-                            index = excerpt["id"]
+                            await generate_excerpts(session, identity)
+                        excerpts = (await required(session, "score_outline", identity))["outline"]["excerpts"]
+                        for index, excerpt in enumerate(excerpts):
                             path = folder / f"excerpt-{index}" / "page-0.svg"
                             path.parent.mkdir()
-                            error = await export(session, identity, "svg", path, excerptId=index, page=0)
+                            error = await export(session, identity, "svg", path, excerpt=excerpt["id"], page=0)
                             if error:
                                 raise ValueError(f"{source.name}: excerpt {index}: {error}")
                             write_text(path, normalize_svg(path.read_text(encoding="utf-8")))
                         print(f"captured {source.name}: {pages} master SVG page(s), PNG page 0, "
-                              f"{len(excerpts.get('excerpts', []))} excerpt(s)", flush=True)
+                              f"{len(excerpts)} excerpt(s)", flush=True)
                     finally:
                         await call_tool(session, "score_close", identity)
 
@@ -756,7 +736,7 @@ def main():
         try:
             asyncio.run(asyncio.wait_for(capture_pages(args.binary, args.resources, args.soundfont,
                                                       args.output), timeout=1800))
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, RuntimeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         return 0
@@ -768,7 +748,7 @@ def main():
             args.golden = Path(tempfile.mkdtemp(prefix="capture-", dir=args.output))
             asyncio.run(asyncio.wait_for(capture_pages(args.binary, args.resources, args.soundfont,
                                                       args.golden), timeout=1800))
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, RuntimeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         print(f"Captured pages: {args.golden}")

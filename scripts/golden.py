@@ -1,4 +1,4 @@
-"""Golden-output capture and comparison for the native MCP server (roadmap step 0).
+"""V2 golden-output capture and comparison for the native MCP server.
 
 Capture exports a fixed fixture set through the official Python MCP client,
 normalizes known-volatile fields, and stores one directory per fixture plus an
@@ -36,6 +36,11 @@ the PCM proves are exactly all-zero; a rounded-zero RMS envelope alone is not
 evidence of silence. A baseline without the field is rejected instead of
 falling back to a weaker rule.
 
+V1 metadata-file exports have no v2 equivalent and remain explicitly classified
+as v1-only, after index verification; v2 outline and audio-track assertions live
+in the facade and excerpt tests. The supplemental MNX baseline directories are
+also compared, but their missing index entries remain failures.
+
 ``semantic.json`` (the exported MSCZ) and ``semantic-source.json`` (the fixture
 file) come from the ``semantic_dump`` dev tool next to the server binary. They
 record musical content read from the in-memory DOM, independent of the MSCX
@@ -58,23 +63,28 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import difflib
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
 from fnmatch import fnmatch
 from functools import partial
+from fractions import Fraction
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from musicxml_semantic import musicxml_semantic
+from v2_fixtures import composition_musicxml
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_DIR = ROOT / "fixtures" / "golden"
@@ -82,6 +92,8 @@ EXTRA_FIXTURES = (ROOT / "fixtures" / "evening.musicxml",)
 # Fixtures without stored excerpts whose part excerpts are generated (after the master
 # outputs are captured) to cover excerpt creation, e.g. ChordLine path copying.
 GENERATE_EXCERPTS = {"chordline_path.mscx"}
+SUPPLEMENTAL_MNX = ("engine/two-notes.mnx", "project_examples/tupletSimple.mnx",
+                    "project_examples/percussionKit.mnx", "project_examples/graceArps.mnx")
 AUDIO_TOLERANCES = {"peak": 1e-4, "rms": 1e-4, "rmsEnvelope": 1e-4,
                     "spectralCentroidHz": 1.0, "centroidEnvelope": 2.0}
 AUDIO_EXACT = {"sampleRate", "channels", "frames"}
@@ -420,9 +432,76 @@ async def call_tool(session: ClientSession, name: str, arguments: dict):
 
 
 async def export(session, identity, fmt, dest, **options):
-    _, error = await call_tool(session, "score_export",
-                               {**identity, "format": fmt, "path": str(dest), **options})
-    return error
+    """Export one v2 artifact to the stable path used by the comparison harness."""
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    selected = options.pop("excerpt", None)
+    page = options.pop("page", 0)
+    if options:
+        raise ValueError(f"unsupported capture options: {options}")
+    score = {"excerpt": selected} if selected is not None else None
+    if fmt in ("measurePositions", "segmentPositions"):
+        kind, export_options = "positions", {"position_kind": "measure" if fmt.startswith("measure") else "segment"}
+    elif fmt in ("svg", "png", "pdf"):
+        kind, export_options = "render", {"format": fmt}
+        if fmt != "pdf":
+            export_options.update(first_page=page, last_page=page)
+    elif fmt == "wav":
+        kind, export_options = "audio", {"format": fmt}
+    else:
+        kind, export_options = "score", {"format": fmt}
+    if score is not None:
+        export_options["score"] = score
+    directory = fmt in ("svg", "png")
+    with tempfile.TemporaryDirectory(prefix="render-", dir=dest.parent) as tmp:
+        location = Path(tmp) if directory else dest
+        payload, error = await call_tool(session, "score_export", {
+            **identity, "action": "run", "kind": kind, "options": export_options,
+            "destination": {"kind": "directory" if directory else "file", "path": str(location)}})
+        if error:
+            return error
+        artifacts = payload.get("artifacts", [])
+        if len(artifacts) != 1:
+            return f"expected one {fmt} artifact, got {len(artifacts)}"
+        artifact = Path(artifacts[0]["path"])
+        if not artifact.is_file() or artifact.stat().st_size != int(artifacts[0]["size"]):
+            return f"invalid {fmt} artifact: {artifact}"
+        if directory:
+            shutil.copyfile(artifact, dest)
+    return None
+
+
+async def required(session, name, arguments):
+    result, error = await call_tool(session, name, arguments)
+    if error:
+        raise RuntimeError(f"{name}: {error}")
+    return result
+
+
+async def open_fixture(session, source):
+    if source.name == "created.json":
+        xml = composition_musicxml(json.loads(read_text(source)))
+        return await required(session, "score_open", {
+            "data": base64.b64encode(xml.encode("utf-8")).decode("ascii"), "format": "musicxml"})
+    return await required(session, "score_open", {"path": str(source.resolve())})
+
+
+async def generate_excerpts(session, identity):
+    outline = await required(session, "score_outline", identity)
+    parts = [{"kind": "id", "id": part["id"]} for part in outline["outline"]["parts"]]
+    await required(session, "score_edit", {**identity, "ops": [{"op": "generate_excerpts", "parts": parts}]})
+
+
+def positions(path):
+    result = load_rounded(path)
+    result["pageSize"] = result.pop("page_size")
+    if path.name.startswith("segment"):
+        for item in result["elements"]:
+            for key in ("x", "y"):
+                if not float(item[key]).is_integer():
+                    raise ValueError(f"non-integral segment {key}: {item[key]}")
+                item[key] = int(item[key])
+    return result
 
 
 def sanitize(text: str, roots: list[Path]) -> str:
@@ -476,16 +555,12 @@ async def capture_master(session, identity, raw, out_dir, roots, legacy_blank_ei
                        "mxl.json", describe_mxl, roots)
     await value_export(session, identity, "midi", raw / "score.mid", out_dir,
                        "midi.json", lambda path: describe_midi(path.read_bytes()), roots)
-    metadata = await value_export(session, identity, "metadata", raw / "metadata.json",
-                                  out_dir, "metadata.json", load_rounded, roots)
     await value_export(session, identity, "measurePositions", raw / "measurePositions.json",
-                       out_dir, "measurePositions.json", load_rounded, roots)
+                       out_dir, "measurePositions.json", positions, roots)
     await value_export(session, identity, "segmentPositions", raw / "segmentPositions.json",
-                       out_dir, "segmentPositions.json", load_rounded, roots)
-    pages = metadata.get("pages") if isinstance(metadata, dict) else None
-    if pages is None:
-        info, _ = await call_tool(session, "score_get", identity)
-        pages = info.get("pages", 0) if isinstance(info, dict) else 0
+                       out_dir, "segmentPositions.json", positions, roots)
+    info = await required(session, "score_outline", identity)
+    pages = info["outline"]["pages"]
     for page in range(int(pages)):
         await text_export(session, identity, "svg", raw / f"page-{page}.svg", out_dir,
                           f"page-{page}.svg", normalize_svg, roots, page=page)
@@ -518,50 +593,37 @@ def semantic_dump(source: Path, dest: Path, roots, *extra: str) -> None:
 
 
 async def capture_excerpts(session, identity, raw, out_dir, roots, legacy_blank_eids: bool = False):
-    payload, error = await call_tool(session, "score_list_excerpts", identity)
-    if error:
-        write_text(out_dir / "excerpts.error.txt", sanitize(error, roots) + "\n")
-        return
+    payload = await required(session, "score_outline", identity)
     normalized_mscx = partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids)
-    for excerpt in payload.get("excerpts", []):
-        index = excerpt["id"]
+    for index, excerpt in enumerate(payload["outline"]["excerpts"]):
+        excerpt_id = excerpt["id"]
         folder = out_dir / f"excerpt-{index}"
         await text_export(session, identity, "mscx", raw / f"excerpt-{index}.mscx", folder,
-                          "score.mscx", normalized_mscx, roots, excerptId=index)
+                          "score.mscx", normalized_mscx, roots, excerpt=excerpt_id)
         await text_export(session, identity, "musicxml", raw / f"excerpt-{index}.musicxml",
-                          folder, "score.musicxml", normalize_musicxml, roots, excerptId=index)
+                          folder, "score.musicxml", normalize_musicxml, roots, excerpt=excerpt_id)
         await value_export(session, identity, "midi", raw / f"excerpt-{index}.mid", folder,
                            "midi.json", lambda path: describe_midi(path.read_bytes()), roots,
-                           excerptId=index)
-        await value_export(session, identity, "metadata", raw / f"excerpt-{index}-metadata.json",
-                           folder, "metadata.json", load_rounded, roots, excerptId=index)
+                           excerpt=excerpt_id)
         await text_export(session, identity, "svg", raw / f"excerpt-{index}-page-0.svg",
-                          folder, "page-0.svg", normalize_svg, roots, excerptId=index, page=0)
+                          folder, "page-0.svg", normalize_svg, roots, excerpt=excerpt_id, page=0)
 
 
 async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots,
                           legacy_blank_eids: bool = False):
     raw = raw_root / fixture_id
     raw.mkdir(parents=True, exist_ok=True)
-    if source.name == "created.json":
-        payload, error = await call_tool(
-            session, "score_create", {"score": json.loads(read_text(source))})
-    else:
-        payload, error = await call_tool(session, "score_open", {"path": str(source)})
-    if error:
-        write_text(out_dir / "open.error.txt", sanitize(error, roots) + "\n")
-        return
-    identity = {"documentId": payload["documentId"]}
-    if source.name != "created.json":
+    payload = await open_fixture(session, source)
+    identity = {"document": payload["document"]}
+    if source.name != "created.json" and source.suffix.lower() != ".mnx":
         # The fixture as the engine reads it, before any save.
+        # semantic_dump does not accept MNX; its exported MSCZ is still checked.
         semantic_dump(source, out_dir / "semantic-source.json", roots,
                       *(["--generate-excerpts"] if fixture_id in GENERATE_EXCERPTS else []))
     try:
         await capture_master(session, identity, raw, out_dir, roots, legacy_blank_eids)
         if fixture_id in GENERATE_EXCERPTS:
-            _, error = await call_tool(session, "score_generate_excerpts", identity)
-            if error:
-                write_text(out_dir / "generate.error.txt", sanitize(error, roots) + "\n")
+            await generate_excerpts(session, identity)
         await capture_excerpts(session, identity, raw, out_dir, roots, legacy_blank_eids)
     finally:
         await call_tool(session, "score_close", identity)
@@ -571,16 +633,16 @@ async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots,
 # preserve on 5.0. Each opens a source, applies one edit and captures the saved content.
 EDIT_SCENARIOS = {
     "edit-replace-measures": {
-        "source": "created.json", "tool": "score_replace_measures",
-        "arguments": {"partIndex": 0, "startMeasure": 1, "measures": [{"notes": [
+        "source": "created.json", "kind": "replace-measures", "start_measure": 1,
+        "notes": [
             {"pitches": [60, 64, 67], "ticks": 960}, {"pitches": [62], "ticks": 480},
-            {"pitches": [], "ticks": 240}, {"pitches": [65], "ticks": 240}]}]},
+            {"pitches": [], "ticks": 240}, {"pitches": [65], "ticks": 240}],
     },
-    "edit-set-pitches-coverage": {"source": "coverage.musicxml", "tool": "score_set_pitches",
+    "edit-set-pitches-coverage": {"source": "coverage.musicxml", "kind": "set-pitches",
                                   "part": 0, "measures": 2, "notes": 4, "delta": 2},
     # Generated part excerpts are linked to the master, so the edit must reach them too
     # (linked_parts.mscx is unusable here: every note in it is tied).
-    "edit-set-pitches-linked": {"source": "chordline_path.mscx", "tool": "score_set_pitches",
+    "edit-set-pitches-linked": {"source": "chordline_path.mscx", "kind": "set-pitches",
                                 "generate": True, "part": 0, "measures": 2, "notes": 3,
                                 "delta": 1},
 }
@@ -591,40 +653,10 @@ async def capture_edit(session, name, scenario, raw_root, out_dir, roots,
     raw = raw_root / name
     raw.mkdir(parents=True, exist_ok=True)
     source = FIXTURE_DIR / scenario["source"]
-    if source.name == "created.json":
-        payload, error = await call_tool(
-            session, "score_create", {"score": json.loads(read_text(source))})
-    else:
-        payload, error = await call_tool(session, "score_open", {"path": str(source)})
-    if error:
-        write_text(out_dir / "open.error.txt", sanitize(error, roots) + "\n")
-        return
-    identity = {"documentId": payload["documentId"]}
+    payload = await open_fixture(session, source)
+    identity = {"document": payload["document"]}
     try:
-        if scenario.get("generate"):
-            _, error = await call_tool(session, "score_generate_excerpts", identity)
-            if error:
-                write_text(out_dir / "generate.error.txt", sanitize(error, roots) + "\n")
-                return
-        if scenario["tool"] == "score_set_pitches":
-            view, error = await call_tool(session, "score_query_region", {
-                **identity, "partIndex": scenario["part"], "firstMeasure": 0,
-                "measureCount": scenario["measures"]})
-            if error:
-                write_text(out_dir / "query.error.txt", sanitize(error, roots) + "\n")
-                return
-            # Tied notes are skipped: a pitch change on one tie end is rejected by design.
-            targets = [n for n in view["notes"] if not n["tied"]][:scenario["notes"]]
-            base = view["revision"] if "revision" in view else view["score"]["revision"]
-            arguments = {**identity, "baseRevision": base, "operationId": name,
-                         "changes": [{"noteId": n["id"], "pitch": n["pitch"] + scenario["delta"]}
-                                     for n in targets]}
-        else:
-            arguments = {**identity, **scenario["arguments"]}
-        _, error = await call_tool(session, scenario["tool"], arguments)
-        if error:
-            write_text(out_dir / "edit.error.txt", sanitize(error, roots) + "\n")
-            return
+        await apply_edit_scenario(session, identity, name, scenario, raw)
         await text_export(session, identity, "mscx", raw / "score.mscx", out_dir,
                           "score.mscx", partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids),
                           roots)
@@ -641,10 +673,74 @@ async def capture_edit(session, name, scenario, raw_root, out_dir, roots,
         await call_tool(session, "score_close", identity)
 
 
+async def apply_edit_scenario(session, identity, name, scenario, raw):
+    """Apply the same fixed edits as the legacy oracle, via v2 operations."""
+    if scenario.get("generate"):
+        await generate_excerpts(session, identity)
+    outline = await required(session, "score_outline", identity)
+    if scenario["kind"] == "replace-measures":
+        measure = outline["outline"]["measures"][scenario["start_measure"]]
+        tick = Fraction(int(measure["tick"]["num"]), int(measure["tick"]["den"]))
+        ops = []
+        for item in scenario["notes"]:
+            duration = Fraction(item["ticks"], 1920)
+            ops.append({"op": "enter_notes", "at": {"kind": "segment", "measure": measure["id"],
+                        "staff": 0, "voice": 0, "tick": {"num": str(tick.numerator), "den": str(tick.denominator)},
+                        "segment_kind": "ChordRest"},
+                        "duration": {"num": str(duration.numerator), "den": str(duration.denominator)},
+                        "pitches": [{"pitch": pitch} for pitch in item["pitches"]]})
+            tick += duration
+        # Each entry can create the segment needed by the next one. V2
+        # resolves addresses at batch start, so publish them in sequence.
+        revision = outline["revision"]
+        for op in ops:
+            result = await required(session, "score_edit", {**identity, "expected_revision": revision, "ops": [op]})
+            revision = result["revision"]
+        return
+    else:
+        staves = [staff["index"] for staff in outline["outline"]["parts"][scenario["part"]]["staves"]]
+        view = await required(session, "score_query", {**identity, "mode": "elements", "query": {
+            "types": ["Note"], "staves": staves, "first_measure": 0,
+            "measure_count": scenario["measures"], "props": ["pitch"], "limit": 100}})
+        # The old region omitted grace notes. Read the exported fixed fixture to
+        # identify their chord IDs, then use the old segment/staff/voice order.
+        before = raw / "before.mscx"
+        error = await export(session, identity, "mscx", before)
+        if error:
+            raise RuntimeError(f"pre-edit export: {error}")
+        grace = {chord.findtext("eid") for chord in ET.parse(before).iter("Chord")
+                 if any(chord.find(tag) is not None for tag in ("acciaccatura", "appoggiatura", "grace4", "grace16", "grace32"))}
+        candidates = [n for n in view["elements"] if n["parent"] not in grace]
+        candidates.sort(key=lambda n: (Fraction(int(n["tick"]["num"]), int(n["tick"]["den"])), n["staff"], n["voice"]))
+        targets = candidates[:scenario["notes"]]
+        signatures = [(int(n["props"][0]["value"]["value"]),
+                       Fraction(int(n["tick"]["num"]), int(n["tick"]["den"])), n["staff"]) for n in targets]
+        expected = {"edit-set-pitches-coverage": [(72, Fraction(0), 0), (74, Fraction(1, 4), 0),
+                    (53, Fraction(1, 4), 1), (76, Fraction(1, 3), 0)],
+                    "edit-set-pitches-linked": [(72, Fraction(0), 0), (74, Fraction(1, 4), 0),
+                                                  (76, Fraction(1, 2), 0)]}[name]
+        if signatures != expected:
+            raise ValueError(f"{name}: fixed untied region changed: {signatures!r}")
+        ops = [{"op": "set_pitch", "note": {"kind": "id", "id": n["id"]},
+                "pitch": int(n["props"][0]["value"]["value"]) + scenario["delta"]} for n in targets]
+    await required(session, "score_edit", {**identity, "expected_revision": outline["revision"], "ops": ops})
+
+
 def fixture_files() -> list[Path]:
     files = sorted(path for path in FIXTURE_DIR.iterdir()
                    if path.is_file() and path.name != "README.md")
     return files + [path for path in EXTRA_FIXTURES if path.is_file()]
+
+
+def supplemental_mnx_files() -> list[Path]:
+    """The engine-gate MNX fixtures have baseline files but no index entries."""
+    engine = Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor/musescore"))
+    data = engine / "src/importexport/mnx/tests/data"
+    files = [data / name for name in SUPPLEMENTAL_MNX]
+    missing = [str(path) for path in files if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"missing supplemental MNX fixtures: {missing}")
+    return files
 
 
 def reset_root(root: Path) -> None:
@@ -687,7 +783,7 @@ async def capture_tree(binary, resources, soundfont, target, log_path, golden_ro
             async with stdio_client(params, errlog=log) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    for source in fixture_files():
+                    for source in fixture_files() + supplemental_mnx_files():
                         try:
                             await capture_fixture(session, source.name, source, raw_root,
                                                   target / source.name, [raw_root, target],
@@ -752,6 +848,11 @@ def verify_golden_index(root: Path, index: dict) -> list[str]:
                    for path in (root / name).rglob("*") if path.is_file()}
         issues += [f"missing indexed file {name}/{entry}" for entry in sorted(set(index[name]) - present)]
         issues += [f"unindexed file {name}/{entry}" for entry in sorted(present - set(index[name]))]
+        for entry in sorted(present & set(index[name])):
+            actual = sha256((root / name / entry).read_bytes())
+            if actual != index[name][entry]:
+                issues.append(f"indexed file hash mismatch {name}/{entry}: "
+                              f"expected {index[name][entry]}, got {actual}")
     return issues
 
 
@@ -847,7 +948,7 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
                   platform: str) -> int:
     golden_index = json.loads(read_text(golden_root / "index.json"))
     counts = {key: 0 for key in ("identical", "allowed", "different", "missing", "extra",
-                                 "goldenError", "extraFixture", "index")}
+                                 "goldenError", "extraFixture", "index", "legacyOnly")}
     report = {"golden": str(golden_root), "actual": str(actual_root), "fixtures": {},
               "stale": [], "extraFixtures": [], "indexIssues": [], "counts": counts,
               "status": "pass"}
@@ -859,6 +960,20 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
     report["indexIssues"] = verify_golden_index(golden_root, golden_index)
     counts["index"] = len(report["indexIssues"])
     for issue in report["indexIssues"]: print(f"index    {issue}")
+    # The four engine-gate MNX folders predate the index. Compare their actual
+    # stored files as well, while retaining the index errors above: their bytes
+    # are not falsely presented as index-pinned evidence.
+    supplemental = {}
+    for name in SUPPLEMENTAL_MNX:
+        fixture = Path(name).name
+        folder = golden_root / fixture
+        if fixture not in golden_index and folder.is_dir():
+            supplemental[fixture] = {p.relative_to(folder).as_posix(): sha256(p.read_bytes())
+                                      for p in folder.rglob("*") if p.is_file()}
+    if supplemental:
+        report["unindexedBaselineComparisons"] = sorted(supplemental)
+        print(f"comparing unindexed baseline fixtures: {', '.join(sorted(supplemental))}")
+    golden_index = {**golden_index, **supplemental}
     actual_fixtures = {path.name for path in actual_root.iterdir() if path.is_dir()}
     for fixture in sorted(actual_fixtures - set(golden_index)):
         report["extraFixtures"].append(fixture)
@@ -876,6 +991,15 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
             golden_file, actual_file = golden_dir / name, actual_dir / name
             golden_sha = sha256(golden_file.read_bytes()) if golden_file.is_file() else None
             actual_sha = sha256(actual_file.read_bytes()) if actual_file.is_file() else None
+            if name.rsplit("/", 1)[-1] == "metadata.json" and name in expected and actual_sha is None:
+                # V2 has no metadata file format. Live outline and audio-track
+                # assertions belong to the v2 facade and excerpt tests; retain
+                # and index-verify the historical byte baseline separately.
+                counts["legacyOnly"] += 1
+                results[name] = {"status": "v1-only", "goldenSha256": golden_sha,
+                                 "replacement": "score_outline and score_query audio_tracks"}
+                print(f"v1-only  {fixture}/{name} (replacement: outline/audio_tracks)")
+                continue
             golden_error = golden_sha is not None and name.endswith(".error.txt")
             golden_format = None
             if actual_sha is None:

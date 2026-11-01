@@ -802,9 +802,38 @@ the source and evidence are described in [webmscore-parity.md](webmscore-parity.
 The strict v2 version-header assertion also fails as tracked in
 `DEFECT-ENGRAVE-014`. The migrated round-trip runner executed 23 cases: 13
 passed, and 10 failed the preserved MSCX text comparison on save/reopen style
-or excerpt-name differences; historical loss hashes were not changed. The full
-v2 lane migration and full lane run remain open; no new goldens or allowances
-were written.
+or excerpt-name differences; historical loss hashes were not changed. No new
+goldens or allowances were written.
+
+`golden.py` now captures the v2 exports and keeps the existing output
+comparators and hash-pinned allow-list. It also checks the stored index hashes.
+The 25 old metadata-file outputs are explicitly reported as v1-only, with live
+outline and audio-track assertions owned by the v2 facade and excerpt tests;
+`golden_v1.py` retains the historical byte checks. Four MNX baseline directories
+were already absent from `index.json`: their available files are also compared,
+but their unindexed status still fails the golden lane. `semantic_dump` does not
+read MNX source files directly; the v2 exported MSCZ is checked instead.
+The Windows comparison captured 29 fixtures without export errors: 252 outputs
+matched, 48 matched existing allowances, 78 differed, and 12 were extra. Those
+12 are the four MNX fixtures' position and MusicXML-semantic outputs, which the
+unindexed engine-gate baseline did not contain. The four index errors remain;
+none of these outcomes were accepted by changing the baseline or allow-list.
+The saved v1 binary also successfully captured the `evening.musicxml` golden
+outputs, including metadata, through `golden_v1.py` on Windows.
+**EXECUTED, Windows:** the semantic checker covered all 29 baseline fixtures,
+with zero mismatches and no skips. The v2 rendered-page capture reached all 26
+SVG and 22 PNG comparisons; `drums_import.musicxml` PNG was 1224 × 1584 instead
+of the reference 1225 × 1585 and failed the unchanged size assertion.
+
+The old `test_xmake_incremental.py` v1 generated-include test was replaced by a
+v2 registry dependency test. **EXECUTED, Windows:** it rebuilt the registry and
+host after changing one description, round-tripped a large UTF-8 description in
+the dump and live tool list, detected a stale generated schema, restored the
+source and passed a no-op rebuild. The historical LLM transcript verifier is
+explicitly named `verify_legacy_llm_session.py`; current v2 native edit and smoke
+tests own live edit/export checks, but do not claim an independent v2 LLM run.
+The renamed verifier passed against the saved v1 transcript and copied exports
+on Windows; that result describes the historical trace only.
 
 The migrated v2 `audio_facade` subsequently passed on Windows, including
 mute/solo and gain, channel balance, four compressed formats, saved master and
