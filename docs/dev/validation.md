@@ -818,6 +818,12 @@ preservation, MIDI repeat and RPN output, repeat-expanded audio, and 16-part
 track queries including after an asynchronous MSCZ export. The removed v1
 metadata-file assertions remain executable in `test_legacy_export_options.py`.
 
+The v2 MCP portion of `engine_audio` also passed separately on Windows: mute,
+gain and pan, sample-identical excerpt/muted-master audio, five synchronous and
+asynchronous codec outputs at Unicode paths, and the existing MIDI comparator.
+The full cross-platform check still requires matching captures from both hosts;
+an engine-only run and a Windows-only capture cannot establish that claim.
+
 ## Roadmap-engrave A4 S0: engine build in the fork (2026-10-30)
 
 The engine's xmake build moved into the fork (`engrave` `a4/s0-build`, tip

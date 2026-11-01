@@ -287,6 +287,8 @@ def validate_version_proof(path: Path, platform: str, engine_commit: str) -> Non
 async def capture_current_audio(binary: Path, resources: Path, soundfont: Path,
                                 target: Path, engine_commit: str) -> None:
     """Render the golden fixture inventory and preserve the server's version stamp."""
+    import base64
+    from v2_fixtures import composition_musicxml
     fixtures = audio_fixture_sources()
     with tempfile.TemporaryDirectory(prefix="musescore-audio-capture-") as temporary:
         raw = Path(temporary)
@@ -298,34 +300,37 @@ async def capture_current_audio(binary: Path, resources: Path, soundfont: Path,
             async with golden.stdio_client(params, errlog=log) as (read, write):
                 async with golden.ClientSession(read, write) as session:
                     await session.initialize()
-                    created, error = await golden.call_tool(session, "score_create", {"score": {
-                        "title": "Audio capture provenance", "tempo": 120, "parts": [{
-                            "name": "Piano", "midiProgram": 1, "measures": [{
-                                "notes": [{"pitches": [60], "ticks": 1920}]}]}]}})
+                    created, error = await golden.call_tool(session, "score_create", {
+                        "template_id": "Treble_Clef", "title": "Audio capture provenance"})
                     assert not error, f"create version proof: {error}"
-                    proof_document = {"documentId": created["documentId"]}
+                    proof_document = created['document']
                     proof = target / "version.mscx"
-                    error = await golden.export(session, proof_document, "mscx", proof)
+                    _, error = await golden.call_tool(session, 'score_export', {'document': proof_document,
+                        'action': 'run', 'kind': 'score', 'options': {'format': 'mscx'},
+                        'destination': {'kind': 'file', 'path': str(proof)}})
                     assert not error, f"export version proof: {error}"
-                    await golden.call_tool(session, "score_close", proof_document)
+                    await golden.call_tool(session, "score_close", {'document': proof_document})
                     validate_version_proof(proof, golden_platform(), engine_commit)
                     for name, source in fixtures.items():
                         if name == "created.json":
-                            payload, error = await golden.call_tool(session, "score_create", {
-                                "score": json.loads(source.read_text(encoding="utf-8"))})
+                            xml = composition_musicxml(json.loads(source.read_text(encoding="utf-8")))
+                            payload, error = await golden.call_tool(session, 'score_open', {
+                                'data': base64.b64encode(xml.encode()).decode(), 'format': 'musicxml'})
                         else:
                             payload, error = await golden.call_tool(session, "score_open", {
                                 "path": str(source.resolve())})
                         assert not error, f"{name}: open failed: {error}"
-                        document = {"documentId": payload["documentId"]}
+                        document = payload['document']
                         try:
                             wav = raw / "capture.wav"
-                            error = await golden.export(session, document, "wav", wav)
+                            _, error = await golden.call_tool(session, 'score_export', {'document': document,
+                                'action': 'run', 'kind': 'audio', 'options': {'format': 'wav'},
+                                'destination': {'kind': 'file', 'path': str(wav)}})
                             assert not error, f"{name}: audio export failed: {error}"
                             golden.write_json(target / name / "audio.json", golden.describe_audio(wav))
                             wav.unlink()
                         finally:
-                            await golden.call_tool(session, "score_close", document)
+                            await golden.call_tool(session, "score_close", {'document': document})
 
 
 def write_capture_manifest(target: Path, platform: str, source_commit: str, engine_commit: str,
@@ -1500,147 +1505,82 @@ def test_excerpt_rendering_parity(
 
 
 async def test_mcp_level_integration(
-    binary: Path,
-    resources: Path,
-    soundfont: Path,
-    out_dir: Path,
-    evidence: dict[str, Any],
+    binary: Path, resources: Path, soundfont: Path, out_dir: Path, evidence: dict[str, Any],
 ) -> None:
-    """MCP-level tests for mix, track model, determinism, and .mid export."""
-    # This integration path still targets the saved v1 baseline; it must be
-    # migrated before the complete engine_audio lane can claim v2 coverage.
-    from legacy_v1_client import Client
+    """Exercise v2 mix, excerpt, codec job and MIDI output against existing evidence."""
+    from types import SimpleNamespace
+    from v2_client import Client
 
-    print("[MCP] Running MCP-level audio integration tests...")
-    mcp_evidence: dict[str, Any] = {}
+    print('[MCP] Running v2 MCP-level audio integration tests...')
+    args = SimpleNamespace(binary=binary, resources=resources, soundfont=soundfont)
+    async with Client(args, out_dir) as client:
+        async def export(doc, fmt, path, options=None, action='run', score=None):
+            kind = 'score' if fmt == 'midi' else 'audio'
+            values = {'format': fmt, **(options or {})}
+            if score is not None: values['score'] = {'excerpt': score}
+            result = await client.tool('score_export', {'document': doc, 'action': action, 'kind': kind,
+                'options': values, 'destination': {'kind': 'file', 'path': str(path.resolve())}})
+            if action == 'start':
+                status = await client.terminal(result['job'])
+                assert status['state'] == 'succeeded', status
+            assert path.is_file() and path.stat().st_size > 0
+            return path
 
-    async with Client(
-        binary=binary,
-        resources=resources,
-        soundfont=soundfont,
-        directory=out_dir,
-    ) as client:
-        # Open evening score
-        evening_path = ROOT / "fixtures" / "evening.musicxml"
-        opened = await client.tool("score_open", {"path": str(evening_path.resolve())})
-        doc_id = opened["documentId"]
-
-        tracks_res = await client.tool("score_audio_tracks", {"documentId": doc_id})
-        tracks = tracks_res["tracks"]
-        assert len(tracks) >= 3, f"Expected at least 3 tracks, got {len(tracks)}"
-        track_ids = [t["trackId"] for t in tracks]
-
-        # 1. Reference export (0 dB)
-        ref_wav = out_dir / "mcp_ref.wav"
-        await client.tool("score_export", {"documentId": doc_id, "format": "wav", "path": str(ref_wav.resolve())})
-        audio_ref, sr = decode_audio(ref_wav)
+        doc = (await client.tool('score_open', {'path': str((ROOT/'fixtures/evening.musicxml').resolve())}))['document']
+        info = await client.tool('score_query', {'document': doc, 'mode': 'audio_tracks'})
+        tracks = info['audio_tracks']['tracks']
+        assert len(tracks) >= 3 and len({t['track'] for t in tracks}) == len(tracks)
+        ref_wav = await export(doc, 'wav', out_dir/'mcp_ref.wav')
+        audio_ref, _ = decode_audio(ref_wav)
         rms_ref = float(np.sqrt(np.mean(audio_ref ** 2)))
-        assert rms_ref > 0.01, f"Reference audio RMS too low: {rms_ref}"
-
-        # 2. Solo / mute silence (energy ratio < -80 dB)
-        all_muted = [{"trackId": tid, "muted": True} for tid in track_ids]
-        muted_wav = out_dir / "mcp_all_muted.wav"
-        await client.tool(
-            "score_export",
-            {"documentId": doc_id, "format": "wav", "path": str(muted_wav.resolve()), "mix": {"tracks": all_muted}},
-        )
-        audio_muted, _ = decode_audio(muted_wav)
+        assert rms_ref > .01
+        muted = await export(doc, 'wav', out_dir/'mcp_all_muted.wav',
+                             {'tracks': [{'track': t['track'], 'mute': True} for t in tracks]})
+        audio_muted, _ = decode_audio(muted)
         rms_muted = float(np.sqrt(np.mean(audio_muted ** 2)))
-        energy_ratio_db = 20.0 * math.log10(max(rms_muted, 1e-12) / rms_ref)
-        assert energy_ratio_db < -80.0, f"Muted energy ratio {energy_ratio_db:.1f} dB not < -80 dB"
+        energy_ratio_db = 20 * math.log10(max(rms_muted, 1e-12) / rms_ref)
+        assert energy_ratio_db < -80.0
+        low = await export(doc, 'wav', out_dir/'mcp_vol_neg6.wav', {'master_volume_db': -6.0})
+        audio_low, _ = decode_audio(low)
+        measured_gain = 20 * math.log10(float(np.sqrt(np.mean(audio_low ** 2))) / rms_ref)
+        assert abs(measured_gain + 6.0) <= .2
+        left = await export(doc, 'wav', out_dir/'mcp_pan_left.wav', {'master_balance': -1.0})
+        right = await export(doc, 'wav', out_dir/'mcp_pan_right.wav', {'master_balance': 1.0})
+        audio_left, _ = decode_audio(left)
+        audio_right, _ = decode_audio(right)
+        ll,lr = (float(np.sqrt(np.mean(audio_left[:,i] ** 2))) for i in (0,1))
+        rl,rr = (float(np.sqrt(np.mean(audio_right[:,i] ** 2))) for i in (0,1))
+        assert lr <= .02*ll and rl <= .02*rr
 
-        # 3. VolumeDb accuracy (+/- 0.2 dB)
-        vol_neg6_wav = out_dir / "mcp_vol_neg6.wav"
-        await client.tool(
-            "score_export",
-            {"documentId": doc_id, "format": "wav", "path": str(vol_neg6_wav.resolve()), "mix": {"master": {"volumeDb": -6.0}}},
-        )
-        audio_neg6, _ = decode_audio(vol_neg6_wav)
-        rms_neg6 = float(np.sqrt(np.mean(audio_neg6 ** 2)))
-        measured_gain = 20.0 * math.log10(rms_neg6 / rms_ref)
-        assert abs(measured_gain - (-6.0)) <= 0.2, (
-            f"Measured master gain {measured_gain:.3f} dB exceeds +/- 0.2 dB tolerance"
-        )
+        outline = (await client.tool('score_outline', {'document':doc}))['outline']
+        await client.tool('score_edit', {'document':doc, 'ops':[{'op':'generate_excerpts',
+            'parts':[{'kind':'id','id':part['id']} for part in outline['parts']]}]})
+        excerpts = (await client.tool('score_outline', {'document':doc}))['outline']['excerpts']
+        assert excerpts
+        excerpt_wav = await export(doc,'wav',out_dir/'mcp_excerpt0.wav',score=excerpts[0]['id'])
+        muted_parts = await export(doc,'wav',out_dir/'mcp_muted_parts12.wav',
+            {'tracks':[{'track':t['track'],'mute':True} for t in tracks if t['part_id'] != tracks[0]['part_id']]})
+        audio_excerpt, _ = decode_audio(excerpt_wav)
+        audio_master, _ = decode_audio(muted_parts)
+        assert audio_excerpt.shape == audio_master.shape and np.max(np.abs(audio_excerpt-audio_master)) == 0.0
 
-        # 4. Pan balance via L/R energy separation
-        left_wav = out_dir / "mcp_pan_left.wav"
-        right_wav = out_dir / "mcp_pan_right.wav"
-        await client.tool(
-            "score_export",
-            {"documentId": doc_id, "format": "wav", "path": str(left_wav.resolve()), "mix": {"master": {"balance": -1.0}}},
-        )
-        await client.tool(
-            "score_export",
-            {"documentId": doc_id, "format": "wav", "path": str(right_wav.resolve()), "mix": {"master": {"balance": 1.0}}},
-        )
-        audio_left, _ = decode_audio(left_wav)
-        audio_right, _ = decode_audio(right_wav)
-        l_rms_left = float(np.sqrt(np.mean(audio_left[:, 0] ** 2)))
-        r_rms_left = float(np.sqrt(np.mean(audio_left[:, 1] ** 2)))
-        l_rms_right = float(np.sqrt(np.mean(audio_right[:, 0] ** 2)))
-        r_rms_right = float(np.sqrt(np.mean(audio_right[:, 1] ** 2)))
-        assert r_rms_left <= 0.02 * l_rms_left, f"Hard left pan leakage: L={l_rms_left}, R={r_rms_left}"
-        assert l_rms_right <= 0.02 * r_rms_right, f"Hard right pan leakage: L={l_rms_right}, R={r_rms_right}"
-
-        # 5. Excerpt export sample-identical to master with other parts muted
-        exc_res = await client.tool("score_generate_excerpts", {"documentId": doc_id})
-        excerpts = exc_res["excerpts"]
-        assert len(excerpts) > 0, "No excerpts generated"
-        excerpt_id = excerpts[0]["id"]
-
-        exc_wav = out_dir / "mcp_excerpt0.wav"
-        await client.tool(
-            "score_export",
-            {"documentId": doc_id, "excerptId": excerpt_id, "format": "wav", "path": str(exc_wav.resolve())},
-        )
-        # Mute all tracks from other parts (parts 1 and 2)
-        mute_parts_wav = out_dir / "mcp_muted_parts12.wav"
-        other_tracks_muted = [{"trackId": t["trackId"], "muted": True} for t in tracks if t.get("partId") != tracks[0].get("partId")]
-        await client.tool(
-            "score_export",
-            {"documentId": doc_id, "format": "wav", "path": str(mute_parts_wav.resolve()), "mix": {"tracks": other_tracks_muted}},
-        )
-        audio_exc, _ = decode_audio(exc_wav)
-        audio_muted_parts, _ = decode_audio(mute_parts_wav)
-        assert np.max(np.abs(audio_exc - audio_muted_parts)) == 0.0, (
-            "MCP excerpt export not sample-identical to muted master export")
-
-        # 6. Sync vs async byte identity across formats; async outputs use a
-        # non-ASCII directory and file name.
-        nonascii_dir = out_dir / "输出 音频"
-        nonascii_dir.mkdir(parents=True, exist_ok=True)
+        nonascii_dir = out_dir/'输出 音频'
+        nonascii_dir.mkdir(parents=True,exist_ok=True)
         nonascii_async = {}
-        for fmt in ("wav", "flac", "ogg", "mp3", "aac"):
-            sync_path = out_dir / f"mcp_sync.{fmt}"
-            async_path = nonascii_dir / f"异步 音频.{fmt}"
-            for p in (sync_path, async_path):
-                if p.exists():
-                    p.unlink()
-            await client.tool("score_export", {"documentId": doc_id, "format": fmt, "path": str(sync_path.resolve())})
-            job = await client.tool("score_export_start", {"documentId": doc_id, "format": fmt, "path": str(async_path.resolve())})
-            done = await client.terminal(job)
-            assert done["state"] == "completed", f"Async export {fmt} failed: {done}"
-            assert sync_path.read_bytes() == async_path.read_bytes(), f"Sync and async outputs differ for {fmt}"
+        for fmt in ('wav','flac','opus','mp3','aac'):
+            sync = await export(doc,fmt,out_dir/f'mcp_sync.{fmt}')
+            async_path = await export(doc,fmt,nonascii_dir/f'异步 音频.{fmt}',action='start')
+            assert sync.read_bytes() == async_path.read_bytes(), fmt
             nonascii_async[fmt] = str(async_path.relative_to(out_dir))
 
-        # 7. MIDI export unchanged vs the platform's tests/golden tree
-        mcp_midi_path = out_dir / "mcp_evening.mid"
-        await client.tool("score_export", {"documentId": doc_id, "format": "midi", "path": str(mcp_midi_path.resolve())})
-        golden_midi_json = ROOT / "tests" / "golden" / golden_platform() / "evening.musicxml" / "midi.json"
-        assert golden_midi_json.is_file(), f"Golden MIDI description missing: {golden_midi_json}"
-        exported_midi_desc = describe_midi(mcp_midi_path.read_bytes())
-        expected_midi_desc = json.loads(golden_midi_json.read_text(encoding="utf-8"))
-        assert exported_midi_desc == expected_midi_desc, "MCP .mid export changed compared to tests/golden!"
-
-        await client.tool("score_close", {"documentId": doc_id})
-
-    mcp_evidence["status"] = "passed"
-    mcp_evidence["energy_ratio_db"] = round(energy_ratio_db, 2)
-    mcp_evidence["measured_volume_gain_db"] = round(measured_gain, 3)
-    mcp_evidence["non_ascii_async_exports"] = nonascii_async
-    mcp_evidence["midi_golden"] = str(golden_midi_json.relative_to(ROOT))
-    evidence["mcp_integration"] = mcp_evidence
-    print("  MCP-level integration tests PASSED")
+        midi = await export(doc,'midi',out_dir/'mcp_evening.mid')
+        expected = json.loads((ROOT/'tests/golden'/golden_platform()/'evening.musicxml/midi.json').read_text(encoding='utf-8'))
+        assert describe_midi(midi.read_bytes()) == expected
+        await client.tool('score_close', {'document':doc})
+    evidence['mcp_integration'] = {'status':'passed','energy_ratio_db':round(energy_ratio_db,2),
+        'measured_volume_gain_db':round(measured_gain,3),'non_ascii_async_exports':nonascii_async,
+        'midi_matches_golden':True}
+    print('  MCP-level v2 integration tests PASSED')
 
 
 def main() -> int:
