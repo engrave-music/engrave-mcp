@@ -106,7 +106,7 @@ async def run(args):
     out.mkdir(parents=True, exist_ok=True)
     child_args = ['--resources', str(args.resources.resolve())] if args.resources else []
     child_env = dict(os.environ)
-    if os.environ.get('MUSIC_MCP_CLEAN_ENV'):
+    if os.environ.get('ENGRAVE_MCP_CLEAN_ENV'):
         child_env = ({'SystemRoot': os.environ['SystemRoot'], 'PATH': str(Path(os.environ['SystemRoot'])/'System32'),
                       'TEMP': os.environ['TEMP'], 'TMP': os.environ['TMP']} if os.name == 'nt'
                      else {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})

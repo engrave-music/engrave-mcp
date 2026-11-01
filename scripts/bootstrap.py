@@ -63,7 +63,7 @@ def ensure_soundfont():
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "wb") as output:
-            request = urllib.request.Request(SOUNDFONT_URL, headers={"User-Agent": "musescore-mcp-bootstrap/1"})
+            request = urllib.request.Request(SOUNDFONT_URL, headers={"User-Agent": "engrave-mcp-bootstrap/1"})
             with urllib.request.urlopen(request, timeout=120) as response:
                 shutil.copyfileobj(response, output, 1024 * 1024)
         if digest(temporary) != SOUNDFONT_SHA256:

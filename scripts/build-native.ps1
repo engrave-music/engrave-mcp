@@ -1,7 +1,7 @@
 param(
     [int]$Jobs = 12,
     [string]$BuildDirectory = 'build/xmake-windows',
-    [string[]]$Targets = @('musescore_mcp', 'musescore_mcp_test', 'registry_dump', 'registry_check', 'host_api_test', 'export_job_test')
+    [string[]]$Targets = @('engrave_mcp', 'engrave_mcp_test', 'registry_dump', 'registry_check', 'host_api_test', 'export_job_test')
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot

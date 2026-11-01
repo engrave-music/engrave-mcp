@@ -41,8 +41,8 @@ ALLOWED_DISABLED = 0
 
 
 def default_bin_dir() -> Path:
-    if os.environ.get("MUSIC_MCP_BIN_DIR"):
-        return Path(os.environ["MUSIC_MCP_BIN_DIR"]).resolve()
+    if os.environ.get("ENGRAVE_MCP_BIN_DIR"):
+        return Path(os.environ["ENGRAVE_MCP_BIN_DIR"]).resolve()
     candidates = (
         ROOT / "build" / "xmake-windows",
         ROOT / "build",
@@ -58,8 +58,8 @@ def default_bin_dir() -> Path:
 
 
 def default_assets_dir() -> Path:
-    if os.environ.get("MUSIC_MCP_RESOURCES"):
-        return Path(os.environ["MUSIC_MCP_RESOURCES"]).resolve()
+    if os.environ.get("ENGRAVE_MCP_RESOURCES"):
+        return Path(os.environ["ENGRAVE_MCP_RESOURCES"]).resolve()
     candidates = (
         ROOT / ".runtime" / "assets",
         ROOT / ".." / ".runtime" / "assets",

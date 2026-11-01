@@ -26,7 +26,7 @@ class Client:
         self.reader = asyncio.create_task(self.read())
         result = await self.call("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                                  "clientInfo": {"name": "v2-async-test", "version": "1"}})
-        assert result["result"]["serverInfo"]["name"] == "musescore-mcp", result
+        assert result["result"]["serverInfo"]["name"] == "engrave-mcp", result
         await self.notify("notifications/initialized", {})
         return self
 

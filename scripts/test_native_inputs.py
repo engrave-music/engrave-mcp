@@ -25,8 +25,8 @@ async def main():
         with zipfile.ZipFile(OUT / f"{name}.mxl", "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("META-INF/container.xml", container)
             archive.writestr("score.xml", score)
-    binary = os.environ.get("MUSIC_MCP_BINARY", str(ROOT / "build/noqt-windows/musescore-mcp.exe"))
-    resources = os.environ.get("MUSIC_MCP_RESOURCES", str(ROOT / ".runtime/assets"))
+    binary = os.environ.get("ENGRAVE_MCP_BINARY", str(ROOT / ("build/xmake-windows/engrave-mcp.exe" if os.name == "nt" else "build/xmake-linux/engrave-mcp")))
+    resources = os.environ.get("ENGRAVE_MCP_RESOURCES", str(ROOT / ".runtime/assets"))
     params = StdioServerParameters(command=binary, args=["--resources", resources], env=dict(os.environ))
     with (OUT / "stderr.log").open("w", encoding="utf-8") as log:
         async with stdio_client(params, errlog=log) as (read, write):

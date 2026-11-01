@@ -1306,7 +1306,7 @@ private:
                         {"tools", Json::object()}
                     }},
                     {"serverInfo", {
-                        {"name", "musescore-mcp"},
+                        {"name", "engrave-mcp"},
                         {"version", "0.1.0"}
                     }}
                 };

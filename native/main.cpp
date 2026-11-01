@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
         for (int i = 1; i < argc; ++i) {
             if (std::string(argv[i]) == "--soundfont" && i + 1 < argc) soundfont = argv[++i];
             else if (std::string(argv[i]) == "--resources" && i + 1 < argc) resources = argv[++i];
-            else throw std::invalid_argument("Usage: musescore-mcp [--soundfont FILE.sf2|FILE.sf3] [--resources DIR]");
+            else throw std::invalid_argument("Usage: engrave-mcp [--soundfont FILE.sf2|FILE.sf3] [--resources DIR]");
         }
         engrave::EngineOptions options;
         options.resources = resources.empty() ? music::current_executable_path().parent_path() / "assets"

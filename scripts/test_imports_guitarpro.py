@@ -21,7 +21,7 @@ from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "vendor/musescore/src/importexport/guitarpro/tests/data"
-OUT = Path(os.environ.get("MUSIC_MCP_OUTPUT", ROOT / "artifacts/imports-guitarpro"))
+OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", ROOT / "artifacts/imports-guitarpro"))
 
 # Quarter-note durations used by the .mscx reference scores.
 MSCX_QUARTERS = {
@@ -338,8 +338,8 @@ async def _export(session, document, fmt, path):
 
 async def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    binary = Path(os.environ.get("MUSIC_MCP_BINARY", ROOT / "build/xmake-windows/musescore-mcp.exe"))
-    resources = Path(os.environ.get("MUSIC_MCP_RESOURCES", ROOT / ".runtime/assets"))
+    binary = Path(os.environ.get("ENGRAVE_MCP_BINARY", ROOT / "build/xmake-windows/engrave-mcp.exe"))
+    resources = Path(os.environ.get("ENGRAVE_MCP_RESOURCES", ROOT / ".runtime/assets"))
     params = StdioServerParameters(
         command=str(binary),
         args=["--resources", str(resources)],

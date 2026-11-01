@@ -1187,7 +1187,7 @@ async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, required=True, help="Path to musescore-mcp server binary")
+    parser.add_argument("--binary", type=Path, required=True, help="Path to engrave-mcp server binary")
     parser.add_argument("--resources", type=Path, required=True, help="Path to .runtime/assets directory")
     parser.add_argument("--output", type=Path, required=True, help="Scratch output directory")
     parser.add_argument("--self-test", action="store_true", help="Deliberately mutate B to verify parser catches failures")

@@ -12,7 +12,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = Path(os.environ.get("MUSIC_MCP_OUTPUT", ROOT / "artifacts/mcp-smoke")).resolve()
+OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", ROOT / "artifacts/mcp-smoke")).resolve()
 TOOLS = {tool["name"]: tool for tool in json.loads((ROOT / "native/tools.json").read_text(encoding="utf-8"))}
 VALIDATORS = {name: Draft202012Validator(tool["outputSchema"]) for name, tool in TOOLS.items()}
 
@@ -24,24 +24,28 @@ async def main():
             if record.levelno >= logging.ERROR: protocol_errors.append(record.getMessage())
     logging.getLogger("mcp.client.stdio").addHandler(ProtocolLog())
     OUT.mkdir(parents=True, exist_ok=True)
-    binary = Path(os.environ.get("MUSIC_MCP_BINARY", ROOT / "build/windows/musescore-mcp.exe")).resolve()
-    soundfont = Path(os.environ.get("MUSIC_MCP_SOUNDFONT", ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3")).resolve()
+    default_binary = ROOT / ("build/xmake-windows/engrave-mcp.exe" if os.name == "nt"
+                             else "build/xmake-linux/engrave-mcp")
+    binary = Path(os.environ.get("ENGRAVE_MCP_BINARY", default_binary)).resolve()
+    soundfont = Path(os.environ.get("ENGRAVE_MCP_SOUNDFONT", ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3")).resolve()
     child_env = dict(os.environ)
-    if os.environ.get("MUSIC_MCP_CLEAN_ENV"):
+    if os.environ.get("ENGRAVE_MCP_CLEAN_ENV"):
         if os.name == "nt":
             child_env = {"SystemRoot": os.environ["SystemRoot"], "PATH": str(Path(os.environ["SystemRoot"]) / "System32"),
                          "TEMP": os.environ["TEMP"], "TMP": os.environ["TMP"]}
         else: child_env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
     child_args = ["--soundfont", str(soundfont)]
-    if os.environ.get("MUSIC_MCP_RESOURCES"): child_args += ["--resources", os.environ["MUSIC_MCP_RESOURCES"]]
+    if os.environ.get("ENGRAVE_MCP_RESOURCES"): child_args += ["--resources", os.environ["ENGRAVE_MCP_RESOURCES"]]
     params = StdioServerParameters(command=str(binary), args=child_args, env=child_env, cwd=str(OUT))
-    report = {"calls": [], "cycles": 0}
+    report = {"calls": [], "cycles": 0, "binary": str(binary), "soundfont": str(soundfont),
+              "resources": os.environ.get("ENGRAVE_MCP_RESOURCES"), "output": str(OUT)}
     started = time.perf_counter()
     with (OUT / "stderr.log").open("w", encoding="utf-8") as errors:
         async with stdio_client(params, errlog=errors) as (read, write):
             async with ClientSession(read, write) as session:
                 initialized = await session.initialize()
-                assert initialized.server_info.name == "musescore-mcp"
+                assert initialized.server_info.name == "engrave-mcp"
+                report["server_name"] = initialized.server_info.name
                 report["protocol"] = initialized.protocol_version
                 listed = await session.list_tools()
                 assert {tool.name for tool in listed.tools} == set(TOOLS)

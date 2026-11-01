@@ -1,4 +1,4 @@
-"""Native MuseScore MCP Export Options Integration Test.
+"""Native engrave-mcp Export Options Integration Test.
 
 Exercises native export options introduced to score_export via the standard
 Python MCP SDK v2 client:

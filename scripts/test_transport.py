@@ -40,7 +40,7 @@ def _run_server(exe: str, payload: str) -> dict:
     started = time.monotonic()
     try:
         completed = subprocess.run(
-            [exe] + (["--resources", os.environ["MUSIC_MCP_RESOURCES"]] if os.environ.get("MUSIC_MCP_RESOURCES") else []),
+            [exe] + (["--resources", os.environ["ENGRAVE_MCP_RESOURCES"]] if os.environ.get("ENGRAVE_MCP_RESOURCES") else []),
             input=payload.encode("utf-8"),
             timeout=TIMEOUT_SECONDS,
             capture_output=True,

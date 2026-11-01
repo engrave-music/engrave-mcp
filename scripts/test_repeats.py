@@ -205,7 +205,7 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, required=True, help="Path to musescore-mcp server binary")
+    parser.add_argument("--binary", type=Path, required=True, help="Path to engrave-mcp server binary")
     parser.add_argument("--resources", type=Path, required=True, help="Path to .runtime/assets directory")
     parser.add_argument("--output", type=Path, required=True, help="Scratch output directory")
     parser.add_argument("--upstream", type=Path, default=ROOT / "vendor/musescore",

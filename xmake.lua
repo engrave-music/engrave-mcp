@@ -1,4 +1,4 @@
--- Qt-free xmake build for the musescore-mcp host (MuseScore 5.0 engine).
+-- Qt-free xmake build for the engrave-mcp host (MuseScore 5.0 engine).
 --
 -- The engine's build belongs to the engine.  The fork (github.com/Locietta/
 -- engrave, consumed as the pinned vendor/musescore submodule) carries its own
@@ -11,8 +11,8 @@
 --   v2_registry, registry_dump       standalone v2 schema authority
 --   registry_test, registry_check    v2 contract validation
 --   v2_store                         public-API document store
---   musescore_mcp                    stdio JSON-RPC host (musescore-mcp binary)
---   musescore_mcp_test, host_api_test, export_job_test   host regression binaries
+--   engrave_mcp                    stdio JSON-RPC host (engrave-mcp binary)
+--   engrave_mcp_test, host_api_test, export_job_test   host regression binaries
 --
 -- Engine targets (muse_global, muse_draw, muse_mpe, engraving, iex_musicxml,
 -- iex_guitarpro, iex_midi, native_fluidsynth, muse_audio_engine,
@@ -22,7 +22,7 @@
 -- Host translation units include only the engine's public engrave/ headers.
 -- The included engine targets and their tests still use internal include roots.
 
-set_project("musescore-mcp")
+set_project("engrave-mcp")
 set_xmakever("3.1.1")
 set_version("0.1.0")
 set_languages("cxx23")
@@ -267,9 +267,9 @@ local function add_host_binary(name, basename)
         end
     target_end()
 end
-add_host_binary("musescore_mcp", "musescore-mcp")
-add_host_binary("musescore_mcp_test", "musescore-mcp-test")
-target("musescore_mcp_test")
+add_host_binary("engrave_mcp", "engrave-mcp")
+add_host_binary("engrave_mcp_test", "engrave-mcp-test")
+target("engrave_mcp_test")
     add_defines("MUSIC_ASYNC_TEST_HOOKS")
 target_end()
 

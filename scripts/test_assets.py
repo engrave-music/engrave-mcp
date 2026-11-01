@@ -22,8 +22,8 @@ out.mkdir(parents=True,exist_ok=True)
 def fallback_fixture():
     if a.family_fallback_font:
         return a.family_fallback_font
-    if os.environ.get('MUSIC_MCP_FAMILY_FALLBACK_FONT'):
-        return Path(os.environ['MUSIC_MCP_FAMILY_FALLBACK_FONT'])
+    if os.environ.get('ENGRAVE_MCP_FAMILY_FALLBACK_FONT'):
+        return Path(os.environ['ENGRAVE_MCP_FAMILY_FALLBACK_FONT'])
     root=Path(__file__).resolve().parents[1]
     candidates=(
         root/'.pixi/envs/native/fonts/Ubuntu-M.ttf',

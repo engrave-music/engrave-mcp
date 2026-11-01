@@ -258,7 +258,7 @@ def set_rpath(patchelf, target, value, output):
 
 def validate_package(output, ldd, bundled):
     root = output.resolve()
-    executable = root / "musescore-mcp"
+    executable = root / "engrave-mcp"
     entries = ldd_entries(ldd, executable, CLEAN_LDD_ENV)
     resolved = {}
     for soname, path in entries:
@@ -338,7 +338,7 @@ def main():
         raise SystemExit("Linux packaging must run on Linux")
 
     output = args.output.resolve()
-    binary = (args.binary or ROOT / "build/native-linux/musescore-mcp").resolve()
+    binary = (args.binary or ROOT / "build/xmake-linux/engrave-mcp").resolve()
     assets = (ROOT / ".runtime/assets").resolve()
     upstream = engine_root
 
@@ -388,12 +388,12 @@ def main():
     if any(output.iterdir()):
         raise SystemExit("Package output must be empty; choose a new --output directory")
 
-    copy_checked(binary, output / "musescore-mcp")
+    copy_checked(binary, output / "engrave-mcp")
     (output / "lib").mkdir()
     for soname in sorted(bundled):
         copy_checked(bundled[soname], output / "lib" / soname)
 
-    set_rpath(patchelf, output / "musescore-mcp", "$ORIGIN/lib", output)
+    set_rpath(patchelf, output / "engrave-mcp", "$ORIGIN/lib", output)
     for soname in sorted(bundled):
         set_rpath(patchelf, output / "lib" / soname, "$ORIGIN", output)
 
@@ -426,7 +426,7 @@ def main():
         "glibc_baseline": glibc,
         "interpreter": interpreter,
         "build_path_strings": [path.relative_to(output).as_posix()
-                               for path in [output / "musescore-mcp", *sorted((output / "lib").iterdir())]
+                               for path in [output / "engrave-mcp", *sorted((output / "lib").iterdir())]
                                if str(ROOT).encode() in path.read_bytes()],
         "validation": {
             "scope": "local packaging host only",

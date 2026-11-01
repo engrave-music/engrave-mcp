@@ -1595,7 +1595,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Acceptance test suite for MuseScore 4 audio engine")
     parser.add_argument("--engine-only", action="store_true", help="Run fork audio assertions without the frozen MCP host or dense benchmark")
     parser.add_argument("--bin-dir", type=Path, default=None, help="Directory containing build executables")
-    parser.add_argument("--binary", type=Path, default=None, help="Path to musescore-mcp executable")
+    parser.add_argument("--binary", type=Path, default=None, help="Path to engrave-mcp executable")
     parser.add_argument("--resources", type=Path, default=ROOT / ".runtime" / "assets", help="Path to assets")
     parser.add_argument("--soundfont", type=Path, default=ROOT / ".runtime" / "soundfonts" / "FluidR3Mono_GM.sf3", help="Path to soundfont")
     parser.add_argument("--output", type=Path, required=True, help="Output directory for test artifacts")

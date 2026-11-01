@@ -43,7 +43,7 @@ def main():
         return result.stdout
 
     def build(name):
-        return run(name, ["xmake", "build", "-y", "-j", "4", "registry_dump", "musescore_mcp"])
+        return run(name, ["xmake", "build", "-y", "-j", "4", "registry_dump", "engrave_mcp"])
 
     schema = ROOT / "native/tools.json"
     generator = [sys.executable, str(ROOT / "scripts/generate_tool_schema.py"), "--dump", str(dump)]

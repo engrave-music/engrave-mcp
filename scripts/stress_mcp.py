@@ -9,7 +9,7 @@ import subprocess
 import threading
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = Path(os.environ.get("MUSIC_MCP_STRESS_OUTPUT", ROOT / "artifacts/stress"))
+OUT = Path(os.environ.get("ENGRAVE_MCP_STRESS_OUTPUT", ROOT / "artifacts/stress"))
 
 
 class Counters(ctypes.Structure):
@@ -39,9 +39,9 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     reports = []
     for soundfont in [False, True]:
-        command = [os.environ.get("MUSIC_MCP_BINARY", str(ROOT / "build/windows/musescore-mcp.exe"))]
-        if os.environ.get("MUSIC_MCP_RESOURCES"):
-            command += ["--resources", os.environ["MUSIC_MCP_RESOURCES"]]
+        command = [os.environ.get("ENGRAVE_MCP_BINARY", str(ROOT / ("build/xmake-windows/engrave-mcp.exe" if os.name == "nt" else "build/xmake-linux/engrave-mcp")))]
+        if os.environ.get("ENGRAVE_MCP_RESOURCES"):
+            command += ["--resources", os.environ["ENGRAVE_MCP_RESOURCES"]]
         if soundfont: command += ["--soundfont", str(ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3")]
         with (OUT / f"stderr-{soundfont}.log").open("wb") as log:
             process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, cwd=OUT)

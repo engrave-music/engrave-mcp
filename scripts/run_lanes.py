@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified acceptance test lane runner for musescore-mcp.
+"""Unified acceptance test lane runner for engrave-mcp.
 
 Replaces notes/a2/verify/run_all_a2.ps1 (Windows) and
 notes/a2/linux/run_all_a2_linux.sh (Linux).
@@ -62,18 +62,18 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
     missing = []
     requirements = {
         "host_api": ["host_api_test"],
-        "export_job": ["export_job_test", "musescore-mcp"],
-        "runtime_assets": ["musescore-mcp-test"], "score_edit": ["score_edit_test"],
+        "export_job": ["export_job_test", "engrave-mcp"],
+        "runtime_assets": ["engrave-mcp-test"], "score_edit": ["score_edit_test"],
         "score_audio": ["score_audio_test"], "score_positions": ["score_positions_test"],
         "noqt_probe": ["noqt_probe"], "excerpts": ["excerpts_test"],
-        "assets": ["assets_test"], "archives": ["archive_test", "musescore-mcp"],
-        "async_session": ["musescore-mcp-test"], "golden": ["musescore-mcp", "semantic_dump"],
+        "assets": ["assets_test"], "archives": ["archive_test", "engrave-mcp"],
+        "async_session": ["engrave-mcp-test"], "golden": ["engrave-mcp", "semantic_dump"],
         "semantic_check": [], "oracle_harness": [], "compat_corpus": ["semantic_dump"],
         "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
-        "engine_audio": ["engine_audio_probe", "musescore-mcp"],
+        "engine_audio": ["engine_audio_probe", "engrave-mcp"],
         "tool_schema": ["registry_dump", "registry_test"],
     }
-    selected = {binary for lane in lanes for binary in requirements.get(lane, ["musescore-mcp"])}
+    selected = {binary for lane in lanes for binary in requirements.get(lane, ["engrave-mcp"])}
     for binary_name in sorted(selected):
         target = build_dir / f"{binary_name}{exe_suffix}"
         if not target.is_file():
@@ -213,13 +213,13 @@ def run_lane(
     if lane == "export_job":
         cmd = [py, str(repo_root / "scripts/test_export_job.py"),
                "--binary", str(build_dir / f"export_job_test{exe_suffix}"),
-               "--host-binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+               "--host-binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
                "--resources", str(assets), "--soundfont", str(soundfont), "--output", str(output / "export-job")]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "runtime_assets":
         cmd = [py, str(repo_root / "scripts/test_runtime_assets_mcp.py"),
-               "--binary", str(build_dir / f"musescore-mcp-test{exe_suffix}"), "--resources", str(assets),
+               "--binary", str(build_dir / f"engrave-mcp-test{exe_suffix}"), "--resources", str(assets),
                "--soundfont", str(soundfont), "--output", str(output / "runtime-assets")]
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -270,7 +270,7 @@ def run_lane(
             str(testcwd),
             str(repo_root / "scripts/test_archives.py"),
             "--binary", str(build_dir / f"archive_test{exe_suffix}"),
-            "--server", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--server", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--output", str(output / "archives"),
         ]
@@ -280,7 +280,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_native_edit.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--output", str(output / "native-edit"),
         ]
@@ -288,13 +288,13 @@ def run_lane(
 
     if lane == "linked_tie":
         cmd = [py, str(repo_root / "scripts/test_linked_tie.py"),
-               "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"), "--resources", str(assets),
+               "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"), "--resources", str(assets),
                "--output", str(output / "linked-tie")]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "xml_text":
         cmd = [py, str(repo_root / "scripts/test_xml_text.py"),
-               "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"), "--resources", str(assets),
+               "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"), "--resources", str(assets),
                "--output", str(output / "xml-text")]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -303,7 +303,7 @@ def run_lane(
             py, "-c", retarget_code,
             str(testcwd),
             str(repo_root / "scripts/test_audio_facade.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--soundfont", str(soundfont),
             "--output", str(output / "audio-facade"),
@@ -314,7 +314,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_async_session.py"),
-            "--binary", str(build_dir / f"musescore-mcp-test{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp-test{exe_suffix}"),
             "--resources", str(assets),
             "--test-hooks",
             "--soundfont", str(soundfont),
@@ -326,7 +326,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_imports_midi.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--upstream", str(engine_source),
             "--output", str(output / "imports-midi"),
@@ -337,7 +337,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_open_data.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--upstream", str(engine_source),
             "--output", str(output / "open-data"),
@@ -346,7 +346,7 @@ def run_lane(
 
     if lane == "imports_gp":
         gp_env = dict(base_env)
-        gp_env["MUSIC_MCP_OUTPUT"] = str(output / "imports-guitarpro")
+        gp_env["ENGRAVE_MCP_OUTPUT"] = str(output / "imports-guitarpro")
         gp_code = (
             "import asyncio, os, runpy, sys; from pathlib import Path; "
             "engine = Path(sys.argv.pop(1)).resolve(); "
@@ -374,7 +374,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_positions.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--upstream", str(engine_source),
             "--output", str(output / "positions"),
@@ -385,7 +385,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_export_options.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--soundfont", str(soundfont),
             "--output", str(output / "export-options"),
@@ -396,7 +396,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_transport.py"),
-            str(build_dir / f"musescore-mcp{exe_suffix}"),
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
             str(output / "transport.json"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
@@ -407,7 +407,7 @@ def run_lane(
             py,
             str(repo_root / "scripts/golden.py"),
             "compare",
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--soundfont", str(soundfont),
             "--golden", str(golden_dir),
@@ -418,7 +418,7 @@ def run_lane(
 
     if lane == "v2_golden_overlap":
         cmd = [py, str(repo_root / "scripts/test_v2_golden_overlap.py"),
-               "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"), "--resources", str(assets),
+               "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"), "--resources", str(assets),
                "--soundfont", str(soundfont), "--output", str(output / "v2-golden-overlap")]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -466,7 +466,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_roundtrip.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--output", str(output / "roundtrip"),
         ]
@@ -484,7 +484,7 @@ def run_lane(
         cmd2 = [
             py,
             str(repo_root / "scripts/check_rendered_page.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--soundfont", str(soundfont),
             "--output", str(output / "rendered-page"),
@@ -499,7 +499,7 @@ def run_lane(
             py,
             str(repo_root / "scripts/test_engine_audio.py"),
             "--bin-dir", str(build_dir),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--soundfont", str(soundfont),
             "--engine-source", str(engine_source),
@@ -526,7 +526,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_repeats.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--upstream", str(engine_source),
             "--output", str(output / "repeats"),
@@ -537,7 +537,7 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_version_info.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
             "--resources", str(assets),
             "--upstream", str(engine_source),
             "--output", str(output / "version-info"),
@@ -546,7 +546,7 @@ def run_lane(
 
     if lane == "mcp_smoke":
         smoke_env = dict(base_env)
-        smoke_env["MUSIC_MCP_OUTPUT"] = str(output / "smoke")
+        smoke_env["ENGRAVE_MCP_OUTPUT"] = str(output / "smoke")
         cmd = [py, str(repo_root / "scripts/mcp_smoke.py")]
         return subprocess.run(cmd, env=smoke_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -556,7 +556,7 @@ def run_lane(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run musescore-mcp acceptance test lanes.",
+        description="Run engrave-mcp acceptance test lanes.",
         allow_abbrev=False,
     )
     parser.add_argument("--build-dir", type=Path, required=True, help="Directory containing compiled binaries")
@@ -631,9 +631,9 @@ def main() -> None:
     base_env["TEMP"] = str(output / "tmp")
     base_env["TMP"] = str(output / "tmp")
     base_env["TMPDIR"] = str(output / "tmp")
-    base_env["MUSIC_MCP_BINARY"] = str(build_dir / f"musescore-mcp{exe_suffix}")
-    base_env["MUSIC_MCP_SOUNDFONT"] = str(soundfont)
-    base_env["MUSIC_MCP_RESOURCES"] = str(assets)
+    base_env["ENGRAVE_MCP_BINARY"] = str(build_dir / f"engrave-mcp{exe_suffix}")
+    base_env["ENGRAVE_MCP_SOUNDFONT"] = str(soundfont)
+    base_env["ENGRAVE_MCP_RESOURCES"] = str(assets)
     base_env["MUSESCORE_ENGINE_SOURCE"] = str(engine_source)
     base_env["ENGRAVING_TESTS_DATA_ROOT"] = str(engine_source / "src/engraving/tests")
     base_env["PYTHONDONTWRITEBYTECODE"] = "1"

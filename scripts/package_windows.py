@@ -143,8 +143,7 @@ def main():
         origins[str(destination.relative_to(output))] = str(source)
         queue.append(destination)
 
-    build = "native-windows" if args.no_qt else "windows"
-    copy(args.binary or ROOT / f"build/{build}/musescore-mcp.exe", output / "musescore-mcp.exe")
+    copy(args.binary or ROOT / "build/xmake-windows/engrave-mcp.exe", output / "engrave-mcp.exe")
     if not args.no_qt:
         copy(library / "lib/qt6/plugins/platforms/qoffscreen.dll", output / "plugins/platforms/qoffscreen.dll")
     system = Path(os.environ["SystemRoot"]) / "System32"
