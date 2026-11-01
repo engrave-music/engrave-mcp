@@ -38,8 +38,9 @@ falling back to a weaker rule.
 
 V1 metadata-file exports have no v2 equivalent and remain explicitly classified
 as v1-only, after index verification; v2 outline and audio-track assertions live
-in the facade and excerpt tests. The supplemental MNX baseline directories are
-also compared, but their missing index entries remain failures.
+in the facade and excerpt tests. A separate v2 index pins the four supplemental
+MNX directories and the v2-only artifacts, without changing the historical v1
+index or its files.
 
 ``semantic.json`` (the exported MSCZ) and ``semantic-source.json`` (the fixture
 file) come from the ``semantic_dump`` dev tool next to the server binary. They
@@ -856,6 +857,43 @@ def verify_golden_index(root: Path, index: dict) -> list[str]:
     return issues
 
 
+def read_v2_index(golden_root: Path) -> tuple[Path | None, dict, dict]:
+    """Load the independent v2 MNX index; every entry still pins actual bytes."""
+    overlay = golden_root.parent / "v2" / golden_root.name
+    path = overlay / "index.json"
+    if not path.is_file():
+        return None, {}, {}
+    data = json.loads(read_text(path))
+    if (data.get("schema") != 1 or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
+            or not isinstance(data.get("legacy"), dict) or not isinstance(data.get("additions"), dict)):
+        raise ValueError("invalid v2 index header")
+    legacy = data["legacy"]
+    expected = {Path(name).name for name in SUPPLEMENTAL_MNX}
+    if set(legacy) != expected or not set(data["additions"]).issubset(expected):
+        raise ValueError("v2 index must explicitly list the four supplemental MNX fixtures")
+    additions = {}
+    sources = {source.name: source for source in supplemental_mnx_files()}
+    for fixture, entries in legacy.items():
+        if not isinstance(entries, dict) or not entries:
+            raise ValueError(f"empty legacy index for {fixture}")
+        for name, digest in entries.items():
+            if not isinstance(name, str) or not re.fullmatch(r"[0-9a-f]{64}", str(digest)):
+                raise ValueError(f"invalid legacy index entry for {fixture}/{name}")
+    for fixture, entries in data["additions"].items():
+        if not isinstance(entries, dict) or not entries:
+            raise ValueError(f"empty v2 additions index for {fixture}")
+        additions[fixture] = {}
+        for name, entry in entries.items():
+            if (not isinstance(entry, dict) or not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("sha256", "")))
+                    or entry.get("fixture_sha256") != sha256(sources[fixture].read_bytes())
+                    or not isinstance(entry.get("oracle"), str) or not entry["oracle"].strip()):
+                raise ValueError(f"invalid v2 addition or fixture provenance for {fixture}/{name}")
+            if name in legacy[fixture]:
+                raise ValueError(f"v2 addition shadows legacy file {fixture}/{name}")
+            additions[fixture][name] = entry["sha256"]
+    return overlay, legacy, additions
+
+
 def silence_windows(audio: dict) -> list[bool]:
     """Per-window exact-silence flags from the stored PCM evidence."""
     counts = audio.get(SILENCE_EVIDENCE)
@@ -957,23 +995,19 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
     if diff_root.exists():
         shutil.rmtree(diff_root)
 
-    report["indexIssues"] = verify_golden_index(golden_root, golden_index)
+    try:
+        overlay, supplemental, additions = read_v2_index(golden_root)
+        if set(golden_index) & set(supplemental):
+            raise ValueError("v2 supplemental fixtures overlap the historical index")
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        overlay, supplemental, additions = None, {}, {}
+        report["indexIssues"].append(f"invalid v2 index: {exc}")
+    golden_index = {**golden_index, **supplemental}
+    report["indexIssues"].extend(verify_golden_index(golden_root, golden_index))
+    if overlay is not None:
+        report["indexIssues"].extend(f"v2: {issue}" for issue in verify_golden_index(overlay, additions))
     counts["index"] = len(report["indexIssues"])
     for issue in report["indexIssues"]: print(f"index    {issue}")
-    # The four engine-gate MNX folders predate the index. Compare their actual
-    # stored files as well, while retaining the index errors above: their bytes
-    # are not falsely presented as index-pinned evidence.
-    supplemental = {}
-    for name in SUPPLEMENTAL_MNX:
-        fixture = Path(name).name
-        folder = golden_root / fixture
-        if fixture not in golden_index and folder.is_dir():
-            supplemental[fixture] = {p.relative_to(folder).as_posix(): sha256(p.read_bytes())
-                                      for p in folder.rglob("*") if p.is_file()}
-    if supplemental:
-        report["unindexedBaselineComparisons"] = sorted(supplemental)
-        print(f"comparing unindexed baseline fixtures: {', '.join(sorted(supplemental))}")
-    golden_index = {**golden_index, **supplemental}
     actual_fixtures = {path.name for path in actual_root.iterdir() if path.is_dir()}
     for fixture in sorted(actual_fixtures - set(golden_index)):
         report["extraFixtures"].append(fixture)
@@ -981,14 +1015,16 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
         print(f"extra fixture  {fixture}")
 
     for fixture in sorted(golden_index):
-        expected = golden_index[fixture]
+        expected = {**golden_index[fixture], **additions.get(fixture, {})}
         golden_dir, actual_dir = golden_root / fixture, actual_root / fixture
         actual_files = ({path.relative_to(actual_dir).as_posix()
                          for path in actual_dir.rglob("*") if path.is_file()}
                         if actual_dir.is_dir() else set())
         results = report["fixtures"].setdefault(fixture, {})
         for name in sorted(set(expected) | actual_files):
-            golden_file, actual_file = golden_dir / name, actual_dir / name
+            golden_file = ((overlay / fixture / name) if name in additions.get(fixture, {})
+                           else (golden_dir / name))
+            actual_file = actual_dir / name
             golden_sha = sha256(golden_file.read_bytes()) if golden_file.is_file() else None
             actual_sha = sha256(actual_file.read_bytes()) if actual_file.is_file() else None
             if name.rsplit("/", 1)[-1] == "metadata.json" and name in expected and actual_sha is None:

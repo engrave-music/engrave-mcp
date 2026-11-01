@@ -26,6 +26,7 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -63,6 +64,45 @@ class TestRoundTripXmlControls(unittest.TestCase):
 
 
 class TestV2GoldenInventory(unittest.TestCase):
+    def test_mnx_indexes_cover_legacy_and_v2_files_and_detect_tampering(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline, overlay, actual, output = (root / "golden/windows", root / "golden/v2/windows",
+                                                 root / "actual", root / "report")
+            baseline.mkdir(parents=True)
+            actual.mkdir()
+            output.mkdir()
+            shutil.copytree(ROOT / "tests/golden/v2/windows", overlay)
+            names = [Path(name).name for name in golden.SUPPLEMENTAL_MNX]
+            for name in names:
+                shutil.copytree(ROOT / "tests/golden/windows" / name, baseline / name)
+                shutil.copytree(baseline / name, actual / name)
+                for path in (overlay / name).iterdir():
+                    shutil.copyfile(path, actual / name / path.name)
+            golden.write_json(baseline / "index.json", {})
+
+            def compare():
+                with contextlib.redirect_stdout(io.StringIO()):
+                    code = golden.compare_trees(baseline, actual, [], output, "windows")
+                return code, json.loads((output / "report.json").read_text(encoding="utf-8"))
+
+            code, report = compare()
+            self.assertEqual(code, 0)
+            self.assertEqual(report["counts"]["index"], 0)
+            self.assertEqual(report["counts"]["identical"], 52)
+            (actual / names[0] / "musicxml-semantic.json").write_text("{}\n", encoding="utf-8")
+            code, report = compare()
+            self.assertEqual(code, 1)
+            self.assertEqual(report["counts"]["different"], 1)
+            (baseline / names[0] / "score.musicxml").write_text("tampered\n", encoding="utf-8")
+            code, report = compare()
+            self.assertEqual(code, 1)
+            self.assertGreater(report["counts"]["index"], 0)
+            (overlay / names[0] / "measurePositions.json").write_text("{}\n", encoding="utf-8")
+            code, report = compare()
+            self.assertEqual(code, 1)
+            self.assertTrue(any(issue.startswith("v2:") for issue in report["indexIssues"]))
+
     def test_only_retired_metadata_is_excluded_and_index_still_gates(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
