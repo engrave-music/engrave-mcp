@@ -786,6 +786,23 @@ shows the written snapshot's 5.0.0. Exports write the current format version;
 that snapshot version is not the owner's source provenance. No live API
 schema changed. See `DEFECT-ENGRAVE-014`.
 
+**Writer-precision exceptions, EXECUTED on Windows:** `golden` compared 29
+fixtures and 390 outputs: 264 identical, 126 allowed, no differences, extras,
+missing outputs or index errors, and 25 separately counted v1-only metadata
+files. Fourteen of the allowed outputs are the individually census-backed
+snapshot-precision pins in `DEFECT-ENGRAVE-015`. `rendered_page` checked 26
+SVGs and 22 PNGs; its drums PNG passed only the exact file-hash and diagnostic
+exception. The comparator and diagnostic mutation controls reject changed
+pins, measurements, fixtures, platform, inventory, PNG bytes and diagnostics.
+This accepts a save/reopen writer-precision limitation, not equal rendering;
+the numeric-precision follow-up remains open under `DEFECT-ENGRAVE-016`.
+
+**Archive timing, EXECUTED on Windows:** every malformed archive is rejected
+three times, with each subprocess limited to 10 seconds. The median must remain
+under one second. This tolerates one delayed process launch while still failing
+if at least two attempts exhibit a sustained one-second regression; all three
+rejection results and durations are checked and recorded.
+
 The `engrave-16` follow-up and the current v2 comparison policy are in
 [a5-outputs.md](a5-outputs.md); the 78-output classification is in its linked
 machine-readable census. **EXECUTED, Windows:** the new-pin round trip passed

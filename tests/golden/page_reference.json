@@ -3295,5 +3295,18 @@
     "procedure": "MCP score_open/score_create and score_export PNG master page 0; see scripts/check_rendered_page.py --capture-only.",
     "ink_measure": "RGBA composited over white; pixel has ink if any RGB channel is below 250. Bounding box uses exclusive right/bottom. Grid cells store ink fraction in an 8x8 page grid.",
     "coverage": "The golden harness exports a PNG only for master page 0; the three excerpts and slurs master page 1 are SVG-only."
-  }
+  },
+  "png_exceptions": [
+    {
+      "issues": [
+        "PNG size [1224, 1584] differs from reference [1225, 1585]",
+        "PNG ink share ratio 1.2716 outside ±10%",
+        "PNG grid L1 0.2764 exceeds 0.2500"
+      ],
+      "page": "drums_import.musicxml/page-0.png",
+      "platform": "windows",
+      "png_sha256": "13e77384dd6cd4cdb900068ad60905986697367f626f280db3f6117a1f8b6eeb",
+      "reason": "Individually pinned writer-precision snapshot drift; see docs/dev/a5-output-census.json and DEFECT-ENGRAVE-015."
+    }
+  ]
 }

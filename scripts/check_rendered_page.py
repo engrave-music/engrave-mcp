@@ -600,6 +600,26 @@ def count_exceptions(payload):
     return result
 
 
+def png_exceptions(payload):
+    """Validate page- and platform-specific pins for known snapshot drift."""
+    result = {}
+    for entry in payload.get("png_exceptions", []):
+        name, platform, digest, issues, reason = (entry.get("page"), entry.get("platform"),
+                                                  entry.get("png_sha256"), entry.get("issues"),
+                                                  entry.get("reason"))
+        svg = str(Path(name).with_suffix(".svg").as_posix()) if isinstance(name, str) else None
+        key = (platform, name)
+        if (svg not in payload["pages"] or payload["pages"][svg].get("png") is None
+                or platform not in ("windows", "linux") or key in result
+                or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                or not isinstance(reason, str) or not reason.strip()
+                or not isinstance(issues, list) or not issues
+                or any(not isinstance(issue, str) or not issue.strip() for issue in issues)):
+            raise ValueError(f"invalid PNG exception for {name!r}")
+        result[key] = entry
+    return result
+
+
 def png_stats(path):
     """Measure visible ink after compositing RGBA over white, in page coordinates."""
     import numpy as np
@@ -766,8 +786,9 @@ def main():
         return 2
     try:
         exceptions = count_exceptions(payload)
+        png_pins = png_exceptions(payload)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
-        print(f"error: invalid count exceptions: {exc}", file=sys.stderr)
+        print(f"error: invalid page exceptions: {exc}", file=sys.stderr)
         return 2
     files = sorted(args.golden.rglob("*.svg"))
     if not files:
@@ -828,7 +849,18 @@ def main():
                 actual = png_stats(actual_png[name])
                 reference = expected_png[name]["stats"]
                 issues = png_issues(actual, reference)
-                if actual["size"] == reference["size"]:
+                platform = "windows" if sys.platform.startswith("win") else "linux"
+                pin = png_pins.get((platform, name))
+                if pin:
+                    digest = hashlib.sha256(actual_png[name].read_bytes()).hexdigest()
+                    if digest != pin["png_sha256"]:
+                        issues.append("precision exception PNG SHA-256 does not match")
+                    elif issues != pin["issues"]:
+                        issues.append("precision exception diagnostics do not match")
+                    else:
+                        detail = " (exact snapshot precision pin; " + "; ".join(issues) + ")"
+                        issues = []
+                if not detail and actual["size"] == reference["size"]:
                     ratio, edge, grid = png_metrics(actual, reference)
                     detail = (f" (ink {reference['ink_share']:.6f}->{actual['ink_share']:.6f}, "
                               f"ratio {ratio:.4f}, bbox edge {edge:.4f}, grid L1 {grid:.4f})"

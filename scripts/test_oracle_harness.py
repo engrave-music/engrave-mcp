@@ -30,6 +30,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = Path(__file__).resolve().parent
@@ -73,6 +74,99 @@ class TestRoundTripXmlControls(unittest.TestCase):
 
 
 class TestV2GoldenInventory(unittest.TestCase):
+    def test_writer_precision_pins_every_recorded_output_and_exact_hash(self):
+        migrations = golden.read_v2_migrations(ROOT / "tests/golden/windows")
+        census = json.loads(golden.PRECISION_CENSUS.read_text(encoding="utf-8"))
+        entries = [item for item in census["entries"] if item.get("acceptance") == "writer_precision"]
+        self.assertEqual(len(entries), 14)
+        for item in entries:
+            key = (item["fixture"], item["output"])
+            pin = migrations[key]
+            self.assertEqual(pin["kind"], "snapshot-precision")
+            self.assertEqual(pin["measurement"], item["measurement"])
+            self.assertEqual(pin["direct_sha256"], item["direct_engine_sha256"])
+            old, actual = item["baseline_sha256"], item["host_sha256"]
+            self.assertIsNotNone(golden.v2_migration_accept(migrations, *key, old, actual))
+            # A changed baseline, render byte, output name, or fixture never
+            # inherits this artifact's precision exception.
+            changed = ("0" if actual[0] != "0" else "1") + actual[1:]
+            self.assertIsNone(golden.v2_migration_accept(migrations, *key, old, changed))
+            self.assertIsNone(golden.v2_migration_accept(migrations, *key, "0" * 64, actual))
+            self.assertIsNone(golden.v2_migration_accept(migrations, key[0], key[1] + ".other", old, actual))
+            self.assertIsNone(golden.v2_migration_accept(migrations, key[0] + ".other", key[1], old, actual))
+            if key[1].endswith(".png.json"):
+                self.assertEqual(pin["raw_png_sha256"], item["raw_host_png_sha256"])
+                self.assertTrue(golden.precision_png_accept(pin, pin["raw_png_sha256"]))
+                self.assertFalse(golden.precision_png_accept(pin, "0" * 64))
+                self.assertFalse(golden.precision_png_accept(pin, None))
+
+    def test_precision_png_comparator_requires_the_raw_file_hash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline, actual, output = root / "windows", root / "actual", root / "report"
+            (baseline / "fixture").mkdir(parents=True)
+            (actual / "fixture").mkdir(parents=True)
+            output.mkdir()
+            name = "page-0.png.json"
+            old, new = b"old descriptor", b"new descriptor"
+            (baseline / "fixture" / name).write_bytes(old)
+            (actual / "fixture" / name).write_bytes(new)
+            golden.write_json(baseline / "index.json", {"fixture": {name: golden.sha256(old)}})
+            pin = {"kind": "snapshot-precision", "output": name, "baseline_sha256": golden.sha256(old),
+                   "actual_sha256": golden.sha256(new), "raw_png_sha256": "a" * 64,
+                   "reason": "test", "oracle": "test"}
+            migrations = {("fixture", name): pin}
+            with mock.patch.object(golden, "read_v2_index", return_value=(None, {}, {})), \
+                    mock.patch.object(golden, "read_v2_migrations", return_value=migrations), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows",
+                                                      {"fixture": "a" * 64}), 0)
+                self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows",
+                                                      {"fixture": "b" * 64}), 1)
+                self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows"), 1)
+                # Even an exact return to the old descriptor needs its own
+                # reviewed change; it cannot bypass a host-specific pin.
+                (actual / "fixture" / name).write_bytes(old)
+                self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows",
+                                                      {"fixture": "a" * 64}), 1)
+
+    def test_writer_precision_rejects_changed_evidence_and_inventory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "golden"
+            baseline, overlay = root / "windows", root / "v2/windows"
+            baseline.mkdir(parents=True)
+            overlay.mkdir(parents=True)
+            shutil.copyfile(ROOT / "tests/golden/allow.json", root / "allow.json")
+            original = json.loads((ROOT / "tests/golden/v2/windows/migrations.json").read_text(encoding="utf-8"))
+
+            def check(data, message):
+                golden.write_json(overlay / "migrations.json", data)
+                with self.assertRaisesRegex(ValueError, message):
+                    golden.read_v2_migrations(baseline)
+
+            altered = copy.deepcopy(original)
+            item = next(item for item in altered["entries"] if item.get("kind") == "snapshot-precision")
+            item["measurement"]["pixel_diff"] += 1
+            check(altered, "writer-precision census mismatch")
+            altered = copy.deepcopy(original)
+            item = next(item for item in altered["entries"] if item.get("kind") == "snapshot-precision")
+            item["fixture_sha256"] = "0" * 64
+            check(altered, "invalid v2 migration provenance")
+            altered = copy.deepcopy(original)
+            altered["entries"] = [item for item in altered["entries"]
+                                  if item.get("kind") != "snapshot-precision"]
+            check(altered, "migrations do not match the census inventory")
+            with self.assertRaisesRegex(ValueError, "census header"):
+                golden.read_precision_census(original, "linux")
+            census = json.loads(golden.PRECISION_CENSUS.read_text(encoding="utf-8"))
+            item = next(item for item in census["entries"] if item.get("acceptance") == "writer_precision")
+            item["reopened_engine_sha256"] = "0" * 64
+            path = Path(temporary) / "census.json"
+            golden.write_json(path, census)
+            with mock.patch.object(golden, "PRECISION_CENSUS", path):
+                with self.assertRaisesRegex(ValueError, "invalid writer-precision evidence"):
+                    golden.read_precision_census(original, "windows")
+
     def test_migration_pins_both_versions_and_the_specific_output(self):
         migrations = golden.read_v2_migrations(ROOT / "tests/golden/windows")
         key = ("evening.musicxml", "score.mscx")
@@ -143,7 +237,10 @@ class TestV2GoldenInventory(unittest.TestCase):
             golden.write_json(baseline / "index.json", {})
 
             def compare(platform="windows"):
-                with contextlib.redirect_stdout(io.StringIO()):
+                # This inventory control copies historical files as its actual
+                # tree; snapshot migrations are tested independently above.
+                with mock.patch.object(golden, "read_v2_migrations", return_value={}), \
+                        contextlib.redirect_stdout(io.StringIO()):
                     code = golden.compare_trees(baseline, actual, [], output, platform)
                 return code, json.loads((output / "report.json").read_text(encoding="utf-8"))
 

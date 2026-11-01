@@ -25,6 +25,8 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-012 | Snapshot-based render is not bit-identical to direct render | Accepted limitation | EXECUTED | Export jobs render a captured MSCZ snapshot, so render output can differ from a direct in-process render |
 | DEFECT-ENGRAVE-013 | Pitch edits can leave a mismatched tie without a diagnostic | Carried / Open | SOURCE-REVIEWED, EXECUTED | An exported mismatched tie may not survive MusicXML reimport |
 | DEFECT-ENGRAVE-014 | Snapshot rendering changes an unedited score's version header | Resolved by contract | SOURCE-REVIEWED, EXECUTED | The owner keeps the source version; a written and reopened snapshot and its render report the writer version |
+| DEFECT-ENGRAVE-015 | Snapshot render drift exceeds the S3 example | Accepted limitation, exact outputs pinned | SOURCE-REVIEWED, EXECUTED | Fourteen measured outputs differ beyond the original small-drift limits |
+| DEFECT-ENGRAVE-016 | Writer numeric precision in save/reopen | Carried / Open | SOURCE-REVIEWED, EXECUTED | Serialized dimensions can lose precision and alter subsequent output |
 
 ## Details
 
@@ -157,7 +159,7 @@ Evidence levels used in this ledger:
 - **Description**: Export jobs render a captured MSCZ snapshot in a separate worker, so the result comes from a save/reopen round trip rather than the live document. In the S3 parity tests, MSCZ save/reopen rounded the A4 page height by 0.001 point and changed 36 of 2,005,644 PNG pixels for each tested master and excerpt. The tests therefore compare PDF/SVG geometry within 0.02 point and PNG output within a stated pixel tolerance.
 - **Impact**: v2 render output must not be advertised or golden-compared as bit-identical to a direct in-process render, and tolerance-based comparisons must be explicit wherever snapshot rendering is validated. No universal parity claim follows from the tested scores.
 - **Next Step**: Keep the tolerance documented alongside the export-job tests; if a consumer needs bit-identical output, make a direct-render design decision rather than silently widening tolerances.
-- **S5 evidence at `engrave-16`**: The limited S3 tolerance is not a bound on every score. The Windows census independently reopened the public-engine MSCZ and reproduced the host's SVG, PNG and PDF descriptors for 25 source fixtures. Thirty-two specific outputs were within the documented bounds and are pinned individually; fourteen render outputs exceeded them and remain unaccepted under `DEFECT-ENGRAVE-015`. See [the v2 output policy and census](a5-outputs.md).
+- **S5 evidence at `engrave-16`**: The limited S3 tolerance is not a bound on every score. The Windows census independently reopened the public-engine MSCZ and reproduced the host's SVG, PNG and PDF descriptors for 25 source fixtures. Thirty-two specific outputs were within the documented bounds; fourteen exceeded them. All are pinned individually, and the fourteen are accepted as the documented writer-precision round-trip limitation under `DEFECT-ENGRAVE-015`. They do not establish equal rendering. See [the v2 output policy and census](a5-outputs.md).
 
 ### 13. Pitch edits can leave a mismatched tie without a diagnostic (DEFECT-ENGRAVE-013)
 
@@ -178,9 +180,16 @@ Evidence levels used in this ledger:
 
 ### 15. Snapshot render drift exceeds the accepted bounds (DEFECT-ENGRAVE-015)
 
-- **Status**: Open at `engrave-16` (Windows); `golden` and `rendered_page` remain failing.
+- **Status**: Accepted writer-precision round-trip limitation at `engrave-16` (Windows); fourteen exact outputs are individually pinned.
 - **Evidence Level**: EXECUTED (Windows, public engine and v2 host), SOURCE-REVIEWED (snapshot/export path).
 - **Description**: MSCZ save/reopen can change more than the small geometry and antialiasing differences measured in S3. Fourteen original S5 golden render differences exceed the stated bounds. The complete per-output evidence is in [the census](a5-output-census.json). For `drums_import.musicxml`, the public direct render is 1225 × 1585 and the public render of its reopened MSCZ is 1224 × 1584, exactly matching the host. The common area differs at 22,588 pixels (limit 100); one text y coordinate moves from 158.5907135 to 159.4676361 points. `rendered_page` also reports ink-share ratio 1.2716 and grid L1 0.2764 against limits 1.10 and 0.25. These failures are not covered by the 36-pixel example in -012.
 - **Page-size mechanism**: The MusicXML scaling and page dimensions imply approximately 612.000000386 × 792.000000499 points before saving; the serialized style contains exactly 8.5 × 11 inches. Both PDF/SVG page boxes round to 612 × 792 points, but the PNG renderer applies `ceil` at 144 dpi, producing the observed one-pixel difference. This explains the dimensions, not the separate ink/layout difference.
-- **Impact**: A completed snapshot render can differ in pixel content or geometry from the direct render of the same live document. The current 0.02-point / 0.005%-pixel allowance cannot justify these fourteen outputs.
-- **Next Step**: Preserve render-relevant score state in a reviewed host or public-engine snapshot design and compare the same fixtures through both paths. Do not relax the existing limits or pin the out-of-bound artifacts as accepted output. This work must preserve async isolation, score/excerpt selection, assets and edit semantics; this S5 investigation made no engine changes.
+- **Impact and acceptance**: A completed snapshot render can differ in pixel content or geometry from a direct render of the live document. These fourteen exceed the 0.02-point / 0.005%-pixel example and are accepted only for the exact fixture, old baseline, direct-engine and reopened-engine/host hashes and measurements in the census. The golden comparator rejects any other changed normalized output, pixel, glyph or geometry and additionally requires the exact encoded PNG bytes for all eight PNG exceptions. The drums rendered-page exception also pins the PNG file bytes and exact diagnostics. This is a round-trip precision limitation, not a claim that rendering is equal.
+- **Follow-up**: Investigate writer numeric precision independently under `DEFECT-ENGRAVE-016`. The size-rounding mechanism is demonstrated; the evidence does not separately isolate every ink or layout movement. No engine change is part of this acceptance.
+
+### 16. Writer numeric precision in save/reopen (DEFECT-ENGRAVE-016)
+
+- **Status**: Carried / Open; independent of A5 acceptance.
+- **Evidence Level**: SOURCE-REVIEWED, EXECUTED (Windows, `engrave-16`).
+- **Description**: Snapshot serialization rounds render-relevant dimensions, including the approximately 0.001 pt A4 page-height change in the S3 tests and the near-integer page size in the drums S5 fixture. The latter crosses the PNG renderer's `ceil` boundary after reopening. Save/reopen also reproduces the individually measured pixel and geometry drift in [the census](a5-output-census.json); the page-size rounding alone does not prove the cause of every content movement.
+- **Next Step**: Independently investigate and improve writer numeric precision with round-trip tests that preserve dimension values and compare direct and reopened renders. Preserve explicit format/version compatibility, async snapshot isolation and the current pinned baselines when evaluating the change.

@@ -14,6 +14,7 @@ from unittest import mock
 import xml.etree.ElementTree as ET
 
 from PIL import Image, ImageDraw
+from PIL.PngImagePlugin import PngInfo
 
 import check_rendered_page as page
 
@@ -369,6 +370,54 @@ class TestPngInkControls(unittest.TestCase):
         with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
             self.assertEqual(page.main(), 1)
         self.assertIn("PNG has no reference", output.getvalue())
+
+    def test_precision_exception_requires_exact_png_bytes_and_diagnostics(self):
+        target = self.root / "pedal.mscx/page-0.svg"
+        target.parent.mkdir()
+        target.write_text(PEDAL.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+        svg_reference = json.loads(REFERENCE.read_text(encoding="utf-8"))["pages"]["pedal.mscx/page-0.svg"]
+        image = Image.new("RGBA", (128, 128), "white")
+        png = target.with_suffix(".png")
+        image.save(png)
+        issues = page.png_issues(page.png_stats(png), self.reference)
+        pin = {"page": "pedal.mscx/page-0.png",
+               "platform": "windows" if sys.platform.startswith("win") else "linux",
+               "png_sha256": hashlib.sha256(png.read_bytes()).hexdigest(),
+               "issues": issues, "reason": "synthetic precision control"}
+        payload = {"version": 3, "pages": {"pedal.mscx/page-0.svg": {
+            "stats": svg_reference["stats"], "png": {"stats": self.reference}}}, "png_exceptions": [pin]}
+        refpath = self.root / "reference.json"
+        refpath.write_text(json.dumps(payload), encoding="utf-8")
+        self.reference_path.unlink()
+        args = ["check_rendered_page.py", "--golden", str(self.root), "--reference", str(refpath)]
+        with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(page.main(), 0)
+        # Add a PNG metadata chunk without changing any pixels: even that byte
+        # change must invalidate this particular page's exception.
+        metadata = PngInfo()
+        metadata.add_text("changed", "yes")
+        image.save(png, pnginfo=metadata)
+        self.assertEqual(page.png_issues(page.png_stats(png), self.reference), issues)
+        output = io.StringIO()
+        with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
+            self.assertEqual(page.main(), 1)
+        self.assertIn("precision exception PNG SHA-256 does not match", output.getvalue())
+        pin["png_sha256"] = hashlib.sha256(png.read_bytes()).hexdigest()
+        pin["issues"] = ["different diagnostic"]
+        refpath.write_text(json.dumps(payload), encoding="utf-8")
+        output = io.StringIO()
+        with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
+            self.assertEqual(page.main(), 1)
+        self.assertIn("precision exception diagnostics do not match", output.getvalue())
+
+    def test_checked_in_png_exception_matches_the_census(self):
+        payload = json.loads(REFERENCE.read_text(encoding="utf-8"))
+        pin = page.png_exceptions(payload)[("windows", "drums_import.musicxml/page-0.png")]
+        census = json.loads((ROOT / "docs/dev/a5-output-census.json").read_text(encoding="utf-8"))
+        item = next(item for item in census["entries"] if item["fixture"] == "drums_import.musicxml"
+                    and item["output"] == "page-0.png.json")
+        self.assertEqual(pin["png_sha256"], item["raw_reopened_png_sha256"])
+        self.assertEqual(pin["issues"], item["rendered_page_diagnostic"]["issues"])
 
 
 if __name__ == "__main__":

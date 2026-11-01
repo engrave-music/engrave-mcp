@@ -104,6 +104,7 @@ AUDIO_EXACT = {"sampleRate", "channels", "frames"}
 SILENCE_EVIDENCE = "nonzeroSamples"
 ALLOW_KINDS = ("different", "missing", "extra")
 DEFAULT_PLATFORM = "windows" if sys.platform.startswith("win") else "linux"
+PRECISION_CENSUS = ROOT / "docs/dev/a5-output-census.json"
 
 
 def sha256(data: bytes) -> str:
@@ -768,7 +769,7 @@ def build_index(root: Path) -> dict:
 
 
 async def capture_tree(binary, resources, soundfont, target, log_path, golden_root: Path | None = None,
-                       legacy_blank_eids: bool = False):
+                       legacy_blank_eids: bool = False, raw_png_hashes: dict | None = None):
     require_eid_mode(golden_root, legacy_blank_eids)
     dump = binary.parent / ("semantic_dump.exe" if sys.platform.startswith("win") else "semantic_dump")
     if not dump.is_file():
@@ -790,6 +791,9 @@ async def capture_tree(binary, resources, soundfont, target, log_path, golden_ro
                             await capture_fixture(session, source.name, source, raw_root,
                                                   target / source.name, [raw_root, target],
                                                   legacy_blank_eids)
+                            raw_png = raw_root / source.name / "page-0.png"
+                            if raw_png_hashes is not None and raw_png.is_file():
+                                raw_png_hashes[source.name] = sha256(raw_png.read_bytes())
                         except Exception as exc:  # noqa: BLE001 - keep other fixtures going
                             write_text(target / source.name / "capture.error.txt",
                                        f"{type(exc).__name__}: "
@@ -898,6 +902,57 @@ def read_v2_index(golden_root: Path) -> tuple[Path | None, dict, dict]:
     return overlay, legacy, additions
 
 
+def read_precision_census(data: dict, platform: str) -> dict[tuple[str, str], dict]:
+    """Load only individually accepted, measured writer-precision artifacts."""
+    census = json.loads(read_text(PRECISION_CENSUS))
+    if (not isinstance(census, dict) or census.get("schema") != 1 or census.get("platform") != platform
+            or any(census.get(field) != data.get(field)
+                   for field in ("engine_commit", "engine_gate_commit", "engine_tree"))
+            or not isinstance(census.get("entries"), list) or not isinstance(census.get("counts"), dict)):
+        raise ValueError("invalid writer-precision census header")
+    entries = {}
+    for item in census["entries"]:
+        if not isinstance(item, dict):
+            raise ValueError("invalid writer-precision census entry")
+        if item.get("bucket") != "c":
+            if item.get("acceptance") == "writer_precision":
+                raise ValueError("writer-precision acceptance outside bucket c")
+            continue
+        fixture, output = item.get("fixture"), item.get("output")
+        key = (fixture, output)
+        measurement = item.get("measurement")
+        if (item.get("acceptance") != "writer_precision" or not isinstance(fixture, str)
+                or not isinstance(output, str) or key in entries
+                or any(char in fixture + output for char in "*?[]")
+                or any(not re.fullmatch(r"[0-9a-f]{64}", str(item.get(field, "")))
+                       for field in ("baseline_sha256", "direct_engine_sha256",
+                                     "host_sha256", "reopened_engine_sha256"))
+                or item["host_sha256"] != item["reopened_engine_sha256"]
+                or not isinstance(item.get("evidence"), str) or not item["evidence"].strip()
+                or not isinstance(measurement, dict) or measurement.get("within") is not False):
+            raise ValueError(f"invalid writer-precision evidence for {fixture}/{output}")
+        if output.endswith(".png.json"):
+            delta = measurement.get("size_delta")
+            pixels, limit = measurement.get("pixel_diff"), measurement.get("pixel_limit")
+            if (not isinstance(delta, list) or len(delta) != 2
+                    or any(type(n) is not int for n in delta)
+                    or type(pixels) is not int or type(limit) is not int
+                    or pixels < 0 or limit <= 0
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("raw_host_png_sha256", "")))):
+                raise ValueError(f"invalid writer-precision PNG measurement: {fixture}/{output}")
+        elif output.endswith(".svg") or output == "score.pdf.json":
+            delta, structural = measurement.get("max_delta"), measurement.get("structural")
+            if (type(delta) not in (int, float) or not math.isfinite(delta) or delta < 0
+                    or not isinstance(structural, list) or any(not isinstance(s, str) for s in structural)):
+                raise ValueError(f"invalid writer-precision vector measurement: {fixture}/{output}")
+        else:
+            raise ValueError(f"invalid writer-precision output: {fixture}/{output}")
+        entries[key] = item
+    if census.get("counts", {}).get("c") != len(entries) or not entries:
+        raise ValueError("writer-precision census inventory differs")
+    return entries
+
+
 def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
     """Load exact v1-to-v2 output migrations, including their oracle provenance."""
     path = golden_root.parent / "v2" / golden_root.name / "migrations.json"
@@ -911,6 +966,11 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
         raise ValueError("invalid v2 migration header")
     sources = {source.name: source for source in fixture_files() + supplemental_mnx_files()}
     sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})
+    census_path = data.get("precision_census")
+    if census_path is not None and census_path != "docs/dev/a5-output-census.json":
+        raise ValueError("invalid writer-precision census path")
+    precision = read_precision_census(data, golden_root.name) if census_path else {}
+    precision_keys = set()
     result = {}
     for entry in data["entries"]:
         if not isinstance(entry, dict):
@@ -937,7 +997,7 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
                     or entry.get("converter_sha256") != sha256((ROOT / "scripts/v2_fixtures.py").read_bytes())):
                 raise ValueError(f"created input or converter changed: {fixture}")
         kind = entry.get("kind", "standalone")
-        if kind == "snapshot":
+        if kind in ("snapshot", "snapshot-precision"):
             direct, measurement = entry.get("direct_sha256"), entry.get("measurement")
             if not re.fullmatch(r"[0-9a-f]{64}", str(direct)) or not isinstance(measurement, dict):
                 raise ValueError(f"invalid snapshot evidence for {fixture}/{output}")
@@ -946,7 +1006,18 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
                 _, accepted, _ = allow_accept(prior, fixture, output, "different", direct, golden_root.name)
                 if accepted is None:
                     raise ValueError(f"direct snapshot oracle has no existing baseline allowance: {fixture}/{output}")
-            if output.endswith(".svg") or output == "score.pdf.json":
+            if kind == "snapshot-precision":
+                evidence = precision.get(key)
+                if (evidence is None or entry["baseline_sha256"] != evidence["baseline_sha256"]
+                        or direct != evidence["direct_engine_sha256"]
+                        or entry["actual_sha256"] != evidence["host_sha256"]
+                        or entry["oracle_sha256"] != evidence["reopened_engine_sha256"]
+                        or measurement != evidence["measurement"]
+                        or (output.endswith(".png.json")
+                            and entry.get("raw_png_sha256") != evidence["raw_host_png_sha256"])):
+                    raise ValueError(f"writer-precision census mismatch: {fixture}/{output}")
+                precision_keys.add(key)
+            elif output.endswith(".svg") or output == "score.pdf.json":
                 delta = measurement.get("max_delta")
                 if (type(delta) not in (int, float) or not math.isfinite(delta) or not 0 <= delta <= 0.02
                         or measurement.get("structural") != [] or measurement.get("within") is not True):
@@ -969,6 +1040,8 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
         elif kind != "standalone":
             raise ValueError(f"invalid v2 migration kind: {kind}")
         result[key] = entry
+    if precision_keys != set(precision):
+        raise ValueError("writer-precision migrations do not match the census inventory")
     return result
 
 
@@ -979,6 +1052,14 @@ def v2_migration_accept(entries: dict, fixture: str, output: str,
             and actual_sha == entry["actual_sha256"]):
         return entry
     return None
+
+
+def precision_png_accept(entry: dict, actual_raw_sha: str | None) -> bool:
+    """Require the exact encoded PNG as well as its indexed RGBA descriptor."""
+    if entry.get("kind") != "snapshot-precision" or not entry["output"].endswith(".png.json"):
+        return True
+    expected = entry.get("raw_png_sha256")
+    return bool(expected) and actual_raw_sha == expected
 
 
 def silence_windows(audio: dict) -> list[bool]:
@@ -1070,7 +1151,7 @@ def write_diff(root: Path, fixture: str, output: str, golden: Path, actual: Path
 
 
 def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], output: Path,
-                  platform: str) -> int:
+                  platform: str, raw_png_hashes: dict | None = None) -> int:
     golden_index = json.loads(read_text(golden_root / "index.json"))
     counts = {key: 0 for key in ("identical", "allowed", "different", "missing", "extra",
                                  "goldenError", "extraFixture", "index", "legacyOnly")}
@@ -1148,6 +1229,17 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
                     # allow entry may cover: it must be recaptured.
                     same, golden_format = False, str(exc)
                 kind = None if same and not golden_error else "different"
+            precision_pin = migrations.get((fixture, name))
+            if (precision_pin and precision_pin.get("kind") == "snapshot-precision"
+                    and actual_sha is not None
+                    and (golden_sha != precision_pin["baseline_sha256"]
+                         or actual_sha != precision_pin["actual_sha256"])):
+                counts["different"] += 1
+                results[name] = {"status": "different", "kind": "different",
+                                 "goldenSha256": golden_sha, "actualSha256": actual_sha,
+                                 "error": "snapshot-precision baseline or host hash changed"}
+                print(f"different {fixture}/{name}: snapshot-precision baseline or host hash changed")
+                continue
             if kind is None:
                 counts["identical"] += 1
                 results[name] = {"status": "identical", "sha256": actual_sha}
@@ -1162,9 +1254,17 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
 
             migration = (v2_migration_accept(migrations, fixture, name, golden_sha, actual_sha)
                          if kind == "different" and not golden_error else None)
+            if migration and not precision_png_accept(migration, (raw_png_hashes or {}).get(fixture)):
+                counts["different"] += 1
+                results[name] = {"status": "different", "kind": kind,
+                                 "goldenSha256": golden_sha, "actualSha256": actual_sha,
+                                 "error": "snapshot-precision raw PNG hash missing or changed"}
+                print(f"different {fixture}/{name}: snapshot-precision raw PNG hash missing or changed")
+                continue
             if migration:
                 counts["allowed"] += 1
-                status = "v2-snapshot" if migration.get("kind") == "snapshot" else "v2-migrated"
+                status = {"snapshot": "v2-snapshot", "snapshot-precision": "v2-snapshot-precision"}.get(
+                    migration.get("kind"), "v2-migrated")
                 results[name] = {"status": status, "kind": kind,
                                  "reason": migration["reason"], "oracle": migration["oracle"],
                                  "actualSha256": actual_sha, "goldenSha256": golden_sha}
@@ -1233,14 +1333,16 @@ def command_compare(args) -> int:
     args.output.mkdir(parents=True, exist_ok=True)
     require_eid_mode(args.golden, args.legacy_blank_eids)
     actual = args.output / "actual"
+    raw_png_hashes = {}
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
         asyncio.run(asyncio.wait_for(capture_tree(
             args.binary, args.resources, args.soundfont, actual,
             Path(temporary) / "server-stderr.log", golden_root=args.golden,
-            legacy_blank_eids=args.legacy_blank_eids), timeout=1800))
+            legacy_blank_eids=args.legacy_blank_eids, raw_png_hashes=raw_png_hashes), timeout=1800))
         # Keep a copy of the server log for debugging (outside the compared tree).
         shutil.copyfile(Path(temporary) / "server-stderr.log", args.output / "server-stderr.log")
-    return compare_trees(args.golden, actual, allow, args.output, args.platform)
+    write_json(args.output / "raw-png-sha256.json", raw_png_hashes, indent=2)
+    return compare_trees(args.golden, actual, allow, args.output, args.platform, raw_png_hashes)
 
 
 def command_pin(args) -> int:
