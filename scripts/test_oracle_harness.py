@@ -138,15 +138,18 @@ class TestV2GoldenInventory(unittest.TestCase):
                     shutil.copyfile(path, actual / name / path.name)
             golden.write_json(baseline / "index.json", {})
 
-            def compare():
+            def compare(platform="windows"):
                 with contextlib.redirect_stdout(io.StringIO()):
-                    code = golden.compare_trees(baseline, actual, [], output, "windows")
+                    code = golden.compare_trees(baseline, actual, [], output, platform)
                 return code, json.loads((output / "report.json").read_text(encoding="utf-8"))
 
             code, report = compare()
             self.assertEqual(code, 0)
             self.assertEqual(report["counts"]["index"], 0)
             self.assertEqual(report["counts"]["identical"], 52)
+            code, report = compare("linux")
+            self.assertEqual(code, 1)
+            self.assertTrue(any("not linux" in issue for issue in report["indexIssues"]))
             (actual / names[0] / "musicxml-semantic.json").write_text("{}\n", encoding="utf-8")
             code, report = compare()
             self.assertEqual(code, 1)

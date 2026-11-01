@@ -1079,6 +1079,8 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
 
     try:
         overlay, supplemental, additions = read_v2_index(golden_root)
+        if overlay is not None and golden_root.name != platform:
+            raise ValueError(f"v2 index is for {golden_root.name}, not {platform}")
         if set(golden_index) & set(supplemental):
             raise ValueError("v2 supplemental fixtures overlap the historical index")
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -1086,6 +1088,8 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
         report["indexIssues"].append(f"invalid v2 index: {exc}")
     try:
         migrations = read_v2_migrations(golden_root)
+        if migrations and golden_root.name != platform:
+            raise ValueError(f"v2 migrations are for {golden_root.name}, not {platform}")
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         migrations = {}
         report["indexIssues"].append(f"invalid v2 migrations: {exc}")
