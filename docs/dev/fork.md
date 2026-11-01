@@ -83,6 +83,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 
 | `engrave-23` | `c0aabb421c` | `32f0a26e5b` | `da3885cb` | Phase B must-fix round (`fix/write470-gaps`, `559cc84545`; this merge has its tree): the invalid-tie guard now covers hidden and staff-hidden parts, an unaddressable tie uses the nearest source identity or the documented non-EID `locator:…` form instead of a fabricated sentinel (empty/sentinel/malformed identities are `InvalidArgument` with no artifact), and active instrument group naming emits the frozen `B470_INSTRUMENT_GROUP_NAME_DROPPED`. Part EIDs remain unrepresentable in 4.70 (numeric part IDs survive; `DEFECT-ENGRAVE-024`). Focused tests 14/14, API 21/21, 26 oracle exports plus paired-edit/refusal controls with all 87 archive checksums verified. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
 
+| `engrave-24` | `51db3ae00b` | `32f0a26e5b` | `da3885cb` | Phase B identity hardening (`test/warning-identity`, `7f659c8ec0`; this merge has its tree): twelve negative warning-identity cases — empty kind, empty id, sentinel id, malformed range key, malformed bracket key, garbage and incomplete locator — reject as `InvalidArgument` with no output in both formats, so a meaningless warning can never be published. Test-only; no production behaviour change. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
+
 The superproject's `.gitmodules` now tracks `branch = main`.
 
 ## History: mcp/v4.7.x (frozen)
