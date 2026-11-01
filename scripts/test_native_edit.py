@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from test_async_session import Client, VALIDATORS
+from v2_client import Client, VALIDATORS
 
 
 def fixture(tied: bool = False) -> str:

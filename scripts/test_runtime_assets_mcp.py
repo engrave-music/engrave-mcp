@@ -10,7 +10,7 @@ import shutil
 import numpy as np
 import soundfile as sf
 
-from test_async_session import Client
+from v2_client import Client
 
 ROOT = Path(__file__).resolve().parents[1]
 

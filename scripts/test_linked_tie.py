@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from test_async_session import Client
+from v2_client import Client
 
 
 ROOT = Path(__file__).resolve().parents[1]
