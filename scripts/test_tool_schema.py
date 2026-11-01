@@ -23,10 +23,10 @@ OPS = ["set_property", "reset_property", "set_style", "enter_notes", "set_pitch"
        "add_tuplet", "add_text", "add"]
 
 
-def inspect_schema(node, root):
+def inspect_schema(node, root, *, input_schema):
     if isinstance(node, list):
         for child in node:
-            inspect_schema(child, root)
+            inspect_schema(child, root, input_schema=input_schema)
     elif isinstance(node, dict):
         if "$ref" in node:
             ref = node["$ref"]
@@ -35,12 +35,12 @@ def inspect_schema(node, root):
         kind = node.get("type")
         if kind == "object":
             assert node.get("additionalProperties") is False or node.get("unevaluatedProperties") is False
-        if kind == "string":
+        if input_schema and kind == "string":
             assert "maxLength" in node or "enum" in node
-        if kind == "array":
+        if input_schema and kind == "array":
             assert "maxItems" in node
         for child in node.values():
-            inspect_schema(child, root)
+            inspect_schema(child, root, input_schema=input_schema)
 
 
 def check_cases(tools):
@@ -194,7 +194,7 @@ def main():
             schema = tool[key]
             assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
             Draft202012Validator.check_schema(schema)
-            inspect_schema(schema, schema)
+            inspect_schema(schema, schema, input_schema=key == "inputSchema")
     input_count, output_count = check_cases(tools)
     with tempfile.TemporaryDirectory(prefix="registry-contract-") as temp:
         copy = Path(temp) / "tools.json"

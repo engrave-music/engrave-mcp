@@ -68,7 +68,6 @@
           "additionalProperties": false,
           "properties": {
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "severity": {
@@ -119,20 +118,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -152,7 +146,6 @@
               "items": {
                 "$ref": "#/$defs/diagnostic"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "document": {
@@ -263,7 +256,6 @@
           "additionalProperties": false,
           "properties": {
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "severity": {
@@ -314,20 +306,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -347,7 +334,6 @@
               "items": {
                 "$ref": "#/$defs/diagnostic"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "document": {
@@ -449,20 +435,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -586,20 +567,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -619,12 +595,11 @@
               "type": "string"
             },
             "name": {
-              "maxLength": 4096,
               "type": "string"
             },
             "pages": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             }
           },
@@ -669,7 +644,7 @@
             },
             "index": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "tick": {
@@ -688,7 +663,6 @@
           "additionalProperties": false,
           "properties": {
             "composer": {
-              "maxLength": 4096,
               "type": "string"
             },
             "duration": {
@@ -698,68 +672,59 @@
               "items": {
                 "$ref": "#/$defs/excerpt"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "file_version": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "key": {
-              "maximum": 7,
-              "minimum": -7,
+              "maximum": 2147483647,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "measure_count": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "measures": {
               "items": {
                 "$ref": "#/$defs/measure"
               },
-              "maxItems": 100000,
               "type": "array"
             },
             "mscore_version": {
-              "maxLength": 4096,
               "type": "string"
             },
             "pages": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "parts": {
               "items": {
                 "$ref": "#/$defs/part"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "poet": {
-              "maxLength": 4096,
               "type": "string"
             },
             "signatures": {
               "items": {
                 "$ref": "#/$defs/signature"
               },
-              "maxItems": 100000,
               "type": "array"
             },
             "subtitle": {
-              "maxLength": 4096,
               "type": "string"
             },
             "timesig": {
-              "maxLength": 4096,
               "type": "string"
             },
             "title": {
-              "maxLength": 4096,
               "type": "string"
             }
           },
@@ -792,18 +757,15 @@
               "type": "string"
             },
             "instrument_id": {
-              "maxLength": 4096,
               "type": "string"
             },
             "name": {
-              "maxLength": 4096,
               "type": "string"
             },
             "staves": {
               "items": {
                 "$ref": "#/$defs/staff"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -822,17 +784,16 @@
               "type": "number"
             },
             "key": {
-              "maximum": 7,
-              "minimum": -7,
+              "maximum": 2147483647,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "staff": {
               "maximum": 2147483647,
-              "minimum": -1,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "text": {
-              "maxLength": 4096,
               "type": "string"
             },
             "tick": {
@@ -872,7 +833,6 @@
           "additionalProperties": false,
           "properties": {
             "group": {
-              "maxLength": 4096,
               "type": "string"
             },
             "id": {
@@ -883,7 +843,7 @@
             },
             "index": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "invisible": {
@@ -891,12 +851,12 @@
             },
             "lines": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "part": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             }
           },
@@ -1372,7 +1332,6 @@
               "items": {
                 "$ref": "#/$defs/track"
               },
-              "maxItems": 256,
               "type": "array"
             }
           },
@@ -1390,7 +1349,7 @@
             },
             "page": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "width": {
@@ -1441,7 +1400,6 @@
                 "pattern": "^[A-Za-z0-9+/_-]+$",
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "measure": {
@@ -1459,7 +1417,7 @@
             },
             "measure_index": {
               "maximum": 2147483647,
-              "minimum": -1,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "parent": {
@@ -1479,7 +1437,6 @@
               "items": {
                 "$ref": "#/$defs/property"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "score": {
@@ -1487,19 +1444,18 @@
             },
             "staff": {
               "maximum": 2147483647,
-              "minimum": -1,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "tick": {
               "$ref": "#/$defs/fraction"
             },
             "type": {
-              "maxLength": 4096,
               "type": "string"
             },
             "voice": {
-              "maximum": 3,
-              "minimum": -1,
+              "maximum": 2147483647,
+              "minimum": -2147483648,
               "type": "integer"
             }
           },
@@ -1554,20 +1510,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -1632,7 +1583,6 @@
               "type": "boolean"
             },
             "name": {
-              "maxLength": 4096,
               "type": "string"
             },
             "styled": {
@@ -1670,27 +1620,23 @@
               "type": "boolean"
             },
             "instrument_id": {
-              "maxLength": 4096,
               "type": "string"
             },
             "instrument_name": {
-              "maxLength": 4096,
               "type": "string"
             },
             "mix": {
               "$ref": "#/$defs/mix"
             },
             "part_id": {
-              "maxLength": 4096,
               "type": "string"
             },
             "part_name": {
-              "maxLength": 4096,
               "type": "string"
             },
             "track": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             }
           },
@@ -1767,7 +1713,6 @@
                   "const": "string"
                 },
                 "value": {
-                  "maxLength": 65536,
                   "type": "string"
                 }
               },
@@ -1903,7 +1848,6 @@
                   "const": "enum"
                 },
                 "value": {
-                  "maxLength": 4096,
                   "type": "string"
                 }
               },
@@ -1925,7 +1869,6 @@
                     "pattern": "^(0|-?[1-9][0-9]*)$",
                     "type": "string"
                   },
-                  "maxItems": 4096,
                   "type": "array"
                 }
               },
@@ -1942,7 +1885,6 @@
                   "const": "opaque"
                 },
                 "type": {
-                  "maxLength": 4096,
                   "type": "string"
                 }
               },
@@ -2021,7 +1963,6 @@
                   "items": {
                     "$ref": "#/$defs/property"
                   },
-                  "maxItems": 4096,
                   "type": "array"
                 },
                 "revision": {
@@ -2175,20 +2116,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -2223,14 +2159,11 @@
           "properties": {
             "enum_tokens": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "group": {
-              "maxLength": 4096,
               "type": "string"
             },
             "kind": {
@@ -2253,7 +2186,6 @@
               "type": "boolean"
             },
             "name": {
-              "maxLength": 4096,
               "type": "string"
             },
             "settable": {
@@ -2289,10 +2221,8 @@
             },
             "enum_tokens": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "kind": {
@@ -2312,7 +2242,6 @@
               "type": "string"
             },
             "name": {
-              "maxLength": 4096,
               "type": "string"
             },
             "unit": {
@@ -2342,11 +2271,9 @@
               "items": {
                 "$ref": "#/$defs/prop_info"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "type": {
-              "maxLength": 4096,
               "type": "string"
             }
           },
@@ -2418,7 +2345,6 @@
                   "const": "string"
                 },
                 "value": {
-                  "maxLength": 65536,
                   "type": "string"
                 }
               },
@@ -2554,7 +2480,6 @@
                   "const": "enum"
                 },
                 "value": {
-                  "maxLength": 4096,
                   "type": "string"
                 }
               },
@@ -2576,7 +2501,6 @@
                     "pattern": "^(0|-?[1-9][0-9]*)$",
                     "type": "string"
                   },
-                  "maxItems": 4096,
                   "type": "array"
                 }
               },
@@ -2593,7 +2517,6 @@
                   "const": "opaque"
                 },
                 "type": {
-                  "maxLength": 4096,
                   "type": "string"
                 }
               },
@@ -2623,7 +2546,6 @@
                   "items": {
                     "$ref": "#/$defs/type_info"
                   },
-                  "maxItems": 4096,
                   "type": "array"
                 }
               },
@@ -2667,7 +2589,6 @@
                   "items": {
                     "$ref": "#/$defs/style_info"
                   },
-                  "maxItems": 4096,
                   "type": "array"
                 }
               },
@@ -3765,7 +3686,6 @@
           "additionalProperties": false,
           "properties": {
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "severity": {
@@ -3816,20 +3736,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -3852,14 +3767,12 @@
                 "pattern": "^[A-Za-z0-9+/_-]+$",
                 "type": "string"
               },
-              "maxItems": 65536,
               "type": "array"
             },
             "diagnostics": {
               "items": {
                 "$ref": "#/$defs/diagnostic"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "ok": {
@@ -3883,7 +3796,6 @@
                         }
                       ]
                     },
-                    "maxItems": 65536,
                     "type": "array"
                   }
                 },
@@ -3902,7 +3814,6 @@
                 "pattern": "^[A-Za-z0-9+/_-]+$",
                 "type": "string"
               },
-              "maxItems": 65536,
               "type": "array"
             },
             "replaced": {
@@ -3912,7 +3823,6 @@
                 "pattern": "^[A-Za-z0-9+/_-]+$",
                 "type": "string"
               },
-              "maxItems": 65536,
               "type": "array"
             },
             "revision": {
@@ -4553,11 +4463,9 @@
           "additionalProperties": false,
           "properties": {
             "mime": {
-              "maxLength": 128,
               "type": "string"
             },
             "path": {
-              "maxLength": 4096,
               "type": "string"
             },
             "size": {
@@ -4607,20 +4515,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -4642,7 +4545,6 @@
                   "const": "start"
                 },
                 "job": {
-                  "maxLength": 128,
                   "type": "string"
                 },
                 "ok": {
@@ -4790,16 +4692,14 @@
                 ],
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "audio_sample_rate": {
               "maximum": 2147483647,
-              "minimum": 0,
+              "minimum": -2147483648,
               "type": "integer"
             },
             "engine_version": {
-              "maxLength": 4096,
               "type": "string"
             },
             "export_formats": {
@@ -4813,7 +4713,6 @@
                 ],
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "import_formats": {
@@ -4829,7 +4728,6 @@
                 ],
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "render_formats": {
@@ -4841,15 +4739,12 @@
                 ],
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "soundfonts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 256,
               "type": "array"
             }
           },
@@ -4898,20 +4793,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -4925,28 +4815,18 @@
           "additionalProperties": false,
           "properties": {
             "base64_chars": {
-              "maximum": 2147483647,
-              "minimum": 0,
               "type": "integer"
             },
             "batch_ops": {
-              "maximum": 2147483647,
-              "minimum": 0,
               "type": "integer"
             },
             "deadline_ms": {
-              "maximum": 2147483647,
-              "minimum": 0,
               "type": "integer"
             },
             "export_workers": {
-              "maximum": 2147483647,
-              "minimum": 0,
               "type": "integer"
             },
             "input_bytes": {
-              "maximum": 2147483647,
-              "minimum": 0,
               "type": "integer"
             },
             "output_bytes": {
@@ -4955,13 +4835,9 @@
               "type": "string"
             },
             "query_results": {
-              "maximum": 2147483647,
-              "minimum": 0,
               "type": "integer"
             },
             "queue_capacity": {
-              "maximum": 2147483647,
-              "minimum": 0,
               "type": "integer"
             },
             "snapshot_bytes": {
@@ -4970,13 +4846,9 @@
               "type": "string"
             },
             "transport_request_bytes": {
-              "maximum": 2147483647,
-              "minimum": 0,
               "type": "integer"
             },
             "worker_request_bytes": {
-              "maximum": 2147483647,
-              "minimum": 0,
               "type": "integer"
             }
           },
@@ -4999,19 +4871,15 @@
           "additionalProperties": false,
           "properties": {
             "category": {
-              "maxLength": 4096,
               "type": "string"
             },
             "id": {
-              "maxLength": 4096,
               "type": "string"
             },
             "path": {
-              "maxLength": 4096,
               "type": "string"
             },
             "title": {
-              "maxLength": 4096,
               "type": "string"
             }
           },
@@ -5034,10 +4902,8 @@
             },
             "fonts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "limits": {
@@ -5050,7 +4916,6 @@
               "items": {
                 "$ref": "#/$defs/template"
               },
-              "maxItems": 4096,
               "type": "array"
             },
             "tool_revision": {
@@ -5121,11 +4986,9 @@
           "additionalProperties": false,
           "properties": {
             "mime": {
-              "maxLength": 128,
               "type": "string"
             },
             "path": {
-              "maxLength": 4096,
               "type": "string"
             },
             "size": {
@@ -5175,20 +5038,15 @@
               "type": "string"
             },
             "message": {
-              "maxLength": 65536,
               "type": "string"
             },
             "op_index": {
-              "maximum": 1023,
-              "minimum": 0,
               "type": "integer"
             },
             "published_artifacts": {
               "items": {
-                "maxLength": 4096,
                 "type": "string"
               },
-              "maxItems": 4096,
               "type": "array"
             }
           },
@@ -5219,7 +5077,6 @@
               ]
             },
             "job": {
-              "maxLength": 128,
               "type": "string"
             },
             "source_revision": {

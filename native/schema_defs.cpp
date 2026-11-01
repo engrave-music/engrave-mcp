@@ -1,5 +1,7 @@
 #include "schema_defs.h"
+#include <algorithm>
 #include <string>
+#include <vector>
 namespace music::v2 {
 namespace {
 using J = Json;
@@ -26,6 +28,39 @@ void collect(const J& node,const J& defs,J& used) {
     } else if(node.is_array()) for(auto& v:node) collect(v,defs,used);
 }
 J schema(J body,const J& defs) { J used=J::object(); collect(body,defs,used); body["type"]="object"; body["unevaluatedProperties"]=false; body["$defs"]=used; body["$schema"]="https://json-schema.org/draft/2020-12/schema"; return body; }
+
+// Input limits protect request decoding; they do not limit data imported by
+// the engine. Build output schemas separately so shared definitions do not
+// accidentally advertise those request limits for engine-produced strings,
+// vectors, and numbers. Keep only bounds established by the output producers.
+void output_bounds(J& node, const std::string& field = {}) {
+    if (node.is_array()) { for (auto& item : node) output_bounds(item, field); return; }
+    if (!node.is_object()) return;
+    const auto type = node.value("type", std::string());
+    if (type == "string" && !node.contains("pattern")) node.erase("maxLength");
+    if (type == "array" && field != "elements" && field != "ops" && field != "artifacts")
+        node.erase("maxItems");
+    if (type == "integer" || type == "number") {
+        const bool color = node.value("minimum", -1) == 0 && node.value("maximum", -1) == 255;
+        const bool paging = (field == "total" || field == "next_cursor") && node.value("maximum", -1) == 4096;
+        const bool mix = field == "volume_db" || field == "balance";
+        if (!color && !paging && !mix) {
+            node.erase("minimum"); node.erase("maximum");
+            // These public DTO fields are int32_t, including any sentinel.
+            static const std::vector<std::string> int32_fields = {"page", "index", "part", "lines", "pages",
+                "file_version", "measure_count", "key", "staff", "voice", "measure_index", "track", "audio_sample_rate"};
+            if (type == "integer" && std::find(int32_fields.begin(), int32_fields.end(), field) != int32_fields.end()) {
+                node["minimum"] = -2147483647 - 1; node["maximum"] = 2147483647;
+            }
+        }
+    }
+    for (auto it = node.begin(); it != node.end(); ++it) {
+        if (it.key() == "properties" && it->is_object()) {
+            for (auto property = it->begin(); property != it->end(); ++property)
+                output_bounds(property.value(), property.key());
+        } else output_bounds(it.value(), field);
+    }
+}
 }
 Json declared_tools() {
     const J b=boolean(), n=num(), idx=integer(), text=str();
@@ -103,7 +138,11 @@ Json declared_tools() {
     d["template"]=object({{"id",text},{"title",text},{"category",text},{"path",text}});
     d["limits"]=object({{"input_bytes",idx},{"base64_chars",idx},{"batch_ops",idx},{"query_results",idx},{"output_bytes",u},{"queue_capacity",idx},{"deadline_ms",idx},{"export_workers",idx},{"snapshot_bytes",u},{"transport_request_bytes",idx},{"worker_request_bytes",idx}});
     J tools=J::array();
-    auto tool=[&](const char* name,const char* description,J input,J output) { tools.push_back({{"name",name},{"description",description},{"inputSchema",schema(input,d)},{"outputSchema",schema(one(J::array({output,object({{"ok",lit(false)},{"error",ref("error")}})})),d)}}); };
+    auto tool=[&](const char* name,const char* description,J input,J output) {
+        auto out = schema(one(J::array({output,object({{"ok",lit(false)},{"error",ref("error")}})})),d);
+        output_bounds(out);
+        tools.push_back({{"name",name},{"description",description},{"inputSchema",schema(input,d)},{"outputSchema",std::move(out)}});
+    };
     J input=object({{"path",text},{"data",{{"type","string"},{"maxLength",11184812},{"pattern","^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"}}},{"format",formats},{"filename_hint",text},{"strict_ids",b}},J::array());
     input["oneOf"]={J{{"required",{"path"}},{"not",{{"required",{"data"}}}}},J{{"required",{"data"}},{"not",{{"required",{"path"}}}}}};
     const J opened=success({{"document",doc},{"revision",u},{"diagnostics",diagnostics}});
