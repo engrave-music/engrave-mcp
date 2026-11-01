@@ -196,16 +196,20 @@ async def valid_score_imports(binary, resources, out):
                 await session.initialize()
                 opened=await session.call_tool("score_open", {"path":str(out/"valid.mxl")})
                 assert not opened.is_error, opened.content
-                document=opened.structured_content["documentId"]
-                exported=await session.call_tool("score_export", {"documentId":document,"format":"mscz","path":str(out/"valid.mscz")})
+                document=opened.structured_content["document"]
+                exported=await session.call_tool("score_export", {"document":document,"action":"run","kind":"score",
+                    "options":{"format":"mscz"},"destination":{"kind":"file","path":str(out/"valid.mscz")}})
                 assert not exported.is_error, exported.content
-                await session.call_tool("score_close", {"documentId":document})
+                assert exported.structured_content["artifacts"] and (out/"valid.mscz").stat().st_size > 0
+                closed = await session.call_tool("score_close", {"document":document})
+                assert not closed.is_error, closed.content
                 result.append("mxl")
                 for path, label in [(out/"valid.mscz","mscz"),(ROOT/"vendor/musescore/src/importexport/guitarpro/tests/data/sforzato.gp","gp")]:
                     assert path.is_file(), path
                     opened=await session.call_tool("score_open", {"path":str(path)})
                     assert not opened.is_error, (label,opened.content)
-                    await session.call_tool("score_close", {"documentId":opened.structured_content["documentId"]})
+                    closed = await session.call_tool("score_close", {"document":opened.structured_content["document"]})
+                    assert not closed.is_error, closed.content
                     result.append(label)
     return result
 
