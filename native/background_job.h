@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <system_error>
 
 namespace music {
 bool same_output_path(const std::filesystem::path& first, const std::filesystem::path& second);
@@ -21,6 +22,15 @@ bool is_output_path_reserved(const std::filesystem::path& path);
 [[nodiscard]] std::filesystem::path current_executable_path();
 std::uint64_t current_process_id() noexcept;
 void enforce_worker_parent(std::uint64_t expected_parent);
+// A directory-sync failure occurs after visibility commits. Callers must
+// include that destination in published_artifacts even though durability failed.
+class PublicationError : public std::system_error {
+public:
+    PublicationError(int code, const char* message, bool visible)
+        : std::system_error(code, std::generic_category(), message), visible(visible) {}
+    bool visible;
+};
+// POSIX: sync staged contents, rename, then sync destination directory.
 void publish_job_output(const std::filesystem::path& staged, const std::filesystem::path& destination);
 // Creates a fresh directory under parent with an unpredictable name (and
 // owner-only permissions on POSIX).

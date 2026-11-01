@@ -374,6 +374,10 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         for (const auto& file : staged) {
             auto start = ExportTiming::Clock::now();
             try { publish_job_output(file.source, file.artifact.path); }
+            catch (const PublicationError& e) {
+                if (e.visible) artifacts.push_back(file.artifact);
+                throw detail::DecodeError{HostError{"Io", e.what()}};
+            }
             catch (const std::exception& e) { throw detail::DecodeError{HostError{"Io", e.what()}}; }
             timing.add("publish", start);
             artifacts.push_back(file.artifact);

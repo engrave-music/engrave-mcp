@@ -229,6 +229,8 @@ void publish(Shared& shared, Job& job, int exit_code) {
             const auto name = artifacts.at(i).at("name").get<std::string>();
             try { publish_job_output(job.staging / name, checked[i].path); }
             catch (const std::exception& e) {
+                if (const auto* publication = dynamic_cast<const PublicationError*>(&e);
+                    publication && publication->visible) job.status.artifacts.push_back(checked[i]);
                 HostError error{"Io", std::string("cannot publish artifact: ") + e.what()};
                 for (const auto& published : job.status.artifacts) error.published_artifacts.push_back(detail::path_text(published.path));
                 throw Failure{std::move(error)};

@@ -26,7 +26,7 @@ stdfloat stop_token streambuf string string_view strstream syncstream system_err
 thread tuple typeindex typeinfo type_traits unordered_map unordered_set utility
 valarray variant vector version
 Windows.h windows.h fcntl.h io.h poll.h signal.h spawn.h unistd.h sys/prctl.h
-sys/wait.h
+sys/wait.h sys/stat.h
 """.split())
 
 

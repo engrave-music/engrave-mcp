@@ -432,8 +432,27 @@ void publish_job_output(const std::filesystem::path& staged, const std::filesyst
     if (!MoveFileExW(staged.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
         windows_error("Cannot publish job output");
 #else
+    struct Descriptor {
+        int fd;
+        ~Descriptor() { if (fd >= 0) ::close(fd); }
+    };
+    auto parent = destination.parent_path();
+    if (parent.empty()) parent = ".";
+    Descriptor directory{::open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC)};
+    if (directory.fd < 0)
+        throw PublicationError(errno, "Cannot open publication directory", false);
+    Descriptor file{::open(staged.c_str(), O_RDONLY | O_CLOEXEC)};
+    if (file.fd < 0)
+        throw PublicationError(errno, "Cannot open staged output", false);
+    auto sync = [](int fd, const char* message, bool visible) {
+        int result;
+        do { result = ::fsync(fd); } while (result < 0 && errno == EINTR);
+        if (result < 0) throw PublicationError(errno, message, visible);
+    };
+    sync(file.fd, "Cannot sync staged output", false);
     if (::rename(staged.c_str(), destination.c_str()) != 0)
-        throw std::system_error(errno, std::generic_category(), "Cannot publish job output");
+        throw PublicationError(errno, "Cannot publish job output", false);
+    sync(directory.fd, "Cannot sync publication directory", true);
 #endif
 }
 }

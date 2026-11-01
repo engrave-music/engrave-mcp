@@ -306,3 +306,13 @@ target("live_export_test")
         add_files(path.join(native_dir, "utf8.manifest"))
     end
 target_end()
+
+-- Linux fsync ordering/failure injection, independent of the engine.
+if is_plat("linux") then
+    target("publication_test")
+        set_kind("binary")
+        set_default(false)
+        add_files(path.join(native_dir, "publication_test.cpp"), path.join(native_dir, "background_job.cpp"))
+        add_ldflags("-Wl,--wrap=fsync", {force = true})
+    target_end()
+end
