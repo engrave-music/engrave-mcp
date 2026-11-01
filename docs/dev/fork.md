@@ -91,6 +91,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 
 | `engrave-27` | `c0b6eee825` | `32f0a26e5b` | `da3885cb` | Build portability (`fix/climits`, `5ef76556a5`; this merge has its tree): the translation units that used integer-limit macros now include `<climits>` directly, so a canonical Linux build needs no `-include climits` workaround. No behaviour change. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
 
+| `engrave-28` | `451143b716` | `32f0a26e5b` | `da3885cb` | Cooperative cancellation for long operations (`feat/cancel-hooks`, `f3563d22cf`; this merge has its tree): `RenderOptions` and `AudioOptions` gain a `std::function<bool()> cancelled` following `CaptureOptions`' owner-thread/no-reentry contract. Render checks before drawing, at page boundaries, before final encoding and afterward (`score_render.cpp:37,95,98,104,110`); audio checks before each synthesis block, before encoding, around final flush (`soundtrackwriter.cpp:161,182,209,167,195,215,124,129`) and every encoder file write (`streamfile.h:78`). Aborts map to `Cancelled` and clean intermediates. Public signatures unchanged, std-only headers. Windows and linux-host suites pass (30 output/audio tests, IO suite, frozen 5.00 byte checks, eight 4.70 captures); granularity tests prove exact abort points and byte-identical recovery. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
+
 The superproject's `.gitmodules` now tracks `branch = main`.
 
 ## History: mcp/v4.7.x (frozen)
