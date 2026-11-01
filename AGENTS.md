@@ -1,8 +1,8 @@
 # engrave-mcp
 
 Native C++ MCP host for the engrave engine, a pinned, trimmed fork of MuseScore
-core. Renamed from musescore-mcp on 2026-10-30; the binary, the MCP server name
-and the `MUSIC_MCP_*` env vars keep their old names until A5. This is a
+core. Renamed from musescore-mcp on 2026-10-30; A5 renamed the binary, MCP
+server name and `ENGRAVE_MCP_*` client and test environment variables. This is a
 separate project from `C:/path/to/llm-music`, which holds baseline experiments.
 
 Goal: give LLM agents a tool to compose music, with enough MuseScore interop that

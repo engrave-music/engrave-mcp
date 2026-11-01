@@ -2,6 +2,17 @@
 
 本文档记录基于固定（pinned）上游代码的原生 C++ engrave-mcp 服务端构建流程、架构约束及验证规范。
 
+## A5 产品名称迁移
+
+| 原名称 | 新名称 | 适用范围 |
+| --- | --- | --- |
+| `musescore-mcp`、`musescore-mcp-test` | `engrave-mcp`、`engrave-mcp-test` | 可执行文件、打包入口与 MCP `serverInfo.name`（测试二进制使用同一服务器名） |
+| `musescore_mcp`、`musescore_mcp_test` | `engrave_mcp`、`engrave_mcp_test` | xmake targets |
+| `MUSIC_MCP_*` | `ENGRAVE_MCP_*` | 活跃客户端、测试及 lane 脚本环境变量；不提供旧名别名 |
+| `musescore-mcp-bootstrap/1` | `engrave-mcp-bootstrap/1` | bootstrap 下载请求的 User-Agent |
+
+环境变量由脚本读取；直接运行二进制使用 `--resources` 和 `--soundfont` 参数。仓库目录 `musescore-mcp`、引擎子模块 `vendor/musescore`、引擎源码选项 `--musescore_source` 与引擎身份不改名。历史 v1 客户端和基线测试脚本保留原有调用方式；`scripts/make_dense_score.py` 的旧作曲者字符串是历史确定性测试数据的一部分。历史文档、归档证据及 fixture/golden 字节保持原样。
+
 ---
 
 ## 1. 架构设计与约束
@@ -35,7 +46,7 @@
 ## 3. 上游代码与资产准备
 
 ### 3.1 检出引擎子模块与下载音色库
-引擎源码采用 Git 子模块 `vendor/musescore` 形式引入（锁定至 Fork 仓库 https://github.com/Locietta/engrave ，分支 `mcp/v4.7.6`，Tag `mcp-4.7.6-4`，Commit `6cd717f2`，提交台账参见 `docs/dev/fork.md`）。旧版 webmscore、`.upstream/webmscore`、`patches/*.patch` 以及 Brotli 依赖均已废弃移除。
+引擎源码采用 Git 子模块 `vendor/musescore` 形式引入（锁定至 Fork 仓库 https://github.com/Locietta/engrave ，Tag `engrave-16`，Commit `5fd08f45cb67742cfe43a48f95745821251a6c70`，提交台账参见 `docs/dev/fork.md`）。旧版 webmscore、`.upstream/webmscore`、`patches/*.patch` 以及 Brotli 依赖均已废弃移除。
 
 全新克隆的项目可执行 `git submodule update --init --depth 1` 初始化子模块，或直接运行 `bootstrap.py`。`scripts/bootstrap.py` 会自动执行浅子模块更新（`git submodule update --init --depth 1 -- vendor/musescore`），并按需下载经哈希验证的基础 SF3 音色库；`scripts/prepare.py` 会校验子模块提交与工作区清洁，并从 Git blob 同步运行时资源，**子模块尚未初始化时它会直接拒绝运行**（见 `scripts/prepare.py` 的 `verify_submodule()`）。因此构建脚本必须 bootstrap 在 prepare 之前，`scripts/build-native.ps1` 已按此顺序执行：
 
@@ -75,7 +86,7 @@ xmake 的 `muse_generated` 在构建目录写入引擎版本信息；宿主 v2 �
 增量测试检查长 UTF-8 registry 描述、修改 schema 只重编译 `schema_defs.cpp`，以及恢复后的无变化构建不编译/链接。验收命令：
 
 ```powershell
-pixi run -e native python scripts/test_xmake_incremental.py --binary build/xmake-windows/musescore-mcp.exe --output artifacts/xmake-incremental
+pixi run -e native python scripts/test_xmake_incremental.py --binary build/xmake-windows/engrave-mcp.exe --output artifacts/xmake-incremental
 ```
 
 ---
@@ -85,11 +96,11 @@ pixi run -e native python scripts/test_xmake_incremental.py --binary build/xmake
 使用原生包装脚本进行编译（禁止直接调用原始 xmake）：
 
 ```powershell
-pwsh -NoProfile -File notes/claude-scripts/build.ps1 musescore_mcp
+pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 ```
 *(日常开发可使用 `./scripts/build-native.ps1 -Jobs 12`。)*
 
-包装脚本默认同时构建 `musescore_mcp`、`musescore_mcp_test`、`registry_dump`、
+包装脚本默认同时构建 `engrave_mcp`、`engrave_mcp_test`、`registry_dump`、
 `registry_check`、`host_api_test` 和 `export_job_test`；可用 `-Targets` 指定子集。
 S2 的独立验收（必须在原生 DLL 目录已加入 PATH 的环境中运行）：
 
@@ -100,10 +111,10 @@ S2 的独立验收（必须在原生 DLL 目录已加入 PATH 的环境中运行
 构建系统支持通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认指向 `vendor/musescore`），并提供 `releasedbg` 模式用于带符号排错与性能分析。
 
 ### 直接运行构建产物
-构建产物位于 `build/xmake-windows/musescore-mcp.exe`。未经打包直接从构建目录启动时，必须传入资源的绝对路径：
+构建产物位于 `build/xmake-windows/engrave-mcp.exe`。未经打包直接从构建目录启动时，必须传入资源的绝对路径：
 
 ```powershell
-pixi run -e native build/xmake-windows/musescore-mcp.exe --resources "C:/path/to/musescore-mcp/.runtime/assets" --soundfont "C:/path/to/musescore-mcp/.runtime/soundfonts/FluidR3Mono_GM.sf3"
+pixi run -e native build/xmake-windows/engrave-mcp.exe --resources "C:/path/to/musescore-mcp/.runtime/assets" --soundfont "C:/path/to/musescore-mcp/.runtime/soundfonts/FluidR3Mono_GM.sf3"
 ```
 *(注：`--soundfont` 为可选参数。)*
 
@@ -115,18 +126,18 @@ pixi run -e native build/xmake-windows/musescore-mcp.exe --resources "C:/path/to
 在 Visual Studio 开发人员终端与 Pixi 原生环境下执行打包脚本：
 
 ```powershell
-pixi run -e native python scripts/package_windows.py --no-qt --binary build/xmake-windows/musescore-mcp.exe --output artifacts/windows-next
+pixi run -e native python scripts/package_windows.py --no-qt --binary build/xmake-windows/engrave-mcp.exe --output artifacts/windows-next
 ```
 
 - **动作规范**：自动解析并提取运行时完整的 DLL 闭包、静态资源及 SoundFont；**严格拒绝混入任何 Qt 相关动态链接库**。
-- **打包规格**：Windows 打包目录包含 139 个文件，体积约为 61 MB。
+- **打包规格**：文件数与体积取决于构建和环境；以生成的 `manifest.json` 为准。
 - **路径自解析**：打包后的可执行文件已具备就近查找同级资产的能力，运行时无需额外传递 `--resources` 绝对路径。
 
 ### 5.2 独立运行验证标准
 打包产物已完成严格的洁净环境验证：
 - 运行时环境变量 `PATH` 仅保留 `C:\Windows\System32`。
 - 完全脱离桌面版 MuseScore 安装、Node.js、WASM、Python 及 Pixi 运行环境。
-- 当前 xmake 产物通过全部 25 条测试道回归，涵盖官方 SDK 冒烟、传输测试、版本信息（`scripts/test_version_info.py`）、上游 72 例反复播放顺序（`scripts/test_repeats.py`）、`scripts/golden.py compare`（针对 `tests/golden/<platform>` 与 `tests/golden/allow.json` 白名单）排版渲染验证，以及 `scripts/test_roundtrip.py` 往返一致性测试。
+- 当前验收道由 `scripts/run_lanes.py` 列出，包含官方 SDK 冒烟、传输、版本、重复播放、golden 和往返验证；实际结果以对应提交的运行记录为准。
 
 ---
 
@@ -149,12 +160,12 @@ pixi install -e native --locked
 pixi run --locked -e native python scripts/bootstrap.py --soundfont
 pixi run --locked -e native python scripts/prepare.py
 bash scripts/build-native.sh 8 build/xmake-linux "$HOME/OSS/musescore-mcp-a4s1/.pixi/envs/native"
-pixi run --locked -e native python scripts/package_linux.py --binary build/xmake-linux/musescore-mcp --output artifacts/linux-next
+pixi run --locked -e native python scripts/package_linux.py --binary build/xmake-linux/engrave-mcp --output artifacts/linux-next
 ```
 
-- **构建产物**：`build/xmake-linux/musescore-mcp`。
-- **打包规格**：`package_linux.py` 提取 ELF 依赖并设置相对 RUNPATH，排除了所有 Qt 依赖。生成的打包目录包含 172 个文件，体积约为 103 MB。
-- **洁净运行验证**：在完全脱离开发环境 PATH 的纯净隔离环境下，运行打包二进制完整通过官方 SDK `mcp_smoke`（20 次创建/修改/导出循环及真实可听音频输出）。全部 25 条测试道在 Linux 宿主上 100% 通过（exit=0）。
+- **构建产物**：`build/xmake-linux/engrave-mcp`。
+- **打包规格**：`package_linux.py` 提取 ELF 依赖并设置相对 RUNPATH，排除了所有 Qt 依赖；文件数与体积以生成的清单为准。
+- **历史洁净运行验证**：旧版包曾在脱离开发环境 PATH 的环境下通过官方 SDK 冒烟；新版包和测试道须按实际提交重新验证。
 
 Linux 使用显式 `gcc@` / `g++@` 工具类型识别 Pixi 的编译器，确保 xmake 正确继承 `-std=c++23`、`-O3` 与 `-fPIC` 参数。FluidSynth C 目标使用 GNU17 以保留上游 `alloca` 扩展；Windows 的该 C 目标仍为 C11。
 
@@ -168,4 +179,4 @@ Linux 使用显式 `gcc@` / `g++@` 工具类型识别 Pixi 的编译器，确保
 | **图像元素** | 暂不支持嵌入式光栅图及外部图片对象（images unsupported）。 |
 | **排版与文字** | 尚未实现完整的全字集回退（font fallback）；不支持从右到左（RTL）书写文字。 |
 | **绘制模型** | 仅支持定义明确的纯色画刷（solid brushes）与指定混合模式，渐变/复杂贴图绘制受限。 |
-| **音频流与导出并发槽位** | 音频流与后台导出任务拥有独立的运行子进程预算（各 2 个运行 worker 槽位，共享 16 个后台作业总上限）；流式音频不再饿死导出任务。 |
+| **后台导出** | 默认最多 2 个导出 worker、8 个活动任务；具体限制由 `runtime_info` 返回。 |
