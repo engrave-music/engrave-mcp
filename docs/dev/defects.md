@@ -34,6 +34,7 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-021 | Runtime font cache breaks Linux audio monitoring | Resolved | SOURCE-REVIEWED, EXECUTED | The audio monitor counts only regular engine audio cache files |
 | DEFECT-ENGRAVE-022 | No-repeat audio projected using repeat-expanded duration | Resolved for the reproduced rejection | SOURCE-REVIEWED, EXECUTED | The worker uses the matching end time when exposed and otherwise does not reject on the expanded estimate |
 | DEFECT-ENGRAVE-024 | 4.70 cannot represent part EIDs | Accepted format limitation | EXECUTED, SOURCE-REVIEWED | Shared-part downgrades keep numeric part IDs but cannot write part EIDs; every representable element EID is preserved |
+| DEFECT-ENGRAVE-025 | 4.70 export refuses scores with generated accidentals | Open / bounded-contract gap | EXECUTED | Editing a tied pair to C-sharp5 produced four accidentals and the export was refused as B470_UNSUPPORTED_FEATURE; accidental conversion is not implemented |
 | DEFECT-ENGRAVE-023 | Stave-sharing labels are lost on 5.00 open/export | RESOLVED at `engrave-21` (2026-11-02) | EXECUTED | Labels now survive 5.00 ingest, export and reopen; the 5.00 output of label-bearing scores changes by design and no golden covers one |
 
 ## Details
@@ -264,3 +265,10 @@ such engine contract or change is introduced here.
 - **Evidence**: **EXECUTED** in the B5/B6 fixtures and the ngrave-23 regression: a shared-part downgrade keeps all four numeric Part ids 1–4, four ordinary parts reopen, and all four source part EIDs are absent. The 4.70 Part reader/writer has numeric ids and no interoperable part-EID field, so no private extension was invented.
 - **Impact**: "IDs retained" in the earlier B1 wording overstated the contract for parts. Every representable element EID (score, staff, measure, clef, time signature, chord, note, spanner, …) is preserved; part EIDs are the documented exception. A consumer that keys parts by EID must fall back to the numeric part id in 4.70 files.
 - **Next step**: Keep docs/dev/phase-b-features.md as the authority for which IDs survive; revisit only if a future 4.70 writer gains an interoperable part-identity field.
+
+### 25. 4.70 export refuses scores with generated accidentals (DEFECT-ENGRAVE-025)
+
+- **Status**: Open; recorded as a bounded-contract gap, not a silent failure.
+- **Evidence**: **EXECUTED** in the phase-B live-edit evidence: a paired edit to C-sharp5 generated four accidentals, and the 4.70 export refused with B470_UNSUPPORTED_FEATURE (no artifact). Windows saw the same refusal in its initial capture; the accepted live scenario deliberately uses B4 to C5. The refused export carries its warning, so a client is not handed a downgraded file silently.
+- **Impact**: Scores that need generated accidentals in 4.70 are refused rather than degraded. Any agent workflow that produces chromatic alterations before a 4.70 export hits this.
+- **Next step**: Implement accidental conversion (or an explicit degraded form with a frozen warning identity) and add a fixture; until then the phase-B contract must keep listing generated accidentals as outside the accepted conversion set.
