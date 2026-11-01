@@ -820,6 +820,8 @@ unindexed engine-gate baseline did not contain. The four index errors remain;
 none of these outcomes were accepted by changing the baseline or allow-list.
 The saved v1 binary also successfully captured the `evening.musicxml` golden
 outputs, including metadata, through `golden_v1.py` on Windows.
+The explicitly retained v1 round-trip suite passed 23/23 against that saved
+binary; this is historical baseline evidence, not a v2 parity result.
 **EXECUTED, Windows:** the semantic checker covered all 29 baseline fixtures,
 with zero mismatches and no skips. The v2 rendered-page capture reached all 26
 SVG and 22 PNG comparisons; `drums_import.musicxml` PNG was 1224 × 1584 instead
@@ -852,6 +854,10 @@ gain and pan, sample-identical excerpt/muted-master audio, five synchronous and
 asynchronous codec outputs at Unicode paths, and the existing MIDI comparator.
 The full cross-platform check still requires matching captures from both hosts;
 an engine-only run and a Windows-only capture cannot establish that claim.
+The complete Windows run at `a580f38` executed all 35 lanes: 29 passed, five
+strict comparisons failed (`golden`, `v2_golden_overlap`, `roundtrip`,
+`rendered_page`, `version_info`), and `engine_audio` was pending its missing
+Linux capture. Its dense benchmark, engine checks and v2 MCP checks passed.
 
 ## Roadmap-engrave A4 S0: engine build in the fork (2026-10-30)
 
