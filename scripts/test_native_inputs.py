@@ -1,5 +1,6 @@
 """Malformed/archive input must fail without killing or poisoning the server."""
 import asyncio
+import base64
 import json
 import os
 from pathlib import Path
@@ -34,11 +35,12 @@ async def main():
                 for name in cases:
                     response = await session.call_tool("score_open", {"path": str(OUT / f"{name}.mxl")})
                     assert response.is_error, name
-                response = await session.call_tool("score_open", {"musicxml": "<score-partwise><part>"})
+                response = await session.call_tool("score_open", {
+                    "data": base64.b64encode(b"<score-partwise><part>").decode('ascii'), "format": "musicxml"})
                 assert response.is_error
                 valid = await session.call_tool("score_open", {"path": str(ROOT / "fixtures/evening.musicxml")})
                 assert not valid.is_error
-                closed = await session.call_tool("score_close", {"documentId": valid.structured_content["documentId"]})
+                closed = await session.call_tool("score_close", {"document": valid.structured_content["document"]})
                 assert not closed.is_error
     result = {"rejected": list(cases) + ["malformed-musicxml"], "valid_score_after_errors": True}
     (OUT / "validation.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
