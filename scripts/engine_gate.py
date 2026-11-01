@@ -16,6 +16,13 @@ from test_a4_output import compare, describe_render, describe_audio_file, probe_
 
 ROOT = Path(__file__).resolve().parents[1]
 
+def run_compat_exports(run, compat, build_dir, assets, soundfont, output, suffix):
+    for source in compat:
+        # Different frozen writers can have the same fixture name.
+        run('compat-'+source.parent.name+'-'+source.stem,
+            probe_command(build_dir/('engrave_output_probe'+suffix), assets, [soundfont],
+                          'export', source, output/'compat'/source.parent.name/source.stem))
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('engine-source', 'build-dir', 'assets', 'soundfont', 'output'):
@@ -104,14 +111,13 @@ def main():
         'project_examples/percussionKit.mnx', 'project_examples/graceArps.mnx')]
     sources = [s for s in sources if s.suffix in {'.mscx','.mscz','.musicxml','.mxl','.mid','.gp','.mnx'}]
     compat = sorted((ROOT/'tests/compat-corpus').rglob('*.mscz'))
+    if not sources or not compat:
+        raise RuntimeError('incomplete supported corpus')
     run('embedder',[a.build_dir/('example_embedder'+suffix),a.assets,*sources,*compat])
-    for source in compat:
-        run('compat-'+source.stem, probe_command(a.build_dir/('engrave_output_probe'+suffix),a.assets,[a.soundfont],'export',source,a.output/'compat'/source.stem))
+    run_compat_exports(run, compat, a.build_dir, a.assets, a.soundfont, a.output, suffix)
     counts = dict(identical=0,allowed=0,different=0,**{'missing-golden':0})
     dual = dict(identical=0,allowed=0,different=0,**{'missing-golden':0})
     allow = g.load_allow(ROOT/'tests/golden/allow.json')
-    if not sources or len(compat) != 25:
-        raise RuntimeError('incomplete supported corpus (expected 25 compat scores)')
     for source in sources:
         raw = a.output/'raw'/source.name
         out = a.output/'actual'/source.name

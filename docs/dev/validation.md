@@ -745,20 +745,61 @@ Environment lessons:
 `tests/compat-corpus/<pin>/` preserves the original MSCZ exports and their
 expected A0 semantic dumps. Each `manifest.json` entry records the byte hash,
 writer, upstream, framework and superproject commits, source and covered
-features. Every pin adds its own files; `scripts/capture_compat_corpus.py`
-captures the golden fixtures and edit scenarios through the pinned host.
-Round trips and externally produced scores are added when available.
+features. New directories are required on a writer or supported written-feature
+change, not on every pin. `scripts/capture_compat_corpus.py` captures golden
+fixtures and edit scenarios through the pinned host; round trips and externally
+produced scores are added when available. The tracked `index.json` pins each
+directory's manifest hash and entry count, so losing an entire reference fails
+the check. The lane and engine gate use that same indexed inventory.
 
-After each sync, the `compat_corpus` lane runs `scripts/test_compat_corpus.py`
-with the current `semantic_dump` and assets on Windows and Linux. It verifies
-the inventory and hashes, reopens every older file, and compares the complete
-semantic JSON. A failure blocks the pin until a compatibility reader or a
-written migration decision resolves it. The corpus covers only its fixtures
-and dump fields; it does not prove compatibility with future releases.
+**Recorded exception:** no historical writer captures were made for `engrave-2`
+through `engrave-18`. This is a gap in evidence, not an assertion that those
+writers were byte-identical. Current recaptures cannot recreate those historical
+bytes. `engrave-19` is the frozen 5.00 phase B reference alongside the original
+`engrave-1` seed; it was captured now, not at earlier pins.
 
-The `engrave-1` seed has 22 golden inputs and three edit scenarios. Both hosts
-passed all 25 entries and the six corruption, inventory, read and semantic
-negative controls; their semantic JSON files were byte-identical. EIDs and
+The `engrave-19` set contains 22 golden inputs and three edit scenarios. Its
+manifest records the full engine SHA `45ea71c664404b3698e7bb7d1f7335ee3dbec4b5`,
+the `engrave-19` tag, ancestral upstream `32f0a26e5b` and framework `da3885cb`,
+the host source commit, configuration, writer and semantic-dump binary hashes,
+asset and SoundFont hashes, source and output hashes, detected features and
+expected semantic JSON for each score. It was captured with an incrementally
+rebuilt Windows release host at `6b962a1`; this host commit changes only A6
+metrics documentation relative to `ba86e8d`. The 25 new scores and 25 original
+seed scores have 50 distinct byte hashes, so there were no byte-identical
+captures to deduplicate. The three edited scenarios reuse source fixtures and
+record their source hashes; their saved score bytes differ from the unedited
+outputs. The expected semantics are the current reader's dump of
+the captured writer bytes, not an independent 4.7 oracle. The A0 dump does not
+cover every object identity or layout property; phase B still needs its own
+feature fixtures, expected losses and 4.7.6 reader controls.
+
+On each pin, the `compat_corpus` lane and engine gate run
+`scripts/test_compat_corpus.py` with the current `semantic_dump` and assets on
+Windows and physical Linux. It verifies the indexed inventory and hashes,
+reopens every file, and compares the complete recorded semantic JSON. The engine
+gate also runs the public export/reopen probe for every score, with output paths
+scoped by corpus directory. A failure blocks the pin until a compatibility reader
+or a written migration decision resolves it. The corpus covers only its fixtures
+and dump fields; it does not prove compatibility with future releases. Future
+byte-identical captures may be deduplicated only with explicit source, writer and
+semantic provenance; the current capture/checker schema does not yet support
+cross-directory references, so that requires a tooling change rather than
+silently deleting a reference.
+
+**Executed 2026-11-01:** the incremental `engrave-19` Windows writer and
+`semantic_dump` build, the capture, the Windows corpus checker and the
+`compat_corpus` lane all exited 0. Windows and physical linux-host each checked all
+50 score hashes and semantic dumps and passed nine negative controls. On each
+machine the engine gate's public-export loop also exported and reopened all 50
+scores with 50 distinct logs; the full engine gate was not rerun. The Linux
+probe and semantic-dump binaries were from delivery commit `73d827ac1d91`,
+whose engine tree equals `engrave-19`; this was not a newly compiled exact-tag
+Linux test. See ignored `notes/phase-a/close/` for local run details.
+
+The `engrave-1` seed has 22 golden inputs and three edit scenarios. At seed
+capture, both hosts passed all 25 entries and the six corruption, inventory,
+read and semantic negative controls; their semantic JSON files were byte-identical. EIDs and
 multi-measure-rest references occur in the saved files, but the A0 dump does
 not directly record their identities. No seed fixture has a hidden instrument.
 
