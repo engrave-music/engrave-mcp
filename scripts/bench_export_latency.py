@@ -71,6 +71,30 @@ class Client:
         return phases
 
 
+def rss_bytes(pid):
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        class Counters(ctypes.Structure):
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [(name, ctypes.c_size_t) for name in ("PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage", "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage", "PagefileUsage", "PeakPagefileUsage")]
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        psapi = ctypes.WinDLL("psapi", use_last_error=True)
+        psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+        handle = kernel.OpenProcess(0x410, False, pid)
+        if not handle: raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            counters = Counters(); counters.cb = ctypes.sizeof(counters)
+            if not psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+                raise ctypes.WinError(ctypes.get_last_error())
+            return counters.WorkingSetSize
+        finally: kernel.CloseHandle(handle)
+    for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+        if line.startswith("VmRSS:"): return int(line.split()[1])*1024
+    raise RuntimeError("RSS unavailable")
+
+
 def summary(samples):
     values = sorted(samples)
     return dict(median=statistics.median(values), p95=values[math.ceil(.95*len(values))-1],
@@ -101,22 +125,30 @@ def main():
             out = a.output/mode/fixture
             c = Client(a.binary, a.resources, out, mode)
             doc = c.tool("score_open", {"path":str(ROOT/"fixtures/golden"/fixture)})["document"]
-            for fmt, pages in (("svg",False), ("pdf",False), ("mscz",False), ("pdf",True)):
-                if pages:
+            for fmt, pages in (("svg",False), ("pdf",False), ("mscz",False), ("pdf-matched",False), ("pdf",True)):
+                if fmt=="pdf-matched":
                     measure=c.tool("score_outline",{"document":doc})["outline"]["measures"][0]["id"]
                     c.tool("score_edit",{"document":doc,"ops":[{"op":"set_layout_break",
                         "measure":{"kind":"id","id":measure},"kind":"page","on":True}]})
                 path = out/(fmt + ("-all" if pages else ""))
                 if fmt=="svg": path.mkdir(exist_ok=True)
-                args = export_args(doc, fmt, path, pages)
+                args = export_args(doc, "pdf" if fmt=="pdf-matched" else fmt, path, pages)
                 c.tool("score_export", args) # warmup excluded
                 samples=[]
+                rss=[]
                 for _ in range(a.warm):
                     start=time.perf_counter()
                     c.tool("score_export", args)
                     samples.append((time.perf_counter()-start)*1000)
+                    rss.append(rss_bytes(c.p.pid))
                 report["warm"].append(dict(mode=mode,fixture=fixture,format=fmt,all_pages=pages,
-                    total_ms=summary(samples),samples_ms=samples))
+                    total_ms=summary(samples),samples_ms=samples,rss_bytes=rss))
+            from golden import describe_pdf
+            page_count=describe_pdf(out/"pdf-all")["pages"]
+            assert page_count>=2
+            matched, full=report["warm"][-2:]
+            full["pages"]=page_count
+            full["per_page_marginal_ms"]=(full["total_ms"]["median"]-matched["total_ms"]["median"])/(page_count-1)
             # Reapply a real edit before each render; export timing excludes the edit's layout.
             post=[]
             for _ in range(a.warm):
