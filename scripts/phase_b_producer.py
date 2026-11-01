@@ -102,8 +102,9 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                         versions = ['4.70'] + ([case['target_version']] if case['target_version'] != '4.70' else [])
                         for version in versions:
                             for fmt, action in ([(f, 'run') for f in ('mscx', 'mscz')] +
-                                                ([(f, 'start') for f in ('mscx', 'mscz')] if version != '4.70' else [])):
-                                label = fmt if version == '4.70' else f'{version}-{fmt}' + ('-start' if action == 'start' else '')
+                                                [(f, 'start') for f in ('mscx', 'mscz')]):
+                                label = fmt if version == '4.70' else f'{version}-{fmt}'
+                                label += '-start' if action == 'start' else ''
                                 folder = dest / label
                                 folder.mkdir()
                                 path = folder / f'score.{fmt}'
@@ -125,10 +126,19 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                                             break
                                         require(time.monotonic() < deadline, 'job poll timed out')
                                         await asyncio.sleep(.02)
-                                    require(status['state'] == 'failed', f'unsupported target job did not fail: {status}')
-                                    require(status['export_warnings'] == status['error']['export_warnings'], 'job warning mismatch')
-                                    value = {'ok': False, 'error': status['error'], 'job_status': status}
+                                    require(status['state'] in ('succeeded', 'failed'), f'job cancelled: {status}')
+                                    if status['state'] == 'failed':
+                                        require(status['artifacts'] == [], 'refused job published artifacts')
+                                        require(status['export_warnings'] == status['error']['export_warnings'], 'job warning mismatch')
+                                        value = {'ok': False, 'error': status['error'], 'job_status': status}
+                                    else:
+                                        value = dict(status, ok=True)
                                 warnings = value.get('export_warnings') if value['ok'] else value.get('error', {}).get('export_warnings')
+                                if action == 'start':
+                                    sync_label = label.removesuffix('-start')
+                                    sync = record['formats'][sync_label]['host_result']
+                                    sync_warnings = sync.get('export_warnings') if sync['ok'] else sync['error'].get('export_warnings')
+                                    require(warnings == sync_warnings, 'sync/async warning arrays differ')
                                 save_json(folder / 'warnings.json', warnings)
                                 result = {'source_sha256': record['source_sha256'], 'target_version': version,
                                     'request_sha256': sha(request), 'host_result': value,
@@ -171,8 +181,11 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                                         result['oracle_stderr_sha256'] = sha(proc.stderr)
                                         result['oracle_matched'] = False
                                         require(proc.returncode == 0 and not proc.stderr, 'oracle failed or reported diagnostics')
-                                        compare_semantics(read_json(check_file(fixture_root, case, 'expected_semantics')),
-                                                          json.loads(proc.stdout))
+                                        expected = read_json(check_file(fixture_root, case, 'expected_semantics'))
+                                        actual = json.loads(proc.stdout)
+                                        from phase_b_live import association_report
+                                        save_json(folder / 'associations.json', association_report(expected, actual))
+                                        compare_semantics(expected, actual)
                                         result['oracle_matched'] = True
                                 except Exception as error:
                                     result['errors'].append(str(error))
@@ -189,7 +202,7 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                                 record['errors'].append(str(error))
                         require(file_sha(source) == record['source_sha256'], 'source changed during export')
                         save_json(dest / 'result.json', record)
-                    required = {'mscx', 'mscz'}
+                    required = {'mscx', 'mscz', 'mscx-start', 'mscz-start'}
                     if case['target_version'] != '4.70':
                         required |= {f"{case['target_version']}-{fmt}" for fmt in ('mscx', 'mscz')}
                         required |= {f"{case['target_version']}-{fmt}-start" for fmt in ('mscx', 'mscz')}
@@ -200,5 +213,8 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                     save_json(dest / 'result.json', record)
                     print(f"{record['status'].upper()} {case['id']}", flush=True)
                     records.append(record)
+    if getattr(args, 'live_edits', False):
+        from phase_b_live import live_edits
+        records.extend(await live_edits(args, fixture_root, output, binary, assets, oracle_env))
     require(file_sha(host) == host_hash, 'host binary changed during run')
     return records

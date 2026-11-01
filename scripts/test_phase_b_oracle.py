@@ -436,6 +436,7 @@ def main() -> int:
     parser.add_argument("--current-binary", type=Path)
     parser.add_argument("--current-assets", type=Path)
     parser.add_argument("--oracle-ssh", help="Physical Linux oracle host, e.g. linux-host; oracle paths are remote absolute paths")
+    parser.add_argument("--live-edits", action="store_true", help="Producer companion: live tie edits and rollback")
     parser.add_argument("--host-binary", type=Path)
     parser.add_argument("--host-resources", type=Path)
     parser.add_argument("--host-sha256", help="Required expected SHA-256 of the producer executable")
@@ -449,6 +450,7 @@ def main() -> int:
         fixture_root = args.fixture_root.resolve()
         manifest_path = args.manifest.resolve() if args.manifest else fixture_root / "manifest.json"
         cases = validate_manifest(fixture_root, manifest_path)
+        require(not args.live_edits or args.producer, "--live-edits requires --producer")
         if args.producer:
             require(args.host_binary is not None and args.host_resources is not None and args.host_sha256,
                     'producer requires --host-binary, --host-resources and --host-sha256')
@@ -482,12 +484,14 @@ def main() -> int:
         if args.producer:
             from phase_b_producer import produce
             records = asyncio.run(produce(args, cases, fixture_root, output, binary, assets, oracle_env))
-            require(len(records) == len(cases) > 0, 'producer skipped fixtures')
+            require(len(records) == len(cases) + (6 if args.live_edits else 0) > 0, 'producer skipped fixtures')
             summary = {'mode': 'producer', 'platform': sys.platform,
                        'oracle_host': args.oracle_ssh or 'local Linux',
                        'host_sha256': args.host_sha256, 'oracle_archive_sha256': ARCHIVE_SHA,
                        'oracle_binary_sha256': BINARY_SHA, 'mutations': mutations, 'cases': records}
             save_json(output / 'summary.json', summary)
+            from phase_b_live import write_association_table
+            write_association_table(output)
             return 1 if any(record['status'] != 'passed' for record in records) else 0
         results = []
         for case in cases:
