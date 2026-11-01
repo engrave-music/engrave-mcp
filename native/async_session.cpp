@@ -4,6 +4,10 @@
 #include "host_api.h"
 #include "mcp_transport.h"
 #include "registry.h"
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+#include <engrave/testing/write470.h>
+#include <cstdio>
+#endif
 
 #include <asio/async_result.hpp>
 #include <asio/associated_cancellation_slot.hpp>
@@ -60,6 +64,8 @@ Json capture(void* p, const Json& a) {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     if (request->destination.path.string().find(".test-capture-deadline") != std::string::npos)
         submitted -= std::chrono::milliseconds(119500);
+    if (request->destination.path.string().find(".test-470-deadline") != std::string::npos)
+        submitted -= std::chrono::milliseconds(119000);
 #endif
     auto reservation = context.jobs->reserve(*request, submitted);
     if (!reservation) return error_envelope(reservation.error());
@@ -78,9 +84,24 @@ Json capture(void* p, const Json& a) {
             const auto test_path = request->destination.path.string();
             const bool slow_capture = test_path.find(".test-capture-slow") != std::string::npos ||
                                       test_path.find(".test-capture-deadline") != std::string::npos;
+            const bool conversion_probe = test_path.find(".test-470-") != std::string::npos;
+            bool conversion_entered = false;
+            engrave::testing::Write470Progress conversion_progress;
 #endif
             options.cancelled = [&] {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
+                const auto progress = engrave::testing::write470_progress();
+                if (conversion_probe && !conversion_entered &&
+                    progress.stage == engrave::testing::Write470Progress::Stage::Serializing && progress.units >= 2) {
+                    conversion_entered = true;
+                    conversion_progress = progress;
+                    std::fprintf(stderr, "WRITE470_SERIALIZING units=%llu\n", static_cast<unsigned long long>(progress.units));
+                    std::fflush(stderr);
+                    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+                    while (!context.request_cancelled->load(std::memory_order_acquire) &&
+                           !reservation->stop_reason() && std::chrono::steady_clock::now() < until)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                }
                 if (slow_capture && ++polls == 2) {
                     context.capture_polling->store(true, std::memory_order_release);
                     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
@@ -94,6 +115,13 @@ Json capture(void* p, const Json& a) {
                        reservation->stop_reason().has_value();
             };
             auto snapshot = capture_export(document, std::move(*runtime), *request, options);
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+            if (conversion_entered) {
+                std::fprintf(stderr, "WRITE470_RETURN units=%llu error=%s\n",
+                    static_cast<unsigned long long>(conversion_progress.units), snapshot ? "SUCCESS" : snapshot.error().code.c_str());
+                std::fflush(stderr);
+            }
+#endif
             if (!snapshot) {
                 if (snapshot.error().code == "Cancelled") {
                     if (context.request_cancelled && context.request_cancelled->load(std::memory_order_acquire))
