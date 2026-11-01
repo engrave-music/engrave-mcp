@@ -71,7 +71,8 @@ Json export_request(const ExportSnapshot& snapshot) {
     switch (r.kind) {
     case ExportKind::Score:
         kind = "score";
-        options = {{"format", format(r.score_options.format)}, {"score", score(r.score_options.score)}};
+        options = {{"format", format(r.score_options.format)}, {"score", score(r.score_options.score)},
+                   {"native_version", r.score_options.native_version}};
         if (r.score_options.format == engrave::Format::Midi) {
             options["midi_expand_repeats"] = r.score_options.midi_expand_repeats;
             options["midi_rpns"] = r.score_options.midi_rpns;
