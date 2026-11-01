@@ -75,6 +75,28 @@ class TestV2GoldenInventory(unittest.TestCase):
         self.assertIsNone(golden.v2_migration_accept(migrations, key[0], "other.mscx", old, new))
         self.assertIsNone(golden.v2_migration_accept(migrations, "other.musicxml", key[1], old, new))
 
+    def test_snapshot_pin_requires_evidence_within_the_documented_limit(self):
+        migrations = golden.read_v2_migrations(ROOT / "tests/golden/windows")
+        key = ("bend.gp", "page-0.png.json")
+        entry = migrations[key]
+        self.assertEqual(entry["kind"], "snapshot")
+        self.assertIsNotNone(golden.v2_migration_accept(
+            migrations, *key, entry["baseline_sha256"], entry["actual_sha256"]))
+        self.assertIsNone(golden.v2_migration_accept(
+            migrations, *key, entry["baseline_sha256"], "0" * 64))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "golden"
+            baseline, overlay = root / "windows", root / "v2/windows"
+            baseline.mkdir(parents=True)
+            overlay.mkdir(parents=True)
+            shutil.copyfile(ROOT / "tests/golden/allow.json", root / "allow.json")
+            data = json.loads((ROOT / "tests/golden/v2/windows/migrations.json").read_text(encoding="utf-8"))
+            png = next(item for item in data["entries"] if (item["fixture"], item["output"]) == key)
+            png["measurement"]["pixel_diff"] = png["measurement"]["pixel_limit"] + 1
+            golden.write_json(overlay / "migrations.json", data)
+            with self.assertRaisesRegex(ValueError, "exceeds pixel"):
+                golden.read_v2_migrations(baseline)
+
     def test_mnx_indexes_cover_legacy_and_v2_files_and_detect_tampering(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -84,6 +106,7 @@ class TestV2GoldenInventory(unittest.TestCase):
             actual.mkdir()
             output.mkdir()
             shutil.copytree(ROOT / "tests/golden/v2/windows", overlay)
+            shutil.copyfile(ROOT / "tests/golden/allow.json", baseline.parent / "allow.json")
             names = [Path(name).name for name in golden.SUPPLEMENTAL_MNX]
             for name in names:
                 shutil.copytree(ROOT / "tests/golden/windows" / name, baseline / name)

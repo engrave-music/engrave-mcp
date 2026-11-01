@@ -68,6 +68,7 @@ import base64
 import difflib
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -924,6 +925,38 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
             if (entry.get("input_sha256") != sha256(xml)
                     or entry.get("converter_sha256") != sha256((ROOT / "scripts/v2_fixtures.py").read_bytes())):
                 raise ValueError("created.json migration input or converter changed")
+        kind = entry.get("kind", "standalone")
+        if kind == "snapshot":
+            direct, measurement = entry.get("direct_sha256"), entry.get("measurement")
+            if not re.fullmatch(r"[0-9a-f]{64}", str(direct)) or not isinstance(measurement, dict):
+                raise ValueError(f"invalid snapshot evidence for {fixture}/{output}")
+            if direct != entry["baseline_sha256"]:
+                prior = load_allow(golden_root.parent / "allow.json")
+                _, accepted, _ = allow_accept(prior, fixture, output, "different", direct, golden_root.name)
+                if accepted is None:
+                    raise ValueError(f"direct snapshot oracle has no existing baseline allowance: {fixture}/{output}")
+            if output.endswith(".svg") or output == "score.pdf.json":
+                delta = measurement.get("max_delta")
+                if (type(delta) not in (int, float) or not math.isfinite(delta) or not 0 <= delta <= 0.02
+                        or measurement.get("structural") != [] or measurement.get("within") is not True):
+                    raise ValueError(f"snapshot vector exceeds 0.02 pt: {fixture}/{output}")
+            elif output.endswith(".png.json"):
+                dimensions = measurement.get("compared_dimensions")
+                delta = measurement.get("size_delta")
+                pixels, limit = measurement.get("pixel_diff"), measurement.get("pixel_limit")
+                if (not isinstance(dimensions, list) or len(dimensions) != 2
+                        or any(type(n) is not int or n <= 0 for n in dimensions)
+                        or not isinstance(delta, list) or len(delta) != 2
+                        or any(type(n) is not int or abs(n) > 1 for n in delta)
+                        or type(pixels) is not int or type(limit) is not int
+                        or limit != max(100, dimensions[0] * dimensions[1] // 20000)
+                        or not 0 <= pixels <= limit or measurement.get("blank_extra_border") is not True
+                        or measurement.get("within") is not True):
+                    raise ValueError(f"snapshot PNG exceeds pixel or size tolerance: {fixture}/{output}")
+            else:
+                raise ValueError(f"invalid snapshot output: {fixture}/{output}")
+        elif kind != "standalone":
+            raise ValueError(f"invalid v2 migration kind: {kind}")
         result[key] = entry
     return result
 
@@ -1116,10 +1149,11 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
                          if kind == "different" and not golden_error else None)
             if migration:
                 counts["allowed"] += 1
-                results[name] = {"status": "v2-migrated", "kind": kind,
+                status = "v2-snapshot" if migration.get("kind") == "snapshot" else "v2-migrated"
+                results[name] = {"status": status, "kind": kind,
                                  "reason": migration["reason"], "oracle": migration["oracle"],
                                  "actualSha256": actual_sha, "goldenSha256": golden_sha}
-                print(f"migrated {fixture}/{name} (v1 to v2; public-API oracle)")
+                print(f"{status} {fixture}/{name} (public-API oracle; exact hashes)")
                 continue
 
             position, entry, problem = allow_accept(allow, fixture, name, kind, actual_sha, platform)
