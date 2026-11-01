@@ -18,8 +18,8 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-005 | Host asset staging must move to installer | Resolved 2026-11-01 (`b53ff3b`) | EXECUTED | Replaced retired QRC generator with engine installer; verified 345 files (28,380,646 B) |
 | DEFECT-ENGRAVE-006 | Phase C formal status | ACCEPTED 2026-11-01 (Astra), no must-fix | EXECUTED, SOURCE-REVIEWED | Phase C closed at `engrave-14`; the open leak (-001) and host packaging (-005) items carry into A5 |
 | DEFECT-ENGRAVE-007 | Parked API work | IMPLEMENTED at `engrave-15`; host adoption partial | EXECUTED, SOURCE-REVIEWED | The v1 host now retains runtime fonts/SoundFonts through the owned engine; public positions and excerpt export remain for A5 |
-| DEFECT-ENGRAVE-008 | Encoder finalization cannot report codec-internal failure | Carried / Open | SOURCE-REVIEWED | A codec failure during final flush can leave a truncated output reported as success |
-| DEFECT-ENGRAVE-009 | Audio storage errors lose public IO classification | Carried / Open | SOURCE-REVIEWED | Disk-full or open/close failure surfaces as an engine exception instead of an actionable `Io` result |
+| DEFECT-ENGRAVE-008 | Encoder finalization cannot report codec-internal failure | RESOLVED at `engrave-16` (2026-11-01) | SOURCE-REVIEWED, EXECUTED | `end()` now returns a status, the writer preserves the first encode/finalize error, and an injected finalization failure is followed by a byte-identical render |
+| DEFECT-ENGRAVE-009 | Audio storage errors lose public IO classification | RESOLVED at `engrave-16` (2026-11-01) | SOURCE-REVIEWED, EXECUTED | Audio storage failures return public `ErrorCode::Io`; a forced output-open failure is tested |
 | DEFECT-ENGRAVE-010 | Routine engine gate does not execute the new boundary tests | RESOLVED 2026-11-01 (`1fb47a7`) | SOURCE-REVIEWED | Gate now runs diagnostics, IO-boundary, installer and manifest checks; both hosts green at `bfe86bd` |
 | DEFECT-ENGRAVE-011 | Host adapter layer predates engine C5-C8 and does not compile | RESOLVED 2026-11-01 (Windows + linux-host) | EXECUTED | The v1 host builds and its runtime assets, workers and MCP smoke pass against `engrave-15` on both hosts; public-document cutover remains A5 S2+ work |
 | DEFECT-ENGRAVE-012 | Snapshot-based render is not bit-identical to direct render | Accepted limitation | EXECUTED | Export jobs render a captured MSCZ snapshot, so render output can differ from a direct in-process render |
@@ -113,16 +113,18 @@ Evidence levels used in this ledger:
 
 ### 8. Encoder finalization cannot report codec-internal failure (DEFECT-ENGRAVE-008)
 
-- **Status**: Carried / Open.
-- **Evidence Level**: SOURCE-REVIEWED.
+- **Status**: RESOLVED at `engrave-16` (2026-11-01).
+- **Evidence Level**: SOURCE-REVIEWED (per-library error branches), EXECUTED (injected failure plus byte-identical follow-up render, five codec hashes).
+- **Resolution**: encoder `end()` returns `muse::Ret` instead of a byte count, the soundtrack writer preserves the first encode/finalize error, and render requests accept an encoder factory so the tests can inject a finalization failure. No encoder algorithm or success-path byte changed. Note retained limitation: the injection proves the host/engine plumbing, not each FLAC/Opus/MP3/AAC library's own native failure branch.
 - **Description**: Final flush failures are discarded on the way out of the audio export path. `muse/framework/audio/engine/internal/export/soundtrackwriter.cpp:107` calls `end()` from deferred cleanup and ignores its result; `abstractaudioencoder.h:46` exposes a byte count rather than a status; `flacencoder.cpp:169` ignores `finish()`, `oggencoder.cpp:123` ignores drain status, `mp3encoder.cpp:123` does not propagate negative flush results, and `aacencoder.cpp:236` breaks on non-EOF errors without exposing them. `engine_audio.cpp:733` does check file close and sticky device errors, so filesystem failures are caught, but a codec error discarded inside the encoder cannot be recovered there.
 - **Impact**: A codec failure during finalization can leave a nonempty, truncated output reported as successful. No such failure was reproduced, and a zero byte count is not evidence of failure (several encoders return zero on success). These encoder files are unchanged since `engrave-6`, so this is retained debt, not a C4/C7 regression.
 - **Next Step**: Give finalization an explicit status-bearing result that preserves the first encode/finalize error, and add injected finalization-failure plus subsequent-render tests.
 
 ### 9. Audio storage errors lose public IO classification (DEFECT-ENGRAVE-009)
 
-- **Status**: Carried / Open.
-- **Evidence Level**: SOURCE-REVIEWED.
+- **Status**: RESOLVED at `engrave-16` (2026-11-01).
+- **Evidence Level**: SOURCE-REVIEWED, EXECUTED (forced output-open failure returns `Io`; throwing-sink test).
+- **Resolution**: an internal IO failure category now maps audio output open/write/close and encoder-stage storage failures to public `ErrorCode::Io`; `ByteSink` exception propagation is unchanged, and synthesis/codec semantics are untouched.
 - **Description**: `engrave/src/audio/engine_audio.cpp:718` and `:739` classify output open/write/close failure as `EngineFailure`, and `engrave/src/api/audio.cpp:288` throws for that category, while the same public method returns `ErrorCode::Io` for unusable cache directories and readback failures. A disk-full or unwritable-output failure can therefore surface as an engine exception instead of an actionable IO result. Sticky stream errors are not silently treated as success; they are misclassified. The public mapping is unchanged since C0 apart from explicit context passing.
 - **Impact**: A5 cannot classify storage failures reliably, which matters for host error mapping and for reporting partial outputs.
 - **Next Step**: Add an internal IO failure category and map it to `Io`, keeping exception propagation from the caller's `ByteSink`; land this before A5's public error mapping is finalized and cover it with a public-boundary failure test.
