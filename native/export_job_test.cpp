@@ -158,6 +158,21 @@ int main(int argc, char** argv) {
             });
             require(bool(visited), visited ? "" : visited.error().message);
         }
+        for (const Json& selection : {Json::object(), excerpt}) {
+            auto req = request(doc, "score", {{"format", "midi"}, {"score", selection},
+                {"midi_expand_repeats", false}, {"midi_rpns", false}});
+            require(!req.score_options.midi_expand_repeats && !req.score_options.midi_rpns, "MIDI options were not decoded");
+            auto checked = host->with_document(doc, revision, [&](engrave::Document& document) -> Result<void> {
+                auto direct = document.export_score(req.score_options);
+                if (!direct) return std::unexpected(api_error(direct.error()));
+                auto snapshot = capture_export(document, *runtime, req);
+                if (!snapshot) return std::unexpected(snapshot.error());
+                auto output = run_snapshot(*snapshot);
+                require(output.size() == 1 && output[0] == *direct, "MIDI options changed in worker");
+                return {};
+            });
+            require(bool(checked), checked ? "" : checked.error().message);
+        }
         for (const Json& selection : {Json::object(), excerpt}) for (const char* kind : {"measure", "segment"}) {
             auto req = request(doc, "positions", {{"position_kind", kind}, {"score", selection}});
             auto visited = host->with_document(doc, revision, [&](engrave::Document& document) -> Result<void> {
@@ -175,6 +190,28 @@ int main(int argc, char** argv) {
             });
             require(bool(visited), visited ? "" : visited.error().message);
         }
+        auto repeated = host->open({{"path", path_text(fs::absolute("fixtures/golden/repeat70.mscx"))}});
+        require(repeated.at("ok").get<bool>(), repeated.dump());
+        const auto repeated_id = repeated.at("document").get<std::string>();
+        auto repeat_req = request(repeated_id, "positions", {{"position_kind", "measure"}});
+        auto repeat_check = host->with_document(repeated_id, 1, [&](engrave::Document& document) -> Result<void> {
+            auto snapshot = capture_export(document, *runtime, repeat_req);
+            if (!snapshot) return std::unexpected(snapshot.error());
+            const auto& data = snapshot->captured_positions_json;
+            const auto result = Json::parse(std::string(reinterpret_cast<const char*>(data.data()), data.size()));
+            require(result.at("events") == Json::array({Json{{"elid", 0}, {"position", 0}},
+                Json{{"elid", 1}, {"position", 600}}, Json{{"elid", 0}, {"position", 1200}},
+                Json{{"elid", 2}, {"position", 1800}}, Json{{"elid", 3}, {"position", 2400}},
+                Json{{"elid", 4}, {"position", 3000}}}), "repeat-expanded millisecond events differ");
+            require(result.at("page_size").at("width").get<double>() > 9000 &&
+                result.at("page_size").at("height").get<double>() > 13000 &&
+                result.at("elements").at(0).at("page") == 0, "positions are not page-local 1200-DPI geometry");
+            auto output = run_snapshot(*snapshot);
+            require(output.size() == 1 && output[0] == data, "repeat positions worker bytes differ");
+            return {};
+        });
+        require(bool(repeat_check), repeat_check ? "" : repeat_check.error().message);
+        require(host->close({{"document", repeated_id}}).at("ok").get<bool>(), "repeat fixture close failed");
         auto audio_doc = host->open({{"path", path_text(fs::absolute("fixtures/audio/mix.mscz"))}});
         require(audio_doc.at("ok").get<bool>(), audio_doc.dump());
         const auto audio_id = audio_doc.at("document").get<std::string>();
