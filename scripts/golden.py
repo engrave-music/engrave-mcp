@@ -1054,6 +1054,14 @@ def v2_migration_accept(entries: dict, fixture: str, output: str,
     return None
 
 
+def snapshot_pin_mismatch(entry: dict | None, baseline_sha: str | None,
+                          actual_sha: str | None) -> bool:
+    """Snapshot pins override both tolerant comparisons and older allowances."""
+    return bool(entry and entry.get("kind") in ("snapshot", "snapshot-precision")
+                and (baseline_sha != entry["baseline_sha256"]
+                     or actual_sha != entry["actual_sha256"]))
+
+
 def precision_png_accept(entry: dict, actual_raw_sha: str | None) -> bool:
     """Require the exact encoded PNG as well as its indexed RGBA descriptor."""
     if entry.get("kind") != "snapshot-precision" or not entry["output"].endswith(".png.json"):
@@ -1229,16 +1237,14 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
                     # allow entry may cover: it must be recaptured.
                     same, golden_format = False, str(exc)
                 kind = None if same and not golden_error else "different"
-            precision_pin = migrations.get((fixture, name))
-            if (precision_pin and precision_pin.get("kind") == "snapshot-precision"
-                    and actual_sha is not None
-                    and (golden_sha != precision_pin["baseline_sha256"]
-                         or actual_sha != precision_pin["actual_sha256"])):
-                counts["different"] += 1
-                results[name] = {"status": "different", "kind": "different",
+            pin = migrations.get((fixture, name))
+            if snapshot_pin_mismatch(pin, golden_sha, actual_sha):
+                failure_kind = "missing" if actual_sha is None else "different"
+                counts[failure_kind] += 1
+                results[name] = {"status": failure_kind, "kind": failure_kind,
                                  "goldenSha256": golden_sha, "actualSha256": actual_sha,
-                                 "error": "snapshot-precision baseline or host hash changed"}
-                print(f"different {fixture}/{name}: snapshot-precision baseline or host hash changed")
+                                 "error": "snapshot baseline or host hash changed"}
+                print(f"{failure_kind} {fixture}/{name}: snapshot baseline or host hash changed")
                 continue
             if kind is None:
                 counts["identical"] += 1

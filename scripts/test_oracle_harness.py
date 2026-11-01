@@ -74,6 +74,51 @@ class TestRoundTripXmlControls(unittest.TestCase):
 
 
 class TestV2GoldenInventory(unittest.TestCase):
+    def test_snapshot_pin_precedes_existing_pedal_allowances(self):
+        migrations = golden.read_v2_migrations(ROOT / "tests/golden/windows")
+        allowances = golden.load_allow(ROOT / "tests/golden/allow.json")
+        real_sha256 = golden.sha256
+        for name in ("page-0.svg", "score.pdf.json"):
+            with self.subTest(output=name), tempfile.TemporaryDirectory() as temporary:
+                fixture = "pedal.mscx"
+                pin = migrations[(fixture, name)]
+                self.assertEqual(pin["kind"], "snapshot")
+                self.assertIsNotNone(golden.allow_accept(
+                    allowances, fixture, name, "different", pin["direct_sha256"], "windows")[1])
+                self.assertNotEqual(pin["direct_sha256"], pin["actual_sha256"])
+                root = Path(temporary)
+                baseline, actual, report = root / "windows", root / "actual", root / "report"
+                (baseline / fixture).mkdir(parents=True)
+                (actual / fixture).mkdir(parents=True)
+                report.mkdir()
+                shutil.copyfile(ROOT / "tests/golden/windows" / fixture / name, baseline / fixture / name)
+                golden.write_json(baseline / "index.json", {fixture: {name: pin["baseline_sha256"]}})
+                target = actual / fixture / name
+
+                # The two short marker files stand for the recorded direct and
+                # host bytes; the real manifest and A3 allowance supply their hashes.
+                def digest(data):
+                    if data == b"direct":
+                        return pin["direct_sha256"]
+                    if data == b"host":
+                        return pin["actual_sha256"]
+                    return real_sha256(data)
+
+                with mock.patch.object(golden, "sha256", side_effect=digest), \
+                        mock.patch.object(golden, "read_v2_index", return_value=(None, {}, {})), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    target.write_bytes(b"direct")
+                    with mock.patch.object(golden, "read_v2_migrations", return_value={}):
+                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 0)
+                    with mock.patch.object(golden, "read_v2_migrations", return_value={(fixture, name): pin}):
+                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 1)
+                        result = json.loads((report / "report.json").read_text(encoding="utf-8"))
+                        self.assertEqual(result["fixtures"][fixture][name]["status"], "different")
+                        target.write_bytes(b"host")
+                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 0)
+                        target.unlink()
+                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 1)
+
     def test_writer_precision_pins_every_recorded_output_and_exact_hash(self):
         migrations = golden.read_v2_migrations(ROOT / "tests/golden/windows")
         census = json.loads(golden.PRECISION_CENSUS.read_text(encoding="utf-8"))
