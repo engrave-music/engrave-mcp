@@ -1,4 +1,5 @@
 #include "api_output.h"
+#include "audio_budget.h"
 #include "host_api.h"
 #include "export_job.h"
 #include "worker_v2.h"
@@ -118,7 +119,36 @@ int main(int argc, char** argv) {
             }
             if (target.find(".test-slow") != std::string::npos)
                 std::this_thread::sleep_for(std::chrono::seconds(2));
+            if (target.find(".test-audio-grow") != std::string::npos) {
+                const auto cache = path.parent_path() / "cache";
+                fs::create_directory(cache);
+                std::ofstream file(cache / "growing.wav", std::ios::binary);
+                const std::string block(1024, 'x');
+                for (int i = 0; i < 256; ++i) {
+                    file.write(block.data(), static_cast<std::streamsize>(block.size()));
+                    file.flush();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                }
+                return 1; // The manager must stop this test worker first.
+            }
             return run_worker(path);
+        }
+        {
+            engrave::AudioOptions settings;
+            settings.format = engrave::AudioFormat::Wav; settings.bit_depth = 16;
+            const auto wav16 = projected_audio_bytes(settings, 10, 44100);
+            settings.bit_depth = 24;
+            const auto wav24 = projected_audio_bytes(settings, 10, 44100);
+            require(wav16 == 2385496 && wav24 == 3576196, "WAV projection does not use requested depth/stereo/rate");
+            require(projected_audio_bytes(settings, 10, 88200) > wav24, "WAV projection ignores sample rate");
+            settings.format = engrave::AudioFormat::Flac; settings.bit_depth = 16;
+            const auto flac16 = projected_audio_bytes(settings, 10, 44100);
+            settings.bit_depth = 24;
+            require(projected_audio_bytes(settings, 10, 44100) > flac16, "FLAC projection ignores bit depth");
+            settings.format = engrave::AudioFormat::Mp3; settings.bit_depth = 0; settings.bitrate_kbps = 128;
+            const auto mp3_128 = projected_audio_bytes(settings, 10, 44100);
+            settings.bitrate_kbps = 512;
+            require(projected_audio_bytes(settings, 10, 44100) > mp3_128, "lossy projection ignores bitrate");
         }
         require(argc == 4, "usage: export_job_test ASSETS SOUNDFONT OUTPUT_DIR");
         const auto output_dir = fs::absolute(fs::u8path(argv[3])); fs::create_directories(output_dir);
@@ -342,6 +372,16 @@ int main(int argc, char** argv) {
 
         const auto scratch = music::create_private_directory(output_dir);
         struct Cleanup { fs::path p; ~Cleanup() { std::error_code ec; fs::remove_all(p, ec); } } cleanup{scratch};
+        {
+            JobLimits limits; limits.output_bytes = 4096;
+            ExportJobs limited(limits);
+            const auto path = scratch / "audio.test-audio-grow.wav";
+            auto growing = submit(limited, *captured_audio, path);
+            auto stopped = wait_job(limited, growing.job);
+            require(stopped.state == JobState::Failed && stopped.error && stopped.error->code == "ResourceLimit",
+                    "growing audio cache was not stopped");
+            require(!fs::exists(path), "growing audio cache published an artifact");
+        }
         std::optional<ExportSnapshot> captured_score;
         auto score_req = request(doc, "score", {{"format", "mscx"}, {"score", excerpt}});
         visited = host->with_document(doc, revision, [&](engrave::Document& document) -> Result<void> {

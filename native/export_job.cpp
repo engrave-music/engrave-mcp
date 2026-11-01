@@ -81,7 +81,7 @@ struct Job {
     std::uint64_t snapshot_size = 0;
     Clock::time_point submitted;
     fs::path destination, directory, staging;
-    bool reserved = false, cancel = false, timeout = false;
+    bool reserved = false, cancel = false, timeout = false, audio_limit = false;
     std::unique_ptr<WorkerProcess> process;
     ExportJobs::Completion completion;
 };
@@ -130,6 +130,28 @@ void start(Shared& shared, Job& job) {
     write_file(job.directory / "request.json", request);
     job.process = std::make_unique<WorkerProcess>(current_executable_path(), job.directory / "request.json", job.directory / "worker.log");
     job.status.state = JobState::Running; ++shared.running;
+}
+
+bool audio_cache_exceeds(const Job& job, std::uint64_t limit) {
+    const auto cache = job.directory / "cache";
+    std::error_code ec;
+    if (!fs::exists(cache, ec)) {
+        if (ec) throw std::system_error(ec, "cannot inspect audio cache");
+        return false;
+    }
+    std::uint64_t total = 0;
+    fs::directory_iterator entries(cache, ec), end;
+    if (ec) throw std::system_error(ec, "cannot inspect audio cache");
+    for (; entries != end; entries.increment(ec)) {
+        if (ec) throw std::system_error(ec, "cannot inspect audio cache");
+        const auto size = entries->file_size(ec);
+        if (ec == std::errc::no_such_file_or_directory) { ec.clear(); continue; }
+        if (ec) throw std::system_error(ec, "cannot measure audio cache file");
+        if (size > limit - total) return true;
+        total += size;
+    }
+    if (ec) throw std::system_error(ec, "cannot inspect audio cache");
+    return false;
 }
 
 void publish(Shared& shared, Job& job, int exit_code) {
@@ -220,11 +242,15 @@ void coordinator(std::shared_ptr<Shared> shared) {
             if (job->status.state != JobState::Running) continue;
             try {
                 if (!job->cancel && Clock::now() - job->submitted >= shared->limits.deadline) job->timeout = true;
-                if (job->cancel || job->timeout) job->process->terminate();
+                if (!job->cancel && !job->timeout && job->snapshot.request.kind == ExportKind::Audio &&
+                    audio_cache_exceeds(*job, shared->limits.output_bytes)) job->audio_limit = true;
+                if (job->cancel || job->timeout || job->audio_limit) job->process->terminate();
                 auto exited = job->process->poll();
                 if (!exited) continue;
                 --shared->running;
-                if (job->cancel || job->timeout) {
+                if (job->audio_limit && !job->cancel && !job->timeout) {
+                    finish(*shared, *job, JobState::Failed, HostError{"ResourceLimit", "audio cache exceeds output byte limit"});
+                } else if (job->cancel || job->timeout) {
                     finish(*shared, *job, job->cancel ? JobState::Cancelled : JobState::Failed,
                            HostError{job->cancel ? "Cancelled" : "DeadlineExceeded", job->cancel ? "job cancelled" : "job deadline exceeded"});
                 } else {
@@ -233,14 +259,16 @@ void coordinator(std::shared_ptr<Shared> shared) {
                 }
             } catch (const std::exception& e) {
                 --shared->running;
-                if (job->cancel || job->timeout)
+                if (job->audio_limit && !job->cancel && !job->timeout)
+                    finish(*shared, *job, JobState::Failed, HostError{"ResourceLimit", "audio cache exceeds output byte limit"});
+                else if (job->cancel || job->timeout)
                     finish(*shared, *job, job->cancel ? JobState::Cancelled : JobState::Failed,
                            HostError{job->cancel ? "Cancelled" : "DeadlineExceeded", job->cancel ? "job cancelled" : "job deadline exceeded"});
                 else finish(*shared, *job, JobState::Failed, HostError{"WorkerFailed", e.what()});
             }
         }
         if (shared->stopping && shared->active == 0) break;
-        shared->changed.wait_for(lock, std::chrono::milliseconds(20));
+        shared->changed.wait_for(lock, std::chrono::milliseconds(shared->running ? 5 : 20));
     }
     shared->coordinator_done = true;
     shared->callbacks_ready.notify_all();

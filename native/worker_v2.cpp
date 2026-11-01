@@ -1,4 +1,5 @@
 #include "worker_v2.h"
+#include "audio_budget.h"
 #include "api_json_internal.h"
 #include "background_job.h"
 
@@ -246,6 +247,11 @@ int run_worker(const fs::path& request_path) noexcept {
                     }
                 }
             } else {
+                if (request.audio_options.sample_rate && request.audio_options.sample_rate != options.audio_sample_rate)
+                    throw Failure{{"Unsupported", "audio sample rate differs from the engine rate"}};
+                const auto duration = value(document->outline(request.audio_options.score)).duration;
+                if (projected_audio_bytes(request.audio_options, duration, options.audio_sample_rate) > limit)
+                    throw Failure{{"ResourceLimit", "projected audio exceeds output byte limit"}};
                 std::ofstream out(stage / "output", std::ios::binary | std::ios::trunc);
                 if (!out) throw Failure{{"Io", "cannot open staged audio"}};
                 auto audio = document->render_audio(request.audio_options, [&](std::span<const std::byte> chunk) {
@@ -267,8 +273,6 @@ int run_worker(const fs::path& request_path) noexcept {
     } catch (const detail::DecodeError& e) {
         try { write_result(result_path, {{"version", 2}, {"ok", false}, {"error", error_envelope(e.error).at("error")}}); } catch (...) {}
     } catch (const std::exception& e) {
-        // DEFECT-ENGRAVE-009: audio storage failures thrown by the engine
-        // currently arrive here as EngineFailure. Preserve that classification.
         try { write_result(result_path, {{"version", 2}, {"ok", false}, {"error", {{"code", "EngineFailure"}, {"message", std::string(e.what()).substr(0, 2048)}}}}); } catch (...) {}
     } catch (...) {
         try { write_result(result_path, {{"version", 2}, {"ok", false}, {"error", {{"code", "EngineFailure"}, {"message", "unknown worker failure"}}}}); } catch (...) {}
