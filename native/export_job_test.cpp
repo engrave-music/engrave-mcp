@@ -556,9 +556,14 @@ int main(int argc, char** argv) {
                 auto live_path = fs::u8path(live->at("artifacts").at(0).at("path").get<std::string>());
                 std::ifstream live_in(live_path, std::ios::binary);
                 std::string live_bytes((std::istreambuf_iterator<char>(live_in)), {});
-                require(live_bytes.size() == expected.size() &&
-                    std::equal(expected.begin(), expected.end(), reinterpret_cast<const std::byte*>(live_bytes.data())),
-                    "live render differs from direct engine bytes");
+                fs::copy_file(live_path, output_dir / (prefix + "live." + format), fs::copy_options::overwrite_existing);
+                // Cairo PDF metadata includes wall-clock time, including inside
+                // compressed streams. The Python harness canonicalizes metadata
+                // and compares the complete PDF; other formats remain byte exact.
+                if (req.render_options.format != engrave::RenderFormat::Pdf)
+                    require(live_bytes.size() == expected.size() &&
+                        std::equal(expected.begin(), expected.end(), reinterpret_cast<const std::byte*>(live_bytes.data())),
+                        "live render differs from direct engine bytes");
 
                 save(output_dir / (prefix + "worker." + format), result[0]);
                 return {};
