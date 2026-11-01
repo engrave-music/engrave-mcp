@@ -18,7 +18,6 @@ namespace music::v2 {
 namespace {
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
-constexpr std::size_t worker_count = 2;
 constexpr std::size_t retained_jobs = 256;
 struct Failure { HostError error; };
 
@@ -210,7 +209,7 @@ void coordinator(std::shared_ptr<Shared> shared) {
                 if (job->cancel || job->timeout) {
                     finish(*shared, *job, job->cancel ? JobState::Cancelled : JobState::Failed,
                            HostError{job->cancel ? "Cancelled" : "DeadlineExceeded", job->cancel ? "job cancelled" : "job deadline exceeded"});
-                } else if (shared->running < worker_count) {
+                } else if (shared->running < export_worker_count) {
                     try { start(*shared, *job); }
                     catch (const Failure& e) { finish(*shared, *job, JobState::Failed, e.error); }
                     catch (const std::exception& e) { finish(*shared, *job, JobState::Failed, HostError{"WorkerFailed", e.what()}); }

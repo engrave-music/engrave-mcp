@@ -4939,6 +4939,11 @@
               "minimum": 0,
               "type": "integer"
             },
+            "export_workers": {
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
+            },
             "input_bytes": {
               "maximum": 2147483647,
               "minimum": 0,
@@ -4958,16 +4963,35 @@
               "maximum": 2147483647,
               "minimum": 0,
               "type": "integer"
+            },
+            "snapshot_bytes": {
+              "maxLength": 20,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            "transport_request_bytes": {
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "worker_request_bytes": {
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
             }
           },
           "required": [
             "base64_chars",
             "batch_ops",
             "deadline_ms",
+            "export_workers",
             "input_bytes",
             "output_bytes",
             "query_results",
-            "queue_capacity"
+            "queue_capacity",
+            "snapshot_bytes",
+            "transport_request_bytes",
+            "worker_request_bytes"
           ],
           "type": "object"
         },

@@ -141,7 +141,9 @@ def check_cases(tools):
     capability = {"engine_version": "5.0.0", "import_formats": ["mscz", "mnx"], "export_formats": ["mscz"],
                   "render_formats": ["png"], "audio_formats": ["opus"], "soundfonts": [], "audio_sample_rate": 44100}
     limits = {"input_bytes": 8388608, "base64_chars": 11184812, "batch_ops": 1024, "query_results": 4096,
-              "output_bytes": "1073741824", "queue_capacity": 8, "deadline_ms": 120000}
+              "output_bytes": "1073741824", "queue_capacity": 8, "deadline_ms": 120000,
+              "export_workers": 2, "snapshot_bytes": "67108864",
+              "transport_request_bytes": 4194304, "worker_request_bytes": 4194304}
     results = {
         "score_open": [{"document": doc, "revision": "1", "diagnostics": []}],
         "score_create": [{"document": doc, "revision": "1", "diagnostics": []}],

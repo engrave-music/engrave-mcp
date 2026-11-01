@@ -1,5 +1,6 @@
 #pragma once
 #include "api_output.h"
+#include "runtime_limits.h"
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -11,11 +12,6 @@ struct JobStatus {
     std::uint64_t source_revision=0;
     std::vector<Artifact> artifacts;
     std::optional<HostError> error;
-};
-struct JobLimits {
-    std::size_t queue_capacity=8;
-    std::uint64_t snapshot_bytes=64*1024*1024, output_bytes=1024ull*1024*1024;
-    std::chrono::milliseconds deadline{120000};
 };
 // S3 implementation. Thread-safe facade for S4; only owned snapshots cross it.
 // run and start submit the same path. S4 awaits through completion callback,

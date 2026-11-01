@@ -1,4 +1,5 @@
 #include "mcp_transport.h"
+#include "runtime_limits.h"
 
 #include <algorithm>
 #include <atomic>
@@ -65,7 +66,7 @@ ToolCallError::ToolCallError(std::string error_code,
 
 namespace {
 
-constexpr std::size_t kMaxLineBytes = 8u * 1024u * 1024u; // 8 MiB strict maximum
+constexpr std::size_t kMaxLineBytes = v2::transport_request_limit;
 constexpr std::size_t kMaxPendingLines = 64u;
 constexpr std::size_t kMaxPendingBytes = 32u * 1024u * 1024u;
 

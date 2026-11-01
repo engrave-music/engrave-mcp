@@ -1,6 +1,7 @@
 #pragma once
 #include "api_json.h"
 #include "runtime_snapshot.h"
+#include "runtime_limits.h"
 #include <functional>
 #include <memory>
 #include <thread>
@@ -11,7 +12,7 @@ namespace music::v2 {
 // to I/O or worker threads; with_document is synchronous on the owner thread.
 class HostApi {
 public:
-    static Result<std::unique_ptr<HostApi>> create(const engrave::EngineOptions&);
+    static Result<std::unique_ptr<HostApi>> create(const engrave::EngineOptions&, JobLimits = {});
     ~HostApi();
     HostApi(const HostApi&)=delete;
     HostApi& operator=(const HostApi&)=delete;

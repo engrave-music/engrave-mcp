@@ -101,7 +101,7 @@ Json declared_tools() {
     const J export_formats=en({"mscz","mscx","musicxml","mxl","midi"});
     d["capabilities"]=object({{"engine_version",text},{"import_formats",array(formats)},{"export_formats",array(export_formats)},{"render_formats",array(en({"pdf","png","svg"}))},{"audio_formats",array(en({"wav","flac","opus","mp3","aac"}))},{"soundfonts",array(text,256)},{"audio_sample_rate",idx}});
     d["template"]=object({{"id",text},{"title",text},{"category",text},{"path",text}});
-    d["limits"]=object({{"input_bytes",idx},{"base64_chars",idx},{"batch_ops",idx},{"query_results",idx},{"output_bytes",u},{"queue_capacity",idx},{"deadline_ms",idx}});
+    d["limits"]=object({{"input_bytes",idx},{"base64_chars",idx},{"batch_ops",idx},{"query_results",idx},{"output_bytes",u},{"queue_capacity",idx},{"deadline_ms",idx},{"export_workers",idx},{"snapshot_bytes",u},{"transport_request_bytes",idx},{"worker_request_bytes",idx}});
     J tools=J::array();
     auto tool=[&](const char* name,const char* description,J input,J output) { tools.push_back({{"name",name},{"description",description},{"inputSchema",schema(input,d)},{"outputSchema",schema(one(J::array({output,object({{"ok",lit(false)},{"error",ref("error")}})})),d)}}); };
     J input=object({{"path",text},{"data",{{"type","string"},{"maxLength",11184812},{"pattern","^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"}}},{"format",formats},{"filename_hint",text},{"strict_ids",b}},J::array());

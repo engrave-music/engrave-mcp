@@ -1,5 +1,6 @@
 #include "host_api.h"
 #include "api_json_internal.h"
+#include "worker_v2.h"
 
 #include <algorithm>
 #include <array>
@@ -127,6 +128,7 @@ struct HostApi::Impl {
     std::string session=nonce();
     std::uint64_t next=1;
     engrave::EngineOptions options;
+    JobLimits limits;
     std::shared_ptr<const RuntimeAssetLease> assets;
     std::unique_ptr<engrave::Engine> engine; // destroyed after documents, before assets
     std::unordered_map<std::string,std::unique_ptr<engrave::Document>> documents;
@@ -170,13 +172,13 @@ HostApi::HostApi(std::unique_ptr<Impl> impl):impl_(std::move(impl)) {}
 HostApi::~HostApi() {
     if (impl_ && std::this_thread::get_id()!=impl_->owner) std::terminate();
 }
-Result<std::unique_ptr<HostApi>> HostApi::create(const engrave::EngineOptions& options) {
+Result<std::unique_ptr<HostApi>> HostApi::create(const engrave::EngineOptions& options, JobLimits limits) {
     try {
         auto impl=std::make_unique<Impl>();
         auto assets=std::make_shared<RuntimeAssetLease>();
         for (const auto& f:options.fonts) assets->fonts.push_back(unwrap(copy_asset(f)));
         for (const auto& f:options.soundfonts) assets->soundfonts.push_back(unwrap(copy_asset(f)));
-        impl->assets=std::move(assets); impl->options=options;
+        impl->assets=std::move(assets); impl->options=options; impl->limits=limits;
         if (!options.resources.empty()) impl->options.resources=fs::absolute(options.resources);
         if (!options.cache_dir.empty()) impl->options.cache_dir=fs::absolute(options.cache_dir);
         auto engine=engrave::Engine::create(impl->snapshot_options());
@@ -283,7 +285,10 @@ Json HostApi::runtime_info(const Json& j) { return boundary([&] {
     auto caps=impl_->engine->capabilities(); auto opts=impl_->snapshot_options(); caps.soundfonts=opts.soundfonts;
     Json fonts=Json::array(); for(const auto& path:opts.fonts) fonts.push_back(detail::path_text(path));
     return Json{{"ok",true},{"tool_revision","2"},{"capabilities",encode(caps)},{"templates",encoded_array(impl_->engine->templates())},{"fonts",fonts},
-        {"limits",{{"input_bytes",engrave::max_input_bytes},{"base64_chars",((engrave::max_input_bytes+2)/3)*4},{"batch_ops",1024},{"query_results",engrave::max_query_results},{"output_bytes","1073741824"},{"queue_capacity",8},{"deadline_ms",120000}}}};
+        {"limits",{{"input_bytes",engrave::max_input_bytes},{"base64_chars",((engrave::max_input_bytes+2)/3)*4},{"batch_ops",1024},{"query_results",engrave::max_query_results},
+                   {"output_bytes",std::to_string(impl_->limits.output_bytes)},{"queue_capacity",impl_->limits.queue_capacity},{"deadline_ms",impl_->limits.deadline.count()},
+                   {"export_workers",export_worker_count},{"snapshot_bytes",std::to_string(impl_->limits.snapshot_bytes)},
+                   {"transport_request_bytes",transport_request_limit},{"worker_request_bytes",worker_request_limit}}}};
 }); }
 Result<void> HostApi::with_document(std::string_view token,std::optional<std::uint64_t> expected,const std::function<Result<void>(engrave::Document&)>& fn) {
     const std::string key(token); bool entered=false;
