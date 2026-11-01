@@ -31,6 +31,7 @@ LANE_NAMES = [
     "archives",
     "native_edit",
     "linked_tie",
+    "xml_text",
     "audio_facade",
     "async_session",
     "imports_midi",
@@ -294,6 +295,12 @@ def run_lane(
         cmd = [py, str(repo_root / "scripts/test_linked_tie.py"),
                "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"), "--resources", str(assets),
                "--output", str(output / "linked-tie")]
+        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
+    if lane == "xml_text":
+        cmd = [py, str(repo_root / "scripts/test_xml_text.py"),
+               "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"), "--resources", str(assets),
+               "--output", str(output / "xml-text")]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "audio_facade":
@@ -605,6 +612,12 @@ def main() -> None:
         selected_lanes = [lane for lane in LANE_NAMES if lane in requested]
 
     check_preflight_binaries(build_dir, exe_suffix, selected_lanes)
+
+    if ("semantic_check" in selected_lanes and "golden" not in selected_lanes
+            and not (output / "golden/actual/index.json").is_file()):
+        sys.stderr.write("Error: semantic_check needs a prior golden capture in "
+                         f"{output / 'golden/actual'}; select golden too or reuse its output directory\n")
+        sys.exit(2)
 
     output.mkdir(parents=True, exist_ok=True)
     (output / "tmp").mkdir(parents=True, exist_ok=True)

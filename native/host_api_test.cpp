@@ -92,6 +92,12 @@ int main(int argc,char** argv) {
                 limits.at("output_bytes")=="234567" && limits.at("deadline_ms")==3456 &&
                 limits.at("export_workers")==2 && limits.at("transport_request_bytes")==4194304 &&
                 limits.at("worker_request_bytes")==4194304,"runtime limits differ from configuration");
+        for (const auto* field : {"title", "subtitle", "composer", "lyricist"}) {
+            for (const auto& text : {std::string("bad\xef\xbf\xbe"), std::string("bad\xef\xbf\xbf"), std::string("bad\x01")}) {
+                Json invalid_create={{"template_id","Treble_Clef"},{field,text}};
+                error(*host,"score_create",invalid_create,"InvalidArgument");
+            }
+        }
         auto created=ok(*host,"score_create",{{"template_id","Treble_Clef"},{"title","Store test"}});
         auto doc=created.at("document").get<std::string>(); require(created.at("revision")=="1","new revision differs from 1");
         auto outline=ok(*host,"score_outline",{{"document",doc},{"expected_revision","1"}});
@@ -208,6 +214,11 @@ int main(int argc,char** argv) {
         ok(*host,"score_close",{{"document",all_ops_doc}});
 
         Json enter1={{"op","enter_notes"},{"at",address(measure,"0","1")},{"duration",f},{"pitches",Json::array({Json{{"pitch",60}}})}};
+        auto bad_text=error(*host,"score_edit",{{"document",doc},{"ops",Json::array({
+            Json{{"op","add_text"},{"at",a},{"style","staff"},{"text",std::string("bad\xef\xbf\xbe")}}})}},"InvalidArgument");
+        require(bad_text.at("error").at("op_index")==0,"invalid text did not identify its operation");
+        error(*host,"score_edit",{{"document",doc},{"ops",Json::array({Json{{"op","set_property"},{"target",r},
+            {"property","text"},{"value",{{"kind","string"},{"value",std::string("bad\x01")}}}}})}},"InvalidArgument");
         Json enter2={{"op","enter_notes"},{"at",address(measure,"1","4")},{"duration",f},{"pitches",Json::array({Json{{"pitch",60}}})}};
         auto entered=ok(*host,"score_edit",{{"document",doc},{"ops",Json::array({enter1,enter2,Json{{"op","set_pitch"},{"note",opref(0,1)},{"pitch",60}}})}});
         auto first_chord=entered.at("ops").at(0).at("created").at(0).get<std::string>();

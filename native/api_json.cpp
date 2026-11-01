@@ -138,6 +138,14 @@ const char* unit(engrave::Unit u) {
 
 namespace detail {
 [[noreturn]] void invalid(std::string message) { throw DecodeError{HostError{"InvalidArgument",std::move(message)}}; }
+void validate_xml_text(std::string_view value) {
+    for (unsigned char c : value)
+        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r')
+            invalid("text contains a character forbidden by XML 1.0");
+    if (value.find("\xef\xbf\xbe") != std::string_view::npos ||
+        value.find("\xef\xbf\xbf") != std::string_view::npos)
+        invalid("text contains a character forbidden by XML 1.0");
+}
 void validate_tool(std::string_view name, const Json& value) {
     const auto& root = schema_for(name);
     if (!conforms(root, value, root)) invalid("arguments do not match the declared " + std::string(name) + " schema");
@@ -188,7 +196,7 @@ engrave::Value value(const Json& j) {
     if (k == "bool") return v.get<bool>();
     if (k == "int") return signed_decimal(v);
     if (k == "real") return v.get<double>();
-    if (k == "string") return v.get<std::string>();
+    if (k == "string") { auto text=v.get<std::string>(); validate_xml_text(text); return text; }
     if (k == "fraction") return fraction(v);
     if (k == "point") return engrave::Point{v.at("x").get<double>(),v.at("y").get<double>()};
     if (k == "size") return engrave::Size{v.at("w").get<double>(),v.at("h").get<double>()};

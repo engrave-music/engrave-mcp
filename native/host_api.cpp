@@ -206,6 +206,7 @@ Json HostApi::create_document(const Json& j) { return boundary([&] {
     if(j.contains("template_path")) o.template_path=detail::path(j.at("template_path"));
     o.title=j.value("title",std::string()); o.subtitle=j.value("subtitle",std::string());
     o.composer=j.value("composer",std::string()); o.lyricist=j.value("lyricist",std::string());
+    for (const auto* value : {&o.title, &o.subtitle, &o.composer, &o.lyricist}) detail::validate_xml_text(*value);
     return impl_->publish(engine_result(impl_->engine->create_document(o)));
 }); }
 Json HostApi::close(const Json& j) { return boundary([&] {

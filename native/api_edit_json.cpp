@@ -44,7 +44,7 @@ Result<engrave::Batch> decode_batch(const Json& ops) {
             else if (name=="add_spanner") batch.ops.emplace_back(engrave::AddSpanner{str("type"),ref("start"),ref("end"),props()});
             else if (name=="add_tie") batch.ops.emplace_back(engrave::AddTie{ref("note")});
             else if (name=="add_tuplet") batch.ops.emplace_back(engrave::AddTuplet{ref("first"),ref("last"),j.value("actual",3),j.value("normal",2)});
-            else if (name=="add_text") batch.ops.emplace_back(engrave::AddText{detail::address(j.at("at")),str("style"),str("text")});
+            else if (name=="add_text") { auto text=str("text"); detail::validate_xml_text(text); batch.ops.emplace_back(engrave::AddText{detail::address(j.at("at")),str("style"),std::move(text)}); }
             else if (name=="add") batch.ops.emplace_back(engrave::Add{ref("anchor"),str("type"),props()});
             else detail::invalid("unknown operation");
         } catch (const detail::DecodeError& error) {
