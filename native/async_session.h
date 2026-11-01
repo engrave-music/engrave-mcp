@@ -2,6 +2,7 @@
 #include <asio/awaitable.hpp>
 #include <filesystem>
 #include <memory>
+#include <atomic>
 #include <string>
 #include <nlohmann/json.hpp>
 #include <engrave/engine.h>
@@ -13,7 +14,8 @@ public:
     ~AsyncSession();
     AsyncSession(const AsyncSession&) = delete;
     AsyncSession& operator=(const AsyncSession&) = delete;
-    asio::awaitable<nlohmann::json> call(std::string name, nlohmann::json arguments);
+    asio::awaitable<nlohmann::json> call(std::string name, nlohmann::json arguments,
+        std::shared_ptr<std::atomic<int>> execution = {});
     void shutdown() noexcept;
 private:
     struct Impl;

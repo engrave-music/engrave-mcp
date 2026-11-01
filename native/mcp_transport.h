@@ -1,5 +1,7 @@
 #pragma once
 #include <functional>
+#include <memory>
+#include <atomic>
 #include <stdexcept>
 #include <string>
 
@@ -22,7 +24,7 @@ public:
     std::string code;
 };
 
-using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json)>;
+using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std::shared_ptr<std::atomic<int>>)>;
 
 // Asynchronous MCP stdio server. The local io_context is run on the caller's
 // SESSION thread; list_tools, call_tool and shutdown are invoked there, so a

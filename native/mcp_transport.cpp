@@ -131,6 +131,8 @@ struct CallState {
     bool cancel_requested = false;
     bool responded = false;
     bool live_export = false;
+    // 0 queued, 1 executing on owner, 2 cancelled before execution, 3 finished.
+    std::shared_ptr<std::atomic<int>> execution = std::make_shared<std::atomic<int>>(0);
     bool tool_finished = false;
     std::shared_ptr<asio::steady_timer> watchdog;
 };
@@ -1424,12 +1426,14 @@ private:
                 const bool first = !target->cancel_requested;
                 target->cancel_requested = true;
                 target->cancel->emit(asio::cancellation_type::terminal);
-                if (first && target->live_export && !target->tool_finished) {
+                if (first && target->live_export && !target->tool_finished &&
+                    target->execution->load(std::memory_order_acquire) == 1) {
                     auto timer = std::make_shared<asio::steady_timer>(ioc_, std::chrono::seconds(5));
                     target->watchdog = timer;
                     auto self = shared_from_this();
                     timer->async_wait([self, target, timer](const asio::error_code& error) {
-                        if (error || target->tool_finished || target->responded) return;
+                        if (error || target->tool_finished || target->responded ||
+                            target->execution->load(std::memory_order_acquire) != 1) return;
                         target->responded = true;
                         // A blocked stdout must not defeat the process watchdog.
                         std::thread([] {
@@ -1525,7 +1529,7 @@ private:
         std::string error_message;
 
         try {
-            Json payload = co_await call_tool_(std::move(name), std::move(arguments));
+            Json payload = co_await call_tool_(std::move(name), std::move(arguments), call->execution);
             call->tool_finished = true;
             if (call->watchdog) call->watchdog->cancel();
 

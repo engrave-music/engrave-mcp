@@ -48,7 +48,9 @@ int main(int argc, char** argv) {
 #endif
             return tools;
         },
-            [&](std::string name, music::Json args) { return session.call(std::move(name), std::move(args)); },
+            [&](std::string name, music::Json args, std::shared_ptr<std::atomic<int>> execution) {
+                return session.call(std::move(name), std::move(args), std::move(execution));
+            },
             [&] {
                 session.shutdown();
             }, live_export);

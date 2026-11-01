@@ -251,39 +251,60 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
 
     template<class T, class Function>
     asio::awaitable<T> dispatch(asio::io_context& target, Function function, bool owner_task,
-                                std::shared_ptr<std::atomic<bool>> running_cancel = {}, bool preserve_completed = false) {
+                                std::shared_ptr<std::atomic<bool>> running_cancel = {}, bool preserve_completed = false,
+                                std::shared_ptr<std::atomic<int>> execution = {}) {
         if (closing) throw asio::system_error(asio::error::operation_aborted);
         if (owner_task && owner_pending >= 64)
             throw ToolCallError("ResourceLimit", "Engine queue full (limit 64)");
         auto self = shared_from_this();
         auto token = asio::use_awaitable;
         co_return co_await asio::async_initiate<decltype(token), void(std::exception_ptr, T)>(
-            [self, &target, function = std::move(function), owner_task, running_cancel, preserve_completed](auto handler) mutable {
+            [self, &target, function = std::move(function), owner_task, running_cancel, preserve_completed, execution](auto handler) mutable {
                 auto executor = asio::get_associated_executor(handler);
                 auto work = asio::make_work_guard(executor);
                 auto slot = asio::get_associated_cancellation_slot(handler);
-                auto state = std::make_shared<std::atomic<int>>(0); // queued, running, cancelled
-                if (slot.is_connected()) slot.assign([state, running_cancel](asio::cancellation_type type) {
-                    if (type != asio::cancellation_type::none) {
-                        if (running_cancel) running_cancel->store(true, std::memory_order_release);
-                        int queued = 0;
-                        state->compare_exchange_strong(queued, 2);
+                // Each dispatch owns its cancellation, execution state and completion.
+                // The session thread releases queued closures immediately; a stale
+                // owner-queue entry can only observe Cancelled and return.
+                auto state = execution ? execution : std::make_shared<std::atomic<int>>(0);
+                auto task = std::make_shared<std::optional<Function>>(std::move(function));
+                auto completion_handler = std::make_shared<decltype(handler)>(std::move(handler));
+                auto guard = std::make_shared<decltype(work)>(std::move(work));
+                auto complete = [self, executor, guard, slot, completion_handler, owner_task,
+                                 running_cancel, preserve_completed](std::exception_ptr error, T result) mutable {
+                    asio::post(executor, [self, guard, slot, completion_handler, owner_task,
+                                          error, running_cancel, preserve_completed, result = std::move(result)]() mutable {
+                        if (!preserve_completed && !error && running_cancel && running_cancel->load(std::memory_order_acquire))
+                            error = std::make_exception_ptr(asio::system_error(asio::error::operation_aborted));
+                        if (slot.is_connected()) slot.clear();
+                        if (owner_task) --self->owner_pending;
+                        (*completion_handler)(error, std::move(result));
+                    });
+                };
+                if (slot.is_connected()) slot.assign([state, task, complete, running_cancel](asio::cancellation_type type) mutable {
+                    if (type == asio::cancellation_type::none) return;
+                    if (running_cancel) running_cancel->store(true, std::memory_order_release);
+                    int queued = 0;
+                    if (state->compare_exchange_strong(queued, 2)) {
+                        task->reset();
+                        complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), T{});
                     }
                 });
                 if (owner_task) ++self->owner_pending;
                 try {
-                    asio::post(target, [self, function = std::move(function), handler = std::move(handler),
-                                        executor, work = std::move(work), slot, state, owner_task, running_cancel, preserve_completed]() mutable {
+                    asio::post(target, [self, task, complete, state, running_cancel, preserve_completed]() mutable {
+                        int queued = 0;
+                        if (!state->compare_exchange_strong(queued, 1)) return;
                         std::exception_ptr error;
                         T result{};
                         try {
-                            int queued = 0;
-                            if (!state->compare_exchange_strong(queued, 1) || self->stopping.load(std::memory_order_acquire))
+                            if (self->stopping.load(std::memory_order_acquire))
                                 throw asio::system_error(asio::error::operation_aborted);
-                            result = function();
+                            result = (**task)();
                             if (!preserve_completed && running_cancel && running_cancel->load(std::memory_order_acquire))
                                 throw asio::system_error(asio::error::operation_aborted);
                         } catch (...) { error = std::current_exception(); }
+                        task->reset();
 #ifdef MUSIC_ASYNC_TEST_HOOKS
                         const bool hold_completion = self->test_hold_completion.exchange(false);
                         if (hold_completion && !error && running_cancel) {
@@ -294,16 +315,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                             self->test_capture_completion_pending.store(false, std::memory_order_release);
                         }
 #endif
-                        asio::post(executor, [self, handler = std::move(handler), work = std::move(work), slot,
-                                              owner_task, error, running_cancel, preserve_completed, result = std::move(result)]() mutable {
-                            // Cancellation can arrive after the owner finished
-                            // but before this completion runs on the session.
-                            if (!preserve_completed && !error && running_cancel && running_cancel->load(std::memory_order_acquire))
-                                error = std::make_exception_ptr(asio::system_error(asio::error::operation_aborted));
-                            if (slot.is_connected()) slot.clear();
-                            if (owner_task) --self->owner_pending;
-                            handler(error, std::move(result));
-                        });
+                        state->store(3, std::memory_order_release);
+                        complete(error, std::move(result));
                     });
                 } catch (...) {
                     if (owner_task) --self->owner_pending;
@@ -377,7 +390,7 @@ AsyncSession::AsyncSession(engrave::EngineOptions options, bool live)
 AsyncSession::~AsyncSession() { shutdown(); }
 void AsyncSession::shutdown() noexcept { if (impl_) impl_->shutdown(); }
 
-asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments) {
+asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::shared_ptr<std::atomic<int>> execution) {
     auto self = impl_;
     if (std::this_thread::get_id() != self->session_thread) throw std::logic_error("AsyncSession called from non-session thread");
     if (self->closing) throw asio::system_error(asio::error::operation_aborted);
@@ -430,7 +443,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments) {
                     return error_envelope(result.error());
                 }
                 return payload;
-            }, true, capture_cancel, true);
+            }, true, capture_cancel, true, execution);
             timing->finish();
             co_return payload;
         }

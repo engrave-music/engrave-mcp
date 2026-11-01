@@ -28,6 +28,7 @@ class Client:
             stderr=self.log, env=dict(os.environ, ENGRAVE_MCP_PROFILE_EXPORT="1"))
         self.q = queue.Queue()
         self.ident = 0
+        self.pending = {}
         def read():
             for line in self.p.stdout:
                 self.q.put(json.loads(line))
@@ -46,10 +47,12 @@ class Client:
         return self.ident
 
     def receive(self, ident):
+        if ident in self.pending: return self.pending.pop(ident)
         while True:
             msg = self.q.get(timeout=150)
             if msg.get("error") == "server exited": raise RuntimeError(msg)
             if msg.get("id") == ident: return msg
+            if "id" in msg: self.pending[msg["id"]] = msg
 
     def rpc(self, method, params):
         return self.receive(self.send(method, params))
