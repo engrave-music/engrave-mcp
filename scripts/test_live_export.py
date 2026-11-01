@@ -4,6 +4,7 @@ Use --binary engrave-mcp-test for the deterministic owner-queue cancellation sea
 Direct engine byte comparisons additionally run in export_job_test.
 """
 import argparse
+import os
 import hashlib
 import json
 from pathlib import Path
@@ -25,12 +26,18 @@ def main():
     if a.direct_binary:
         oracle=a.output/"direct"
         subprocess.run([str(a.direct_binary.resolve()),str(a.resources.resolve()),str(oracle)],check=True)
+        from golden import describe_pdf
+        for folder in oracle.iterdir():
+            if folder.is_dir():
+                assert describe_pdf(folder/"direct.pdf")==describe_pdf(folder/"pdf"),folder
         subprocess.run([sys.executable,str(ROOT/"scripts/test_live_golden.py"),"--output",str(oracle)],check=True)
     results={}
     for mode in (None,"isolated","live"):
         out=a.output/(mode or "default")
         c=Client(a.binary,a.resources,out,mode)
         doc=c.tool("score_open",{"path":str(ROOT/"fixtures/golden/repeat70.mscx")})["document"]
+        bad=export_args(doc,"pdf",out/"missing-parent"/"out.pdf")
+        assert c.tool("score_export",bad,False)["error"]["code"]=="InvalidArgument"
         hashes={}
         for fmt in ("mscz","mscx","musicxml","mxl","midi","pdf","svg","png"):
             path=out/fmt
@@ -69,7 +76,8 @@ def main():
         partial=out/"partial"; partial.mkdir(exist_ok=True)
         (partial/"page-0002.svg").mkdir(exist_ok=True)
         r=c.tool("score_export",export_args(doc,"svg",partial,True),False)
-        assert r["error"]["published_artifacts"]==[str((partial/"page-0001.svg").resolve()).replace("\\","/")] or len(r["error"]["published_artifacts"])==1
+        assert r["error"]["code"]=="Io",r
+        assert r["error"]["published_artifacts"]==[str((partial/"page-0001.svg").resolve()).replace("\\","/")],r
         assert not list(partial.glob(".musescore-job-*"))
         c.tool("score_export",export_args(doc,"pdf",out/"multi.pdf",True))
         # Queue an export behind a known running owner task, cancel before engine use.
@@ -85,6 +93,23 @@ def main():
         modes={x["mode"] for x in phases}
         assert ("live" in modes)==(mode=="live"),modes
         results[mode or "default"]=hashes
+    # Test-only binary: fail the shared pre-rename flush in both callers.
+    for mode in ("live","isolated"):
+        for seam in ("FILE_FLUSH", "STAGING") if mode=="live" else ("FILE_FLUSH",):
+            key="ENGRAVE_MCP_TEST_FAIL_"+seam
+            os.environ[key]="1"
+            try: c=Client(a.binary,a.resources,a.output/(mode+"-"+seam),mode)
+            finally: del os.environ[key]
+            doc=c.tool("score_open",{"path":str(ROOT/"fixtures/golden/repeat70.mscx")})["document"]
+            dest=a.output/(mode+"-"+seam)/"old.pdf"
+            for existing in (False,True):
+                if existing: dest.write_bytes(b"old destination")
+                failure=c.tool("score_export",export_args(doc,"pdf",dest),False)
+                assert failure["error"]["code"]=="Io",failure
+                assert not failure["error"].get("published_artifacts"),failure
+                assert dest.read_bytes()==b"old destination" if existing else not dest.exists()
+                assert not list(dest.parent.glob(".musescore-job-*"))
+            c.close()
     (a.output/"comparison.json").write_text(json.dumps(results,indent=2))
     for fmt in results["default"]:
         if fmt != "pdf": assert results["default"][fmt]==results["isolated"][fmt],fmt

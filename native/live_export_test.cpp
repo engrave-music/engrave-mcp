@@ -57,8 +57,10 @@ int main(int argc, char** argv) {
                 auto limited = live_export(*doc, denied_request, tiny, [] { return false; },ExportTiming::Clock::now(),timing);
                 if (limited || limited.error().code != "ResourceLimit") throw std::runtime_error("output limit failed");
                 const auto path = fs::u8path(actual->at("artifacts").at(0).at("path").get<std::string>());
-                if (std::string(fmt)=="mscz") {
-                    std::ofstream direct(out / "direct.mscz", std::ios::binary);
+                if (std::string(fmt)=="mscz" || pdf) {
+                    // PDF has volatile Cairo metadata, including compressed streams.
+                    // The Python harness compares complete golden.describe_pdf descriptors.
+                    std::ofstream direct(out / (pdf ? "direct.pdf" : "direct.mscz"), std::ios::binary);
                     direct.write(reinterpret_cast<const char*>(expected.data()), expected.size());
                 } else if (read(path)!=expected) throw std::runtime_error("direct byte mismatch: "+fixture.path().string()+"/"+fmt);
             }

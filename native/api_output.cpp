@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <cstdlib>
+#include <cerrno>
 #include <limits>
 #include <set>
 
@@ -287,11 +289,21 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
     };
     try {
         check();
-        cleanup.destination = request.destination.directory ? fs::canonical(request.destination.path) : normalize_output_path(request.destination.path);
+        if (request.destination.directory) {
+            std::error_code ec;
+            if (!fs::is_directory(request.destination.path, ec) || ec) invalid("destination directory must exist");
+        }
+        try {
+            cleanup.destination = request.destination.directory ? fs::canonical(request.destination.path) : normalize_output_path(request.destination.path);
+        } catch (const std::invalid_argument& e) { invalid(e.what()); }
         if (request.destination.directory && !fs::is_directory(cleanup.destination)) invalid("destination directory must exist");
         if (!request.destination.directory && fs::is_directory(cleanup.destination)) invalid("file destination is a directory");
         if (!try_reserve_output_path(cleanup.destination, request.destination.directory)) invalid("destination is reserved by another job");
         cleanup.reserved = true;
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        if (std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING"))
+            throw std::system_error(EIO, std::generic_category(), "Injected staging directory failure");
+#endif
         cleanup.stage = create_private_directory(request.destination.directory ? cleanup.destination : cleanup.destination.parent_path());
         std::uint64_t total = 0;
         struct Staged { fs::path source; Artifact artifact; };
@@ -390,7 +402,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         if (error.code == "Cancelled" && !cancelled()) error = HostError{"DeadlineExceeded", "export deadline exceeded"};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
-    } catch (const fs::filesystem_error& e) {
+    } catch (const std::system_error& e) {
         HostError error{"Io", e.what()};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));

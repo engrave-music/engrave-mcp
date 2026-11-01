@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cerrno>
 #include <fstream>
 #include <functional>
@@ -428,7 +429,20 @@ bool is_output_path_reserved(const std::filesystem::path& path) {
     return false;
 }
 void publish_job_output(const std::filesystem::path& staged, const std::filesystem::path& destination) {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+    if (std::getenv("ENGRAVE_MCP_TEST_FAIL_FILE_FLUSH"))
+        throw PublicationError(EIO, "Injected staged file flush failure", false);
+#endif
 #ifdef _WIN32
+    // FlushFileBuffers makes staged contents durable before the name is visible
+    // (subject to the filesystem/device honoring flushes). WRITE_THROUGH is kept,
+    // but its documented copy/delete guarantee does not establish directory-entry
+    // power-loss durability for this same-volume rename. No such promise is made.
+    Handle file(CreateFileW(staged.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+    if (file.value == INVALID_HANDLE_VALUE) windows_error("Cannot open staged output for flush");
+    if (!FlushFileBuffers(file.value)) windows_error("Cannot flush staged output");
+    file.reset(); // Close before rename; a failed flush never replaces destination.
     if (!MoveFileExW(staged.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
         windows_error("Cannot publish job output");
 #else
