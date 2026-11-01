@@ -28,21 +28,31 @@ async def run(args):
     assert marker in score
     score = score.replace(marker, '<Text><style>title</style><text><font face="Petaluma Script"/>'
                           'MMMWWWiii012345</text></Text>' + marker, 1)
+    excerpt_title = '<text>Flute</text>'
+    assert excerpt_title in score
+    score = score.replace(excerpt_title, '<text><font face="Petaluma Script"/>MMMWWWiii012345</text>', 1)
     score_path = out / 'font-score.mscx'
     score_path.write_text(score, encoding='utf-8')
 
     async with Client(args, out) as client:
-        async def export(doc, kind, fmt, path, action='run'):
+        async def export(doc, kind, fmt, path, action='run', excerpt=None):
             directory = kind == 'render' and fmt in ('svg', 'png')
             if directory:
                 path.mkdir(exist_ok=True)
+            options = {'format': fmt}
+            if excerpt is not None:
+                options['score'] = {'excerpt': excerpt}
             return await client.tool('score_export', {'document': doc, 'action': action, 'kind': kind,
-                'options': {'format': fmt}, 'destination': {'kind': 'directory' if directory else 'file', 'path': str(path)}})
+                'options': options, 'destination': {'kind': 'directory' if directory else 'file', 'path': str(path)}})
 
         doc = (await client.tool('score_open', {'path': str(score_path)}))['document']
-        revision = (await client.tool('score_outline', {'document': doc}))['revision']
+        outline = await client.tool('score_outline', {'document': doc})
+        revision = outline['revision']
+        excerpt = outline['outline']['excerpts'][0]['id']
         control, before, after = out / 'control', out / 'before.test-slow', out / 'after'
+        excerpt_before, excerpt_after = out / 'excerpt-before', out / 'excerpt-after'
         await export(doc, 'render', 'svg', control)
+        await export(doc, 'render', 'svg', excerpt_before, excerpt=excerpt)
         captured = await export(doc, 'render', 'svg', before, 'start')
         assert (await client.tool('runtime_job', {'action': 'get', 'job': captured['job']}))['status']['state'] in ('queued', 'running')
         font = await client.tool('runtime_info', {'action': 'add_font', 'path': str(font_input)})
@@ -52,10 +62,13 @@ async def run(args):
         assert again['fonts'] == font['fonts']
         font_input.write_bytes(b'invalid font')
         await export(doc, 'render', 'svg', after)
+        await export(doc, 'render', 'svg', excerpt_after, excerpt=excerpt)
         assert (await client.terminal(captured['job']))['state'] == 'succeeded'
         control_svg, before_svg, after_svg = (p / 'page-0001.svg' for p in (control, before, after))
         assert before_svg.read_bytes() == control_svg.read_bytes(), 'job lost captured fonts'
         assert before_svg.read_bytes() != after_svg.read_bytes(), 'font did not change rendered text'
+        assert (excerpt_before / 'page-0001.svg').read_bytes() != (excerpt_after / 'page-0001.svg').read_bytes(), \
+            'font did not change rendered excerpt text'
         assert font_path.read_bytes() == font_source.read_bytes()
         assert (await client.tool('score_outline', {'document': doc}))['revision'] == revision
         await client.tool('score_close', {'document': doc})
@@ -86,7 +99,7 @@ async def run(args):
 
     assert not font_path.exists(), 'retained font survived host shutdown'
     assert not retained_sf.exists(), 'retained SoundFont survived host shutdown'
-    print(json.dumps({'status': 'passed', 'font_worker_relayout': True, 'captured_font': True,
+    print(json.dumps({'status': 'passed', 'font_worker_relayout': True, 'excerpt_font_relayout': True, 'captured_font': True,
         'soundfont_worker_selection': True, 'captured_soundfont': True,
         'invalid_soundfont_rollback': True, 'revision_unchanged': True, 'retained_files_cleaned': True}))
 

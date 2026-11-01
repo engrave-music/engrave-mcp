@@ -7,6 +7,10 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+#include <chrono>
+#include <thread>
+#endif
 
 namespace music::v2 {
 namespace {
@@ -139,6 +143,24 @@ void write_result(const fs::path& path, const Json& result) {
     const auto text = result.dump();
     write_bytes(path, {reinterpret_cast<const std::byte*>(text.data()), text.size()});
 }
+Json read_request(const fs::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) throw std::runtime_error("cannot read worker request");
+    std::string bytes;
+    char block[16384];
+    while (file) {
+        file.read(block, sizeof(block));
+        const auto count = static_cast<std::size_t>(file.gcount());
+        if (count > worker_request_limit - bytes.size())
+            throw std::runtime_error("worker request exceeds size limit");
+        bytes.append(block, count);
+    }
+    if (file.bad()) throw std::runtime_error("cannot read worker request");
+    return Json::parse(bytes, [](int depth, Json::parse_event_t, Json&) {
+        if (depth > 64) throw std::runtime_error("worker JSON nesting exceeds 64 levels");
+        return true;
+    });
+}
 }
 
 Json worker_request(const ExportSnapshot& snapshot, const fs::path& job_directory,
@@ -156,11 +178,14 @@ Json worker_request(const ExportSnapshot& snapshot, const fs::path& job_director
 int run_worker(const fs::path& request_path) noexcept {
     const auto result_path = request_path.parent_path() / "result.json";
     try {
-        std::ifstream file(request_path, std::ios::binary);
-        if (!file) throw std::runtime_error("cannot read worker request");
-        Json j = Json::parse(file);
+        Json j = read_request(request_path);
         if (j.at("version") != 2) throw std::runtime_error("invalid worker version");
         enforce_worker_parent(j.at("parentPid").get<std::uint64_t>());
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        // Deterministic cancellation coverage, absent from the production host.
+        if (j.at("export").at("destination").at("path").get<std::string>().find(".test-slow") != std::string::npos)
+            std::this_thread::sleep_for(std::chrono::seconds(4));
+#endif
         if (detail::path(j.at("result")) != result_path || detail::path(j.at("payload")).parent_path() != request_path.parent_path())
             throw std::runtime_error("worker files are outside the job directory");
         auto decoded = decode_export(j.at("export"));

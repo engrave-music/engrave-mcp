@@ -1981,13 +1981,4 @@ int serve_stdio_async(const std::function<Json()>& list_tools,
     }
 }
 
-int serve_stdio(const std::function<Json()>& list_tools,
-                const std::function<Json(const std::string&, const Json&)>& call_tool) {
-    AsyncToolCall async_call =
-        [call_tool](std::string name, Json arguments) -> asio::awaitable<Json> {
-            co_return call_tool(name, arguments);
-        };
-    return serve_stdio_async(list_tools, async_call, [] {});
-}
-
 } // namespace music

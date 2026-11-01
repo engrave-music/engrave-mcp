@@ -2,12 +2,9 @@
 #include "async_session.h"
 #include "background_job.h"
 #include "registry.h"
-#include "worker_protocol.h"
-#include <chrono>
-#include <fstream>
+#include "worker_v2.h"
 #include <iostream>
 #include <stdexcept>
-#include <thread>
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
@@ -17,14 +14,7 @@ int main(int argc, char** argv) {
     try {
         if (argc == 3 && std::string(argv[1]) == "--worker") {
             const auto request = std::filesystem::absolute(std::filesystem::u8path(argv[2]));
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-            // Deterministic queue/cancellation tests; absent from the production host.
-            std::ifstream in(request, std::ios::binary);
-            const auto data = music::Json::parse(in);
-            if (data.at("export").at("destination").at("path").get<std::string>().find(".test-slow") != std::string::npos)
-                std::this_thread::sleep_for(std::chrono::seconds(4));
-#endif
-            return music::run_export_worker(request);
+            return music::v2::run_worker(request);
         }
 #ifdef _WIN32
         if (_setmode(_fileno(stdin), _O_BINARY) == -1 || _setmode(_fileno(stdout), _O_BINARY) == -1)

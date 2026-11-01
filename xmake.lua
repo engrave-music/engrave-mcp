@@ -8,25 +8,19 @@
 -- vendor/musescore by default, or from the checkout named by
 -- --musescore_source - and keeps what is the host's:
 --
---   host_generated                   legacy MCP tool schema (tool_schema.inc)
 --   v2_registry, registry_dump       standalone v2 schema authority
 --   registry_test, registry_check    v2 contract validation
---   music_core                       typed document facade and composition
+--   v2_store                         public-API document store
 --   musescore_mcp                    stdio JSON-RPC host (musescore-mcp binary)
---   musescore_mcp_test, music_core_test   host regression binaries
+--   musescore_mcp_test, host_api_test, export_job_test   host regression binaries
 --
 -- Engine targets (muse_global, muse_draw, muse_mpe, engraving, iex_musicxml,
 -- iex_guitarpro, iex_midi, native_fluidsynth, muse_audio_engine,
 -- muse_generated), the engrave library and its tests and probes are defined by
 -- the included engine build and are not repeated here.
 --
--- Host code still includes engine headers directly, through engrave's internal
--- headers (engrave/src/score/score_edit.h, engrave/src/audio/engine_audio.h,
--- engrave/src/runtime/noqt_runtime.h, ...), so the engine's include directories
--- and its feature defines stay project-wide until A5 moves the host onto the
--- public API: they change class layouts and interfaces that the host
--- translation units see.  The engine build's example_embedder proves that the
--- public API itself needs neither.
+-- Host translation units include only the engine's public engrave/ headers.
+-- The included engine targets and their tests still use internal include roots.
 
 set_project("musescore-mcp")
 set_xmakever("3.1.1")
@@ -147,14 +141,12 @@ end
 -- including project.  cairo is linked by engrave itself.
 add_links("z")
 
--- The engine's include roots.  Kept project-wide: the host adapters include
--- engine headers (see the file header).
+-- Engine targets and tests use these shared roots; host code is public-only.
 add_includedirs(ENGRAVE_INCLUDES)
 
 -- The Qt-free feature selection comes from the engine manifest generator (its
 -- PROJECT_DEFINES list), so there is one place to change what the engine
--- compiles as.  It must be project-wide: these macros change class layouts and
--- interfaces that native/ host code includes as well.
+-- and its tests compile as.
 add_defines(table.unpack(ENGRAVE_DEFINES))
 
 -- Qt platform macros normally come from <QtGlobal>; the pinned engine and
@@ -185,121 +177,38 @@ else
     add_ldflags("-pthread")
 end
 
--- Host include directories.  These were generated with the engine manifest
--- (HOST_TARGETS) until S0; from now on the host owns its own source lists and
--- include roots, and the engine owns its manifest.
-local host_includes = {
-    project_root,
-    path.join(source_root, "src", "engraving", "thirdparty", "dtl"),
-    source_root,
-    path.join(source_root, "src"),
-    path.join(source_root, "muse", "framework"),
-    path.join(source_root, "muse", "framework", "global"),
-    path.join(source_root, "src", "engraving"),
-    path.join(source_root, "muse", "framework", "draw"),
-}
--- The host includes engrave's audio headers, which include the engine's, so
--- host targets get the FluidSynth and audio include roots from the engine export.
-local audio_includes = ENGRAVE_AUDIO_INCLUDES
-
--- Every host target gets the engine's global defines (upstream's
--- add_compile_definitions, e.g. KORS_PROFILER_ENABLED) because it includes
--- engine headers; the project-wide list above covers the rest.
-local function add_engine_flags()
-    add_defines(table.unpack(ENGRAVE_GLOBAL_DEFINES))
-    add_includedirs(host_includes)
-    add_includedirs("$(builddir)/xmake-generated")
-    add_includedirs(audio_includes)
-    add_includedirs(ENGRAVE_INTERNAL_INCLUDES)
-end
-
--------------------------------------------------------------------------------
--- Generated host inputs (MCP tool schema)
--------------------------------------------------------------------------------
--- The engine's generated framework config header is produced by the engine
--- build's muse_generated target into the same directory; only the MCP tool
--- schema is the host's.
-
-local function render_tool_schema(tools)
-    -- Keep each literal small for MSVC; byte escapes also preserve UTF-8 when
-    -- a chunk boundary falls inside a multi-byte character.
-    local output = {"[] { std::string value; value.reserve(" .. #tools .. ");"}
-    for first = 1, #tools, 1024 do
-        local chunk = tools:sub(first, first + 1023)
-        local escaped = chunk:gsub(".", function(c)
-            return string.format("\\x%02x", c:byte())
-        end)
-        table.insert(output, 'value.append("' .. escaped .. '", ' .. #chunk .. ');')
-    end
-    table.insert(output, "return value; }()")
-    return table.concat(output, "\n") .. "\n"
-end
-
-local function write_if_changed(os, io, filename, content)
-    if os.isfile(filename) then
-        local previous = io.readfile(filename)
-        if previous == content then
-            return false
-        end
-    end
-    io.writefile(filename, content)
-    return true
-end
-
--- The generator runs in target-callback scope, where raise() exists (a
--- project-scope function would not see it).
-target("host_generated")
-    set_kind("phony")
-    set_default(false)
-    set_targetdir("$(builddir)/xmake-generated")
-    local function generate_tool_schema(target, os, io, json)
-        local output_dir = target:targetdir()
-        if not output_dir or output_dir == "" then
-            raise("generated target requires a build directory")
-        end
-        os.mkdir(output_dir)
-        local tools_path = path.join(project_root, "native", "legacy_tools.json")
-        local tools = io.readfile(tools_path)
-        if not tools then
-            raise("cannot read MCP tool schema: %s", tools_path)
-        end
-        local decoded = json.decode(tools)
-        if type(decoded) ~= "table" or #decoded == 0 then
-            raise("tool schema must be a nonempty JSON array")
-        end
-        write_if_changed(os, io, path.join(output_dir, "tool_schema.inc"),
-            render_tool_schema(tools))
-    end
-    on_config(function (target)
-        import("core.base.json")
-        generate_tool_schema(target, os, io, json)
-    end)
-    on_build(function (target)
-        import("core.base.json")
-        generate_tool_schema(target, os, io, json)
-    end)
-target_end()
-
 -------------------------------------------------------------------------------
 -- Host targets
 -------------------------------------------------------------------------------
--- The engine adapters (runtime, io, render, audio, score) are the engine's
--- engrave library, which also defines their tests and probes; the host links
--- it and includes its internal headers ("score/score_edit.h", ...).
+-- The host links engrave and uses its public API; engine tests and probes are
+-- defined by the included engine build.
 
 local native_dir = path.join(project_root, "native")
 
--- The declared v2 contract is independent of the Engine and of tools.json.
--- It is linked into the host for future S4 integration, without replacing the
--- existing v1 dispatcher or its discovery list during S1.
+-- Check every host/test include before building any host target.
+target("native_include_check")
+    set_kind("phony")
+    set_default(false)
+    on_build(function ()
+        local python = path.join(native_env, is_host("windows") and "python.exe" or "bin/python")
+        if not os.isfile(python) then
+            python = is_host("windows") and "python" or "python3"
+        end
+        os.execv(python, {path.join(project_root, "scripts", "check_native_includes.py"),
+            "--engine-source", source_root})
+    end)
+target_end()
+
+-- The declared contract is independent of the Engine and of tools.json.
 target("v2_registry")
     set_kind("static")
     set_default(false)
+    add_deps("native_include_check")
     add_includedirs(path.join(source_root, "engrave", "include"))
     add_files(path.join(native_dir, "registry.cpp"), path.join(native_dir, "schema_defs.cpp"))
 target_end()
 
--- The S2 store is linked without changing the v1 dispatcher. S4 will bind it.
+-- The document store uses the public engine API.
 target("v2_store")
     set_kind("static")
     set_default(false)
@@ -338,29 +247,18 @@ target("registry_check")
     end)
 target_end()
 
--- Typed document facade and the composition model it drives.
-target("music_core")
-    set_kind("static")
-    set_default(false)
-    add_deps("muse_generated", "host_generated", "engrave")
-    add_files(path.join(native_dir, "music_core.cpp"), path.join(native_dir, "composition.cpp"))
-    add_engine_flags()
-
--- The stdio JSON-RPC host: every native/ source except music_core's and the
--- tests.  musescore-mcp-test is the same host with the async test hooks.
+-- The stdio JSON-RPC host and the same host with async test hooks.
 local function add_host_binary(name, basename)
     target(name)
         set_kind("binary")
         set_default(false)
         set_basename(basename)
-        add_deps("muse_generated", "host_generated", "music_core", "v2_registry", "v2_store")
+        add_deps("muse_generated", "v2_registry", "v2_store")
         add_files(path.join(native_dir, "*.cpp"))
-        remove_files(path.join(native_dir, "music_core.cpp"), path.join(native_dir, "composition.cpp"),
-            path.join(native_dir, "*_test.cpp"), path.join(native_dir, "registry.cpp"),
+        remove_files(path.join(native_dir, "*_test.cpp"), path.join(native_dir, "registry.cpp"),
             path.join(native_dir, "schema_defs.cpp"), path.join(native_dir, "registry_dump.cpp"),
             path.join(native_dir, "api_json.cpp"), path.join(native_dir, "api_edit_json.cpp"),
             path.join(native_dir, "host_api.cpp"))
-        add_engine_flags()
         add_packages("asio")
         if is_plat("windows") then
             add_defines("_WIN32_WINNT=0x0A00")
@@ -375,23 +273,11 @@ target("musescore_mcp_test")
     add_defines("MUSIC_ASYNC_TEST_HOOKS")
 target_end()
 
-target("music_core_test")
-    set_kind("binary")
-    set_default(false)
-    add_deps("muse_generated", "host_generated", "music_core")
-    add_files(path.join(native_dir, "music_core_test.cpp"))
-    add_engine_flags()
-    if is_plat("windows") then
-        add_files(path.join(native_dir, "utf8.manifest"))
-    end
-target_end()
-
 target("host_api_test")
     set_kind("binary")
     set_default(false)
     add_deps("muse_generated", "v2_store")
     add_files(path.join(native_dir, "host_api_test.cpp"))
-    add_engine_flags()
     if is_plat("windows") then
         add_files(path.join(native_dir, "utf8.manifest"))
     end
@@ -404,7 +290,6 @@ target("export_job_test")
     add_files(path.join(native_dir, "export_job_test.cpp"), path.join(native_dir, "api_output.cpp"),
         path.join(native_dir, "worker_v2.cpp"), path.join(native_dir, "background_job.cpp"),
         path.join(native_dir, "export_job.cpp"))
-    add_engine_flags()
     if is_plat("windows") then
         add_files(path.join(native_dir, "utf8.manifest"))
     end

@@ -18,7 +18,6 @@ import sys
 import time
 
 LANE_NAMES = [
-    "music_core",
     "host_api",
     "export_job",
     "runtime_assets",
@@ -62,7 +61,7 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         sys.exit(2)
     missing = []
     requirements = {
-        "music_core": ["music_core_test"], "host_api": ["host_api_test"],
+        "host_api": ["host_api_test"],
         "export_job": ["export_job_test", "musescore-mcp"],
         "runtime_assets": ["musescore-mcp-test"], "score_edit": ["score_edit_test"],
         "score_audio": ["score_audio_test"], "score_positions": ["score_positions_test"],
@@ -203,11 +202,6 @@ def run_lane(
         "res = main(); "
         "sys.exit(res if isinstance(res, int) else 0)"
     )
-
-    if lane == "music_core":
-        cmd = [str(build_dir / f"music_core_test{exe_suffix}"), str(assets), str(soundfont),
-               str(repo_root / "tests/engine_audio/sine.sf2")]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "host_api":
         cmd = [py, str(repo_root / "scripts/test_host_api.py"),
@@ -598,6 +592,10 @@ def main() -> None:
                 raise SystemExit(f"Archive hash mismatch: {name}")
     else:
         check_preflight_eol(repo_root)
+        include_check = subprocess.run([sys.executable, str(repo_root / "scripts/check_native_includes.py"),
+                                        "--engine-source", str(engine_source)], cwd=repo_root)
+        if include_check.returncode:
+            raise SystemExit("Error: native include boundary check failed")
     check_preflight_eol(engine_source)
 
     # Validate --only lanes if requested

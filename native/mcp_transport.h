@@ -24,12 +24,6 @@ public:
 
 using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json)>;
 
-// Legacy synchronous entry point, kept for the Qt/oldhost API. It wraps the
-// synchronous callback in an immediately-ready awaitable and delegates to the
-// asynchronous implementation below.
-int serve_stdio(const std::function<Json()>& list_tools,
-                const std::function<Json(const std::string&, const Json&)>& call_tool);
-
 // Asynchronous MCP stdio server. The local io_context is run on the caller's
 // SESSION thread; list_tools, call_tool and shutdown are invoked there, so a
 // separate Engine owner thread may post completions back to this context.
