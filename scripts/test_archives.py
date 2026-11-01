@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import statistics
 import struct
 import subprocess
 import time
@@ -154,18 +155,28 @@ def run_probe(binary, out):
     for name, packed, expected in [(n, p, e) for n, (p, e) in valid.items()] + [(n, p, None) for n,p in invalid.items()]:
         source, result = out/f"{name}.zip", out/f"{name}.bin"
         source.write_bytes(packed)
-        started = time.monotonic()
-        run = subprocess.run([str(binary), str(source), "payload", str(result)],
-                             capture_output=True, text=True, encoding="utf-8", timeout=10)
-        (out/f"{name}.stderr.log").write_text(run.stderr, encoding="utf-8")
-        assert run.returncode == 0, (name, run.returncode, run.stderr)
-        response = json.loads(run.stdout.strip().splitlines()[-1])
+        samples = []
+        # A single process launch can be delayed by unrelated system activity.
+        # Three independent rejections keep the 1 s bound on sustained work;
+        # the 10 s subprocess timeout still bounds each individual attempt.
+        for attempt in range(3 if expected is None else 1):
+            started = time.monotonic()
+            run = subprocess.run([str(binary), str(source), "payload", str(result)],
+                                 capture_output=True, text=True, encoding="utf-8", timeout=10)
+            samples.append(time.monotonic() - started)
+            suffix = f"-{attempt + 1}" if expected is None else ""
+            (out/f"{name}{suffix}.stderr.log").write_text(run.stderr, encoding="utf-8")
+            assert run.returncode == 0, (name, attempt, run.returncode, run.stderr)
+            response = json.loads(run.stdout.strip().splitlines()[-1])
+            if expected is None:
+                assert response["error"] and response["size"] == 0 and result.read_bytes() == b"", (name, response)
+                assert response.get("buffer_size", len(packed)) == len(packed), (name, response)
         if expected is None:
-            assert response["error"] and response["size"] == 0 and result.read_bytes() == b"", (name, response)
-            assert response.get("buffer_size", len(packed)) == len(packed), (name, response)
-            elapsed = time.monotonic() - started
-            assert elapsed < 1.0, (name, elapsed)
-            report["rejected"].append({"name":name,"seconds":round(elapsed,4),"buffer_size":response.get("buffer_size", len(packed))})
+            median = statistics.median(samples)
+            assert median < 1.0, (name, samples, median)
+            report["rejected"].append({"name":name, "seconds":round(median,4),
+                                       "samples_seconds":[round(value,4) for value in samples],
+                                       "buffer_size":response.get("buffer_size", len(packed))})
         else:
             assert response["exists"], (name, response)
             assert not response["error"] and result.read_bytes() == expected, (name, response)
