@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <set>
 
 namespace music::v2 {
@@ -18,9 +19,39 @@ template<class T> T engine_value(engrave::Result<T> result) {
     return std::move(*result);
 }
 
-std::vector<std::byte> bytes(const std::string& s) {
-    std::vector<std::byte> result(s.size());
-    if (!s.empty()) std::memcpy(result.data(), s.data(), s.size());
+void check_capture_cancelled(const engrave::CaptureOptions& capture) {
+    if (capture.cancelled && capture.cancelled())
+        throw detail::DecodeError{HostError{"Cancelled", "export capture cancelled"}};
+}
+
+// Keep only one position object at a time in the JSON encoder. The engine's
+// payload and this byte vector coexist and share the reserved snapshot budget.
+std::vector<std::byte> position_json(const engrave::Positions& positions, const engrave::CaptureOptions& capture) {
+    const auto limit = capture.max_bytes.value_or(std::numeric_limits<std::uint64_t>::max());
+    const auto payload = engrave::position_payload_bytes(positions);
+    if (payload > limit) throw detail::DecodeError{HostError{"ResourceLimit", "position payload exceeds snapshot budget"}};
+    const auto available = limit - payload;
+    std::vector<std::byte> result;
+    auto append = [&](const std::string& part) {
+        check_capture_cancelled(capture);
+        if (part.size() > available - result.size())
+            throw detail::DecodeError{HostError{"ResourceLimit", "position JSON exceeds snapshot budget"}};
+        const auto* data = reinterpret_cast<const std::byte*>(part.data());
+        result.insert(result.end(), data, data + part.size());
+    };
+    append("{\"page_size\":{\"width\":" + Json(positions.page_width).dump() +
+           ",\"height\":" + Json(positions.page_height).dump() + "},\"elements\":[");
+    bool first = true;
+    for (const auto& e : positions.elements) {
+        if (!first) append(","); first = false;
+        append(Json{{"id", e.id}, {"x", e.x}, {"y", e.y}, {"sx", e.sx}, {"sy", e.sy}, {"page", e.page}}.dump());
+    }
+    append("],\"events\":["); first = true;
+    for (const auto& e : positions.events) {
+        if (!first) append(","); first = false;
+        append(Json{{"elid", e.elid}, {"position", e.position}}.dump());
+    }
+    append("]}");
     return result;
 }
 
@@ -177,7 +208,7 @@ Json encode(const Artifact& artifact) {
 }
 
 Result<ExportSnapshot> capture_export(engrave::Document& document, RuntimeSnapshot runtime,
-                                      const ExportRequest& request) {
+                                      const ExportRequest& request, const engrave::CaptureOptions& capture) {
     try {
         ExportSnapshot snapshot;
         snapshot.source_revision = document.revision();
@@ -185,10 +216,23 @@ Result<ExportSnapshot> capture_export(engrave::Document& document, RuntimeSnapsh
             return std::unexpected(HostError{"RevisionConflict", "export revision is no longer current", {}, request.document, snapshot.source_revision});
         snapshot.request = request;
         snapshot.runtime = std::move(runtime);
+        snapshot.capture_budget = capture.max_bytes.value_or(std::numeric_limits<std::uint64_t>::max());
+        check_capture_cancelled(capture);
         if (request.kind == ExportKind::Score) {
-            snapshot.captured_score_bytes = engine_value(document.export_score(request.score_options));
+            auto options = request.score_options;
+            options.capture = capture;
+            auto result = document.export_score(options);
+            if (!result && result.error().code == engrave::ErrorCode::Unsupported && options.format == engrave::Format::Midi) {
+                check_capture_cancelled(capture);
+                options.capture = {};
+                snapshot.snapshot_budget_enforced = false;
+                result = document.export_score(options);
+            }
+            snapshot.captured_score_bytes = engine_value(std::move(result));
+            check_capture_cancelled(capture);
         } else if (request.kind == ExportKind::Positions) {
-            snapshot.captured_positions_json = bytes(encode(engine_value(document.positions(request.position_kind, request.position_score))).dump());
+            auto positions = engine_value(document.positions(request.position_kind, request.position_score, capture));
+            snapshot.captured_positions_json = position_json(positions, capture);
         } else {
             if (request.kind == ExportKind::Audio) {
                 snapshot.effective_audio = effective_mix(document, request, snapshot.runtime);
@@ -200,8 +244,10 @@ Result<ExportSnapshot> capture_export(engrave::Document& document, RuntimeSnapsh
                     invalid("render page range is outside the score");
             }
             engrave::ExportOptions options; options.format = engrave::Format::Mscz;
+            options.capture = capture;
             snapshot.mscz = engine_value(document.export_score(options));
         }
+        check_capture_cancelled(capture);
         return snapshot;
     } catch (const detail::DecodeError& e) { return std::unexpected(e.error); }
 }

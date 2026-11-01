@@ -10,6 +10,21 @@
 #include <vector>
 
 namespace music::v2 {
+// The engine retains its completed cache file throughout the sink callback.
+// Reserve equal halves for that file and the staged copy, so their combined
+// logical file sizes cannot exceed the job's output budget.
+inline constexpr std::uint64_t audio_file_budget(std::uint64_t output_budget) noexcept {
+    return output_budget / 2;
+}
+
+// Cumulative writes include header rewrites, unlike the file extent. This is a
+// write-traffic limit, not additional disk space; the file cap remains strict.
+inline constexpr std::uint64_t audio_write_budget(std::uint64_t file_budget) noexcept {
+    constexpr std::uint64_t rewrite_slack = 1024 * 1024;
+    constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
+    return file_budget > maximum - rewrite_slack ? maximum : file_budget + rewrite_slack;
+}
+
 // Estimate the same stereo encoding settings used by the public engine API.
 // Duration is either the nearest-second expanded outline or a millisecond
 // position on the expanded timeline. Add half a second for rounding and the
@@ -41,7 +56,7 @@ inline std::uint64_t projected_audio_bytes(const engrave::AudioOptions& options,
 // that conversion directly. A measure position at the same unrolled tick is
 // the engine's own millisecond-rounded conversion; use it only when every
 // laid-out measure maps one-to-one to the outline and the end is a boundary.
-// Otherwise the caller must omit this projection and rely on the cache guard.
+// Otherwise the caller must omit this projection and rely on the engine's quota.
 inline std::optional<double> unexpanded_audio_seconds(const engrave::Outline& outline,
                                                         const engrave::Positions& positions) {
     constexpr std::int64_t ticks_per_whole = 1920; // pinned engine: 480 ticks per quarter

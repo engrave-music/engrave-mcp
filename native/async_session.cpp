@@ -30,8 +30,10 @@ struct HandlerContext {
     std::optional<ExportSnapshot> snapshot;
     std::optional<ExportJobs::Reservation> reservation;
     std::chrono::steady_clock::time_point submitted;
+    std::shared_ptr<std::atomic<bool>> request_cancelled;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     std::atomic<std::uint64_t>* capture_count = nullptr;
+    std::atomic<bool>* capture_polling = nullptr;
 #endif
 };
 
@@ -49,8 +51,14 @@ Json capture(void* p, const Json& a) {
     auto& context = *static_cast<HandlerContext*>(p);
     auto request = decode_export(a);
     if (!request) return error_envelope(request.error());
-    auto reservation = context.jobs->reserve(*request, context.submitted);
+    auto submitted = context.submitted;
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+    if (request->destination.path.string().find(".test-capture-deadline") != std::string::npos)
+        submitted -= std::chrono::milliseconds(119500);
+#endif
+    auto reservation = context.jobs->reserve(*request, submitted);
     if (!reservation) return error_envelope(reservation.error());
+    if (auto stopped = reservation->stop_reason()) return error_envelope(*stopped);
     auto runtime = context.host->capture_runtime();
     if (!runtime) return error_envelope(runtime.error());
     auto result = context.host->with_document(request->document, request->expected_revision,
@@ -58,8 +66,37 @@ Json capture(void* p, const Json& a) {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
             ++*context.capture_count;
 #endif
-            auto snapshot = capture_export(document, std::move(*runtime), *request);
-            if (!snapshot) return std::unexpected(snapshot.error());
+            engrave::CaptureOptions options;
+            options.max_bytes = reservation->budget();
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+            int polls = 0;
+            const auto test_path = request->destination.path.string();
+            const bool slow_capture = test_path.find(".test-capture-slow") != std::string::npos ||
+                                      test_path.find(".test-capture-deadline") != std::string::npos;
+#endif
+            options.cancelled = [&] {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                if (slow_capture && ++polls == 2) {
+                    context.capture_polling->store(true, std::memory_order_release);
+                    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+                    while (!context.request_cancelled->load(std::memory_order_acquire) &&
+                           !reservation->stop_reason() && std::chrono::steady_clock::now() < until)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    context.capture_polling->store(false, std::memory_order_release);
+                }
+#endif
+                return (context.request_cancelled && context.request_cancelled->load(std::memory_order_acquire)) ||
+                       reservation->stop_reason().has_value();
+            };
+            auto snapshot = capture_export(document, std::move(*runtime), *request, options);
+            if (!snapshot) {
+                if (snapshot.error().code == "Cancelled") {
+                    if (context.request_cancelled && context.request_cancelled->load(std::memory_order_acquire))
+                        return std::unexpected(HostError{"Cancelled", "export capture cancelled"});
+                    if (auto stopped = reservation->stop_reason()) return std::unexpected(*stopped);
+                }
+                return std::unexpected(snapshot.error());
+            }
             context.snapshot = std::move(*snapshot);
             return {};
         });
@@ -116,6 +153,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     std::atomic<bool> test_owner_busy{false};
     std::atomic<std::uint64_t> test_capture_count{0};
+    std::atomic<bool> test_capture_polling{false};
 #endif
 
     explicit Impl(engrave::EngineOptions options) {
@@ -166,20 +204,22 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     }
 
     template<class T, class Function>
-    asio::awaitable<T> dispatch(asio::io_context& target, Function function, bool owner_task) {
+    asio::awaitable<T> dispatch(asio::io_context& target, Function function, bool owner_task,
+                                std::shared_ptr<std::atomic<bool>> running_cancel = {}) {
         if (closing) throw asio::system_error(asio::error::operation_aborted);
         if (owner_task && owner_pending >= 64)
             throw ToolCallError("ResourceLimit", "Engine queue full (limit 64)");
         auto self = shared_from_this();
         auto token = asio::use_awaitable;
         co_return co_await asio::async_initiate<decltype(token), void(std::exception_ptr, T)>(
-            [self, &target, function = std::move(function), owner_task](auto handler) mutable {
+            [self, &target, function = std::move(function), owner_task, running_cancel](auto handler) mutable {
                 auto executor = asio::get_associated_executor(handler);
                 auto work = asio::make_work_guard(executor);
                 auto slot = asio::get_associated_cancellation_slot(handler);
                 auto state = std::make_shared<std::atomic<int>>(0); // queued, running, cancelled
-                if (slot.is_connected()) slot.assign([state](asio::cancellation_type type) {
+                if (slot.is_connected()) slot.assign([state, running_cancel](asio::cancellation_type type) {
                     if (type != asio::cancellation_type::none) {
+                        if (running_cancel) running_cancel->store(true, std::memory_order_release);
                         int queued = 0;
                         state->compare_exchange_strong(queued, 2);
                     }
@@ -187,7 +227,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 if (owner_task) ++self->owner_pending;
                 try {
                     asio::post(target, [self, function = std::move(function), handler = std::move(handler),
-                                        executor, work = std::move(work), slot, state, owner_task]() mutable {
+                                        executor, work = std::move(work), slot, state, owner_task, running_cancel]() mutable {
                         std::exception_ptr error;
                         T result{};
                         try {
@@ -195,6 +235,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                             if (!state->compare_exchange_strong(queued, 1) || self->stopping.load(std::memory_order_acquire))
                                 throw asio::system_error(asio::error::operation_aborted);
                             result = function();
+                            if (running_cancel && running_cancel->load(std::memory_order_acquire))
+                                throw asio::system_error(asio::error::operation_aborted);
                         } catch (...) { error = std::current_exception(); }
                         asio::post(executor, [self, handler = std::move(handler), work = std::move(work), slot,
                                               owner_task, error, result = std::move(result)]() mutable {
@@ -281,6 +323,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments) {
     if (self->closing) throw asio::system_error(asio::error::operation_aborted);
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     if (name == "test_capture_count") co_return Json{{"ok", true}, {"count", self->test_capture_count.load()}};
+    if (name == "test_capture_state") co_return Json{{"ok", true}, {"polling", self->test_capture_polling.load()}};
     if (name == "test_owner_state") co_return Json{{"ok", true}, {"busy", self->test_owner_busy.load()}};
     if (name == "test_owner_sleep") {
         co_return co_await self->dispatch<Json>(self->owner_io, [self] {
@@ -301,14 +344,17 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments) {
         }, false);
     }
     const auto submitted = std::chrono::steady_clock::now();
-    auto result = co_await self->dispatch<Impl::OwnerResult>(self->owner_io, [self, handler, submitted, arguments = std::move(arguments)] {
+    auto capture_cancel = spec->scheduling == Scheduling::ExportJob ? std::make_shared<std::atomic<bool>>(false) : nullptr;
+    auto result = co_await self->dispatch<Impl::OwnerResult>(self->owner_io, [self, handler, submitted, capture_cancel, arguments = std::move(arguments)] {
         HandlerContext context; context.host = self->host.get(); context.jobs = &self->jobs; context.submitted = submitted;
+        context.request_cancelled = capture_cancel;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
         context.capture_count = &self->test_capture_count;
+        context.capture_polling = &self->test_capture_polling;
 #endif
         auto payload = handler(&context, arguments);
         return Impl::OwnerResult{std::move(payload), std::move(context.snapshot), std::move(context.reservation)};
-    }, true);
+    }, true, capture_cancel);
     if (spec->scheduling != Scheduling::ExportJob || !result.snapshot) co_return std::move(result.payload);
     if (!result.reservation) co_return error_envelope({"EngineFailure", "captured export has no reservation"});
     co_return co_await self->submit(std::move(*result.snapshot), std::move(*result.reservation));

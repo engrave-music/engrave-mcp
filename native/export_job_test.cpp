@@ -117,6 +117,11 @@ int main(int argc, char** argv) {
 #endif
                 std::abort();
             }
+            if (target.find(".test-cancelled") != std::string::npos) {
+                std::ofstream result(path.parent_path() / "result.json");
+                result << Json{{"version", 2}, {"ok", false}, {"error", {{"code", "Cancelled"}, {"message", "capture cancelled"}}}}.dump();
+                return 1;
+            }
             if (target.find(".test-slow") != std::string::npos)
                 std::this_thread::sleep_for(std::chrono::seconds(2));
             if (target.find(".test-audio-grow") != std::string::npos) {
@@ -187,6 +192,8 @@ int main(int argc, char** argv) {
         }
         require(argc == 4, "usage: export_job_test ASSETS SOUNDFONT OUTPUT_DIR");
         const auto output_dir = fs::absolute(fs::u8path(argv[3])); fs::create_directories(output_dir);
+        const auto scratch = music::create_private_directory(output_dir);
+        struct Cleanup { fs::path p; ~Cleanup() { std::error_code ec; fs::remove_all(p, ec); } } cleanup{scratch};
         engrave::EngineOptions options;
         options.resources = fs::absolute(fs::u8path(argv[1]));
         options.soundfonts = {fs::absolute(fs::u8path(argv[2]))};
@@ -217,6 +224,8 @@ int main(int argc, char** argv) {
                 auto captured = capture_export(document, *runtime, req);
                 if (!captured) return std::unexpected(captured.error());
                 require(captured->source_revision == revision && !captured->captured_score_bytes.empty(), "score capture is empty");
+                require(captured->snapshot_budget_enforced == (req.score_options.format != engrave::Format::Midi),
+                        "capture budget enforcement flag is incorrect");
                 require(captured->captured_score_bytes == *direct, std::string(format) + " score capture differs");
                 auto result = run_snapshot(*captured);
                 require(result.size() == 1 && result[0] == *direct, std::string(format) + " worker score differs");
@@ -255,6 +264,126 @@ int main(int argc, char** argv) {
                 return {};
             });
             require(bool(visited), visited ? "" : visited.error().message);
+        }
+        {
+            // Exercise admission's actual remaining allowance at the engine
+            // boundary, including the explicit legacy MIDI fallback.
+            JobLimits limits; limits.snapshot_bytes = 32;
+            ExportJobs limited(limits);
+            for (const char* format : {"mscz", "mscx", "musicxml", "mxl"}) {
+                auto req = request(doc, "score", {{"format", format}});
+                req.destination.path = scratch / (std::string("capture-limit-") + format);
+                auto held = limited.reserve(req); require(bool(held), "capture reservation failed");
+                auto checked = host->with_document(doc, revision, [&](engrave::Document& document) -> Result<void> {
+                    engrave::CaptureOptions cap; cap.max_bytes = held->budget();
+                    auto capture = capture_export(document, *runtime, req, cap);
+                    require(!capture && capture.error().code == "ResourceLimit", "engine capture exceeded reservation");
+                    return {};
+                });
+                require(bool(checked) && !fs::exists(req.destination.path), "bounded capture published output");
+            }
+            for (const char* kind : {"render", "audio"}) {
+                auto req = request(doc, kind, {{"format", std::string(kind) == "render" ? "pdf" : "wav"}});
+                req.destination.path = scratch / (std::string("capture-limit-") + kind);
+                auto held = limited.reserve(req); require(bool(held), "snapshot reservation failed");
+                auto checked = host->with_document(doc, revision, [&](engrave::Document& document) -> Result<void> {
+                    engrave::CaptureOptions cap; cap.max_bytes = held->budget();
+                    auto capture = capture_export(document, *runtime, req, cap);
+                    require(!capture && capture.error().code == "ResourceLimit", "render/audio snapshot exceeded reservation");
+                    return {};
+                });
+                require(bool(checked) && !fs::exists(req.destination.path), "bounded snapshot published output");
+            }
+            auto req = request(doc, "score", {{"format", "midi"}});
+            req.destination.path = scratch / "capture-limit.mid";
+            auto held = limited.reserve(req); require(bool(held), "MIDI reservation failed");
+            auto checked = host->with_document(doc, revision, [&](engrave::Document& document) -> Result<void> {
+                engrave::CaptureOptions cap; cap.max_bytes = held->budget();
+                auto capture = capture_export(document, *runtime, req, cap);
+                require(capture && !capture->snapshot_budget_enforced && capture->captured_score_bytes.size() > held->budget(),
+                        "MIDI fallback was not recorded");
+                auto submitted = limited.submit(std::move(*held), std::move(*capture));
+                require(!submitted && submitted.error().code == "ResourceLimit", "oversize MIDI was not charged after capture");
+                return {};
+            });
+            require(bool(checked) && !fs::exists(req.destination.path), "oversize MIDI published output");
+        }
+        {
+            ExportJobs manager(JobLimits{});
+            auto req = request(doc, "score", {{"format", "midi"}});
+            req.destination.path = scratch / "budget-fallback.mid";
+            auto held = manager.reserve(req); require(bool(held), "MIDI fallback reservation failed");
+            auto checked = host->with_document(doc, revision, [&](engrave::Document& document) -> Result<void> {
+                engrave::CaptureOptions cap; cap.max_bytes = held->budget();
+                auto capture = capture_export(document, *runtime, req, cap);
+                require(capture && !capture->snapshot_budget_enforced, "MIDI fallback not recorded");
+                auto submitted = manager.submit(std::move(*held), std::move(*capture));
+                require(submitted && !submitted->snapshot_budget_enforced, "job lost MIDI fallback record");
+                auto status = wait_job(manager, submitted->job);
+                require(status.state == JobState::Succeeded && !status.snapshot_budget_enforced && fs::exists(req.destination.path),
+                        "MIDI fallback job failed");
+                return {};
+            });
+            require(bool(checked), "MIDI fallback test failed");
+        }
+        {
+            auto req = request(doc, "score", {{"format", "musicxml"}});
+            req.destination.path = scratch / "cancelled-capture.musicxml";
+            ExportJobs manager(JobLimits{});
+            auto held = manager.reserve(req); require(bool(held), "cancel capture reservation failed");
+            auto checked = host->with_document(doc, revision, [&](engrave::Document& document) -> Result<void> {
+                int polls = 0;
+                engrave::CaptureOptions cap; cap.max_bytes = held->budget(); cap.cancelled = [&] { return ++polls >= 3; };
+                auto capture = capture_export(document, *runtime, req, cap);
+                require(!capture && capture.error().code == "Cancelled" && polls >= 3, "engine capture cancellation was lost");
+                return {};
+            });
+            require(bool(checked) && !fs::exists(req.destination.path), "cancelled capture published output");
+        }
+        {
+            auto req = request(doc, "positions", {{"position_kind", "segment"}});
+            auto checked = host->with_document(doc, revision, [&](engrave::Document& document) -> Result<void> {
+                auto payload = document.positions(req.position_kind, req.position_score);
+                require(bool(payload), "position sizing failed");
+                auto baseline = capture_export(document, *runtime, req);
+                require(bool(baseline), "position baseline failed");
+                const auto needed = engrave::position_payload_bytes(*payload) + baseline->captured_positions_json.size();
+                engrave::CaptureOptions cap; cap.max_bytes = needed - 1;
+                auto rejected = capture_export(document, *runtime, req, cap);
+                require(!rejected && rejected.error().code == "ResourceLimit", "position JSON exceeded shared allowance");
+                cap.max_bytes = needed;
+                auto accepted = capture_export(document, *runtime, req, cap);
+                require(accepted && accepted->captured_positions_json == baseline->captured_positions_json,
+                        "position JSON was not stable at its allowance");
+                return {};
+            });
+            require(bool(checked), "position budget test failed");
+        }
+        {
+            auto created = host->create_document({{"template_id", "Treble_Clef"}});
+            require(created.at("ok").get<bool>(), "cannot create large position fixture");
+            const auto large_doc = created.at("document").get<std::string>();
+            auto expanded = host->edit({{"document", large_doc}, {"ops", Json::array({Json{{"op", "insert_measures"}, {"count", 512}}})}});
+            require(expanded.at("ok").get<bool>(), expanded.dump());
+            const auto rev = std::stoull(expanded.at("revision").get<std::string>());
+            auto req = request(large_doc, "positions", {{"position_kind", "measure"}});
+            auto checked = host->with_document(large_doc, rev, [&](engrave::Document& document) -> Result<void> {
+                auto payload = document.positions(req.position_kind, req.position_score);
+                require(payload && payload->elements.size() >= 512, "large position fixture is too small");
+                auto baseline = capture_export(document, *runtime, req);
+                require(bool(baseline), "large position baseline failed");
+                const auto needed = engrave::position_payload_bytes(*payload) + baseline->captured_positions_json.size();
+                engrave::CaptureOptions cap; cap.max_bytes = needed - 1;
+                auto denied = capture_export(document, *runtime, req, cap);
+                require(!denied && denied.error().code == "ResourceLimit", "large position JSON exceeded budget");
+                cap.max_bytes = needed;
+                auto accepted = capture_export(document, *runtime, req, cap);
+                require(accepted && accepted->captured_positions_json == baseline->captured_positions_json,
+                        "large position JSON differed at its budget");
+                return {};
+            });
+            require(bool(checked), "large position test failed");
+            require(host->close({{"document", large_doc}}).at("ok").get<bool>(), "cannot close large fixture");
         }
         auto repeated = host->open({{"path", path_text(fs::absolute("fixtures/golden/repeat70.mscx"))}});
         require(repeated.at("ok").get<bool>(), repeated.dump());
@@ -427,9 +556,21 @@ int main(int argc, char** argv) {
         invalid["destination"]["kind"] = "directory"; invalid["expected_revision"] = "18446744073709551616";
         require(!decode_export(invalid), "overflow revision accepted");
 
-        const auto scratch = music::create_private_directory(output_dir);
         {
-            JobLimits limits; limits.output_bytes = plain_projection;
+            // The no-repeat worker's positions coexist with the retained MSCZ.
+            JobLimits limits; limits.snapshot_bytes = 2 * plain_audio->mscz.size();
+            ExportJobs limited(limits);
+            auto holding = submit(limited, *plain_audio, scratch / "position-reservation.test-slow.wav");
+            require(wait_job(limited, holding.job, true).state == JobState::Running, "position reservation worker did not run");
+            auto next = plain_audio->request; next.destination.path = scratch / "position-reservation-next.wav";
+            auto denied = limited.reserve(next);
+            require(!denied && denied.error().code == "ResourceLimit", "worker position allowance was not retained");
+            require(bool(limited.cancel(holding.job)) && wait_job(limited, holding.job).state == JobState::Cancelled,
+                    "position reservation cancellation failed");
+            require(bool(limited.reserve(next)), "worker position allowance was not released");
+        }
+        {
+            JobLimits limits; limits.output_bytes = 2 * plain_projection;
             ExportJobs bounded(limits);
             const auto plain_path = scratch / "repeat-off-bounded.wav";
             const auto repeated_path = scratch / "repeat-on-rejected.wav";
@@ -443,7 +584,7 @@ int main(int argc, char** argv) {
                     "bounded repeated job did not use the expanded projection");
         }
         {
-            JobLimits limits; limits.output_bytes = repeat_projection;
+            JobLimits limits; limits.output_bytes = 2 * repeat_projection;
             ExportJobs bounded(limits);
             const auto path = scratch / "repeat-on-bounded.wav";
             auto repeated = submit(bounded, *repeat_audio, path);
@@ -451,7 +592,6 @@ int main(int argc, char** argv) {
                     fs::file_size(path) <= repeat_projection, "expanded job failed at its projected budget");
         }
         plain_audio.reset(); repeat_audio.reset();
-        struct Cleanup { fs::path p; ~Cleanup() { std::error_code ec; fs::remove_all(p, ec); } } cleanup{scratch};
         {
             JobLimits limits; limits.output_bytes = 4096;
             ExportJobs limited(limits);
@@ -614,6 +754,11 @@ int main(int argc, char** argv) {
         auto crash_status = wait_job(jobs, crashed.job);
         require(crash_status.state == JobState::Failed && crash_status.error && crash_status.error->code == "WorkerFailed" &&
                 !fs::exists(scratch / "worker.test-crash"), "worker crash published output or lost its failure");
+        auto cancelled = submit(jobs, *captured_score, scratch / "worker.test-cancelled");
+        auto cancelled_status = wait_job(jobs, cancelled.job);
+        require(cancelled_status.state == JobState::Cancelled && cancelled_status.error &&
+                cancelled_status.error->code == "Cancelled" && !fs::exists(scratch / "worker.test-cancelled"),
+                "worker cancellation did not produce a cancelled job");
         {
             JobLimits limits; limits.deadline = std::chrono::milliseconds(500);
             ExportJobs expiring(limits);

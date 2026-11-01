@@ -40,6 +40,8 @@ int main(int argc, char** argv) {
                              {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
             tools.push_back({{"name", "test_capture_count"}, {"description", "Test-only capture counter"},
                              {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
+            tools.push_back({{"name", "test_capture_state"}, {"description", "Test-only capture polling state"},
+                             {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
 #endif
             return tools;
         },

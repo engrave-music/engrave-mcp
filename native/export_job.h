@@ -10,6 +10,7 @@ struct JobStatus {
     std::string job;
     JobState state=JobState::Queued;
     std::uint64_t source_revision=0;
+    bool snapshot_budget_enforced=true;
     std::vector<Artifact> artifacts;
     std::optional<HostError> error;
 };
@@ -29,6 +30,10 @@ public:
         Reservation& operator=(Reservation&&) noexcept;
         Reservation(const Reservation&) = delete;
         Reservation& operator=(const Reservation&) = delete;
+        std::uint64_t budget() const;
+        // Empty while capture can continue; shutdown and deadline are polled by
+        // the engine callback without calling back into the engine.
+        std::optional<HostError> stop_reason() const;
     private:
         friend class ExportJobs;
         struct State;

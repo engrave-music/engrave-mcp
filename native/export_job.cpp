@@ -1,9 +1,11 @@
 #include "export_job.h"
 #include "api_json_internal.h"
 #include "background_job.h"
+#include "audio_budget.h"
 #include "worker_v2.h"
 
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <fstream>
@@ -94,7 +96,8 @@ struct Shared {
     std::size_t active = 0, running = 0;
     std::mutex mutex;
     std::condition_variable changed, callbacks_ready;
-    bool stopping = false, coordinator_done = false;
+    std::atomic<bool> stopping{false};
+    bool coordinator_done = false;
     std::unordered_map<std::string, std::shared_ptr<Job>> jobs;
     std::unordered_map<std::uint64_t, CaptureReservation> captures;
     std::deque<std::string> order;
@@ -252,7 +255,7 @@ void coordinator(std::shared_ptr<Shared> shared) {
             try {
                 if (!job->cancel && Clock::now() - job->submitted >= shared->limits.deadline) job->timeout = true;
                 if (!job->cancel && !job->timeout && job->snapshot.request.kind == ExportKind::Audio &&
-                    audio_cache_exceeds(*job, shared->limits.output_bytes)) job->audio_limit = true;
+                    audio_cache_exceeds(*job, audio_file_budget(shared->limits.output_bytes))) job->audio_limit = true;
                 if (job->cancel || job->timeout || job->audio_limit) job->process->terminate();
                 auto exited = job->process->poll();
                 if (!exited) continue;
@@ -264,7 +267,7 @@ void coordinator(std::shared_ptr<Shared> shared) {
                            HostError{job->cancel ? "Cancelled" : "DeadlineExceeded", job->cancel ? "job cancelled" : "job deadline exceeded"});
                 } else {
                     try { publish(*shared, *job, *exited); finish(*shared, *job, JobState::Succeeded); }
-                    catch (const Failure& e) { finish(*shared, *job, JobState::Failed, e.error); }
+                    catch (const Failure& e) { finish(*shared, *job, e.error.code == "Cancelled" ? JobState::Cancelled : JobState::Failed, e.error); }
                 }
             } catch (const std::exception& e) {
                 --shared->running;
@@ -321,6 +324,14 @@ ExportJobs::Reservation::~Reservation() = default;
 ExportJobs::Reservation::Reservation(Reservation&&) noexcept = default;
 ExportJobs::Reservation& ExportJobs::Reservation::operator=(Reservation&&) noexcept = default;
 ExportJobs::Reservation::Reservation(std::unique_ptr<State> state) : state_(std::move(state)) {}
+std::uint64_t ExportJobs::Reservation::budget() const { return state_ ? state_->budget : 0; }
+std::optional<HostError> ExportJobs::Reservation::stop_reason() const {
+    if (!state_ || state_->shared->stopping.load(std::memory_order_acquire))
+        return HostError{"Cancelled", "job manager is shutting down"};
+    if (Clock::now() - state_->submitted >= state_->shared->limits.deadline)
+        return HostError{"DeadlineExceeded", "job deadline exceeded during capture"};
+    return {};
+}
 
 struct ExportJobs::Impl {
     explicit Impl(JobLimits limits) : shared(std::make_shared<Shared>(limits)) {
@@ -434,6 +445,13 @@ Result<JobStatus> ExportJobs::submit(Reservation reservation, ExportSnapshot sna
                 return std::unexpected(HostError{"ResourceLimit", "snapshot exceeds reserved byte budget"});
             size += n;
         }
+        // No-repeat audio may capture positions in the worker to estimate its
+        // duration. Keep a separate part of the original reservation charged
+        // for that concurrent payload until the job finishes. If it is too
+        // small, the worker skips projection and relies on the audio quota.
+        const auto position_budget = snapshot.request.kind == ExportKind::Audio && !snapshot.request.audio_options.use_repeats
+            ? std::min(size, state->budget - size) : 0;
+        snapshot.capture_budget = position_budget;
         if ((snapshot.request.kind == ExportKind::Render || snapshot.request.kind == ExportKind::Audio) && snapshot.mscz.size() > engrave::max_input_bytes)
             return std::unexpected(HostError{"ResourceLimit", "snapshot exceeds engine input limit"});
         if ((snapshot.request.kind == ExportKind::Score && snapshot.captured_score_bytes.size() > impl_->shared->limits.output_bytes) ||
@@ -448,9 +466,10 @@ Result<JobStatus> ExportJobs::submit(Reservation reservation, ExportSnapshot sna
             return std::unexpected(HostError{"DeadlineExceeded", "job deadline exceeded during capture"});
         auto job = std::make_shared<Job>();
         job->destination = state->destination; job->snapshot = std::move(snapshot);
-        job->snapshot_size = size; job->submitted = state->submitted; job->completion = std::move(completion);
+        job->snapshot_size = size + position_budget; job->submitted = state->submitted; job->completion = std::move(completion);
         job->status.job = "job-" + shared->session + "-" + std::to_string(++shared->next);
         job->status.source_revision = job->snapshot.source_revision;
+        job->status.snapshot_budget_enforced = job->snapshot.snapshot_budget_enforced;
         JobStatus status = job->status;
         while (shared->order.size() >= retained_jobs) {
             auto oldest = std::find_if(shared->order.begin(), shared->order.end(), [&](const auto& id) { return terminal(shared->jobs.at(id)->status.state); });
@@ -460,7 +479,7 @@ Result<JobStatus> ExportJobs::submit(Reservation reservation, ExportSnapshot sna
         shared->jobs.emplace(job->status.job, job);
         try { shared->order.push_back(job->status.job); }
         catch (...) { shared->jobs.erase(job->status.job); throw; }
-        shared->snapshot_bytes -= state->budget - size;
+        shared->snapshot_bytes -= state->budget - job->snapshot_size;
         shared->captures.erase(state->id);
         job->reserved = true;
         shared->changed.notify_all();

@@ -168,6 +168,22 @@ async def run(args):
 
         doc = (await client.tool("score_create", {"template_id": "Treble_Clef"}))["document"]
         if args.test_hooks:
+            capture_path = out / "cancel.test-capture-slow.musicxml"
+            capture_path.unlink(missing_ok=True)
+            capture_id, capture_future = client.begin("tools/call", {"name": "score_export", "arguments":
+                export(doc, capture_path, "run")})
+            await client.proc.stdin.drain()
+            for _ in range(300):
+                if (await client.tool("test_capture_state", {}))["polling"]: break
+                await asyncio.sleep(.01)
+            else: raise AssertionError("engine capture did not enter its cancellation callback")
+            await client.notify("notifications/cancelled", {"requestId": capture_id})
+            capture_result = await asyncio.wait_for(capture_future, 10)
+            assert capture_result["error"]["code"] == -32800 and not capture_path.exists(), capture_result
+            deadline_path = out / "deadline.test-capture-deadline.musicxml"
+            deadline_path.unlink(missing_ok=True)
+            deadline_result = await client.tool("score_export", export(doc, deadline_path, "run"), error=True)
+            assert deadline_result["error"]["code"] == "DeadlineExceeded" and not deadline_path.exists(), deadline_result
             jobs = []
             for i in range(8):
                 path = out / f"capacity-{i}.test-slow.musicxml"
@@ -264,7 +280,8 @@ async def run(args):
             assert not shutdown_path.exists() and not run_path.exists() and not list(out.glob(".musescore-job-*"))
             assert all(not child.is_running() for child in children), [child.pid for child in children]
             evidence.update(queue_limit=8, running_limit=2, queued_and_running_cancel=True,
-                            request_cancel=True, queued_owner_cancel=True, running_owner_committed=True,
+                            request_cancel=True, capture_cancel=True, capture_deadline=True,
+                            queued_owner_cancel=True, running_owner_committed=True,
                             job_manager_responsive_while_owner_busy=True, eof_reaped_worker=True,
                             destination_reservation=True)
         else:

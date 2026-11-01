@@ -86,8 +86,8 @@ def main():
     for repeats, seconds in ((False, 4), (True, expanded_duration)):
         options = {"format": "wav", "use_repeats": repeats}
         expected = projection(seconds)
-        produced = worker(args, short, options, expected, "success")
-        rejected = worker(args, short, options, expected - 1, "ResourceLimit")
+        produced = worker(args, short, options, 2 * expected, "success")
+        rejected = worker(args, short, options, 2 * expected - 1, "ResourceLimit")
         assert "projected audio" in rejected["message"], rejected
         # WAV is uncompressed: at most half a second of rounding, 4096 header
         # bytes, and one millisecond for the engine's time truncation.
@@ -100,9 +100,15 @@ def main():
     # Use the actual captured 1000-repeat snapshot with a budget that fits
     # its unexpanded WAV and is far below the expanded projection.
     results["large_no_repeat_bounded"] = worker(
-        args, large, {"format": "wav", "use_repeats": False}, projection(4), "success")
+        args, large, {"format": "wav", "use_repeats": False}, 2 * projection(4), "success")
     results["mid_measure_no_repeat_at_encoded_size"] = worker(
-        args, mid_measure, {"format": "wav", "use_repeats": False}, mid_measure_size, "success")
+        args, mid_measure, {"format": "wav", "use_repeats": False}, 2 * mid_measure_size, "success")
+    # This score cannot be projected, so the engine itself must stop the file
+    # one byte below its actual extent and deliver no bytes to the sink.
+    results["mid_measure_engine_overrun"] = worker(
+        args, mid_measure, {"format": "wav", "use_repeats": False}, 2 * mid_measure_size - 1, "ResourceLimit")
+    assert "audio intermediate byte limit exceeded" in results["mid_measure_engine_overrun"]["message"]
+    assert results["mid_measure_engine_overrun"]["observed_cache_peak"] <= mid_measure_size - 1
     print(json.dumps(results, indent=2))
 
 

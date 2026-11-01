@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import math
 import os
@@ -63,14 +64,16 @@ def worker(args, source, audio_options, limit, expected):
             assert exit_code == 0 and result["ok"], result
             produced = (stage / "output").stat().st_size
             assert 0 < produced <= limit
+            digest = hashlib.sha256((stage / "output").read_bytes()).hexdigest()
         else:
             assert exit_code != 0 and not result["ok"] and result["error"]["code"] == expected, result
             assert not list(stage.iterdir()) and not (job / "destination").exists()
             produced = 0
+            digest = None
         assert not list(cache.glob("*")), "temporary audio survived worker exit"
         return {"limit": limit, "observed_cache_peak": peak, "exit": exit_code,
                 "result": "success" if result["ok"] else result["error"]["code"], "output_bytes": produced,
-                "message": "" if result["ok"] else result["error"]["message"]}
+                "sha256": digest, "message": "" if result["ok"] else result["error"]["message"]}
 
 
 def main():
@@ -85,17 +88,19 @@ def main():
     seconds = duration + 3.5  # nearest-second outline plus half-second and 3-second tail
     frames = math.ceil(seconds * 44100)
     wav16, wav24 = frames * 4 + 4096, frames * 6 + 4096
-    wav_budget = (wav16 + wav24) // 2
+    wav_budget = 2 * ((wav16 + wav24) // 2)
     mp3_128 = math.ceil(seconds * 128000 / 8 + 1024 * 1024)
     mp3_512 = math.ceil(seconds * 512000 / 8 + 1024 * 1024)
-    mp3_budget = (mp3_128 + mp3_512) // 2
+    mp3_budget = 2 * ((mp3_128 + mp3_512) // 2)
     evidence = {"duration_seconds_rounded": duration,
         "tiny_wav": worker(args, source, {"format": "wav"}, 64, "ResourceLimit"),
         "wav16": worker(args, source, {"format": "wav", "bit_depth": 16}, wav_budget, "success"),
+        "wav16_large_budget": worker(args, source, {"format": "wav", "bit_depth": 16}, 2 * wav_budget, "success"),
         "wav24": worker(args, source, {"format": "wav", "bit_depth": 24}, wav_budget, "ResourceLimit"),
         "mp3_128": worker(args, source, {"format": "mp3", "bitrate_kbps": 128}, mp3_budget, "success"),
         "mp3_512": worker(args, source, {"format": "mp3", "bitrate_kbps": 512}, mp3_budget, "ResourceLimit")}
     assert evidence["tiny_wav"]["observed_cache_peak"] <= 64
+    assert evidence["wav16"]["sha256"] == evidence["wav16_large_budget"]["sha256"]
     (args.output / "audio-budget-evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     print(json.dumps(evidence, indent=2))
 

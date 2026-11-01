@@ -171,6 +171,7 @@ Json worker_request(const ExportSnapshot& snapshot, const fs::path& job_director
             {"payload", detail::path_text(job_directory / "payload")},
             {"result", detail::path_text(job_directory / "result.json")},
             {"stage", detail::path_text(staging_directory)}, {"outputLimit", output_limit},
+            {"snapshotLimit", snapshot.capture_budget},
             {"resources", detail::path_text(o.resources)}, {"fonts", paths(o.fonts)},
             {"soundfonts", snapshot.request.kind == ExportKind::Audio ? paths(o.soundfonts) : Json::array()},
             {"sampleRate", o.audio_sample_rate}, {"deterministicIds", o.deterministic_ids}};
@@ -257,19 +258,34 @@ int run_worker(const fs::path& request_path) noexcept {
                     // Audio length always follows the master score, including for excerpts.
                     const auto master = request.audio_options.score.excerpt ? value(document->outline()) : selected;
                     try {
-                        const auto positions = document->positions(engrave::PositionKind::Measure);
+                        engrave::CaptureOptions capture;
+                        capture.max_bytes = j.value("snapshotLimit", JobLimits{}.snapshot_bytes);
+                        const auto positions = document->positions(engrave::PositionKind::Measure, {}, capture);
                         if (positions) duration = unexpanded_audio_seconds(master, *positions);
                     } catch (const std::runtime_error&) {
                         // Some layouts/timings cannot be represented by the public
                         // position API. Do not reject using the expanded duration.
                     }
                 }
-                if (duration && projected_audio_bytes(request.audio_options, *duration, options.audio_sample_rate) > limit)
+                const auto file_limit = audio_file_budget(limit);
+                if (duration && projected_audio_bytes(request.audio_options, *duration, options.audio_sample_rate) > file_limit)
                     throw Failure{{"ResourceLimit", "projected audio exceeds output byte limit"}};
-                std::ofstream out(stage / "output", std::ios::binary | std::ios::trunc);
-                if (!out) throw Failure{{"Io", "cannot open staged audio"}};
-                auto audio = document->render_audio(request.audio_options, [&](std::span<const std::byte> chunk) {
-                    if (chunk.size() > limit - total) throw Failure{{"ResourceLimit", "export exceeds output byte limit"}};
+                auto audio_options = request.audio_options;
+                audio_options.max_bytes = file_limit;
+                audio_options.max_write_bytes = audio_write_budget(file_limit);
+                const auto staged_path = stage / "output";
+                struct Cleanup {
+                    fs::path path;
+                    bool committed = false;
+                    ~Cleanup() { if (!committed) { std::error_code ec; fs::remove(path, ec); } }
+                } cleanup{staged_path};
+                std::ofstream out;
+                auto audio = document->render_audio(audio_options, [&](std::span<const std::byte> chunk) {
+                    if (chunk.size() > file_limit - total) throw Failure{{"ResourceLimit", "export exceeds output byte limit"}};
+                    if (!out.is_open()) {
+                        out.open(staged_path, std::ios::binary | std::ios::trunc);
+                        if (!out) throw Failure{{"Io", "cannot open staged audio"}};
+                    }
                     out.write(reinterpret_cast<const char*>(chunk.data()), static_cast<std::streamsize>(chunk.size()));
                     if (!out) throw Failure{{"Io", "cannot write staged audio"}};
                     total += chunk.size();
@@ -278,6 +294,7 @@ int run_worker(const fs::path& request_path) noexcept {
                 out.close(); if (!out) throw Failure{{"Io", "cannot close staged audio"}};
                 if (!total || total != audio->bytes) throw Failure{{"EngineFailure", "invalid audio byte count"}};
                 artifacts.push_back({{"name", "output"}, {"mime", mime(request)}, {"size", total}});
+                cleanup.committed = true;
             }
         }
         write_result(result_path, {{"version", 2}, {"ok", true}, {"artifacts", std::move(artifacts)}});

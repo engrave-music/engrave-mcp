@@ -1,6 +1,7 @@
 #pragma once
 #include "api_json.h"
 #include "runtime_snapshot.h"
+#include "runtime_limits.h"
 #include <filesystem>
 namespace music::v2 {
 enum class ExportKind { Score, Render, Audio, Positions };
@@ -33,8 +34,13 @@ struct ExportSnapshot {
     std::vector<std::byte> mscz;
     std::vector<std::byte> captured_score_bytes;
     std::vector<std::byte> captured_positions_json;
+    // False only when bounded MIDI capture was rejected by the engine and the
+    // legacy unbounded capture was used. Retained bytes are still charged.
+    bool snapshot_budget_enforced=true;
+    std::uint64_t capture_budget=JobLimits{}.snapshot_bytes;
     engrave::AudioOptions effective_audio;
     double duration_seconds=0;
 };
-Result<ExportSnapshot> capture_export(engrave::Document&, RuntimeSnapshot, const ExportRequest&);
+Result<ExportSnapshot> capture_export(engrave::Document&, RuntimeSnapshot, const ExportRequest&,
+    const engrave::CaptureOptions& = engrave::CaptureOptions{.max_bytes=JobLimits{}.snapshot_bytes});
 }
