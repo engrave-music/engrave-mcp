@@ -123,7 +123,12 @@ async def run(args):
                     validator = Draft202012Validator(warning)
                     validator.validate({'code':'OTHER','message':'no object required'})
                     validator.validate(expected[0])
-                    for obj in (None, {}, {'kind':'tie'}, {'id':'H_H'}):
+                    for kind, identity in (('tie', 'locator:score:0/measure:0/tick:0/track:0/note:0/tieFor'),
+                                           ('page_lock', 'A_A..B_B'), ('group_bracket', 'B_B:1')):
+                        validator.validate({'code':'B470_UNSUPPORTED_FEATURE','message':'test',
+                                            'object':{'kind':kind,'id':identity}})
+                    for obj in (None, {}, {'kind':'tie'}, {'id':'H_H'},
+                                {'kind':'','id':'H_H'}, {'kind':'tie','id':''}, {'kind':'','id':''}):
                         invalid = {'code':'B470_INVALID_TIE','message':'test'}
                         if obj is not None: invalid['object']=obj
                         assert not validator.is_valid(invalid), (tool['name'], invalid)
