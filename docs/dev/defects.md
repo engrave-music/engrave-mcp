@@ -23,6 +23,7 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-010 | Routine engine gate does not execute the new boundary tests | RESOLVED 2026-11-01 (`1fb47a7`) | SOURCE-REVIEWED | Gate now runs diagnostics, IO-boundary, installer and manifest checks; both hosts green at `bfe86bd` |
 | DEFECT-ENGRAVE-011 | Host adapter layer predates engine C5-C8 and does not compile | RESOLVED 2026-11-01 (Windows + linux-host) | EXECUTED | The v1 host builds and its runtime assets, workers and MCP smoke pass against `engrave-15` on both hosts; public-document cutover remains A5 S2+ work |
 | DEFECT-ENGRAVE-012 | Snapshot-based render is not bit-identical to direct render | Accepted limitation | EXECUTED | Export jobs render a captured MSCZ snapshot, so render output can differ from a direct in-process render |
+| DEFECT-ENGRAVE-013 | Pitch edits can leave a mismatched tie without a diagnostic | Carried / Open | SOURCE-REVIEWED, EXECUTED | An exported mismatched tie may not survive MusicXML reimport |
 
 ## Details
 
@@ -153,3 +154,12 @@ Evidence levels used in this ledger:
 - **Description**: Export jobs render a captured MSCZ snapshot in a separate worker, so the result comes from a save/reopen round trip rather than the live document. In the S3 parity tests, MSCZ save/reopen rounded the A4 page height by 0.001 point and changed 36 of 2,005,644 PNG pixels for each tested master and excerpt. The tests therefore compare PDF/SVG geometry within 0.02 point and PNG output within a stated pixel tolerance.
 - **Impact**: v2 render output must not be advertised or golden-compared as bit-identical to a direct in-process render, and tolerance-based comparisons must be explicit wherever snapshot rendering is validated. No universal parity claim follows from the tested scores.
 - **Next Step**: Keep the tolerance documented alongside the export-job tests; if a consumer needs bit-identical output, make a direct-render design decision rather than silently widening tolerances.
+
+### 13. Pitch edits can leave a mismatched tie without a diagnostic (DEFECT-ENGRAVE-013)
+
+- **Status**: Carried / Open at `engrave-15`.
+- **Evidence Level**: SOURCE-REVIEWED, EXECUTED (Windows, v2 wire).
+- **Description**: The public engine contract in `engrave/include/engrave/ops/notes.h` explicitly changes a tied note independently while propagating to its linked score copies. `engrave/src/api/ops/notes.cpp` calls the engine's pitch operation on that note; `HostApi::edit` decodes the batch and passes it to `Document::edit`. This is an engine boundary limitation, not a host conversion of a valid two-end edit. Neither the individual edit nor the export reports that the still-connected endpoints now have different pitches.
+- **Executed evidence**: `scripts/test_linked_tie.py` opens `fixtures/golden/linked_parts.mscx`, whose first tied notes are B4 (`I_I` and `L_L`). Changing only `I_I` to D5 changes its linked copies and returns no diagnostic; MusicXML contains a D5 start and B4 stop. On MXL reimport, the connection is lost and the start becomes a `let-ring`. In a fresh document, setting both ends to D5 in one batch preserves the tie after the same MXL round trip. This observes the specified independent-note edit and the consequence of exporting an invalid tie; it does not establish behavior for every tie form or format.
+- **Impact**: Clients editing a tie must coordinate both endpoints or risk an undiagnosed loss on interchange. The retired v1 pitch-edit projection rejected partial tied-note edits; v2 does not retain that protection.
+- **Next Step**: Decide an engine-level contract for detecting and diagnosing or preventing mismatched ties, including multi-operation batches and linked excerpts, and add public-boundary tests. Until then, retain the focused v2 reproduction and do not claim partial tied-note edits round-trip safely.
