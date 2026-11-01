@@ -87,6 +87,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 
 | `engrave-25` | `ac0876b0e4` | `32f0a26e5b` | `da3885cb` | 4.70 excerpt selection (`feat/write470-excerpt`, `82ffad2d1b`; this merge has its tree): a named excerpt now exports as a standalone genuine 4.70 score in MSCX and MSCZ — `excerpts.mscx` `v_v` and `linked_parts.mscx` `v_v` both export with `[]` warnings, retain their body/notes/grace ties/names/links, and were reopened successfully by the preserved oracle and re-exported by the verified old Windows 4.7.6 host (the old host's own MSCX export drops nested excerpts; MSCZ retains them). The 5.00 writer and master conversion mapping are unchanged. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
 
+| `engrave-26` | `fd25d800bf` | `32f0a26e5b` | `da3885cb` | Interruptible 4.70 conversion (`feat/write470-cancel`, `0ed6e4d9a9`; this merge has its tree): the converted XML polls the capture cancellation callback every ≤4 KiB, so a client cancel or deadline aborts mid-conversion with `Cancelled` and publishes nothing, while the working/output budgets stay enforced. The host's request cancellation reaches that callback; eight host cases observed the abort at serialization unit 2, destinations stayed absent, `-32800`/`DeadlineExceeded` were returned as documented, and a following export in the same session succeeded. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
+
 The superproject's `.gitmodules` now tracks `branch = main`.
 
 ## History: mcp/v4.7.x (frozen)
