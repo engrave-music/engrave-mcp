@@ -657,6 +657,11 @@ def main() -> None:
             phase_b_args += ["--baseline"]
         else:
             phase_b_args += ["--writer-results", str(args.phase_b_writer_results.resolve())]
+        if not args.phase_b_producer:
+            current_dump = build_dir / f"semantic_dump{exe_suffix}"
+            if not current_dump.is_file():
+                parser.error(f"baseline/writer-results current-reader control is missing: {current_dump}")
+            phase_b_args += ["--current-binary", str(current_dump), "--current-assets", str(assets)]
 
     check_preflight_binaries(build_dir, exe_suffix, selected_lanes)
 

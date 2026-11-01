@@ -88,6 +88,8 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                     source = check_file(fixture_root, case, 'source')
                     record = {'case': case['id'], 'category': case['category'],
                         'platform': platform.system(), 'source_sha256': file_sha(source),
+                        'expected_semantics_sha256': case['expected_semantics_sha256'],
+                        'expected_warnings_sha256': case['warnings_sha256'],
                         'host_sha256': host_hash, 'formats': {}, 'errors': []}
                     doc = None
                     try:
@@ -140,9 +142,14 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                                         result['errors'].append('writer outcome differs from frozen contract')
                                     # Always compare successful output, even when warnings failed.
                                     if value['ok']:
-                                        compare_xml(path, case.get('xml_checks', {}))
+                                        try:
+                                            compare_xml(path, case.get('xml_checks', {}))
+                                        except Exception as error:
+                                            result['errors'].append(str(error))
                                         proc = run_dump(binary, assets, path, folder, 'oracle', oracle_env)
                                         result['oracle_exit'] = proc.returncode
+                                        result['oracle_stdout_sha256'] = sha(proc.stdout)
+                                        result['oracle_stderr_sha256'] = sha(proc.stderr)
                                         result['oracle_matched'] = False
                                         require(proc.returncode == 0 and not proc.stderr, 'oracle failed or reported diagnostics')
                                         compare_semantics(read_json(check_file(fixture_root, case, 'expected_semantics')),
