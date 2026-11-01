@@ -1507,7 +1507,9 @@ async def test_mcp_level_integration(
     evidence: dict[str, Any],
 ) -> None:
     """MCP-level tests for mix, track model, determinism, and .mid export."""
-    from test_async_session import Client
+    # This integration path still targets the saved v1 baseline; it must be
+    # migrated before the complete engine_audio lane can claim v2 coverage.
+    from legacy_v1_client import Client
 
     print("[MCP] Running MCP-level audio integration tests...")
     mcp_evidence: dict[str, Any] = {}

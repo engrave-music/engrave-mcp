@@ -806,6 +806,12 @@ or excerpt-name differences; historical loss hashes were not changed. The full
 v2 lane migration and full lane run remain open; no new goldens or allowances
 were written.
 
+The migrated v2 `audio_facade` subsequently passed on Windows, including
+mute/solo and gain, channel balance, four compressed formats, saved master and
+excerpt mix settings, multi-instrument tracks and run/start parity. The removed
+v1 metadata-track projection remains covered only by the explicitly named v1
+baseline client; it is not a live v2 capability.
+
 ## Roadmap-engrave A4 S0: engine build in the fork (2026-10-30)
 
 The engine's xmake build moved into the fork (`engrave` `a4/s0-build`, tip

@@ -195,6 +195,7 @@ def run_lane(
         "import runpy, sys; from pathlib import Path; "
         "test_root = Path(sys.argv.pop(1)).resolve(); "
         "script = Path(sys.argv.pop(1)).resolve(); "
+        "sys.path.insert(0, str(script.parent)); "
         "sys.argv[0] = str(script); "
         "module = runpy.run_path(str(script), run_name='__main__retargeted'); "
         "main = module['main']; "
