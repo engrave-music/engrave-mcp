@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <exception>
@@ -129,6 +130,9 @@ struct CallState {
     std::shared_ptr<asio::cancellation_signal> cancel;
     bool cancel_requested = false;
     bool responded = false;
+    bool live_export = false;
+    bool tool_finished = false;
+    std::shared_ptr<asio::steady_timer> watchdog;
 };
 
 using CallStatePtr = std::shared_ptr<CallState>;
@@ -181,12 +185,12 @@ public:
     Session(asio::io_context& ioc,
             const std::function<Json()>& list_tools,
             const AsyncToolCall& call_tool,
-            const std::function<void()>& shutdown)
+            const std::function<void()>& shutdown, bool live_export)
         : ioc_(ioc),
           list_tools_(list_tools),
           call_tool_(call_tool),
           shutdown_(shutdown),
-          work_(asio::make_work_guard(ioc)) {
+          work_(asio::make_work_guard(ioc)), live_export_(live_export) {
         inflight_.reserve(kMaxInflightCalls);
 #if !defined(_WIN32)
         if (::pipe2(reader_wake_, O_CLOEXEC | O_NONBLOCK) != 0) {
@@ -257,6 +261,7 @@ public:
     }
 
 private:
+    bool live_export_ = false;
     // ---------------------------------------------------------------------
     // Reader thread
     // ---------------------------------------------------------------------
@@ -1416,8 +1421,27 @@ private:
             }
 
             if (target && target->cancel) {
+                const bool first = !target->cancel_requested;
                 target->cancel_requested = true;
                 target->cancel->emit(asio::cancellation_type::terminal);
+                if (first && target->live_export && !target->tool_finished) {
+                    auto timer = std::make_shared<asio::steady_timer>(ioc_, std::chrono::seconds(5));
+                    target->watchdog = timer;
+                    auto self = shared_from_this();
+                    timer->async_wait([self, target, timer](const asio::error_code& error) {
+                        if (error || target->tool_finished || target->responded) return;
+                        target->responded = true;
+                        // A blocked stdout must not defeat the process watchdog.
+                        std::thread([] {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                            std::_Exit(70);
+                        }).detach();
+                        asio::co_spawn(self->ioc_, [self, target]() -> asio::awaitable<void> {
+                            (void)co_await self->send_error(target->id, -32603,
+                                "Live export cancellation watchdog expired after 5 seconds; session terminated");
+                        }, asio::detached);
+                    });
+                }
             }
         } catch (...) {
         }
@@ -1435,6 +1459,7 @@ private:
         try {
             call = std::make_shared<CallState>();
             call->id = id;
+            call->live_export = live_export_ && name == "score_export" && arguments.value("action", "") == "run";
             call->cancel = std::make_shared<asio::cancellation_signal>();
             inflight_.push_back(call);
         } catch (...) {
@@ -1500,6 +1525,8 @@ private:
 
         try {
             Json payload = co_await call_tool_(std::move(name), std::move(arguments));
+            call->tool_finished = true;
+            if (call->watchdog) call->watchdog->cancel();
 
             // The callback returned success. From here on cancellation must
             // not turn a committed operation into an error; late
@@ -1553,6 +1580,8 @@ private:
             error_message = "Unknown application error";
         }
 
+        call->tool_finished = true;
+        if (call->watchdog) call->watchdog->cancel();
         // Delivering the failure must not itself be aborted because the
         // cancellation state is still "cancelled"; the response is the
         // acknowledgement of that cancellation (or the real tool error).
@@ -1874,7 +1903,7 @@ private:
 
 int serve_stdio_async(const std::function<Json()>& list_tools,
                       const AsyncToolCall& call_tool,
-                      const std::function<void()>& shutdown) {
+                      const std::function<void()>& shutdown, bool live_export) {
 #if !defined(_WIN32)
     std::signal(SIGPIPE, SIG_IGN);
 #endif
@@ -1884,7 +1913,7 @@ int serve_stdio_async(const std::function<Json()>& list_tools,
         std::shared_ptr<Session> session;
         try {
             session = std::make_shared<Session>(
-                ioc, list_tools, call_tool, shutdown);
+                ioc, list_tools, call_tool, shutdown, live_export);
             session->start_threads();
         } catch (...) {
             if (session) {

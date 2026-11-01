@@ -44,5 +44,5 @@ using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json)>;
 // failure path.
 int serve_stdio_async(const std::function<Json()>& list_tools,
                       const AsyncToolCall& call_tool,
-                      const std::function<void()>& shutdown);
+                      const std::function<void()>& shutdown, bool live_export = false);
 } // namespace music

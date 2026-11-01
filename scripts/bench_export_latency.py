@@ -17,12 +17,13 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 
 class Client:
-    def __init__(self, binary, resources, output, mode=None):
+    def __init__(self, binary, resources, output, mode=None, soundfont=None):
         output.mkdir(parents=True, exist_ok=True)
         self.log_path = output / "stderr.log"
         self.log = self.log_path.open("w", encoding="utf-8")
         args = [str(binary.resolve()), "--resources", str(resources.resolve())]
         if mode: args.append("--export-mode=" + mode)
+        if soundfont: args += ["--soundfont", str(soundfont.resolve())]
         self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=self.log, env=dict(os.environ, ENGRAVE_MCP_PROFILE_EXPORT="1"))
         self.q = queue.Queue()

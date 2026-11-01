@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
             [&](std::string name, music::Json args) { return session.call(std::move(name), std::move(args)); },
             [&] {
                 session.shutdown();
-            });
+            }, live_export);
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';
         return 1;

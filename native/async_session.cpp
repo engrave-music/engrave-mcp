@@ -409,16 +409,18 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments) {
     if (self->live_export && spec->scheduling == Scheduling::ExportJob) {
         auto request = decode_export(arguments);
         if (!request) co_return error_envelope(request.error());
-        if (request->action == ExportAction::Run && request->kind != ExportKind::Audio) {
+        if (request->action == ExportAction::Run) {
             auto timing = std::make_shared<ExportTiming>("live", request->destination.path);
             auto payload = co_await self->dispatch<Json>(self->owner_io, [self, request = *request, capture_cancel, timing, submitted] {
                 timing->add("owner_dispatch", submitted);
                 Json payload;
+                auto runtime = self->host->capture_runtime();
+                if (!runtime) return error_envelope(runtime.error());
                 auto result = self->host->with_document(request.document, request.expected_revision,
                     [&](engrave::Document& document) -> Result<void> {
                         auto output = live_export(document, request, self->limits, [&] {
                             return capture_cancel->load(std::memory_order_acquire) || self->stopping.load(std::memory_order_acquire);
-                        }, submitted, *timing);
+                        }, submitted, *timing, *runtime);
                         if (!output) return std::unexpected(output.error());
                         payload = std::move(*output);
                         return {};

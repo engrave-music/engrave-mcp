@@ -2,6 +2,7 @@
 #include "api_json_internal.h"
 #include "background_job.h"
 #include "export_timing.h"
+#include "audio_budget.h"
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -12,6 +13,8 @@
 #include <cerrno>
 #include <limits>
 #include <set>
+#include <thread>
+#include <cstdio>
 
 namespace music::v2 {
 namespace {
@@ -269,7 +272,8 @@ Result<ExportSnapshot> capture_export(engrave::Document& document, RuntimeSnapsh
     } catch (const detail::DecodeError& e) { return std::unexpected(e.error); }
 }
 Result<Json> live_export(engrave::Document& document, const ExportRequest& request, const JobLimits& limits,
-    const std::function<bool()>& cancelled, std::chrono::steady_clock::time_point submitted, ExportTiming& timing) {
+    const std::function<bool()>& cancelled, std::chrono::steady_clock::time_point submitted, ExportTiming& timing,
+    const RuntimeSnapshot& runtime) {
     namespace fs = std::filesystem;
     struct Cleanup {
         fs::path destination, stage;
@@ -326,7 +330,23 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         };
         engrave::CaptureOptions capture;
         capture.max_bytes = limits.output_bytes;
-        capture.cancelled = [&] { return cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline; };
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        int cancellation_polls = 0;
+#endif
+        capture.cancelled = [&] {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+            if (request.destination.path.string().find(".test-live-noncooperative") != std::string::npos) {
+                std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n"); std::fflush(stderr);
+                std::this_thread::sleep_for(std::chrono::seconds(30));
+            }
+            if (request.destination.path.string().find(".test-live-cancel") != std::string::npos &&
+                ++cancellation_polls == (request.kind == ExportKind::Render ? 2 : 8)) {
+                std::fprintf(stderr, "LIVE_CANCEL_POLL\n"); std::fflush(stderr);
+                while (!cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+#endif
+            return cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline;
+        };
         if (request.kind == ExportKind::Score) {
             auto start = ExportTiming::Clock::now();
             auto options = request.score_options; options.capture = capture;
@@ -358,6 +378,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             auto start = ExportTiming::Clock::now();
             const auto count = engine_value(document.page_count(request.render_options.score));
             auto options = request.render_options;
+            options.cancelled = capture.cancelled;
             const auto last = options.last_page < 0 ? count - 1 : options.last_page;
             if (options.first_page >= count || last >= count) invalid("render page range is outside the score");
             if (static_cast<std::int64_t>(last) - options.first_page + 1 > 4096)
@@ -380,7 +401,55 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
                     write(name.str(), png ? "image/png" : "image/svg+xml", output.pages[0]);
                 }
             }
-        } else invalid("audio requires isolated export");
+        } else if (request.kind == ExportKind::Audio) {
+            auto start = ExportTiming::Clock::now();
+            auto options = effective_mix(document, request, runtime);
+            options.cancelled = capture.cancelled;
+            const auto rate = runtime.options.audio_sample_rate;
+            if (options.sample_rate && options.sample_rate != rate)
+                throw detail::DecodeError{HostError{"Unsupported", "audio sample rate differs from the engine rate"}};
+            const auto outline = engine_value(document.outline(options.score));
+            std::optional<double> duration;
+            if (options.use_repeats) duration = outline.duration;
+            else {
+                const auto master = options.score.excerpt ? engine_value(document.outline()) : outline;
+                auto positions = document.positions(engrave::PositionKind::Measure, {}, capture);
+                if (positions) duration = unexpanded_audio_seconds(master, *positions);
+                else check();
+            }
+            const auto limit = audio_file_budget(limits.output_bytes);
+            if (duration && projected_audio_bytes(options, *duration, rate) > limit)
+                throw detail::DecodeError{HostError{"ResourceLimit", "projected audio exceeds output byte limit"}};
+            options.max_bytes = limit;
+            options.max_write_bytes = audio_write_budget(limit);
+            const auto path = cleanup.stage / "output";
+            std::ofstream out;
+            std::uint64_t bytes = 0;
+            auto audio = engine_value(document.render_audio(options, [&](std::span<const std::byte> chunk) {
+                check();
+                if (!out.is_open()) out.open(path, std::ios::binary | std::ios::trunc);
+                if (chunk.size() > limit - bytes)
+                    throw detail::DecodeError{HostError{"ResourceLimit", "audio exceeds output byte limit"}};
+                out.write(reinterpret_cast<const char*>(chunk.data()), static_cast<std::streamsize>(chunk.size()));
+                if (!out) throw detail::DecodeError{HostError{"Io", "cannot write staged audio"}};
+                bytes += chunk.size();
+            }));
+            out.close();
+            if (!out) throw detail::DecodeError{HostError{"Io", "cannot close staged audio"}};
+            if (!bytes || bytes != audio.bytes || fs::file_size(path) != bytes)
+                throw detail::DecodeError{HostError{"EngineFailure", "invalid audio byte count"}};
+            const char* mime = "audio/wav";
+            switch (options.format) {
+            case engrave::AudioFormat::Flac: mime = "audio/flac"; break;
+            case engrave::AudioFormat::Opus: mime = "audio/ogg"; break;
+            case engrave::AudioFormat::Mp3: mime = "audio/mpeg"; break;
+            case engrave::AudioFormat::Aac: mime = "audio/aac"; break;
+            default: break;
+            }
+            timing.add("engine_call", start);
+            const auto destination = request.destination.directory ? cleanup.destination / "output" : cleanup.destination;
+            staged.push_back({path, {mime, destination, bytes}});
+        }
         // All rendering and staging succeeds before any file becomes visible.
         check(); // Publication commits the request; later cancellation observes its result.
         for (const auto& file : staged) {
