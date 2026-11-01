@@ -1,15 +1,14 @@
-"""Exercise native DOM edits, stable IDs and same-base concurrent edit semantics via MCP."""
+"""Exercise v2 edits, stable note IDs, rollback and revision conflicts over MCP."""
 from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
-import os
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from test_async_session import Client, VALIDATORS
 
 
 def fixture(tied: bool = False) -> str:
@@ -31,7 +30,7 @@ def fixture(tied: bool = False) -> str:
                 clef = ET.SubElement(attrs, 'clef')
                 ET.SubElement(clef, 'sign').text = 'G'
                 ET.SubElement(clef, 'line').text = '2'
-            for ni, step in enumerate(['C','D','E','F']):
+            for ni, step in enumerate(['C', 'D', 'E', 'F']):
                 note = ET.SubElement(measure, 'note')
                 p = ET.SubElement(note, 'pitch')
                 ET.SubElement(p, 'step').text = 'C' if tied and pi == 0 and ni < 2 else step
@@ -47,106 +46,89 @@ def fixture(tied: bool = False) -> str:
     return ET.tostring(root, encoding='unicode')
 
 
-def revision(data):
-    return data['revision'] if 'revision' in data else data['score']['revision']
+def pitch(note):
+    return int(note['props'][0]['value']['value'])
+
+
+def change(note, value):
+    return {'op': 'set_pitch', 'note': {'kind': 'id', 'id': note['id']}, 'pitch': value}
 
 
 async def run(args):
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    child_args = ['--resources',str(args.resources.resolve())] if args.resources else []
-    env = dict(os.environ)
-    if os.environ.get('MUSIC_MCP_CLEAN_ENV'):
-        env = ({'SystemRoot':os.environ['SystemRoot'], 'PATH':str(Path(os.environ['SystemRoot'])/'System32'),
-                'TEMP':os.environ['TEMP'], 'TMP':os.environ['TMP']} if os.name == 'nt'
-               else {'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'})
-    params = StdioServerParameters(command=str(args.binary.resolve()), args=child_args, env=env, cwd=str(out))
-    report = {'binary':str(args.binary.resolve()), 'calls':[]}
-    with (out/'stderr.log').open('w', encoding='utf-8') as errors:
-        async with stdio_client(params,errlog=errors) as (read,write):
-            async with ClientSession(read,write) as client:
-                await client.initialize()
-                async def raw(name, arguments):
-                    response = await client.call_tool(name,arguments)
-                    report['calls'].append({'tool':name,'error':bool(response.is_error)})
-                    if response.structured_content is not None:
-                        payload = response.structured_content
-                    elif response.content and hasattr(response.content[0],'text'):
-                        try: payload = json.loads(response.content[0].text)
-                        except json.JSONDecodeError: payload = {'message':response.content[0].text}
-                    else: payload = {}
-                    return bool(response.is_error),payload
-                async def call(name,arguments):
-                    error,payload = await raw(name,arguments)
-                    if error: raise AssertionError((name,payload))
-                    return payload
-                opened = await call('score_open',{'musicxml':fixture()})
-                doc = opened['documentId']
-                async def query(part=0,document=doc):
-                    return await call('score_query_region',{'documentId':document,'partIndex':part,'firstMeasure':0,'measureCount':2})
-                before = [await query(0),await query(1)]
-                assert all(len(q['notes']) == 8 for q in before)
-                assert before[0]['notes'] == (await query(0))['notes'], 'Repeated query changed IDs or musical data'
-                base = revision(before[0])
-                targets = [q['notes'][i] for q in before for i in (0,4)]
-                changes = [{'noteId':n['id'],'pitch':n['pitch']+1} for n in targets]
-                requests = [{'documentId':doc,'baseRevision':base,'operationId':f'independent-{i}', 'changes':[change]}
-                            for i,change in enumerate(changes)]
-                results = await asyncio.gather(*(raw('score_set_pitches',r) for r in requests))
-                assert not any(error for error,_ in results), results
-                latest = [await query(0),await query(1)]
-                expected = {c['noteId']:c['pitch'] for c in changes}
-                old_notes = {n['id']:n for q in before for n in q['notes']}
-                actual = {n['id']:n for q in latest for n in q['notes']}
-                assert set(actual) == set(old_notes), 'Pitch editing replaced note identity'
-                for id,n in actual.items():
-                    assert n['pitch'] == expected.get(id,old_notes[id]['pitch'])
-                    for field in ('measureId','staffIndex','measureIndex','voice','tick','durationTicks'):
-                        assert n[field] == old_notes[id][field], (id,field)
-                current_revision = revision(latest[0])
-                assert current_revision == base+4
-                replayed = await call('score_set_pitches',requests[0])
-                assert revision(replayed) == current_revision or replayed.get('replayed') is True
-                assert (await query(0))['notes'] == latest[0]['notes']
-                conflict_base = revision(await query(0))
-                conflict_note = latest[0]['notes'][1]
-                overlap = [{'documentId':doc,'baseRevision':conflict_base,'operationId':f'overlap-{i}',
-                            'changes':[{'noteId':conflict_note['id'],'pitch':conflict_note['pitch']+i+1}]} for i in range(2)]
-                conflicts = await asyncio.gather(*(raw('score_set_pitches',r) for r in overlap))
-                assert sorted(error for error,_ in conflicts) == [False,True], conflicts
-                clean = await query(0)
-                bad = {'documentId':doc,'baseRevision':revision(clean),'operationId':'invalid-batch','changes':[
-                    {'noteId':clean['notes'][0]['id'],'pitch':80},{'noteId':clean['notes'][1]['id'],'pitch':128}]}
-                assert (await raw('score_set_pitches',bad))[0]
-                after_bad = await query(0)
-                assert after_bad['notes'] == clean['notes'] and revision(after_bad) == revision(clean)
-                assert (await raw('score_query_region',{'documentId':doc,'partIndex':99,'firstMeasure':0,'measureCount':1}))[0]
-                assert (await raw('score_query_region',{'documentId':doc,'partIndex':0,'firstMeasure':0,'measureCount':129}))[0]
-                duplicate = dict(requests[0])
-                duplicate['changes'] = [{'noteId':targets[0]['id'],'pitch':90}]
-                assert (await raw('score_set_pitches',duplicate))[0], 'Operation ID reused with different payload'
-                view = await call('score_get',{'documentId':doc})
-                (out/'edited.musicxml').write_text(view['musicxml'],encoding='utf-8')
-                root = ET.fromstring(view['musicxml'])
-                assert len(root.findall('./part')) == 2 and len(root.findall('./part/measure/note')) == 16
-                await call('score_close',{'documentId':doc})
-                tied_doc = (await call('score_open',{'musicxml':fixture(True)}))['documentId']
-                tied_view = await query(0,tied_doc)
-                tied_note = next(n for n in tied_view['notes'] if n['tied'])
-                assert (await raw('score_set_pitches',{'documentId':tied_doc,'baseRevision':revision(tied_view),
-                    'operationId':'partial-tie','changes':[{'noteId':tied_note['id'],'pitch':tied_note['pitch']+1}]}))[0]
-                assert (await query(0,tied_doc))['notes'] == tied_view['notes']
-                await call('score_close',{'documentId':tied_doc})
-                report.update(status='passed', concurrent_independent_edits=4,overlap_successes=1,
-                              stable_note_ids=16, invalid_batch_unchanged=True, partial_tie_rejected=True,
-                              operation_replay_deduplicated=True)
-    (out/'evidence.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-    print(json.dumps({k:v for k,v in report.items() if k != 'calls'},ensure_ascii=False))
+    args.soundfont = None
+    async with Client(args, out) as client:
+        async def notes(staff):
+            return await client.tool('score_query', {'document': doc, 'mode': 'elements',
+                'query': {'types': ['Note'], 'staves': [staff], 'first_measure': 0,
+                          'measure_count': 2, 'props': ['pitch'], 'limit': 100}})
+
+        async def raw_edit(arguments):
+            response = await client.call('tools/call', {'name': 'score_edit', 'arguments': arguments})
+            assert 'error' not in response, response
+            result = response['result']
+            payload = result['structuredContent']
+            VALIDATORS['score_edit'].validate(payload)
+            assert bool(result['isError']) != payload['ok']
+            return payload
+
+        opened = await client.tool('score_open', {'data': base64.b64encode(fixture().encode()).decode(),
+                                                   'format': 'musicxml'})
+        doc = opened['document']
+        before = [await notes(0), await notes(1)]
+        assert all(len(q['elements']) == 8 for q in before)
+        assert before[0]['elements'] == (await notes(0))['elements']
+        old = {n['id']: n for q in before for n in q['elements']}
+        targets = [q['elements'][i] for q in before for i in (0, 4)]
+        expected = {n['id']: pitch(n) + 1 for n in targets}
+        revision = opened['revision']
+        for n in targets:
+            result = await client.tool('score_edit', {'document': doc, 'expected_revision': revision,
+                                                       'ops': [change(n, expected[n['id']])]})
+            revision = result['revision']
+        latest = [await notes(0), await notes(1)]
+        actual = {n['id']: n for q in latest for n in q['elements']}
+        assert set(actual) == set(old)
+        for identity, item in actual.items():
+            assert pitch(item) == expected.get(identity, pitch(old[identity]))
+            for field in ('measure', 'measure_index', 'staff', 'voice', 'tick', 'duration', 'parent'):
+                assert item[field] == old[identity][field], (identity, field)
+        assert int(revision) == int(opened['revision']) + 4
+
+        # Unlike v1's operation-ID replay and disjoint rebase, v2 serializes
+        # edits and rejects every stale expected_revision, even for disjoint notes.
+        requests = [{'document': doc, 'expected_revision': revision,
+                     'ops': [change(n, pitch(actual[n['id']]) + 1)]} for n in targets]
+        races = await asyncio.gather(*(raw_edit(req) for req in requests))
+        assert sum(r['ok'] for r in races) == 1, races
+        assert all(r['ok'] or r['error']['code'] == 'RevisionConflict' for r in races)
+        conflict = await raw_edit(requests[0])
+        assert not conflict['ok'] and conflict['error']['code'] == 'RevisionConflict'
+        clean = await notes(0)
+        measure = (await client.tool('score_outline', {'document': doc}))['outline']['measures'][0]['id']
+        invalid_batch = await raw_edit({'document': doc, 'expected_revision': clean['revision'], 'ops': [
+            change(clean['elements'][0], 80), {'op': 'set_pitch', 'note': {'kind': 'id', 'id': measure}, 'pitch': 80}]})
+        assert not invalid_batch['ok'] and invalid_batch['error']['op_index'] == 1
+        after_bad = await notes(0)
+        assert after_bad['elements'] == clean['elements'] and after_bad['revision'] == clean['revision']
+        await client.tool('score_query', {'document': doc, 'mode': 'elements',
+                                         'query': {'measure_count': 129}}, error=True)
+        export = out / 'edited.musicxml'
+        await client.tool('score_export', {'document': doc, 'action': 'run', 'kind': 'score',
+            'options': {'format': 'musicxml'}, 'destination': {'kind': 'file', 'path': str(export)}})
+        xml = ET.parse(export).getroot()
+        assert len(xml.findall('./part')) == 2 and len(xml.findall('./part/measure/note')) == 16
+        await client.tool('score_close', {'document': doc})
+    report = {'status': 'passed', 'sequential_independent_edits': 4, 'same_revision_winners': 1,
+              'stable_note_ids': 16, 'invalid_batch_unchanged': True, 'stale_revision_rejected': True}
+    (out / 'evidence.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+    print(json.dumps(report))
 
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--binary',type=Path,required=True)
-    p.add_argument('--resources',type=Path)
-    p.add_argument('--output',type=Path,required=True)
-    asyncio.run(run(p.parse_args()))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--binary', type=Path, required=True)
+    parser.add_argument('--resources', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    asyncio.run(run(parser.parse_args()))
