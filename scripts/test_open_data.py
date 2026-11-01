@@ -2,7 +2,7 @@
 
 The lane exports MSCZ, MXL and MIDI references from fixtures/evening.musicxml,
 then opens each file once via `path` and once via `data` (standard base64) and
-requires identical score_get metadata and MusicXML. A pinned Guitar Pro fixture
+requires identical outlines and MusicXML exports. Pinned Guitar Pro and MNX fixtures
 is checked the same way; malformed argument combinations are rejected; and a
 decoded payload above the 8 MiB input limit cannot be opened.
 """
@@ -16,6 +16,7 @@ import io
 import zipfile
 import os
 from pathlib import Path
+import shutil
 import subprocess
 
 from mcp import ClientSession, StdioServerParameters
@@ -42,13 +43,13 @@ async def call(client, name, values, error=False, label="", expect=None):
 
 
 def summary(document):
-    metadata = document["metadata"]
+    metadata = document["outline"]
     return {
-        "title": document["title"],
-        "pages": document["pages"],
-        "parts": document["parts"],
+        "title": metadata["title"],
+        "pages": metadata["pages"],
+        "parts": len(metadata["parts"]),
         "metadataTitle": metadata["title"],
-        "measures": metadata["measures"],
+        "measures": metadata["measure_count"],
         "partNames": [part["name"] for part in metadata["parts"]],
     }
 
@@ -58,7 +59,7 @@ async def open_path(client, path):
 
 
 def oversized_probe(binary, resources, cwd):
-    """The stdio transport caps a request line at 8 MiB, so a decoded payload
+    """The stdio transport caps a request line at 4 MiB, so a decoded payload
     above the score limit cannot be transmitted; the server must reject it."""
     payload = base64.b64encode(b"\0" * (MAX_INPUT + 1)).decode("ascii")
     lines = [
@@ -105,7 +106,7 @@ def oversized_probe(binary, resources, cwd):
     assert completed.returncode == 0, (completed.returncode, completed.stderr[-2000:])
     assert any("error" in response for response in responses), responses
     assert not any(
-        (response.get("result") or {}).get("structuredContent", {}).get("documentId")
+        (response.get("result") or {}).get("structuredContent", {}).get("document")
         for response in responses
         if "result" in response and isinstance(response.get("result"), dict)
     ), responses
@@ -133,9 +134,19 @@ async def run(args):
             async with ClientSession(read, write) as client:
                 await client.initialize()
 
+                async def score_export(document, fmt, target):
+                    return await call(client, 'score_export', {'document': document, 'action': 'run', 'kind': 'score',
+                        'options': {'format': fmt}, 'destination': {'kind': 'file', 'path': str(target)}})
+
+                async def read_document(document, target):
+                    info = await call(client, 'score_outline', {'document': document})
+                    await score_export(document, 'musicxml', target)
+                    info['musicxml'] = target.read_text(encoding='utf-8')
+                    return info
+
                 source = ROOT / "fixtures/evening.musicxml"
                 reference = await open_path(client, source)
-                reference_id = reference["documentId"]
+                reference_id = reference["document"]
                 exports = {}
                 try:
                     for output_format, name in (
@@ -144,38 +155,35 @@ async def run(args):
                         ("midi", "reference.mid"),
                     ):
                         target = out / name
-                        await call(
-                            client,
-                            "score_export",
-                            {
-                                "documentId": reference_id,
-                                "format": output_format,
-                                "path": str(target),
-                            },
-                            label=f"export {output_format}",
-                        )
+                        await score_export(reference_id, output_format, target)
                         assert target.stat().st_size > 0, target
                         exports[output_format] = target
                 finally:
                     await call(
                         client,
                         "score_close",
-                        {"documentId": reference_id},
+                        {"document": reference_id},
                         label="close reference",
                     )
 
                 fixtures = (args.upstream / "src/importexport/guitarpro/tests/data").resolve()
+                for source_path, alias in ((exports['midi'], out / 'alias.midi'),
+                                           (source, out / 'alias.xml'),
+                                           (fixtures / 'tempo.gp3', out / 'alias.gtp')):
+                    shutil.copyfile(source_path, alias)
                 cases = [
                     ("mscz", exports["mscz"], "mscz"),
                     ("mxl", exports["mxl"], "mxl"),
                     ("midi", exports["midi"], "midi"),
-                    ("mid-alias", exports["midi"], "mid"),
+                    ("midi-extension", out / 'alias.midi', "midi"),
                     ("musicxml", source, "musicxml"),
-                    ("xml-alias", source, "xml"),
-                    ("gp3", fixtures / "tempo.gp3", "gp3"),
-                    ("gtp-alias", fixtures / "tempo.gp3", "gtp"),
+                    ("xml-extension", out / 'alias.xml', "musicxml"),
+                    ("gp3", fixtures / "tempo.gp3", "guitarpro"),
+                    ("gtp-extension", out / 'alias.gtp', "guitarpro"),
+                    ("mnx", args.upstream / "src/importexport/mnx/tests/data/engine/two-notes.mnx", "mnx"),
                 ]
                 for name, path, input_format in cases:
+                    path = path.resolve()
                     assert path.is_file(), path
                     path_document = await call(
                         client,
@@ -184,17 +192,12 @@ async def run(args):
                         label=f"{name} path open",
                     )
                     try:
-                        path_info = await call(
-                            client,
-                            "score_get",
-                            {"documentId": path_document["documentId"]},
-                            label=f"{name} path get",
-                        )
+                        path_info = await read_document(path_document['document'], out / f'{name}-path.musicxml')
                     finally:
                         await call(
                             client,
                             "score_close",
-                            {"documentId": path_document["documentId"]},
+                            {"document": path_document["document"]},
                             label=f"{name} path close",
                         )
 
@@ -202,21 +205,16 @@ async def run(args):
                     data_document = await call(
                         client,
                         "score_open",
-                        {"data": encoded, "format": input_format},
+                        {"data": encoded, "format": input_format, "filename_hint": path.name},
                         label=f"{name} data open",
                     )
                     try:
-                        data_info = await call(
-                            client,
-                            "score_get",
-                            {"documentId": data_document["documentId"]},
-                            label=f"{name} data get",
-                        )
+                        data_info = await read_document(data_document['document'], out / f'{name}-data.musicxml')
                     finally:
                         await call(
                             client,
                             "score_close",
-                            {"documentId": data_document["documentId"]},
+                            {"document": data_document["document"]},
                             label=f"{name} data close",
                         )
 
@@ -226,6 +224,9 @@ async def run(args):
                         summary(data_info),
                     )
                     assert path_info["musicxml"] == data_info["musicxml"], name
+                    if name == 'mscz':
+                        mscz_summary = summary(path_info)
+                        mscz_xml = path_info['musicxml']
                     report["cases"].append(
                         {
                             "name": name,
@@ -249,20 +250,19 @@ async def run(args):
                      {"data": base64.b64encode((ROOT / "tests/negative/legacy-3.mscx").read_bytes()).decode("ascii"), "format": "mscx"},
                      "scores from before MuseScore 4.6 are not supported"),
                     ("invalid base64 characters",
-                     {"data": "U2Nvcm$=", "format": "mscz"}, "base64"),
-                    ("unpadded base64", {"data": "U2NvcmU", "format": "mscz"}, "base64"),
+                     {"data": "U2Nvcm$=", "format": "mscz"}, None),
+                    ("unpadded base64", {"data": "U2NvcmU", "format": "mscz"}, None),
                     ("excess base64 padding",
-                     {"data": "U2NvcmU===", "format": "mscz"}, "base64"),
+                     {"data": "U2NvcmU===", "format": "mscz"}, None),
                     ("misplaced base64 padding",
-                     {"data": "U2Nvcm=A=", "format": "mscz"}, "base64"),
-                    ("missing format", {"data": valid}, "format is required"),
+                     {"data": "U2Nvcm=A=", "format": "mscz"}, None),
                     ("unknown format",
-                     {"data": valid, "format": "aac"}, "Unsupported input format"),
+                     {"data": valid, "format": "aac"}, None),
                     ("mismatched format", {"data": valid, "format": "midi"}, None),
                     (
                         "data and path",
                         {"path": str(exports["mscz"]), "data": valid, "format": "mscz"},
-                        "Specify exactly one",
+                        None,
                     ),
                     (
                         "data and musicxml",
@@ -271,14 +271,12 @@ async def run(args):
                             "data": valid,
                             "format": "musicxml",
                         },
-                        "Specify exactly one",
-                    ),
-                    (
-                        "format without data",
-                        {"path": str(exports["mscz"]), "format": "mscz"},
-                        "format is required",
+                        None,
                     ),
                 ]
+                # V2 format names are canonical; filename aliases remain path-detected.
+                rejections.extend((f'retired format {alias}', {'data': valid, 'format': alias}, None)
+                                  for alias in ('mid', 'xml', 'gp3', 'gtp'))
                 for label, arguments, expect in rejections:
                     await call(
                         client,
@@ -290,11 +288,19 @@ async def run(args):
                     )
                     report["rejections"].append(label)
 
+                # The v2 engine can identify an MSCZ byte stream without an explicit format.
+                detected = await call(client, 'score_open', {'data': valid})
+                detected_info = await read_document(detected['document'], out / 'detected.musicxml')
+                assert summary(detected_info) == mscz_summary
+                assert detected_info['musicxml'] == mscz_xml
+                await call(client, 'score_close', {'document': detected['document']})
+                explicit = await call(client, 'score_open', {'path': str(exports['mscz']), 'format': 'mscz'})
+                await call(client, 'score_close', {'document': explicit['document']})
                 recovered = await open_path(client, fixtures / "tempo.gp3")
                 await call(
                     client,
                     "score_close",
-                    {"documentId": recovered["documentId"]},
+                    {"document": recovered["document"]},
                     label="recovery close",
                 )
                 report["recovered"] = True

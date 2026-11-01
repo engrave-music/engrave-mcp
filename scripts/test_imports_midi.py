@@ -86,12 +86,22 @@ async def run(args):
                     assert bool(r.is_error)==error,r
                     if error:return None
                     return r.structured_content if r.structured_content is not None else json.loads(r.content[0].text)
+                serial = 0
+                async def export(doc, fmt, dest):
+                    await call('score_export', {'document': doc, 'action': 'run', 'kind': 'score',
+                        'options': {'format': fmt}, 'destination': {'kind': 'file', 'path': str(dest)}})
+                async def score_xml(doc):
+                    nonlocal serial
+                    serial += 1
+                    dest = out / f'query-{serial}.musicxml'
+                    await export(doc, 'musicxml', dest)
+                    return dest.read_text(encoding='utf-8')
                 for extension,karaoke,midi_format in [('mid',False,1),('midi',False,1),('kar',True,1),('format0.mid',False,0)]:
                     data,expected=fixture(karaoke,midi_format)
                     source=out/f'input.{extension}';source.write_bytes(data)
                     doc=await call('score_open',{'path':str(source)})
-                    info=await call('score_get',{'documentId':doc['documentId']})
-                    notes,lyrics=xml_notes(info['musicxml'])
+                    info=await call('score_outline',{'document':doc['document']})
+                    notes,lyrics=xml_notes(await score_xml(doc['document']))
                     assert Counter(p for p,d in notes)==Counter(expected),(extension,notes)
                     assert all(d==1 for _,d in notes),(extension,notes)
                     # Pinned upstream (importmidi_lyrics.cpp:135-159,270-279) appends an
@@ -103,12 +113,12 @@ async def run(args):
                     if karaoke: assert lyrics==[s for s in '你好世界' for _ in range(2)],lyrics
                     else: assert not lyrics,lyrics
                     dest=out/f'roundtrip-{extension}.mid'
-                    await call('score_export',{'documentId':doc['documentId'],'format':'midi','path':str(dest)})
+                    await export(doc['document'],'midi',dest)
                     parsed=parse_midi_file(dest.read_bytes());count,onsets=count_note_on_events(parsed)
                     assert count==len(expected) and Counter(e['pitch'] for e in onsets)==Counter(expected)
                     assert sorted(Fraction(e['tick'],parsed['division']) for e in onsets)==[0,0,1,1,2,2,3,3]
-                    report['formats'][extension]={'notes':count,'lyrics':lyrics,'pages':doc['pages'],'parts':doc['parts']}
-                    await call('score_close',{'documentId':doc['documentId']})
+                    report['formats'][extension]={'notes':count,'lyrics':lyrics,'pages':info['outline']['pages'],'parts':len(info['outline']['parts'])}
+                    await call('score_close',{'document':doc['document']})
                 valid,_=fixture()
                 def single_track(payload):
                     return (b'MThd\x00\x00\x00\x06\x00\x00\x00\x01\x01\xe0'
@@ -138,20 +148,18 @@ async def run(args):
                 for index in range(5):
                     path=out/f'recovery-{index}.mid';path.write_bytes(valid)
                     doc=await call('score_open',{'path':str(path)})
-                    info=await call('score_get',{'documentId':doc['documentId']})
-                    notes,lyrics=xml_notes(info['musicxml'])
+                    notes,lyrics=xml_notes(await score_xml(doc['document']))
                     assert len(notes)==8 and not lyrics
-                    await call('score_close',{'documentId':doc['documentId']})
+                    await call('score_close',{'document':doc['document']})
                 reference_cases=['division','instrument_grand','instrument_grand2','instrument_channels','instrument_3staff_organ']
                 for name in reference_cases:
                     scores=[]
                     for suffix in ['.mid','-ref.mscx']:
                         source=args.upstream/'src/importexport/midi/tests/midiimport_data'/(name+suffix)
                         doc=await call('score_open',{'path':str(source.resolve())})
-                        info=await call('score_get',{'documentId':doc['documentId']})
-                        notes,lyrics=xml_notes(info['musicxml'])
+                        notes,lyrics=xml_notes(await score_xml(doc['document']))
                         scores.append((Counter(notes),lyrics))
-                        await call('score_close',{'documentId':doc['documentId']})
+                        await call('score_close',{'document':doc['document']})
                     assert scores[0]==scores[1],(name,scores)
                 report['upstream_default_reference_cases']=reference_cases
                 report['status']='passed';report['recovery_cycles']=5

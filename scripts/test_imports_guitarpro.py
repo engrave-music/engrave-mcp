@@ -1,9 +1,7 @@
 """End-to-end Guitar Pro / Power Tab import lane checks.
 
 The script uses the official Python MCP SDK and the pinned upstream fixtures in
-vendor/musescore/src/importexport/guitarpro/tests/data. It is written for the
-native server but is intentionally not wired into CI until score_open routes the
-Guitar Pro / Power Tab extensions to engrave/src/io/score_imports.cpp.
+vendor/musescore/src/importexport/guitarpro/tests/data through the v2 host.
 
 Run with:
     python scripts/test_imports_guitarpro.py
@@ -319,7 +317,7 @@ def build_malformed_cases():
 def _document_id(response):
     if response.is_error:
         raise AssertionError(response.content)
-    return response.structured_content["documentId"]
+    return response.structured_content["document"]
 
 
 async def _open(session, path):
@@ -327,7 +325,15 @@ async def _open(session, path):
 
 
 async def _close(session, document_id):
-    await session.call_tool("score_close", {"documentId": document_id})
+    response = await session.call_tool("score_close", {"document": document_id})
+    assert not response.is_error, response
+
+
+async def _export(session, document, fmt, path):
+    result = await session.call_tool("score_export", {"document": document, "action": "run", "kind": "score",
+        "options": {"format": fmt}, "destination": {"kind": "file", "path": str(path)}})
+    assert not result.is_error, result
+    assert path.stat().st_size == int(result.structured_content['artifacts'][0]['size']) > 0
 
 
 async def main():
@@ -353,33 +359,20 @@ async def main():
                     document_id = await _open(session, path)
                     try:
                         described = await session.call_tool(
-                            "score_get", {"documentId": document_id}
+                            "score_outline", {"document": document_id}
                         )
                         if described.is_error:
                             raise AssertionError(described.content)
-                        document = described.structured_content
-                        metadata = document["metadata"]
+                        metadata = described.structured_content['outline']
                         assert isinstance(metadata, dict), metadata
-                        assert metadata["measures"] > 0, metadata
+                        assert metadata["measure_count"] > 0, metadata
                         assert metadata["duration"] > 0, metadata
-                        assert len(metadata["parts"]) == document["parts"] > 0, metadata
-                        assert metadata["title"] == document["title"], metadata
-                        assert document["musicxml"], "score_get returned no MusicXML"
+                        assert len(metadata["parts"]) > 0, metadata
 
                         musicxml_path = OUT / f"{case['lane']}.musicxml"
                         midi_path = OUT / f"{case['lane']}.mid"
                         for output_format, target in (("musicxml", musicxml_path), ("midi", midi_path)):
-                            exported = await session.call_tool(
-                                "score_export",
-                                {
-                                    "documentId": document_id,
-                                    "format": output_format,
-                                    "path": str(target),
-                                },
-                            )
-                            if exported.is_error:
-                                raise AssertionError(exported.content)
-                            assert target.stat().st_size > 0, target
+                            await _export(session, document_id, output_format, target)
 
                         xml_events = musicxml_note_events(musicxml_path)
                         midi_events = midi_note_events(midi_path)
@@ -397,9 +390,7 @@ async def main():
                             reference_id = await _open(session, FIXTURES / case["reference"])
                             try:
                                 reference_midi = OUT / f"{case['lane']}-reference.mid"
-                                result = await session.call_tool("score_export", {"documentId": reference_id,
-                                    "format": "midi", "path": str(reference_midi)})
-                                assert not result.is_error, result
+                                await _export(session, reference_id, "midi", reference_midi)
                                 expected_midi = Counter(midi_note_events(reference_midi))
                             finally:
                                 await _close(session, reference_id)
@@ -425,7 +416,7 @@ async def main():
                                 ),
                                 "metadata": {
                                     "title": metadata["title"],
-                                    "measures": metadata["measures"],
+                                    "measures": metadata["measure_count"],
                                     "parts": len(metadata["parts"]),
                                 },
                             }
@@ -437,7 +428,7 @@ async def main():
                 for name, path in malformed.items():
                     response = await session.call_tool("score_open", {"path": str(path)})
                     if not response.is_error:
-                        document_id = response.structured_content.get("documentId")
+                        document_id = response.structured_content.get("document")
                         if document_id:
                             await _close(session, document_id)
                         raise AssertionError(f"malformed input was accepted: {name}")
@@ -448,11 +439,11 @@ async def main():
                 recovered_id = await _open(session, FIXTURES / "sforzato.gp4")
                 try:
                     recovered = await session.call_tool(
-                        "score_get", {"documentId": recovered_id}
+                        "score_outline", {"document": recovered_id}
                     )
                     if recovered.is_error:
                         raise AssertionError(recovered.content)
-                    assert recovered.structured_content["metadata"]["measures"] > 0
+                    assert recovered.structured_content["outline"]["measure_count"] > 0
                 finally:
                     await _close(session, recovered_id)
 
