@@ -10,6 +10,8 @@ from pathlib import Path
 import time
 import zipfile
 import re
+import subprocess
+import sys
 from bench_export_latency import Client, ROOT, export_args
 
 def main():
@@ -17,8 +19,13 @@ def main():
     p.add_argument("--binary",type=Path,required=True)
     p.add_argument("--resources",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
+    p.add_argument("--direct-binary",type=Path,help="also run native direct oracle and restoration pins")
     a=p.parse_args()
     a.output=a.output.resolve()
+    if a.direct_binary:
+        oracle=a.output/"direct"
+        subprocess.run([str(a.direct_binary.resolve()),str(a.resources.resolve()),str(oracle)],check=True)
+        subprocess.run([sys.executable,str(ROOT/"scripts/test_live_golden.py"),"--output",str(oracle)],check=True)
     results={}
     for mode in (None,"isolated","live"):
         out=a.output/(mode or "default")
