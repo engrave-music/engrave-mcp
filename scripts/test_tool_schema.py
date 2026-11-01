@@ -44,6 +44,17 @@ def inspect_schema(node, root, *, input_schema):
 
 
 def check_cases(tools):
+    for tool in tools:
+        warning = tool['outputSchema']['$defs'].get('export_warning')
+        if warning is None:
+            continue
+        validator = Draft202012Validator(warning)
+        for obj in ({'kind':'','id':'H_H'}, {'kind':'tie','id':''}, {'kind':'','id':''}):
+            assert not validator.is_valid({'code':'B470_INVALID_TIE','message':'test','object':obj}), tool['name']
+        for kind, identity in (('tie', 'locator:score:0/measure:0/tick:0/track:0/note:0/tieFor'),
+                               ('page_lock', 'A_A..B_B'), ('group_bracket', 'B_B:1')):
+            validator.validate({'code':'B470_UNSUPPORTED_FEATURE','message':'test',
+                                'object':{'kind':kind,'id':identity}})
     inputs = {t["name"]: Draft202012Validator(t["inputSchema"]) for t in tools}
     outputs = {t["name"]: Draft202012Validator(t["outputSchema"]) for t in tools}
     doc = "doc-session-1"

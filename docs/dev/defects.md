@@ -263,7 +263,7 @@ such engine contract or change is introduced here.
 ### 24. 4.70 cannot represent part EIDs (DEFECT-ENGRAVE-024)
 
 - **Status**: Accepted format limitation, scoped in the phase-B contract.
-- **Evidence**: **EXECUTED** in the B5/B6 fixtures and the ngrave-23 regression: a shared-part downgrade keeps all four numeric Part ids 1–4, four ordinary parts reopen, and all four source part EIDs are absent. The 4.70 Part reader/writer has numeric ids and no interoperable part-EID field, so no private extension was invented.
+- **Evidence**: **EXECUTED** in the B5/B6 fixtures and the engrave-23 regression: a shared-part downgrade keeps all four numeric Part ids 1–4, four ordinary parts reopen, and all four source part EIDs are absent. The 4.70 Part reader/writer has numeric ids and no interoperable part-EID field, so no private extension was invented.
 - **Impact**: "IDs retained" in the earlier B1 wording overstated the contract for parts. Every representable element EID (score, staff, measure, clef, time signature, chord, note, spanner, …) is preserved; part EIDs are the documented exception. A consumer that keys parts by EID must fall back to the numeric part id in 4.70 files.
 - **Next step**: Keep docs/dev/phase-b-features.md as the authority for which IDs survive; revisit only if a future 4.70 writer gains an interoperable part-identity field.
 

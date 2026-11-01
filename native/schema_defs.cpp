@@ -113,6 +113,8 @@ Json declared_tools() {
     d["diagnostic"]=object({{"severity",en({"info","warning"})},{"message",str(65536)}});
     const J diagnostics=array(ref("diagnostic"));
     d["export_warning"]=object({{"code",str()},{"message",str()},{"object",object({{"kind",str(128)},{"id",str(256)}})}},J::array({"code","message"}));
+    for (const auto* field : {"kind", "id"})
+        d["export_warning"]["properties"]["object"]["properties"][field]["minLength"] = 1;
     // Frozen 4.70 warnings always identify their source; other warning families
     // retain the optional object contract.
     d["export_warning"]["if"]={{"properties",{{"code",{{"pattern","^B470_"}}}}},{"required",{"code"}}};
