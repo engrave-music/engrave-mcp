@@ -30,6 +30,18 @@ Evidence levels used in this ledger:
 
 ## Details
 
+### Host include boundary and poison-test coverage (A5 S6)
+
+Every translation unit and header under `native/`, including tests, must use
+only `engrave/...` public engine headers; there is no test-only internal-header
+exception. `host_api_test` exercises corrupt-score rejection and recovery after
+a throwing public document callback. The public engine API offers no way to
+force a snapshot-restore failure, so this does not prove the host's recovery
+probe against an actually poisoned document. The engine's own tests use its
+internal fault-injection seam for that state. A deterministic end-to-end host
+test would require a public, test-only way to request a restore failure; no
+such engine contract or change is introduced here.
+
 ### 1. LeakSanitizer findings at `engrave-14` (DEFECT-ENGRAVE-001)
 
 - **Status**: Carried / Open (accepted defect for Phase C closeout; does not block cleanup gate but precludes leak-clean claim).

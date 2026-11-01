@@ -1,7 +1,4 @@
 #include "host_api.h"
-// Test-only access to the engine's fault-injection seam; production S2 uses
-// only the public API. This lets us exercise a failed snapshot restoration.
-#include "engrave/src/api/state.h"
 
 #include <chrono>
 #include <filesystem>
@@ -265,18 +262,27 @@ int main(int argc,char** argv) {
         require(by_template_path.at("document")!=linked_doc,"closed token was reused");
         ok(*host,"score_close",{{"document",by_template_path.at("document")}});
 
-        auto poison=ok(*host,"score_open",{{"path",path_text(input)}}); const auto poison_doc=poison.at("document").get<std::string>();
-        require(bool(host->with_document(poison_doc,{},[](engrave::Document& d)->music::v2::Result<void>{
-            auto& hooks=engrave::DocumentAccess::edit_hooks(d); hooks.policy=engrave::api::Policy::Snapshot; hooks.fail_restore=true;
-            hooks.before_step=[](std::size_t){throw std::runtime_error("injected failure");}; return {};
-        })),"cannot inject recovery fault");
+        // Reject a genuinely corrupt score without damaging another open document.
+        const auto corrupt_path=scratch/"corrupt.mscx";
+        { std::ofstream f(corrupt_path,std::ios::binary); f << "not a MuseScore score"; }
+        error(*host,"score_open",{{"path",path_text(corrupt_path)}},"InvalidInput");
+        ok(*host,"score_outline",{{"document",doc}});
+
+        // A public callback failure exercises the host's recovery probe and
+        // lifetime guard without access to the engine's private edit hooks.
+        auto recovery=ok(*host,"score_open",{{"path",path_text(input)}}); const auto recovery_doc=recovery.at("document").get<std::string>();
+        auto failed=host->with_document(recovery_doc,{},[](engrave::Document&)->music::v2::Result<void>{
+            throw std::runtime_error("callback failure");
+        });
+        require(!failed && failed.error().code=="EngineFailure","callback failure was not reported");
+        ok(*host,"score_query",{{"document",recovery_doc},{"mode","audio_tracks"}});
+        bool reached=false;
+        require(bool(host->with_document(recovery_doc,{},[&](engrave::Document&)->music::v2::Result<void>{ reached=true; return {}; })) && reached,
+                "healthy document was not recovered after callback failure");
         const Json style={{"op","set_style"},{"score",Json::object()},{"style","staffDistance"},{"value",{{"kind","real"},{"value",9.0}}}};
-        error(*host,"score_edit",{{"document",poison_doc},{"ops",Json::array({style})}},"EngineFailure");
-        error(*host,"score_outline",{{"document",poison_doc}},"Poisoned");
-        error(*host,"score_query",{{"document",poison_doc},{"mode","audio_tracks"}},"Poisoned");
-        require(!host->with_document(poison_doc,{},[](engrave::Document&)->music::v2::Result<void>{return {}; }),"poisoned document reached with_document");
-        error(*host,"score_edit",{{"document",poison_doc},{"ops",Json::array({style})}},"Poisoned");
-        ok(*host,"score_close",{{"document",poison_doc}});
+        ok(*host,"score_edit",{{"document",recovery_doc},{"ops",Json::array({style})}});
+        ok(*host,"score_close",{{"document",recovery_doc}});
+        fs::remove(corrupt_path);
 
         const auto revision_before_assets=ok(*host,"score_outline",{{"document",doc}}).at("revision");
         auto font_info=ok(*host,"runtime_info",{{"action","add_font"},{"path",path_text(add_font_input)}});
