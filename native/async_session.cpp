@@ -34,6 +34,7 @@ struct HandlerContext {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     std::atomic<std::uint64_t>* capture_count = nullptr;
     std::atomic<bool>* capture_polling = nullptr;
+    std::atomic<bool>* hold_capture_completion = nullptr;
 #endif
 };
 
@@ -51,6 +52,10 @@ Json capture(void* p, const Json& a) {
     auto& context = *static_cast<HandlerContext*>(p);
     auto request = decode_export(a);
     if (!request) return error_envelope(request.error());
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+    if (request->destination.path.string().find(".test-capture-late") != std::string::npos)
+        context.hold_capture_completion->store(true, std::memory_order_release);
+#endif
     auto submitted = context.submitted;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     if (request->destination.path.string().find(".test-capture-deadline") != std::string::npos)
@@ -154,6 +159,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     std::atomic<bool> test_owner_busy{false};
     std::atomic<std::uint64_t> test_capture_count{0};
     std::atomic<bool> test_capture_polling{false};
+    std::atomic<bool> test_hold_completion{false}, test_capture_completion_pending{false};
 #endif
 
     explicit Impl(engrave::EngineOptions options) {
@@ -238,8 +244,22 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                             if (running_cancel && running_cancel->load(std::memory_order_acquire))
                                 throw asio::system_error(asio::error::operation_aborted);
                         } catch (...) { error = std::current_exception(); }
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                        const bool hold_completion = self->test_hold_completion.exchange(false);
+                        if (hold_completion && !error && running_cancel) {
+                            self->test_capture_completion_pending.store(true, std::memory_order_release);
+                            const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+                            while (!running_cancel->load(std::memory_order_acquire) && std::chrono::steady_clock::now() < until)
+                                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                            self->test_capture_completion_pending.store(false, std::memory_order_release);
+                        }
+#endif
                         asio::post(executor, [self, handler = std::move(handler), work = std::move(work), slot,
-                                              owner_task, error, result = std::move(result)]() mutable {
+                                              owner_task, error, running_cancel, result = std::move(result)]() mutable {
+                            // Cancellation can arrive after the owner finished
+                            // but before this completion runs on the session.
+                            if (!error && running_cancel && running_cancel->load(std::memory_order_acquire))
+                                error = std::make_exception_ptr(asio::system_error(asio::error::operation_aborted));
                             if (slot.is_connected()) slot.clear();
                             if (owner_task) --self->owner_pending;
                             handler(error, std::move(result));
@@ -323,7 +343,8 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments) {
     if (self->closing) throw asio::system_error(asio::error::operation_aborted);
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     if (name == "test_capture_count") co_return Json{{"ok", true}, {"count", self->test_capture_count.load()}};
-    if (name == "test_capture_state") co_return Json{{"ok", true}, {"polling", self->test_capture_polling.load()}};
+    if (name == "test_capture_state") co_return Json{{"ok", true}, {"polling", self->test_capture_polling.load()},
+        {"completion_pending", self->test_capture_completion_pending.load()}};
     if (name == "test_owner_state") co_return Json{{"ok", true}, {"busy", self->test_owner_busy.load()}};
     if (name == "test_owner_sleep") {
         co_return co_await self->dispatch<Json>(self->owner_io, [self] {
@@ -351,6 +372,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments) {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
         context.capture_count = &self->test_capture_count;
         context.capture_polling = &self->test_capture_polling;
+        context.hold_capture_completion = &self->test_hold_completion;
 #endif
         auto payload = handler(&context, arguments);
         return Impl::OwnerResult{std::move(payload), std::move(context.snapshot), std::move(context.reservation)};

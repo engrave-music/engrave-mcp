@@ -180,6 +180,18 @@ async def run(args):
             await client.notify("notifications/cancelled", {"requestId": capture_id})
             capture_result = await asyncio.wait_for(capture_future, 10)
             assert capture_result["error"]["code"] == -32800 and not capture_path.exists(), capture_result
+            late_path = out / "cancel.test-capture-late.musicxml"
+            late_path.unlink(missing_ok=True)
+            late_id, late_future = client.begin("tools/call", {"name": "score_export", "arguments":
+                export(doc, late_path, "run")})
+            await client.proc.stdin.drain()
+            for _ in range(300):
+                if (await client.tool("test_capture_state", {}))["completion_pending"]: break
+                await asyncio.sleep(.01)
+            else: raise AssertionError("capture completion was not held")
+            await client.notify("notifications/cancelled", {"requestId": late_id})
+            late_result = await asyncio.wait_for(late_future, 10)
+            assert late_result["error"]["code"] == -32800 and not late_path.exists(), late_result
             deadline_path = out / "deadline.test-capture-deadline.musicxml"
             deadline_path.unlink(missing_ok=True)
             deadline_result = await client.tool("score_export", export(doc, deadline_path, "run"), error=True)
@@ -280,7 +292,7 @@ async def run(args):
             assert not shutdown_path.exists() and not run_path.exists() and not list(out.glob(".musescore-job-*"))
             assert all(not child.is_running() for child in children), [child.pid for child in children]
             evidence.update(queue_limit=8, running_limit=2, queued_and_running_cancel=True,
-                            request_cancel=True, capture_cancel=True, capture_deadline=True,
+                            request_cancel=True, capture_cancel=True, capture_completion_cancel=True, capture_deadline=True,
                             queued_owner_cancel=True, running_owner_committed=True,
                             job_manager_responsive_while_owner_busy=True, eof_reaped_worker=True,
                             destination_reservation=True)
