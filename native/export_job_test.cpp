@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
             if (target.find(".test-audio-grow") != std::string::npos) {
                 const auto cache = path.parent_path() / "cache";
                 fs::create_directory(cache);
-                std::ofstream file(cache / "growing.wav", std::ios::binary);
+                std::ofstream file(cache / "engrave-audio-test.wav", std::ios::binary);
                 const std::string block(1024, 'x');
                 for (int i = 0; i < 256; ++i) {
                     file.write(block.data(), static_cast<std::streamsize>(block.size()));
@@ -130,6 +130,23 @@ int main(int argc, char** argv) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(3));
                 }
                 return 1; // The manager must stop this test worker first.
+            }
+            if (target.find(".test-audio-ignored") != std::string::npos) {
+                const auto cache = path.parent_path() / "cache";
+                fs::create_directories(cache / "musescore-runtime-fonts-test");
+                fs::create_directories(cache / "engrave-audio-directory");
+                const std::string large(8192, 'x');
+                std::ofstream(cache / "musescore-runtime-fonts-test" / "font", std::ios::binary) << large;
+                std::ofstream(cache / "unrelated", std::ios::binary) << large;
+                std::error_code ec;
+                fs::create_symlink(cache / "unrelated", cache / "engrave-audio-link", ec);
+                // Keep the nodes in place for several monitor iterations.
+                std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                std::ofstream(fs::u8path(j.at("stage").get<std::string>()) / "output", std::ios::binary) << "ok";
+                std::ofstream(path.parent_path() / "result.json", std::ios::binary) <<
+                    Json{{"version", 2}, {"ok", true}, {"artifacts", Json::array({
+                        Json{{"name", "output"}, {"mime", "audio/wav"}, {"size", 2}}})}}.dump();
+                return 0;
             }
             return run_worker(path);
         }
@@ -375,12 +392,25 @@ int main(int argc, char** argv) {
         {
             JobLimits limits; limits.output_bytes = 4096;
             ExportJobs limited(limits);
+            const auto ignored_path = scratch / "audio.test-audio-ignored.wav";
+            auto ignored = submit(limited, *captured_audio, ignored_path);
+            require(wait_job(limited, ignored.job).state == JobState::Succeeded &&
+                    fs::file_size(ignored_path) == 2, "unrelated cache nodes were charged to audio");
             const auto path = scratch / "audio.test-audio-grow.wav";
             auto growing = submit(limited, *captured_audio, path);
             auto stopped = wait_job(limited, growing.job);
             require(stopped.state == JobState::Failed && stopped.error && stopped.error->code == "ResourceLimit",
                     "growing audio cache was not stopped");
             require(!fs::exists(path), "growing audio cache published an artifact");
+        }
+        {
+            JobLimits limits; limits.output_bytes = 64;
+            ExportJobs limited(limits);
+            const auto path = scratch / "audio-oversized.wav";
+            auto oversized = submit(limited, *captured_audio, path);
+            const auto status = wait_job(limited, oversized.job);
+            require(status.state == JobState::Failed && status.error && status.error->code == "ResourceLimit" &&
+                    !fs::exists(path), "oversized real audio job was not rejected");
         }
         std::optional<ExportSnapshot> captured_score;
         auto score_req = request(doc, "score", {{"format", "mscx"}, {"score", excerpt}});

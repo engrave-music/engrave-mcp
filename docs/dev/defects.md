@@ -31,6 +31,7 @@ Evidence levels used in this ledger:
 | DEFECT-ENGRAVE-018 | Snapshot materialization exceeds pre-admission accounting | Partially mitigated / Open | SOURCE-REVIEWED, EXECUTED | Provisional capacity, destination and payload reservations precede capture, but the pinned API cannot bound or interrupt the allocation during capture |
 | DEFECT-ENGRAVE-019 | Audio temporary output can exceed its byte budget | Partially mitigated / Open | SOURCE-REVIEWED, EXECUTED | Settings-aware estimates and sampled cache termination reduce exposure, but sampling is not a hard filesystem quota |
 | DEFECT-ENGRAVE-020 | Snapshot pins fell through to legacy allowances | Resolved | SOURCE-REVIEWED, EXECUTED | A snapshot pin takes precedence over an older direct-engine allowance |
+| DEFECT-ENGRAVE-021 | Runtime font cache breaks Linux audio monitoring | Resolved | SOURCE-REVIEWED, EXECUTED | The audio monitor counts only regular engine audio cache files |
 
 ## Details
 
@@ -224,10 +225,16 @@ such engine contract or change is introduced here.
 ### 19. Audio temporary output can exceed its byte budget (DEFECT-ENGRAVE-019)
 
 - **Status**: Partially mitigated by `e0091f3`; open for a hard temporary-file quota.
-- **Evidence**: **EXECUTED** on Windows: a 64-byte worker limit returned `ResourceLimit` with a sampled cache peak of 0 bytes and no staged artifact. For the same 43-second rounded outline, 16-bit WAV and 128-kbps MP3 succeeded under budgets that rejected 24-bit WAV and 512-kbps MP3 before creating audio. A test worker growing a cache was terminated by the job manager and published nothing. **SOURCE-REVIEWED**: the estimate uses the selected settings; cache monitoring samples approximately every 5 ms and may overshoot, and a manually invoked private worker has no manager watchdog. The engine still writes its complete cache file before invoking the public sink.
+- **Evidence**: **EXECUTED** on Windows: a 64-byte worker limit returned `ResourceLimit` with a sampled cache peak of 0 bytes and no staged artifact. For the same 43-second rounded outline, 16-bit WAV and 128-kbps MP3 succeeded under budgets that rejected 24-bit WAV and 512-kbps MP3 before creating audio. A test worker growing a cache was terminated by the job manager and published nothing. **SOURCE-REVIEWED**: the estimate uses the selected settings; the 5-ms monitor interval is a polling target, not a maximum overshoot. Scheduling, filesystem work and other coordinator work can delay sampling, and no finite maximum overshoot has been established. A manually invoked private worker has no manager watchdog. The engine still writes its complete cache file before invoking the public sink, and the cache and staged copy can coexist.
 - **Next step**: Supply a quota-enforcing file device or equivalent OS-backed per-worker disk limit that cannot overshoot between samples. Account for the coexistence of the cache and staged output and verify cleanup and failure classification on both platforms.
 
 ### 20. Snapshot pins fell through to legacy allowances (DEFECT-ENGRAVE-020)
 
 - **Status**: Resolved by `8a5794e`.
 - **Evidence**: **EXECUTED** on Windows: the oracle harness exercises both `pedal.mscx` SVG and PDF entries using their real recorded migration and A3 allowance hashes. With marker bytes mapped to those hashes, each older allowance passes without a v2 snapshot pin and fails with the pin; the pinned host hash passes and a missing output fails. **SOURCE-REVIEWED**: the full comparator and v2 overlap check apply snapshot precedence before equality or older allowances. Existing audio tolerances and other allowances are unchanged.
+
+### 21. Runtime font cache breaks Linux audio monitoring (DEFECT-ENGRAVE-021)
+
+- **Status**: Resolved. The A5 re-review (`notes/a5/s8/REVIEW-TERRA-2.md`, section 3.A) reproduced an `Is a directory` worker failure after a runtime font was registered.
+- **Resolution**: The monitor sums only regular, non-symlink direct children of the worker cache whose names start with `engrave-audio-`, the pinned engine's encoded-audio filename prefix. It does not recurse, count runtime font directories, unrelated cache files, symlinks, sockets or other non-regular entries. The worker separately limits the staged output; the monitor does not sum that copy with the cache file.
+- **Evidence**: **EXECUTED** on Windows: live host WAV exports without a font and after `runtime_info` registers Petaluma Script both succeed under the default budget; a manager test ignores unrelated entries and stops a growing named audio cache file. **SOURCE-REVIEWED**: the pinned engine writes its encoded temporary audio as an `engrave-audio-<pid>-<index>.<format>` direct child of its cache directory. The polling limitation remains open in -019.

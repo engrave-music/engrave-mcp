@@ -144,6 +144,15 @@ bool audio_cache_exceeds(const Job& job, std::uint64_t limit) {
     if (ec) throw std::system_error(ec, "cannot inspect audio cache");
     for (; entries != end; entries.increment(ec)) {
         if (ec) throw std::system_error(ec, "cannot inspect audio cache");
+        // The pinned engine writes its encoded audio as a direct child named
+        // engrave-audio-<pid>-<index>.<format>. Do not traverse or charge the
+        // runtime font cache, unrelated files, symlinks, or other node types.
+        // The separately staged output is checked by the worker and publisher.
+        if (!entries->path().filename().generic_u8string().starts_with(u8"engrave-audio-")) continue;
+        const auto status = entries->symlink_status(ec);
+        if (ec == std::errc::no_such_file_or_directory) { ec.clear(); continue; }
+        if (ec) throw std::system_error(ec, "cannot inspect audio cache file");
+        if (!fs::is_regular_file(status)) continue;
         const auto size = entries->file_size(ec);
         if (ec == std::errc::no_such_file_or_directory) { ec.clear(); continue; }
         if (ec) throw std::system_error(ec, "cannot measure audio cache file");
