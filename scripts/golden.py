@@ -894,6 +894,49 @@ def read_v2_index(golden_root: Path) -> tuple[Path | None, dict, dict]:
     return overlay, legacy, additions
 
 
+def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
+    """Load exact v1-to-v2 output migrations, including their oracle provenance."""
+    path = golden_root.parent / "v2" / golden_root.name / "migrations.json"
+    if not path.is_file():
+        return {}
+    data = json.loads(read_text(path))
+    if (data.get("schema") != 1 or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
+            or not isinstance(data.get("entries"), list)):
+        raise ValueError("invalid v2 migration header")
+    sources = {source.name: source for source in fixture_files() + supplemental_mnx_files()}
+    result = {}
+    for entry in data["entries"]:
+        if not isinstance(entry, dict):
+            raise ValueError("invalid v2 migration entry")
+        fixture, output = entry.get("fixture"), entry.get("output")
+        key = (fixture, output)
+        if (not isinstance(fixture, str) or not isinstance(output, str) or fixture not in sources
+                or key in result or any(char in fixture + output for char in "*?[]")
+                or any(not re.fullmatch(r"[0-9a-f]{64}", str(entry.get(field, "")))
+                       for field in ("baseline_sha256", "actual_sha256", "oracle_sha256", "fixture_sha256"))
+                or entry["fixture_sha256"] != sha256(sources[fixture].read_bytes())
+                or entry["actual_sha256"] != entry["oracle_sha256"]
+                or any(not isinstance(entry.get(field), str) or not entry[field].strip()
+                       for field in ("oracle", "reason"))):
+            raise ValueError(f"invalid v2 migration provenance for {fixture}/{output}")
+        if fixture == "created.json":
+            xml = composition_musicxml(json.loads(read_text(sources[fixture]))).encode("utf-8")
+            if (entry.get("input_sha256") != sha256(xml)
+                    or entry.get("converter_sha256") != sha256((ROOT / "scripts/v2_fixtures.py").read_bytes())):
+                raise ValueError("created.json migration input or converter changed")
+        result[key] = entry
+    return result
+
+
+def v2_migration_accept(entries: dict, fixture: str, output: str,
+                        baseline_sha: str | None, actual_sha: str | None) -> dict | None:
+    entry = entries.get((fixture, output))
+    if (entry and baseline_sha == entry["baseline_sha256"]
+            and actual_sha == entry["actual_sha256"]):
+        return entry
+    return None
+
+
 def silence_windows(audio: dict) -> list[bool]:
     """Per-window exact-silence flags from the stored PCM evidence."""
     counts = audio.get(SILENCE_EVIDENCE)
@@ -1002,6 +1045,11 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         overlay, supplemental, additions = None, {}, {}
         report["indexIssues"].append(f"invalid v2 index: {exc}")
+    try:
+        migrations = read_v2_migrations(golden_root)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        migrations = {}
+        report["indexIssues"].append(f"invalid v2 migrations: {exc}")
     golden_index = {**golden_index, **supplemental}
     report["indexIssues"].extend(verify_golden_index(golden_root, golden_index))
     if overlay is not None:
@@ -1062,6 +1110,16 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
                                  "goldenSha256": golden_sha, "actualSha256": actual_sha,
                                  "error": golden_format}
                 print(f"golden-format {fixture}/{name}: {golden_format}")
+                continue
+
+            migration = (v2_migration_accept(migrations, fixture, name, golden_sha, actual_sha)
+                         if kind == "different" and not golden_error else None)
+            if migration:
+                counts["allowed"] += 1
+                results[name] = {"status": "v2-migrated", "kind": kind,
+                                 "reason": migration["reason"], "oracle": migration["oracle"],
+                                 "actualSha256": actual_sha, "goldenSha256": golden_sha}
+                print(f"migrated {fixture}/{name} (v1 to v2; public-API oracle)")
                 continue
 
             position, entry, problem = allow_accept(allow, fixture, name, kind, actual_sha, platform)

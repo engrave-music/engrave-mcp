@@ -64,6 +64,17 @@ class TestRoundTripXmlControls(unittest.TestCase):
 
 
 class TestV2GoldenInventory(unittest.TestCase):
+    def test_migration_pins_both_versions_and_the_specific_output(self):
+        migrations = golden.read_v2_migrations(ROOT / "tests/golden/windows")
+        key = ("evening.musicxml", "score.mscx")
+        entry = migrations[key]
+        old, new = entry["baseline_sha256"], entry["actual_sha256"]
+        self.assertIsNotNone(golden.v2_migration_accept(migrations, *key, old, new))
+        self.assertIsNone(golden.v2_migration_accept(migrations, *key, "0" * 64, new))
+        self.assertIsNone(golden.v2_migration_accept(migrations, *key, old, "0" * 64))
+        self.assertIsNone(golden.v2_migration_accept(migrations, key[0], "other.mscx", old, new))
+        self.assertIsNone(golden.v2_migration_accept(migrations, "other.musicxml", key[1], old, new))
+
     def test_mnx_indexes_cover_legacy_and_v2_files_and_detect_tampering(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
