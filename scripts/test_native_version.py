@@ -93,23 +93,41 @@ async def run(args):
                             'destination':{'kind':'file','path':str(out/'malformed.mscx')}}, failed=True)
                         assert invalid['error']['code']=='InvalidArgument', invalid
                         assert not (out/'malformed.mscx').exists()
-                refused_source = ROOT/'tests/phase_b/page_locks.source.mscx'
+                degraded_source = ROOT/'tests/phase_b/page_locks.source.mscx'
+                degraded_doc = (await call('score_open', {'path':str(degraded_source)}))['document']
+                expected = json.loads((ROOT/'tests/phase_b/expected/page_locks.warnings.json').read_text())
+                for fmt in ('mscx','mscz'):
+                    for action in ('run','start'):
+                        value, _ = await export(degraded_doc,'degraded-'+fmt+'-'+action,'4.70',action,fmt)
+                        assert value['export_warnings']==expected, value
+                refused_source = ROOT/'tests/phase_b/ties_mismatched.mscx'
                 refused_doc = (await call('score_open', {'path':str(refused_source)}))['document']
-                failures=[]
-                for action in ('run','start'):
-                    value, _ = await export(refused_doc,'refused-'+action,'4.70',action,refused=True)
-                    assert value['error']['code']=='Unsupported', value
-                    warnings=value['error']['export_warnings']
-                    assert any(w['code']=='B470_PAGE_LOCK_DROPPED' and set(w.get('object',{}))=={'kind','id'}
-                               for w in warnings), warnings
-                    if action=='start': assert value['export_warnings']==warnings
-                    failures.append(warnings)
-                assert failures[0]==failures[1]
+                expected = json.loads((ROOT/'tests/phase_b/expected/ties_mismatched.warnings.json').read_text())
+                for fmt in ('mscx','mscz'):
+                    for action in ('run','start'):
+                        value, _ = await export(refused_doc,'refused-'+fmt+'-'+action,'4.70',action,fmt,refused=True)
+                        assert value['error']['code']=='Unsupported', value
+                        assert value['error']['export_warnings']==expected, value
+                        if action=='start':
+                            assert value['export_warnings']==expected, value
+                            assert value['artifacts']==[], value
                 # Schema controls: engine-owned strings/arrays have no invented request bounds.
                 large = dict(sync)
                 large['export_warnings']=[{'code':'x'*5000,'message':'m'*70000}]*4100
                 validators['score_export'].validate(large)
-                for token in (doc,doc70,frozen_doc,refused_doc): await call('score_close',{'document':token})
+                # Check every schema embedding the shared warning definition,
+                # including errors and runtime jobs. B470 objects need both fields.
+                for tool in tools.values():
+                    warning = tool['outputSchema']['$defs'].get('export_warning')
+                    if warning is None: continue
+                    validator = Draft202012Validator(warning)
+                    validator.validate({'code':'OTHER','message':'no object required'})
+                    validator.validate(expected[0])
+                    for obj in (None, {}, {'kind':'tie'}, {'id':'H_H'}):
+                        invalid = {'code':'B470_INVALID_TIE','message':'test'}
+                        if obj is not None: invalid['object']=obj
+                        assert not validator.is_valid(invalid), (tool['name'], invalid)
+                for token in (doc,doc70,frozen_doc,degraded_doc,refused_doc): await call('score_close',{'document':token})
     (out/'envelopes.json').write_text(json.dumps(envelopes,indent=2),encoding='utf-8')
     (out/'provenance.json').write_text(json.dumps({'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
         'target_version':'4.70','scope':'restricted writer; independent oracle pending',

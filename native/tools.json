@@ -144,6 +144,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -172,6 +182,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         }
       },
@@ -370,6 +385,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -398,6 +423,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         }
       },
@@ -537,6 +567,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -565,6 +605,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         }
       },
@@ -732,6 +777,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -760,6 +815,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         },
         "fraction": {
@@ -1688,6 +1748,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -1716,6 +1786,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         },
         "fraction": {
@@ -2332,6 +2407,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -2360,6 +2445,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         },
         "fraction": {
@@ -3990,6 +4080,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -4018,6 +4118,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         }
       },
@@ -4814,6 +4919,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -4842,6 +4957,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         }
       },
@@ -5136,6 +5256,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -5164,6 +5294,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         },
         "limits": {
@@ -5419,6 +5554,16 @@
         },
         "export_warning": {
           "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
           "properties": {
             "code": {
               "type": "string"
@@ -5447,6 +5592,11 @@
             "code",
             "message"
           ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
           "type": "object"
         },
         "job": {
