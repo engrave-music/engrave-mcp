@@ -19,14 +19,18 @@ import time
 
 LANE_NAMES = [
     "music_core",
+    "host_api",
+    "export_job",
+    "runtime_assets",
     "score_edit",
     "score_audio",
     "score_positions",
-    "noqt_support",
+    "noqt_probe",
     "excerpts",
     "assets",
     "archives",
     "native_edit",
+    "linked_tie",
     "audio_facade",
     "async_session",
     "imports_midi",
@@ -37,6 +41,7 @@ LANE_NAMES = [
     "export_options",
     "transport",
     "golden",
+    "v2_golden_overlap",
     "semantic_check",
     "compat_corpus",
     "roundtrip",
@@ -56,14 +61,17 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         sys.exit(2)
     missing = []
     requirements = {
-        "music_core": ["music_core_test", "musescore-mcp"], "score_edit": ["score_edit_test"],
+        "music_core": ["music_core_test"], "host_api": ["host_api_test"],
+        "export_job": ["export_job_test", "musescore-mcp"],
+        "runtime_assets": ["musescore-mcp-test"], "score_edit": ["score_edit_test"],
         "score_audio": ["score_audio_test"], "score_positions": ["score_positions_test"],
-        "noqt_support": ["noqt_support_test"], "excerpts": ["excerpts_test"],
+        "noqt_probe": ["noqt_probe"], "excerpts": ["excerpts_test"],
         "assets": ["assets_test"], "archives": ["archive_test", "musescore-mcp"],
         "async_session": ["musescore-mcp-test"], "golden": ["musescore-mcp", "semantic_dump"],
         "semantic_check": [], "oracle_harness": [], "compat_corpus": ["semantic_dump"],
         "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
         "engine_audio": ["engine_audio_probe", "musescore-mcp"],
+        "tool_schema": ["registry_dump", "registry_test"],
     }
     selected = {binary for lane in lanes for binary in requirements.get(lane, ["musescore-mcp"])}
     for binary_name in sorted(selected):
@@ -197,11 +205,25 @@ def run_lane(
     if lane == "music_core":
         cmd = [str(build_dir / f"music_core_test{exe_suffix}"), str(assets), str(soundfont),
                str(repo_root / "tests/engine_audio/sine.sf2")]
-        code = subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-        if code:
-            return code
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
+    if lane == "host_api":
+        cmd = [py, str(repo_root / "scripts/test_host_api.py"),
+               "--binary", str(build_dir / f"host_api_test{exe_suffix}"), "--resources", str(assets),
+               "--soundfont", str(soundfont), "--replacement-soundfont", str(repo_root / "tests/engine_audio/sine.sf2"),
+               "--output", str(output / "host-api")]
+        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
+    if lane == "export_job":
+        cmd = [py, str(repo_root / "scripts/test_export_job.py"),
+               "--binary", str(build_dir / f"export_job_test{exe_suffix}"),
+               "--host-binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
+               "--resources", str(assets), "--soundfont", str(soundfont), "--output", str(output / "export-job")]
+        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
+    if lane == "runtime_assets":
         cmd = [py, str(repo_root / "scripts/test_runtime_assets_mcp.py"),
-               "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"), "--resources", str(assets),
+               "--binary", str(build_dir / f"musescore-mcp-test{exe_suffix}"), "--resources", str(assets),
                "--soundfont", str(soundfont), "--output", str(output / "runtime-assets")]
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -217,11 +239,10 @@ def run_lane(
         cmd = [str(build_dir / f"score_positions_test{exe_suffix}"), str(assets)]
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
-    if lane == "noqt_support":
-        noqt_dir = output / "noqt-support"
-        if noqt_dir.exists():
-            shutil.rmtree(noqt_dir)
-        cmd = [str(build_dir / f"noqt_support_test{exe_suffix}"), str(noqt_dir)]
+    if lane == "noqt_probe":
+        cmd = [py, str(repo_root / "scripts/test_noqt_probe.py"),
+               "--binary", str(build_dir / f"noqt_probe{exe_suffix}"), "--assets", str(assets),
+               "--input", str(repo_root / "fixtures/evening.musicxml"), "--output", str(output / "noqt-probe")]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "excerpts":
@@ -267,6 +288,12 @@ def run_lane(
             "--resources", str(assets),
             "--output", str(output / "native-edit"),
         ]
+        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
+    if lane == "linked_tie":
+        cmd = [py, str(repo_root / "scripts/test_linked_tie.py"),
+               "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"), "--resources", str(assets),
+               "--output", str(output / "linked-tie")]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "audio_facade":
@@ -335,9 +362,9 @@ def run_lane(
     if lane == "tool_schema":
         cmd = [
             py,
-            str(repo_root / "scripts/test_legacy_tool_schema.py"),
-            "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"),
-            "--assets", str(assets),
+            str(repo_root / "scripts/test_tool_schema.py"),
+            "--dump", str(build_dir / f"registry_dump{exe_suffix}"),
+            "--registry-test", str(build_dir / f"registry_test{exe_suffix}"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -385,6 +412,12 @@ def run_lane(
             "--allow", str(repo_root / "tests/golden/allow.json"),
             "--output", str(output / "golden"),
         ]
+        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
+    if lane == "v2_golden_overlap":
+        cmd = [py, str(repo_root / "scripts/test_v2_golden_overlap.py"),
+               "--binary", str(build_dir / f"musescore-mcp{exe_suffix}"), "--resources", str(assets),
+               "--soundfont", str(soundfont), "--output", str(output / "v2-golden-overlap")]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "semantic_check":
