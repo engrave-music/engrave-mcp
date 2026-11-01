@@ -97,6 +97,20 @@ class TestV2GoldenInventory(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exceeds pixel"):
                 golden.read_v2_migrations(baseline)
 
+    def test_edit_migration_pins_the_scenario(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "golden"
+            baseline, overlay = root / "windows", root / "v2/windows"
+            baseline.mkdir(parents=True)
+            overlay.mkdir(parents=True)
+            shutil.copyfile(ROOT / "tests/golden/allow.json", root / "allow.json")
+            data = json.loads((ROOT / "tests/golden/v2/windows/migrations.json").read_text(encoding="utf-8"))
+            edit = next(item for item in data["entries"] if item["fixture"] == "edit-set-pitches-coverage")
+            edit["scenario_sha256"] = "0" * 64
+            golden.write_json(overlay / "migrations.json", data)
+            with self.assertRaisesRegex(ValueError, "edit scenario changed"):
+                golden.read_v2_migrations(baseline)
+
     def test_mnx_indexes_cover_legacy_and_v2_files_and_detect_tampering(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

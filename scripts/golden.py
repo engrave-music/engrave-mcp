@@ -905,6 +905,7 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
             or not isinstance(data.get("entries"), list)):
         raise ValueError("invalid v2 migration header")
     sources = {source.name: source for source in fixture_files() + supplemental_mnx_files()}
+    sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})
     result = {}
     for entry in data["entries"]:
         if not isinstance(entry, dict):
@@ -920,11 +921,16 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
                 or any(not isinstance(entry.get(field), str) or not entry[field].strip()
                        for field in ("oracle", "reason"))):
             raise ValueError(f"invalid v2 migration provenance for {fixture}/{output}")
-        if fixture == "created.json":
+        if fixture in EDIT_SCENARIOS:
+            scenario = json.dumps(EDIT_SCENARIOS[fixture], sort_keys=True, ensure_ascii=False,
+                                  separators=(",", ":")).encode("utf-8")
+            if entry.get("scenario_sha256") != sha256(scenario):
+                raise ValueError(f"edit scenario changed: {fixture}")
+        if sources[fixture].name == "created.json":
             xml = composition_musicxml(json.loads(read_text(sources[fixture]))).encode("utf-8")
             if (entry.get("input_sha256") != sha256(xml)
                     or entry.get("converter_sha256") != sha256((ROOT / "scripts/v2_fixtures.py").read_bytes())):
-                raise ValueError("created.json migration input or converter changed")
+                raise ValueError(f"created input or converter changed: {fixture}")
         kind = entry.get("kind", "standalone")
         if kind == "snapshot":
             direct, measurement = entry.get("direct_sha256"), entry.get("measurement")
