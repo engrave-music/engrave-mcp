@@ -38,6 +38,8 @@ def main():
         doc=c.tool("score_open",{"path":str(ROOT/"fixtures/golden/repeat70.mscx")})["document"]
         bad=export_args(doc,"pdf",out/"missing-parent"/"out.pdf")
         assert c.tool("score_export",bad,False)["error"]["code"]=="InvalidArgument"
+        bad=export_args(doc,"svg",out/"missing-directory")
+        assert c.tool("score_export",bad,False)["error"]["code"]=="InvalidArgument"
         hashes={}
         for fmt in ("mscz","mscx","musicxml","mxl","midi","pdf","svg","png"):
             path=out/fmt
