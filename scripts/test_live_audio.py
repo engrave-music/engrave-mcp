@@ -49,6 +49,25 @@ def main():
     c = client('live', 'reuse')
     try:
         doc = opened(c)
+        # Remove and restore selection on the same Engine. A second distinct
+        # SoundFont is not part of the pinned test assets.
+        selected_path = a.output/'selection.wav'
+        selection_args = args(doc, 'audio', 'wav', selected_path)
+        c.tool('score_export', selection_args)
+        selected_hash = hashlib.sha256(selected_path.read_bytes()).hexdigest()
+        c.tool('runtime_info', {'action':'set_soundfonts', 'files':[]})
+        assert c.tool('score_export', selection_args, False)['error']['code'] == 'Unsupported'
+        c.tool('runtime_info', {'action':'set_soundfonts', 'files':[str(a.soundfont.resolve())]})
+        c.tool('score_export', selection_args)
+        assert hashlib.sha256(selected_path.read_bytes()).hexdigest() == selected_hash
+        results['selection_restore'] = 'A / disabled / A: identical WAV'
+        c.tool('score_export', args(doc, 'audio', 'wav', a.output/'release.test-live-noncooperative.wav'))
+        results['release_hook_inert'] = True
+        # A fresh session below retains a meaningful first-export measurement.
+    finally: c.close()
+    c = client('live', 'reuse-first')
+    try:
+        doc = opened(c)
         for i in range(101):
             start = time.perf_counter()
             c.tool('score_export', args(doc, 'audio', 'wav', a.output/'reuse.wav'))

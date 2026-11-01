@@ -413,9 +413,14 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             if (options.use_repeats) duration = outline.duration;
             else {
                 const auto master = options.score.excerpt ? engine_value(document.outline()) : outline;
-                auto positions = document.positions(engrave::PositionKind::Measure, {}, capture);
-                if (positions) duration = unexpanded_audio_seconds(master, *positions);
-                else check();
+                try {
+                    auto positions = document.positions(engrave::PositionKind::Measure, {}, capture);
+                    if (positions) duration = unexpanded_audio_seconds(master, *positions);
+                } catch (const std::runtime_error&) {
+                    // Match worker preflight: unavailable positions cannot bound
+                    // the unexpanded duration; retain the encoder quota.
+                }
+                check();
             }
             const auto limit = audio_file_budget(limits.output_bytes);
             if (duration && projected_audio_bytes(options, *duration, rate) > limit)
@@ -448,6 +453,8 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             }
             timing.add("engine_call", start);
             const auto destination = request.destination.directory ? cleanup.destination / "output" : cleanup.destination;
+            if (detail::path_text(destination).size() > 4096)
+                throw detail::DecodeError{HostError{"ResourceLimit", "artifact path exceeds limit"}};
             staged.push_back({path, {mime, destination, bytes}});
         }
         // All rendering and staging succeeds before any file becomes visible.
