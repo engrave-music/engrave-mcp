@@ -777,6 +777,15 @@ attributing an older lane result to the v2 host.
 
 ### A5 S5 migration evidence and open checks
 
+The `engrave-16` follow-up and the current v2 comparison policy are in
+[a5-outputs.md](a5-outputs.md); the 78-output classification is in its linked
+machine-readable census. **EXECUTED, Windows:** the new-pin round trip passed
+23/23 and the focused golden overlap passed after independently verified,
+hash-pinned v2 migrations. The full golden comparison still has fourteen
+out-of-bound render outputs, and the strict rendered-page and version checks
+remain open under `DEFECT-ENGRAVE-015` and `DEFECT-ENGRAVE-014`. The earlier
+S5 results below are retained as historical evidence, not current counts.
+
 **EXECUTED, Windows:** the v2 runner subset `music_core`, `host_api`,
 `export_job`, `runtime_assets`, `archives`, `native_edit`, `linked_tie`,
 `imports_midi`, `open_data`, `imports_gp`, `tool_schema`, `positions` and

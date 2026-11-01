@@ -654,7 +654,8 @@ def png_metrics(actual, reference):
 def png_issues(actual, reference):
     issues = []
     if actual["size"] != reference["size"]:
-        return [f"PNG size {actual['size']} differs from reference {reference['size']}"]
+        # A dimension mismatch must not hide an independent change in the ink.
+        issues.append(f"PNG size {actual['size']} differs from reference {reference['size']}")
     ratio, edge_delta, grid_l1 = png_metrics(actual, reference)
     if abs(ratio - 1) > INK_RATIO_DELTA + 1e-12:
         issues.append(f"PNG ink share ratio {ratio:.4f} outside ±{INK_RATIO_DELTA:.0%}")

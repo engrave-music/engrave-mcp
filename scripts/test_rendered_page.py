@@ -308,6 +308,12 @@ class TestPngInkControls(unittest.TestCase):
         self.assertTrue(any("no ink bounding box" in issue for issue in issues), issues)
         self.assertTrue(any("grid L1" in issue for issue in issues), issues)
 
+    def test_changed_dimensions_do_not_mask_missing_ink(self):
+        issues = self.issues_for(Image.new("RGBA", (127, 128), "white"))
+        self.assertTrue(any("PNG size" in issue for issue in issues), issues)
+        self.assertTrue(any("ink share" in issue for issue in issues), issues)
+        self.assertTrue(any("grid L1" in issue for issue in issues), issues)
+
     def test_fully_transparent_black_png_is_blank(self):
         issues = self.issues_for(Image.new("RGBA", (128, 128), (0, 0, 0, 0)))
         self.assertTrue(any("no ink bounding box" in issue for issue in issues), issues)
