@@ -1,4 +1,4 @@
-"""Export the A0 fixtures and edit scenarios as a new forward-compat pin.
+"""Export the A0 fixtures and edit scenarios as a forward-compat reference.
 
 Use the pinned host build and record the commits it was built from. The output
 directory must not already exist: previously captured bytes are never replaced.
@@ -23,7 +23,9 @@ from test_compat_corpus import digest, semantic_dump, write_json
 
 
 def features(source: Path, edit: bool, score: Path, semantic: dict) -> list[str]:
-    found = {"notes and rests", "tempo map"}
+    found = set()
+    if semantic.get("tempoMap"):
+        found.add("tempo map")
     if edit:
         found.add("edited score")
     if source.suffix == ".gp":
@@ -44,6 +46,10 @@ def features(source: Path, edit: bool, score: Path, semantic: dict) -> list[str]
             for item in value:
                 visit(item)
         elif isinstance(value, dict):
+            if value.get("kind") == "chord" and value.get("notes"):
+                found.add("notes")
+            if value.get("kind") == "rest":
+                found.add("rests")
             if value.get("excerpts"):
                 found.add("linked parts and excerpts")
             if value.get("spanners"):
@@ -81,6 +87,7 @@ async def capture_one(session, source: Path, name: str, scenario: dict | None,
         expected = f"{name}.semantic.json"
         write_json(target / expected, dump)
         entry = {"file": score.name, "semantic": expected, "sha256": digest(score),
+                 "semantic_sha256": digest(target / expected), "source_sha256": digest(source),
                  "features": features(source, bool(scenario), score, dump),
                  "source": source.relative_to(Path(__file__).resolve().parents[1]).as_posix(),
                  **provenance}
@@ -119,7 +126,14 @@ async def capture(args) -> None:
             log.seek(0)
             print(log.read(), file=sys.stderr)
             raise
-    write_json(target / "manifest.json", {"schema": 1, "entries": entries})
+    write_json(target / "manifest.json", {
+        "schema": 1, "entries": entries,
+        "capture": {"writer_pin": args.writer_pin, "build": args.build_description,
+                    "writer_binary_sha256": digest(binary),
+                    "semantic_dump_binary_sha256": digest(dump_binary),
+                    "soundfont_sha256": digest(soundfont),
+                    "assets_manifest_sha256": digest(resources / "assets.json")},
+    })
     print(f"captured {len(entries)} corpus entries into {target}")
 
 
@@ -129,6 +143,8 @@ def main() -> int:
         parser.add_argument(f"--{name}", type=Path, required=True)
     for name in ("writer-sha", "upstream-sha", "framework-sha", "superproject-commit"):
         parser.add_argument(f"--{name}", required=True)
+    parser.add_argument("--writer-pin", required=True, help="tag of the captured engine writer")
+    parser.add_argument("--build-description", required=True, help="machine and build configuration")
     args = parser.parse_args()
     for key in ("writer_sha", "upstream_sha", "framework_sha", "superproject_commit"):
         if not re.fullmatch(r"[0-9a-f]{7,40}", getattr(args, key)):
@@ -136,6 +152,10 @@ def main() -> int:
     for name in ("binary", "resources", "soundfont"):
         if not getattr(args, name).exists():
             parser.error(f"{name} does not exist: {getattr(args, name)}")
+    if not re.fullmatch(r"engrave-[0-9]+", args.writer_pin):
+        parser.error("writer-pin must be an engrave-<number> tag")
+    if not (args.resources / "assets.json").is_file():
+        parser.error("resources must contain the pinned assets.json manifest")
     asyncio.run(asyncio.wait_for(capture(args), timeout=1800))
     return 0
 
