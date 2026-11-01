@@ -62,6 +62,15 @@ class TestRoundTripXmlControls(unittest.TestCase):
         self.assertEqual(len(differences), 1)
         self.assertIn('Flute', repr(differences))
 
+    def test_whitespace_in_score_text_is_not_discarded(self):
+        before = '<museScore><Score><text> </text></Score></museScore>'
+        after = '<museScore><Score><text/></Score></museScore>'
+        self.assertTrue(compare_mscz_xml(before, after))
+        self.assertTrue(compare_mscz_xml(before.replace('> </text>', '>\n</text>'), after))
+        mixed = '<museScore><Score><text> <font/></text></Score></museScore>'
+        self.assertTrue(compare_mscz_xml(mixed, mixed.replace('> <font', '><font')))
+        self.assertTrue(compare_mscz_xml(mixed.replace('> <font', '>\n<font'), mixed.replace('> <font', '><font')))
+
 
 class TestV2GoldenInventory(unittest.TestCase):
     def test_migration_pins_both_versions_and_the_specific_output(self):

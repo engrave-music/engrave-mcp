@@ -142,14 +142,20 @@ PAGE_STYLE_DEFAULTS = (
 )
 
 
-def _xml_text(value: str | None) -> str:
-    return value if value and value.strip() else ""
+def _xml_text(value: str | None, preserve: bool = False) -> str:
+    # Pretty-printed MSCX uses newline-bearing whitespace between elements.
+    # A space without a newline can be score text (including mixed rich text)
+    # and must not be discarded.
+    if not value or (not preserve and not value.strip() and ("\n" in value or "\r" in value)):
+        return ""
+    return value
 
 
-def _xml_value(element: ET.Element) -> tuple:
+def _xml_value(element: ET.Element, preserve_tail: bool = False) -> tuple:
     """Represent the complete XML subtree, ignoring indentation only."""
-    return (element.tag, tuple(sorted(element.attrib.items())), _xml_text(element.text),
-            _xml_text(element.tail), tuple(_xml_value(child) for child in element))
+    mixed = element.tag == "text"
+    return (element.tag, tuple(sorted(element.attrib.items())), _xml_text(element.text, mixed or not len(element)),
+            _xml_text(element.tail, preserve_tail), tuple(_xml_value(child, mixed) for child in element))
 
 
 def compare_mscz_xml(before: str, after: str) -> list[tuple]:
@@ -178,12 +184,13 @@ def compare_mscz_xml(before: str, after: str) -> list[tuple]:
 
     differences: list[tuple] = []
 
-    def compare(a: ET.Element, b: ET.Element, path: str) -> None:
+    def compare(a: ET.Element, b: ET.Element, path: str, preserve_tail: bool = False) -> None:
+        mixed = a.tag == "text" or b.tag == "text"
         for field, av, bv in (
             ("tag", a.tag, b.tag),
             ("attributes", tuple(sorted(a.attrib.items())), tuple(sorted(b.attrib.items()))),
-            ("text", _xml_text(a.text), _xml_text(b.text)),
-            ("tail", _xml_text(a.tail), _xml_text(b.tail)),
+            ("text", _xml_text(a.text, mixed or not len(a)), _xml_text(b.text, mixed or not len(b))),
+            ("tail", _xml_text(a.tail, preserve_tail), _xml_text(b.tail, preserve_tail)),
         ):
             if av != bv:
                 differences.append((f"{path}/{field}", av, bv))
@@ -193,10 +200,11 @@ def compare_mscz_xml(before: str, after: str) -> list[tuple]:
             if operation == "equal":
                 for index in range(aj - ai):
                     child = ac[ai + index]
-                    compare(child, bc[bi + index], f"{path}/{child.tag}[{ai + index}]")
+                    compare(child, bc[bi + index], f"{path}/{child.tag}[{ai + index}]", mixed)
             else:
-                differences.append((f"{path}/children[{ai}:{aj}]", tuple(map(_xml_value, ac[ai:aj])),
-                                    tuple(map(_xml_value, bc[bi:bj]))))
+                differences.append((f"{path}/children[{ai}:{aj}]",
+                                    tuple(_xml_value(child, mixed) for child in ac[ai:aj]),
+                                    tuple(_xml_value(child, mixed) for child in bc[bi:bj])))
 
     compare(left, right, f"/{left.tag}")
     return differences
