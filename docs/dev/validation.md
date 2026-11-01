@@ -2,6 +2,63 @@
 
 本文件记录可复核结果；临时日志和 agent 完整输出留在忽略的 `notes/`。
 
+## B1: 4.70 feature contract and oracle harness
+
+**EXECUTED, physical `linux-host`:** the tarball SHA-256 is
+`b915ae9f4ec2fdbfd5fc0edd4be19c3d9026f4e154174967b47556915ac719fa`;
+it was extracted to scratch and all 87 `SHA256SUMS` entries verified. The
+archived 4.7.6 `semantic_dump`, with only its archived `lib/` in
+`LD_LIBRARY_PATH`, read 14 distinct 4.70 source/projection files with exit 0
+and empty stderr. It rejected each of five 5.00 sources with exit 1, empty
+stdout and the `[2007]` diagnostic retained in that source's observation JSON.
+The resulting oracle JSON and fixture hashes are tracked in `tests/phase_b/`.
+The inconsistent tie is an observed old-reader input, not an approved output.
+
+**EXECUTED, Windows:** the existing `engrave-19` capture binaries have SHA-256
+`b6c5ead636001c9c17b5053c1978519ce782defbe2d0f32d4c83884b0fe71955`
+(`semantic_dump`) and
+`e89cc4b6d23bf3965e10f89b8b11a10a30196ac33fd6c179dcb03498ac9bcd32`
+(`engrave-mcp`). The semantic dumper opened all 19
+4.70/5.00 MSCX inputs with exit 0 and empty stderr; the 14 distinct 4.70
+results matched the old reader's normalized JSON. The host opened and wrote
+all five 5.00 feature inputs as 5.00: shared parts, page locks, group brackets
+and group-name override survived; both stave-sharing labels disappeared.
+This is a reader/writer control, not evidence of 4.70 export.
+
+**EXECUTED, physical `linux-host`:** `run_lanes.py --only phase_b_oracle` in
+baseline mode exited 0 for 15 cases (including the unsupported-version request
+over a reused source fixture). The current semantic dumper used SHA-256
+`ecfd14458a43631c04266660d7185e59667176730b92e10b2d8f303078372dd4` from the
+existing delivery build at engine commit `73d827ac1d91`; its source tree equals
+`engrave-19`, but no fresh exact-tag build or binary/source attestation was
+performed. The old-reader process exit, stdout and stderr are saved per case.
+The lost-note, lost-name, missing-warning, wrong-object and real silent-header-
+spoof comparator mutations were rejected. The spoof old-reader process itself
+exited 0 with empty stderr; its JSON hash was
+`ce2df8612e56c1292c4bd8ad6a3732aa1e5e9ec4c7301fc0ebb64b854c53d76f`,
+different from the frozen source semantics. A scratch 4.70 MSCZ wrapper also
+reopened and matched the known control. A separate synthetic set of 4.70
+MSCZ projections exercised all 15 writer-results verifier cases with exit 0;
+it was not produced by `write470`.
+
+**EXECUTED, negative controls:** zero cases, a missing fixture, missing or
+incorrectly hashed archive, modified extracted asset, missing writer results,
+missing warning, changed note, changed name, and a 5.00-only element in a
+4.70-labelled output, plus an artifact published by a rejected case, all exited
+1. Explicitly selecting the lane on Windows
+without oracle arguments exited 2 with a missing-input error. Python syntax
+compilation and `git diff --check` passed; no C++ was rebuilt. No engine code
+or `tests/golden` was changed. The exact lane commands and B2 result interface
+are in [phase-b-features.md](phase-b-features.md).
+
+**SOURCE-REVIEWED:** schema-1 omits EIDs, brackets, page locks and general
+layout precision. The B1 XML assertions verify serialized EIDs and an ordinary
+brace, not their retention by the 4.7.6 reader. `read500/measureread.cpp` lacks
+the stave-sharing-label dispatch needed to pass that object to the current DOM.
+Both limitations block a full B acceptance claim until addressed as specified
+in the feature contract. The carried -001, -013, -016 and -018 defects remain
+separate from new downgrade regressions.
+
 ## A5 S6: public host boundary
 
 **SOURCE-REVIEWED:** the v1 facade, composition adapter, synchronous transport

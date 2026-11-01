@@ -44,6 +44,7 @@ LANE_NAMES = [
     "v2_golden_overlap",
     "semantic_check",
     "compat_corpus",
+    "phase_b_oracle",
     "roundtrip",
     "oracle_harness",
     "rendered_page",
@@ -53,6 +54,10 @@ LANE_NAMES = [
     "version_info",
     "mcp_smoke",
 ]
+
+# The 4.7.6 oracle is a preserved Linux-only input and must be explicitly
+# selected with its pinned archive, executable and assets.
+DEFAULT_LANES = [name for name in LANE_NAMES if name != "phase_b_oracle"]
 
 
 def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str]) -> None:
@@ -69,6 +74,7 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         "assets": ["assets_test"], "archives": ["archive_test", "engrave-mcp"],
         "async_session": ["engrave-mcp-test"], "golden": ["engrave-mcp", "semantic_dump"],
         "semantic_check": [], "oracle_harness": [], "compat_corpus": ["semantic_dump"],
+        "phase_b_oracle": ["semantic_dump"],
         "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
         "engine_audio": ["engine_audio_probe", "engrave-mcp"],
         "tool_schema": ["registry_dump", "registry_test"],
@@ -187,6 +193,7 @@ def run_lane(
     base_env: dict[str, str],
     exe_suffix: str,
     log_file,
+    phase_b_args: list[str],
 ) -> int:
     py = sys.executable
 
@@ -462,6 +469,13 @@ def run_lane(
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
+    if lane == "phase_b_oracle":
+        cmd = [py, str(repo_root / "scripts/test_phase_b_oracle.py"),
+               "--current-binary", str(build_dir / f"semantic_dump{exe_suffix}"),
+               "--current-assets", str(assets),
+               "--output", str(output / "phase-b-oracle"), *phase_b_args]
+        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
     if lane == "roundtrip":
         cmd = [
             py,
@@ -566,6 +580,11 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True, help="Output directory for logs and test artifacts")
     parser.add_argument("--only", type=str, default=None, help="Comma-separated list of lanes to run")
     parser.add_argument("--tag", type=str, default=None, help="Optional run tag")
+    parser.add_argument("--phase-b-oracle-archive", type=Path, help="Pinned 4.7.6 oracle tar.gz")
+    parser.add_argument("--phase-b-oracle-executable", type=Path, help="Extracted Linux 4.7.6 semantic_dump")
+    parser.add_argument("--phase-b-oracle-assets", type=Path, help="Extracted 4.7.6 oracle assets")
+    parser.add_argument("--phase-b-writer-results", type=Path, help="Actual write470 result directories")
+    parser.add_argument("--phase-b-baseline", action="store_true", help="Replay projections only; not writer acceptance")
 
     args = parser.parse_args()
 
@@ -599,7 +618,7 @@ def main() -> None:
     check_preflight_eol(engine_source)
 
     # Validate --only lanes if requested
-    selected_lanes = LANE_NAMES
+    selected_lanes = DEFAULT_LANES
     if args.only is not None:
         requested = [item.strip() for item in args.only.split(",") if item.strip()]
         if not requested:
@@ -610,6 +629,23 @@ def main() -> None:
                 sys.stderr.write(f"Error: Unknown lane: {name}\n")
                 sys.exit(1)
         selected_lanes = [lane for lane in LANE_NAMES if lane in requested]
+
+    phase_b_args: list[str] = []
+    phase_b_requested = (args.phase_b_oracle_archive, args.phase_b_oracle_executable,
+                         args.phase_b_oracle_assets, args.phase_b_baseline,
+                         args.phase_b_writer_results)
+    if "phase_b_oracle" not in selected_lanes and any(phase_b_requested):
+        parser.error("phase B options require selecting --only phase_b_oracle")
+    if "phase_b_oracle" in selected_lanes:
+        if not all((args.phase_b_oracle_archive, args.phase_b_oracle_executable, args.phase_b_oracle_assets)):
+            parser.error("phase_b_oracle requires --phase-b-oracle-archive, --phase-b-oracle-executable and --phase-b-oracle-assets")
+        if args.phase_b_baseline == (args.phase_b_writer_results is not None):
+            parser.error("phase_b_oracle requires exactly one of --phase-b-baseline or --phase-b-writer-results")
+        phase_b_args = ["--oracle-archive", str(args.phase_b_oracle_archive.resolve()),
+                        "--oracle-executable", str(args.phase_b_oracle_executable.resolve()),
+                        "--oracle-assets", str(args.phase_b_oracle_assets.resolve())]
+        phase_b_args += (["--baseline"] if args.phase_b_baseline else
+                         ["--writer-results", str(args.phase_b_writer_results.resolve())])
 
     check_preflight_binaries(build_dir, exe_suffix, selected_lanes)
 
@@ -651,6 +687,12 @@ def main() -> None:
     selected_count = 0
     summary_lines = []
 
+    if args.only is None:
+        notice = ("phase_b_oracle NOT SELECTED: run it explicitly on physical Linux "
+                  "with the preserved oracle; phase B is not verified by this run")
+        print(notice, flush=True)
+        summary_lines.append(notice)
+
     for lane in selected_lanes:
         selected_count += 1
         log_path = output / f"{lane}.log"
@@ -669,6 +711,7 @@ def main() -> None:
                     base_env=base_env,
                     exe_suffix=exe_suffix,
                     log_file=log_file,
+                    phase_b_args=phase_b_args,
                 )
             except Exception as e:
                 log_file.write(f"Lane execution failed with exception: {e}\n".encode("utf-8"))

@@ -1,0 +1,10 @@
+[
+  {
+    "code": "B470_UNSUPPORTED_TARGET",
+    "message": "Cannot write the requested score version.",
+    "object": {
+      "kind": "request",
+      "id": "version:4.90"
+    }
+  }
+]
