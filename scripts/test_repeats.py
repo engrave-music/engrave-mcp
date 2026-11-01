@@ -141,19 +141,20 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
 
                     fixture_path = test["path"]
                     err_open, opened = await call("score_open", {"path": str(fixture_path.resolve())})
-                    if err_open or not isinstance(opened, dict) or "documentId" not in opened:
+                    if err_open or not isinstance(opened, dict) or "document" not in opened:
                         results.append({"name": tname, "fixture": test["fixture"], "status": "FAIL",
                                         "expected": test["expected"], "actual": "",
                                         "error": f"score_open failed: {opened}"})
                         print(f"  [FAIL] {tname} (score_open failed: {opened})")
                         continue
 
-                    doc_id = opened["documentId"]
+                    doc_id = opened["document"]
                     try:
                         pos_path = output_dir / f"{tname}_positions.json"
                         err_exp, exported = await call("score_export", {
-                            "documentId": doc_id, "format": "measurePositions",
-                            "path": str(pos_path.resolve()),
+                            "document": doc_id, "action": "run", "kind": "positions",
+                            "options": {"position_kind": "measure"},
+                            "destination": {"kind": "file", "path": str(pos_path.resolve())},
                         })
                         if err_exp or not pos_path.exists():
                             results.append({"name": tname, "fixture": test["fixture"], "status": "FAIL",
@@ -181,7 +182,7 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
                         else:
                             print(f"  [FAIL] {tname} expected={expected_str} actual={actual_str}")
                     finally:
-                        await call("score_close", {"documentId": doc_id})
+                        await call("score_close", {"document": doc_id})
 
     elapsed = round(time.perf_counter() - t0, 3)
     total = len(results)
