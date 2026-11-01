@@ -2,6 +2,7 @@
 #include "api_json_internal.h"
 #include "background_job.h"
 #include "audio_budget.h"
+#include "export_timing.h"
 #include "worker_v2.h"
 
 #include <algorithm>
@@ -78,6 +79,7 @@ fs::path destination_path(const Destination& destination) {
 }
 
 struct Job {
+    ExportTiming timing{"isolated-job", {}};
     JobStatus status;
     ExportSnapshot snapshot;
     std::uint64_t snapshot_size = 0;
@@ -121,6 +123,8 @@ void finish(Shared& shared, Job& job, JobState state, std::optional<HostError> e
 }
 
 void start(Shared& shared, Job& job) {
+    job.timing.destination = job.destination;
+    auto started = Clock::now();
     job.directory = create_private_directory(fs::temp_directory_path());
     job.staging = create_private_directory(job.snapshot.request.destination.directory
         ? job.destination : job.destination.parent_path());
@@ -132,6 +136,7 @@ void start(Shared& shared, Job& job) {
         throw Failure{{"ResourceLimit", "worker request exceeds byte limit"}};
     write_file(job.directory / "request.json", request);
     job.process = std::make_unique<WorkerProcess>(current_executable_path(), job.directory / "request.json", job.directory / "worker.log");
+    job.timing.add("stage_spawn", started);
     job.status.state = JobState::Running; ++shared.running;
 }
 
@@ -216,6 +221,8 @@ void publish(Shared& shared, Job& job, int exit_code) {
         }
         if (Clock::now() - job.submitted >= shared.limits.deadline)
             throw Failure{{"DeadlineExceeded", "job deadline exceeded before publication"}};
+        if (result.contains("phases_ms")) job.timing.phases.update(result.at("phases_ms"));
+        auto publish_start = Clock::now();
         // The mutex remains held from the final cancellation check through
         // publication; a late cancellation observes the terminal result.
         for (std::size_t i = 0; i < checked.size(); ++i) {
@@ -228,6 +235,8 @@ void publish(Shared& shared, Job& job, int exit_code) {
             }
             job.status.artifacts.push_back(checked[i]);
         }
+        job.timing.add("publish", publish_start);
+        job.timing.finish();
     } catch (const Failure&) { throw; }
       catch (const std::exception&) { throw Failure{{"WorkerFailed", "worker returned an invalid result"}}; }
 }

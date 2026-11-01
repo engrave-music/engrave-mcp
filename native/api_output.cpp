@@ -1,5 +1,10 @@
 #include "api_output.h"
 #include "api_json_internal.h"
+#include "background_job.h"
+#include "export_timing.h"
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 
 #include <algorithm>
 #include <cstring>
@@ -260,5 +265,135 @@ Result<ExportSnapshot> capture_export(engrave::Document& document, RuntimeSnapsh
         check_capture_cancelled(capture);
         return snapshot;
     } catch (const detail::DecodeError& e) { return std::unexpected(e.error); }
+}
+Result<Json> live_export(engrave::Document& document, const ExportRequest& request, const JobLimits& limits,
+    const std::function<bool()>& cancelled, std::chrono::steady_clock::time_point submitted, ExportTiming& timing) {
+    namespace fs = std::filesystem;
+    struct Cleanup {
+        fs::path destination, stage;
+        bool reserved = false;
+        ~Cleanup() {
+            std::error_code ec;
+            if (!stage.empty()) fs::remove_all(stage, ec);
+            if (reserved) release_output_path(destination);
+        }
+    } cleanup;
+    std::vector<Artifact> artifacts;
+    std::vector<engrave::ExportWarning> warnings;
+    auto check = [&] {
+        if (cancelled()) throw detail::DecodeError{HostError{"Cancelled", "live export cancelled"}};
+        if (ExportTiming::Clock::now() - submitted >= limits.deadline)
+            throw detail::DecodeError{HostError{"DeadlineExceeded", "export deadline exceeded"}};
+    };
+    try {
+        check();
+        cleanup.destination = request.destination.directory ? fs::canonical(request.destination.path) : normalize_output_path(request.destination.path);
+        if (request.destination.directory && !fs::is_directory(cleanup.destination)) invalid("destination directory must exist");
+        if (!request.destination.directory && fs::is_directory(cleanup.destination)) invalid("file destination is a directory");
+        if (!try_reserve_output_path(cleanup.destination, request.destination.directory)) invalid("destination is reserved by another job");
+        cleanup.reserved = true;
+        cleanup.stage = create_private_directory(request.destination.directory ? cleanup.destination : cleanup.destination.parent_path());
+        std::uint64_t total = 0;
+        struct Staged { fs::path source; Artifact artifact; };
+        std::vector<Staged> staged;
+        auto write = [&](const std::string& name, const std::string& mime, std::span<const std::byte> bytes) {
+            check();
+            auto start = ExportTiming::Clock::now();
+            if (bytes.empty()) throw detail::DecodeError{HostError{"EngineFailure", "export produced an empty artifact"}};
+            if (bytes.size() > limits.output_bytes - total) throw detail::DecodeError{HostError{"ResourceLimit", "export exceeds output byte limit"}};
+            const auto destination = request.destination.directory ? cleanup.destination / name : cleanup.destination;
+            if (detail::path_text(destination).size() > 4096) throw detail::DecodeError{HostError{"ResourceLimit", "artifact path exceeds limit"}};
+            auto path = cleanup.stage / name;
+            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+            out.close();
+            if (!out || fs::file_size(path) != bytes.size()) throw detail::DecodeError{HostError{"Io", "cannot write staged output"}};
+            total += bytes.size();
+            staged.push_back({path, {mime, destination, bytes.size()}});
+            timing.add("encode_write", start);
+        };
+        engrave::CaptureOptions capture;
+        capture.max_bytes = limits.output_bytes;
+        capture.cancelled = [&] { return cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline; };
+        if (request.kind == ExportKind::Score) {
+            auto start = ExportTiming::Clock::now();
+            auto options = request.score_options; options.capture = capture;
+            auto output = document.export_score_with_warnings(options);
+            if (!output && output.error().code == engrave::ErrorCode::Unsupported && options.format == engrave::Format::Midi) {
+                check(); options.capture = {}; output = document.export_score_with_warnings(options);
+            }
+            auto result = engine_value(std::move(output));
+            timing.add("engine_call", start);
+            warnings = std::move(result.warnings);
+            const char* mime = "audio/midi";
+            switch (options.format) {
+            case engrave::Format::Mscx: mime = "application/vnd.musescore.mscx+xml"; break;
+            case engrave::Format::Mscz: mime = "application/vnd.musescore"; break;
+            case engrave::Format::MusicXml: mime = "application/vnd.recordare.musicxml+xml"; break;
+            case engrave::Format::Mxl: mime = "application/vnd.recordare.musicxml"; break;
+            default: break;
+            }
+            write("output", mime, result.bytes);
+        } else if (request.kind == ExportKind::Positions) {
+            auto start = ExportTiming::Clock::now();
+            auto positions = engine_value(document.positions(request.position_kind, request.position_score, capture));
+            timing.add("engine_call", start);
+            start = ExportTiming::Clock::now();
+            auto bytes = position_json(positions, capture);
+            timing.add("encode_write", start);
+            write("output", "application/json", bytes);
+        } else if (request.kind == ExportKind::Render) {
+            auto start = ExportTiming::Clock::now();
+            const auto count = engine_value(document.page_count(request.render_options.score));
+            auto options = request.render_options;
+            const auto last = options.last_page < 0 ? count - 1 : options.last_page;
+            if (options.first_page >= count || last >= count) invalid("render page range is outside the score");
+            if (static_cast<std::int64_t>(last) - options.first_page + 1 > 4096)
+                throw detail::DecodeError{HostError{"ResourceLimit", "too many output pages"}};
+            timing.add("engine_call", start);
+            if (options.format == engrave::RenderFormat::Pdf) {
+                check(); start = ExportTiming::Clock::now();
+                auto output = engine_value(document.render(options));
+                timing.add("engine_call", start);
+                write("output", "application/pdf", output.document);
+            } else {
+                for (auto page = options.first_page; page <= last; ++page) {
+                    check(); start = ExportTiming::Clock::now();
+                    options.first_page = options.last_page = page;
+                    auto output = engine_value(document.render(options));
+                    timing.add("engine_call", start);
+                    if (output.pages.size() != 1) throw detail::DecodeError{HostError{"EngineFailure", "renderer returned invalid page count"}};
+                    const bool png = options.format == engrave::RenderFormat::Png;
+                    std::ostringstream name; name << "page-" << std::setfill('0') << std::setw(4) << page+1 << (png ? ".png" : ".svg");
+                    write(name.str(), png ? "image/png" : "image/svg+xml", output.pages[0]);
+                }
+            }
+        } else invalid("audio requires isolated export");
+        // All rendering and staging succeeds before any file becomes visible.
+        check(); // Publication commits the request; later cancellation observes its result.
+        for (const auto& file : staged) {
+            auto start = ExportTiming::Clock::now();
+            try { publish_job_output(file.source, file.artifact.path); }
+            catch (const std::exception& e) { throw detail::DecodeError{HostError{"Io", e.what()}}; }
+            timing.add("publish", start);
+            artifacts.push_back(file.artifact);
+        }
+        Json encoded = Json::array(); for (const auto& a : artifacts) encoded.push_back(encode(a));
+        return Json{{"ok", true}, {"action", "run"}, {"source_revision", std::to_string(document.revision())},
+            {"artifacts", std::move(encoded)}, {"export_warnings", encode(warnings)}};
+    } catch (const detail::DecodeError& e) {
+        auto error = e.error;
+        if (error.code == "Cancelled" && !cancelled()) error = HostError{"DeadlineExceeded", "export deadline exceeded"};
+        for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
+        return std::unexpected(std::move(error));
+    } catch (const fs::filesystem_error& e) {
+        HostError error{"Io", e.what()};
+        for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
+        return std::unexpected(std::move(error));
+    } catch (const std::exception& e) {
+        HostError error{"EngineFailure", e.what()};
+        for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
+        return std::unexpected(std::move(error));
+    }
 }
 } // namespace music::v2

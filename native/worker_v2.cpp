@@ -1,5 +1,6 @@
 #include "worker_v2.h"
 #include "audio_budget.h"
+#include "export_timing.h"
 #include "api_json_internal.h"
 #include "background_job.h"
 
@@ -197,11 +198,14 @@ int run_worker(const fs::path& request_path) noexcept {
         const auto stage = detail::path(j.at("stage"));
         if (!stage.is_absolute() || !fs::is_directory(stage)) throw std::runtime_error("invalid staging directory");
         const auto limit = j.at("outputLimit").get<std::uint64_t>();
+        ExportTiming timing("isolated-worker", request.destination.path);
+        auto phase_start = ExportTiming::Clock::now();
         std::uint64_t total = 0; Json artifacts = Json::array();
         const auto write_artifact = [&](const std::string& name, std::span<const std::byte> data) {
             if (data.empty()) throw Failure{{"EngineFailure", "export produced an empty artifact"}};
             if (data.size() > limit - total) throw Failure{{"ResourceLimit", "export exceeds output byte limit"}};
-            write_bytes(stage / name, data); total += data.size();
+            auto start = ExportTiming::Clock::now();
+            write_bytes(stage / name, data); timing.add("encode_write", start); total += data.size();
             artifacts.push_back({{"name", name}, {"mime", mime(request)}, {"size", data.size()}});
         };
         if (request.kind == ExportKind::Score || request.kind == ExportKind::Positions) {
@@ -226,10 +230,15 @@ int run_worker(const fs::path& request_path) noexcept {
             if (!fs::create_directory(options.cache_dir, cache_error) && cache_error)
                 throw Failure{{"Io", "cannot create worker cache: " + cache_error.message()}};
             auto engine = value(engrave::Engine::create(options));
+            timing.add("engine_create", phase_start);
+            phase_start = ExportTiming::Clock::now();
             auto document = value(engine->open(detail::path(j.at("payload")), engrave::OpenOptions{.format = engrave::Format::Mscz}));
+            timing.add("reopen_layout", phase_start);
             if (request.kind == ExportKind::Render) {
                 if (request.render_options.format == engrave::RenderFormat::Pdf) {
+                    phase_start = ExportTiming::Clock::now();
                     auto output = value(document->render(request.render_options));
+                    timing.add("engine_call", phase_start);
                     write_artifact("output", output.document);
                 } else {
                     const auto count = value(document->page_count(request.render_options.score));
@@ -243,7 +252,9 @@ int run_worker(const fs::path& request_path) noexcept {
                     // after each page, while keeping all bytes in staging.
                     for (auto page = first; page <= last; ++page) {
                         auto options = request.render_options; options.first_page = options.last_page = page;
+                        phase_start = ExportTiming::Clock::now();
                         auto output = value(document->render(options));
+                        timing.add("engine_call", phase_start);
                         if (output.pages.size() != 1) throw Failure{{"EngineFailure", "renderer returned an invalid page count"}};
                         write_artifact(page_name(page, options.format == engrave::RenderFormat::Png ? "png" : "svg"), output.pages[0]);
                     }
@@ -298,7 +309,7 @@ int run_worker(const fs::path& request_path) noexcept {
                 cleanup.committed = true;
             }
         }
-        write_result(result_path, {{"version", 2}, {"ok", true}, {"artifacts", std::move(artifacts)}});
+        write_result(result_path, {{"version", 2}, {"ok", true}, {"artifacts", std::move(artifacts)}, {"phases_ms", timing.phases}});
         return 0;
     } catch (const Failure& e) {
         try { write_result(result_path, {{"version", 2}, {"ok", false}, {"error", error_envelope(e.error).at("error")}}); } catch (...) {}

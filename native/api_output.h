@@ -4,6 +4,7 @@
 #include "runtime_limits.h"
 #include <filesystem>
 namespace music::v2 {
+struct ExportTiming;
 enum class ExportKind { Score, Render, Audio, Positions };
 enum class ExportAction { Run, Start };
 struct Destination { std::filesystem::path path; bool directory=false; };
@@ -44,6 +45,8 @@ struct ExportSnapshot {
     engrave::AudioOptions effective_audio;
     double duration_seconds=0;
 };
+Result<Json> live_export(engrave::Document&, const ExportRequest&, const JobLimits&,
+    const std::function<bool()>& cancelled, std::chrono::steady_clock::time_point submitted, ExportTiming&);
 Result<ExportSnapshot> capture_export(engrave::Document&, RuntimeSnapshot, const ExportRequest&,
     const engrave::CaptureOptions& = engrave::CaptureOptions{.max_bytes=JobLimits{}.snapshot_bytes});
 }
