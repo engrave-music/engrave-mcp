@@ -50,6 +50,12 @@ def main():
             hashes[fmt]=hashlib.sha256(content).hexdigest()
             args["expected_revision"]="999"
             assert c.tool("score_export",args,False)["error"]["code"]=="RevisionConflict"
+        refused=export_args(doc,"mscz",out/"refused.mscz")
+        refused["options"]["native_version"]="4.90"
+        failure=c.tool("score_export",refused,False)
+        assert failure["error"]["code"]=="Unsupported",failure
+        assert "export_warnings" in failure["error"]
+        assert not (out/"refused.mscz").exists()
         positions=out/"positions.json"
         c.tool("score_export",dict(document=doc,action="run",kind="positions",options={"position_kind":"measure"},destination={"kind":"file","path":str(positions)}))
         hashes["positions"]=hashlib.sha256(positions.read_bytes()).hexdigest()

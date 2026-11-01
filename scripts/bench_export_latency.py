@@ -121,7 +121,7 @@ def main():
             post=[]
             for _ in range(a.warm):
                 c.tool("score_edit",{"document":doc,"ops":[{"op":"set_layout_break",
-                    "measure":{"kind":"id","id":measure},"kind":"page","on":True}]})
+                    "measure":{"kind":"id","id":measure},"kind":"page","on":bool(_ % 2)}]})
                 start=time.perf_counter()
                 c.tool("score_export",export_args(doc,"pdf",out/"post-edit.pdf"))
                 post.append((time.perf_counter()-start)*1000)
