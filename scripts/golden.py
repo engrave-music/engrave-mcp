@@ -868,6 +868,9 @@ def read_v2_index(golden_root: Path) -> tuple[Path | None, dict, dict]:
     if (data.get("schema") != 1 or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
             or not isinstance(data.get("legacy"), dict) or not isinstance(data.get("additions"), dict)):
         raise ValueError("invalid v2 index header")
+    if data["additions"] and any(not re.fullmatch(r"[0-9a-f]{40}", str(data.get(field, "")))
+                                 for field in ("engine_gate_commit", "engine_tree")):
+        raise ValueError("v2 additions lack the gate commit or source-tree provenance")
     legacy = data["legacy"]
     expected = {Path(name).name for name in SUPPLEMENTAL_MNX}
     if set(legacy) != expected or not set(data["additions"]).issubset(expected):
@@ -902,7 +905,9 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
         return {}
     data = json.loads(read_text(path))
     if (data.get("schema") != 1 or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
-            or not isinstance(data.get("entries"), list)):
+            or not isinstance(data.get("entries"), list)
+            or any(not re.fullmatch(r"[0-9a-f]{40}", str(data.get(field, "")))
+                   for field in ("engine_gate_commit", "engine_tree"))):
         raise ValueError("invalid v2 migration header")
     sources = {source.name: source for source in fixture_files() + supplemental_mnx_files()}
     sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})

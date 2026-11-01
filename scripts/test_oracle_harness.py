@@ -119,6 +119,10 @@ class TestV2GoldenInventory(unittest.TestCase):
             golden.write_json(overlay / "migrations.json", data)
             with self.assertRaisesRegex(ValueError, "edit scenario changed"):
                 golden.read_v2_migrations(baseline)
+            data["engine_tree"] = "not-a-tree-hash"
+            golden.write_json(overlay / "migrations.json", data)
+            with self.assertRaisesRegex(ValueError, "invalid v2 migration header"):
+                golden.read_v2_migrations(baseline)
 
     def test_mnx_indexes_cover_legacy_and_v2_files_and_detect_tampering(self):
         with tempfile.TemporaryDirectory() as temporary:
