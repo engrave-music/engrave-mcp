@@ -21,10 +21,29 @@ struct JobStatus {
 class ExportJobs {
 public:
     using Completion=std::function<void(Result<JobStatus>)>;
+    class Reservation {
+    public:
+        Reservation();
+        ~Reservation();
+        Reservation(Reservation&&) noexcept;
+        Reservation& operator=(Reservation&&) noexcept;
+        Reservation(const Reservation&) = delete;
+        Reservation& operator=(const Reservation&) = delete;
+    private:
+        friend class ExportJobs;
+        struct State;
+        explicit Reservation(std::unique_ptr<State>);
+        std::unique_ptr<State> state_;
+    };
     explicit ExportJobs(JobLimits);
     ~ExportJobs();
     ExportJobs(const ExportJobs&)=delete;
     ExportJobs& operator=(const ExportJobs&)=delete;
+    // Reserve a queue slot, destination and the currently available payload
+    // budget before invoking the engine's materializing capture API.
+    Result<Reservation> reserve(const ExportRequest&,
+        std::chrono::steady_clock::time_point submitted = std::chrono::steady_clock::now());
+    Result<JobStatus> submit(Reservation, ExportSnapshot, Completion = {});
     Result<JobStatus> submit(ExportSnapshot, Completion = {});
     Result<JobStatus> get(std::string_view job) const;
     Result<JobStatus> cancel(std::string_view job);

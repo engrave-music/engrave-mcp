@@ -86,15 +86,17 @@ struct Job {
     ExportJobs::Completion completion;
 };
 struct Shared {
+    struct CaptureReservation { fs::path destination; std::uint64_t budget; };
     explicit Shared(JobLimits value) : limits(value), session(session_id()) {}
     JobLimits limits;
     std::string session;
-    std::uint64_t next = 0, snapshot_bytes = 0;
+    std::uint64_t next = 0, next_reservation = 0, snapshot_bytes = 0;
     std::size_t active = 0, running = 0;
     std::mutex mutex;
     std::condition_variable changed, callbacks_ready;
     bool stopping = false, coordinator_done = false;
     std::unordered_map<std::string, std::shared_ptr<Job>> jobs;
+    std::unordered_map<std::uint64_t, CaptureReservation> captures;
     std::deque<std::string> order;
     std::deque<std::pair<ExportJobs::Completion, JobStatus>> callbacks;
 };
@@ -256,6 +258,33 @@ void callback_loop(std::shared_ptr<Shared> shared) {
 }
 }
 
+struct ExportJobs::Reservation::State {
+    std::shared_ptr<Shared> shared;
+    fs::path destination;
+    Destination requested_destination;
+    ExportKind kind = ExportKind::Score;
+    std::uint64_t budget = 0;
+    std::uint64_t id = 0;
+    Clock::time_point submitted;
+    ~State() {
+        if (!id) return;
+        std::lock_guard lock(shared->mutex);
+        const auto entry = shared->captures.find(id);
+        if (entry == shared->captures.end()) return;
+        release_output_path(entry->second.destination);
+        shared->snapshot_bytes -= entry->second.budget;
+        --shared->active;
+        shared->captures.erase(entry);
+        shared->changed.notify_all();
+    }
+};
+
+ExportJobs::Reservation::Reservation() = default;
+ExportJobs::Reservation::~Reservation() = default;
+ExportJobs::Reservation::Reservation(Reservation&&) noexcept = default;
+ExportJobs::Reservation& ExportJobs::Reservation::operator=(Reservation&&) noexcept = default;
+ExportJobs::Reservation::Reservation(std::unique_ptr<State> state) : state_(std::move(state)) {}
+
 struct ExportJobs::Impl {
     explicit Impl(JobLimits limits) : shared(std::make_shared<Shared>(limits)) {
         callbacks = std::thread(callback_loop, shared);
@@ -282,7 +311,19 @@ struct ExportJobs::Impl {
             shutdown_done.wait(lock, [&] { return joined; }); return;
         }
         joining = true; lock.unlock();
-        { std::lock_guard state_lock(shared->mutex); shared->stopping = true; shared->changed.notify_all(); }
+        {
+            std::lock_guard state_lock(shared->mutex);
+            shared->stopping = true;
+            // Owner work may still be running or its response may never be
+            // consumed. Revoke provisional reservations without waiting for it.
+            for (const auto& [id, capture] : shared->captures) {
+                release_output_path(capture.destination);
+                shared->snapshot_bytes -= capture.budget;
+                --shared->active;
+            }
+            shared->captures.clear();
+            shared->changed.notify_all();
+        }
         if (worker.joinable()) worker.join();
         if (callbacks.joinable()) {
             if (callback_id == std::this_thread::get_id()) callbacks.detach();
@@ -296,18 +337,64 @@ ExportJobs::ExportJobs(JobLimits limits) : impl_(std::make_unique<Impl>(limits))
 ExportJobs::~ExportJobs() { shutdown(); }
 void ExportJobs::shutdown() { if (impl_) impl_->shutdown(); }
 
-Result<JobStatus> ExportJobs::submit(ExportSnapshot snapshot, Completion completion) {
+Result<ExportJobs::Reservation> ExportJobs::reserve(const ExportRequest& request, Clock::time_point submitted) {
     try {
-        const bool pages = snapshot.request.kind == ExportKind::Render &&
-            snapshot.request.render_options.format != engrave::RenderFormat::Pdf;
-        if (snapshot.request.destination.directory != pages)
+        const bool pages = request.kind == ExportKind::Render &&
+            request.render_options.format != engrave::RenderFormat::Pdf;
+        if (request.destination.directory != pages)
             return std::unexpected(HostError{"InvalidArgument", "destination kind does not match export"});
-        const auto destination = destination_path(snapshot.request.destination);
-        snapshot.request.destination.path = destination;
+        auto state = std::make_unique<Reservation::State>();
+        state->shared = impl_->shared;
+        state->destination = destination_path(request.destination);
+        state->requested_destination = request.destination;
+        state->kind = request.kind;
+        state->submitted = submitted;
+        auto shared = state->shared;
+        std::lock_guard lock(shared->mutex);
+        if (shared->stopping) return std::unexpected(HostError{"Cancelled", "job manager is shutting down"});
+        if (Clock::now() - submitted >= shared->limits.deadline)
+            return std::unexpected(HostError{"DeadlineExceeded", "job deadline exceeded before capture"});
+        if (shared->active >= shared->limits.queue_capacity || shared->snapshot_bytes >= shared->limits.snapshot_bytes)
+            return std::unexpected(HostError{"ResourceLimit", "job queue or snapshot budget is full"});
+        if (!try_reserve_output_path(state->destination, request.destination.directory))
+            return std::unexpected(HostError{"InvalidArgument", "destination is reserved by another job"});
+        // A capture's size is unknown until the public API returns it. Charge
+        // all remaining payload budget until the snapshot can be measured.
+        state->budget = shared->limits.snapshot_bytes - shared->snapshot_bytes;
+        const auto id = ++shared->next_reservation;
+        if (!id) {
+            release_output_path(state->destination);
+            return std::unexpected(HostError{"ResourceLimit", "capture reservation IDs exhausted"});
+        }
+        try { shared->captures.emplace(id, Shared::CaptureReservation{state->destination, state->budget}); }
+        catch (...) { release_output_path(state->destination); throw; }
+        state->id = id;
+        shared->snapshot_bytes += state->budget;
+        ++shared->active;
+        return Reservation(std::move(state));
+    } catch (const Failure& e) { return std::unexpected(e.error); }
+      catch (const fs::filesystem_error& e) { return std::unexpected(HostError{"Io", e.what()}); }
+      catch (const std::exception& e) { return std::unexpected(HostError{"EngineFailure", e.what()}); }
+}
+
+Result<JobStatus> ExportJobs::submit(ExportSnapshot snapshot, Completion completion) {
+    auto reservation = reserve(snapshot.request);
+    if (!reservation) return std::unexpected(reservation.error());
+    return submit(std::move(*reservation), std::move(snapshot), std::move(completion));
+}
+
+Result<JobStatus> ExportJobs::submit(Reservation reservation, ExportSnapshot snapshot, Completion completion) {
+    try {
+        auto* state = reservation.state_.get();
+        if (!state || !state->id || state->shared != impl_->shared || state->kind != snapshot.request.kind ||
+            state->requested_destination.directory != snapshot.request.destination.directory ||
+            state->requested_destination.path != snapshot.request.destination.path)
+            return std::unexpected(HostError{"InvalidArgument", "snapshot does not match its reservation"});
+        snapshot.request.destination.path = state->destination;
         std::uint64_t size = 0;
         for (const auto n : {snapshot.mscz.size(), snapshot.captured_score_bytes.size(), snapshot.captured_positions_json.size()}) {
-            if (n > impl_->shared->limits.snapshot_bytes - size)
-                return std::unexpected(HostError{"ResourceLimit", "snapshot exceeds byte limit"});
+            if (n > state->budget - size)
+                return std::unexpected(HostError{"ResourceLimit", "snapshot exceeds reserved byte budget"});
             size += n;
         }
         if ((snapshot.request.kind == ExportKind::Render || snapshot.request.kind == ExportKind::Audio) && snapshot.mscz.size() > engrave::max_input_bytes)
@@ -318,27 +405,29 @@ Result<JobStatus> ExportJobs::submit(ExportSnapshot snapshot, Completion complet
         auto shared = impl_->shared;
         std::lock_guard lock(shared->mutex);
         if (shared->stopping) return std::unexpected(HostError{"Cancelled", "job manager is shutting down"});
-        if (shared->active >= shared->limits.queue_capacity || size > shared->limits.snapshot_bytes - shared->snapshot_bytes)
-            return std::unexpected(HostError{"ResourceLimit", "job queue or snapshot budget is full"});
-        if (!try_reserve_output_path(destination, snapshot.request.destination.directory))
-            return std::unexpected(HostError{"InvalidArgument", "destination is reserved by another job"});
-        try {
-            auto job = std::make_shared<Job>();
-            job->destination = destination; job->reserved = true; job->snapshot = std::move(snapshot);
-            job->snapshot_size = size; job->submitted = Clock::now(); job->completion = std::move(completion);
-            job->status.job = "job-" + shared->session + "-" + std::to_string(++shared->next);
-            job->status.source_revision = job->snapshot.source_revision;
-            while (shared->order.size() >= retained_jobs) {
-                auto oldest = std::find_if(shared->order.begin(), shared->order.end(), [&](const auto& id) { return terminal(shared->jobs.at(id)->status.state); });
-                if (oldest == shared->order.end()) break;
-                shared->jobs.erase(*oldest); shared->order.erase(oldest);
-            }
-            shared->jobs.emplace(job->status.job, job);
-            try { shared->order.push_back(job->status.job); }
-            catch (...) { shared->jobs.erase(job->status.job); throw; }
-            shared->snapshot_bytes += size; ++shared->active; shared->changed.notify_all();
-            return job->status;
-        } catch (...) { release_output_path(destination); throw; }
+        if (!shared->captures.contains(state->id))
+            return std::unexpected(HostError{"Cancelled", "capture reservation was revoked"});
+        if (Clock::now() - state->submitted >= shared->limits.deadline)
+            return std::unexpected(HostError{"DeadlineExceeded", "job deadline exceeded during capture"});
+        auto job = std::make_shared<Job>();
+        job->destination = state->destination; job->snapshot = std::move(snapshot);
+        job->snapshot_size = size; job->submitted = state->submitted; job->completion = std::move(completion);
+        job->status.job = "job-" + shared->session + "-" + std::to_string(++shared->next);
+        job->status.source_revision = job->snapshot.source_revision;
+        JobStatus status = job->status;
+        while (shared->order.size() >= retained_jobs) {
+            auto oldest = std::find_if(shared->order.begin(), shared->order.end(), [&](const auto& id) { return terminal(shared->jobs.at(id)->status.state); });
+            if (oldest == shared->order.end()) break;
+            shared->jobs.erase(*oldest); shared->order.erase(oldest);
+        }
+        shared->jobs.emplace(job->status.job, job);
+        try { shared->order.push_back(job->status.job); }
+        catch (...) { shared->jobs.erase(job->status.job); throw; }
+        shared->snapshot_bytes -= state->budget - size;
+        shared->captures.erase(state->id);
+        job->reserved = true;
+        shared->changed.notify_all();
+        return status;
     } catch (const Failure& e) { return std::unexpected(e.error); }
       catch (const fs::filesystem_error& e) { return std::unexpected(HostError{"Io", e.what()}); }
       catch (const std::exception& e) { return std::unexpected(HostError{"EngineFailure", e.what()}); }

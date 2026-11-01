@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <atomic>
+#include <barrier>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -349,6 +350,66 @@ int main(int argc, char** argv) {
             captured_score = std::move(*result); return {};
         });
         require(bool(visited) && captured_score.has_value(), "score job capture failed");
+        {
+            JobLimits limits; limits.snapshot_bytes = 0;
+            ExportJobs limited(limits);
+            auto req = score_req; req.destination.path = scratch / "no-budget.mscx";
+            auto denied = limited.reserve(req);
+            require(!denied && denied.error().code == "ResourceLimit", "empty budget admitted capture");
+        }
+        {
+            JobLimits limits; limits.snapshot_bytes = captured_score->captured_score_bytes.size() + 1;
+            ExportJobs limited(limits);
+            auto req = score_req; req.destination.path = scratch / "reserved.mscx";
+            auto held = limited.reserve(req);
+            require(bool(held), "capture reservation failed");
+            auto other = req; other.destination.path = scratch / "other-reserved.mscx";
+            auto denied = limited.reserve(other);
+            require(!denied && denied.error().code == "ResourceLimit", "concurrent capture exceeded reserved budget");
+            held = std::unexpected(HostError{"Cancelled", "release test reservation"});
+            require(bool(limited.reserve(other)), "released reservation retained budget");
+            auto invalid = req; invalid.destination.path = scratch / "absent-parent" / "invalid.mscx";
+            auto bad = limited.reserve(invalid);
+            require(!bad && bad.error().code == "InvalidArgument", "invalid destination admitted capture");
+        }
+        {
+            JobLimits limits; limits.deadline = std::chrono::milliseconds(5);
+            ExportJobs limited(limits);
+            auto req = score_req; req.destination.path = scratch / "capture-deadline.mscx";
+            auto expired = limited.reserve(req, std::chrono::steady_clock::now() - std::chrono::seconds(1));
+            require(!expired && expired.error().code == "DeadlineExceeded", "expired request admitted capture");
+            auto held = limited.reserve(req);
+            require(bool(held), "deadline capture reservation failed");
+            std::this_thread::sleep_for(std::chrono::milliseconds(15));
+            auto snapshot = *captured_score; snapshot.request = req;
+            auto denied = limited.submit(std::move(*held), std::move(snapshot));
+            require(!denied && denied.error().code == "DeadlineExceeded", "expired capture was submitted");
+        }
+        {
+            ExportJobs limited(JobLimits{});
+            constexpr int count = 8;
+            std::barrier start(count), finish(count);
+            std::atomic<int> accepted{0}, rejected{0};
+            std::vector<std::thread> callers;
+            for (int i = 0; i < count; ++i) callers.emplace_back([&, i] {
+                auto req = score_req; req.destination.path = scratch / ("concurrent-" + std::to_string(i));
+                start.arrive_and_wait();
+                auto held = limited.reserve(req);
+                if (held) ++accepted;
+                else if (held.error().code == "ResourceLimit") ++rejected;
+                finish.arrive_and_wait(); // Keep the successful reservation while peers try.
+            });
+            for (auto& caller : callers) caller.join();
+            require(accepted == 1 && rejected == count - 1, "concurrent capture reservations exceeded budget");
+        }
+        {
+            ExportJobs limited(JobLimits{});
+            auto req = score_req; req.destination.path = scratch / "shutdown-reservation.mscx";
+            auto held = limited.reserve(req);
+            require(bool(held), "shutdown reservation failed");
+            limited.shutdown();
+            require(!music::is_output_path_reserved(req.destination.path), "shutdown retained capture destination");
+        }
         {
             JobLimits limits; limits.snapshot_bytes = 1;
             ExportJobs jobs(limits);

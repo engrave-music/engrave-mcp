@@ -28,6 +28,11 @@ struct HandlerContext {
     HostApi* host = nullptr;
     ExportJobs* jobs = nullptr;
     std::optional<ExportSnapshot> snapshot;
+    std::optional<ExportJobs::Reservation> reservation;
+    std::chrono::steady_clock::time_point submitted;
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+    std::atomic<std::uint64_t>* capture_count = nullptr;
+#endif
 };
 
 Json open(void* p, const Json& a) { return static_cast<HandlerContext*>(p)->host->open(a); }
@@ -44,16 +49,22 @@ Json capture(void* p, const Json& a) {
     auto& context = *static_cast<HandlerContext*>(p);
     auto request = decode_export(a);
     if (!request) return error_envelope(request.error());
+    auto reservation = context.jobs->reserve(*request, context.submitted);
+    if (!reservation) return error_envelope(reservation.error());
     auto runtime = context.host->capture_runtime();
     if (!runtime) return error_envelope(runtime.error());
     auto result = context.host->with_document(request->document, request->expected_revision,
         [&](engrave::Document& document) -> Result<void> {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+            ++*context.capture_count;
+#endif
             auto snapshot = capture_export(document, std::move(*runtime), *request);
             if (!snapshot) return std::unexpected(snapshot.error());
             context.snapshot = std::move(*snapshot);
             return {};
         });
     if (!result) return error_envelope(result.error());
+    context.reservation = std::move(*reservation);
     return {{"ok", true}}; // Internal acknowledgement; never exposed on the wire.
 }
 
@@ -88,6 +99,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     struct OwnerResult {
         Json payload;
         std::optional<ExportSnapshot> snapshot;
+        std::optional<ExportJobs::Reservation> reservation;
     };
 
     JobLimits limits;
@@ -103,6 +115,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     std::atomic<bool> stopping{false};
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     std::atomic<bool> test_owner_busy{false};
+    std::atomic<std::uint64_t> test_capture_count{0};
 #endif
 
     explicit Impl(engrave::EngineOptions options) {
@@ -198,12 +211,12 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             }, token);
     }
 
-    asio::awaitable<Json> submit(ExportSnapshot snapshot) {
+    asio::awaitable<Json> submit(ExportSnapshot snapshot, ExportJobs::Reservation reservation) {
         if (closing) throw asio::system_error(asio::error::operation_aborted);
         auto self = shared_from_this();
         auto token = asio::use_awaitable;
         co_return co_await asio::async_initiate<decltype(token), void(std::exception_ptr, Json)>(
-            [self, snapshot = std::move(snapshot)](auto handler) mutable {
+            [self, snapshot = std::move(snapshot), reservation = std::move(reservation)](auto handler) mutable {
                 struct State {
                     std::atomic<bool> cancelled{false}, completed{false};
                     std::string job; // Read and written only on jobs_io.
@@ -228,7 +241,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         if (!state->completed.load() && !state->job.empty()) (void)self->jobs.cancel(state->job);
                     });
                 });
-                asio::post(self->jobs_io, [self, state, complete, run, snapshot = std::move(snapshot)]() mutable {
+                asio::post(self->jobs_io, [self, state, complete, run, snapshot = std::move(snapshot),
+                                           reservation = std::move(reservation)]() mutable {
                     if (state->cancelled.load(std::memory_order_acquire) || self->stopping.load(std::memory_order_acquire)) {
                         complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), {});
                         return;
@@ -242,7 +256,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         }
                         complete({}, run_result(*result));
                     };
-                    auto submitted = self->jobs.submit(std::move(snapshot), std::move(callback));
+                    auto submitted = self->jobs.submit(std::move(reservation), std::move(snapshot), std::move(callback));
                     if (!submitted) { complete({}, error_envelope(submitted.error())); return; }
                     state->job = submitted->job;
                     if (!run) {
@@ -266,6 +280,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments) {
     if (std::this_thread::get_id() != self->session_thread) throw std::logic_error("AsyncSession called from non-session thread");
     if (self->closing) throw asio::system_error(asio::error::operation_aborted);
 #ifdef MUSIC_ASYNC_TEST_HOOKS
+    if (name == "test_capture_count") co_return Json{{"ok", true}, {"count", self->test_capture_count.load()}};
     if (name == "test_owner_state") co_return Json{{"ok", true}, {"busy", self->test_owner_busy.load()}};
     if (name == "test_owner_sleep") {
         co_return co_await self->dispatch<Json>(self->owner_io, [self] {
@@ -285,12 +300,17 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments) {
             return handler(&context, arguments);
         }, false);
     }
-    auto result = co_await self->dispatch<Impl::OwnerResult>(self->owner_io, [self, handler, arguments = std::move(arguments)] {
-        HandlerContext context; context.host = self->host.get();
+    const auto submitted = std::chrono::steady_clock::now();
+    auto result = co_await self->dispatch<Impl::OwnerResult>(self->owner_io, [self, handler, submitted, arguments = std::move(arguments)] {
+        HandlerContext context; context.host = self->host.get(); context.jobs = &self->jobs; context.submitted = submitted;
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        context.capture_count = &self->test_capture_count;
+#endif
         auto payload = handler(&context, arguments);
-        return Impl::OwnerResult{std::move(payload), std::move(context.snapshot)};
+        return Impl::OwnerResult{std::move(payload), std::move(context.snapshot), std::move(context.reservation)};
     }, true);
     if (spec->scheduling != Scheduling::ExportJob || !result.snapshot) co_return std::move(result.payload);
-    co_return co_await self->submit(std::move(*result.snapshot));
+    if (!result.reservation) co_return error_envelope({"EngineFailure", "captured export has no reservation"});
+    co_return co_await self->submit(std::move(*result.snapshot), std::move(*result.reservation));
 }
 }

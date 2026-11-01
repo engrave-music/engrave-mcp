@@ -174,10 +174,16 @@ async def run(args):
                 path.unlink(missing_ok=True)
                 jobs.append((await client.tool("score_export", export(doc, path)))["job"])
                 if i == 0:
+                    before = (await client.tool("test_capture_count", {}))["count"]
                     conflict = await client.tool("score_export", export(doc, path), error=True)
                     assert conflict["error"]["code"] == "InvalidArgument", conflict
+                    bad = await client.tool("score_export", export(doc, out / "missing-parent" / "bad.musicxml"), error=True)
+                    assert bad["error"]["code"] == "InvalidArgument", bad
+                    assert (await client.tool("test_capture_count", {}))["count"] == before
+            before = (await client.tool("test_capture_count", {}))["count"]
             rejected = await client.tool("score_export", export(doc, out / "overflow.test-slow.musicxml"), error=True)
             assert rejected["error"]["code"] == "ResourceLimit", rejected
+            assert (await client.tool("test_capture_count", {}))["count"] == before
             states = [(await client.tool("runtime_job", {"action": "get", "job": j}))["status"]["state"] for j in jobs]
             assert states.count("running") == 2 and states.count("queued") == 6, states
             await client.tool("runtime_job", {"action": "cancel", "job": jobs[-1]})
