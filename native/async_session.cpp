@@ -7,6 +7,7 @@
 #ifdef MUSIC_ASYNC_TEST_HOOKS
 #include <engrave/testing/write470.h>
 #include <cstdio>
+#include <cstdlib>
 #endif
 
 #include <asio/async_result.hpp>
@@ -85,18 +86,27 @@ Json capture(void* p, const Json& a) {
             const bool slow_capture = test_path.find(".test-capture-slow") != std::string::npos ||
                                       test_path.find(".test-capture-deadline") != std::string::npos;
             const bool conversion_probe = test_path.find(".test-470-") != std::string::npos;
+            // Test binary only: stop at a real engine conversion poll, after
+            // progress has advanced. Production contains neither probe nor pause.
+            const bool converting_probe = test_path.find(".test-470-converting-") != std::string::npos &&
+                std::getenv("ENGRAVE_MCP_TEST_DISABLE_470_PROBES") == nullptr;
             bool conversion_entered = false;
             engrave::testing::Write470Progress conversion_progress;
 #endif
             options.cancelled = [&] {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
                 const auto progress = engrave::testing::write470_progress();
-                if (conversion_probe && !conversion_entered &&
-                    progress.stage == engrave::testing::Write470Progress::Stage::Serializing && progress.units >= 2) {
+                if ((converting_probe || (conversion_probe && test_path.find(".test-470-converting-") == std::string::npos)) && !conversion_entered &&
+                    progress.stage == (converting_probe ? engrave::testing::Write470Progress::Stage::Converting :
+                        engrave::testing::Write470Progress::Stage::Serializing) && progress.units >= 2) {
                     conversion_entered = true;
                     conversion_progress = progress;
-                    std::fprintf(stderr, "WRITE470_SERIALIZING units=%llu\n", static_cast<unsigned long long>(progress.units));
+                    std::fprintf(stderr, "WRITE470_%s units=%llu\n", converting_probe ? "CONVERTING" : "SERIALIZING",
+                        static_cast<unsigned long long>(progress.units));
                     std::fflush(stderr);
+                    // Expire only here: queued work cannot satisfy this probe.
+                    if (converting_probe && test_path.find(".test-470-converting-deadline") != std::string::npos)
+                        reservation->test_expire_capture();
                     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
                     while (!context.request_cancelled->load(std::memory_order_acquire) &&
                            !reservation->stop_reason() && std::chrono::steady_clock::now() < until)

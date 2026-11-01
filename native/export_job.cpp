@@ -335,6 +335,12 @@ std::optional<HostError> ExportJobs::Reservation::stop_reason() const {
     return {};
 }
 
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+void ExportJobs::Reservation::test_expire_capture() {
+    state_->submitted = Clock::now() - state_->shared->limits.deadline;
+}
+#endif
+
 struct ExportJobs::Impl {
     explicit Impl(JobLimits limits) : shared(std::make_shared<Shared>(limits)) {
         callbacks = std::thread(callback_loop, shared);

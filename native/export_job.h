@@ -35,6 +35,10 @@ public:
         // Empty while capture can continue; shutdown and deadline are polled by
         // the engine callback without calling back into the engine.
         std::optional<HostError> stop_reason() const;
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        // Owner-thread test seam: exercise the real deadline check inside capture.
+        void test_expire_capture();
+#endif
     private:
         friend class ExportJobs;
         struct State;
