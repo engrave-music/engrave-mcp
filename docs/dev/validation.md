@@ -768,7 +768,40 @@ python scripts/run_lanes.py \
   --output artifacts/verify/run
 ```
 
-All 29 acceptance lanes run in order. Pre-flight checks refuse execution (exit 2) if required binaries are missing or if uncommitted files contain unexpected CRLF/mixed line endings.
+The historical 29-lane result above is v1 evidence. During A5 S5 the runner is
+being migrated; selected lanes require only the binaries they execute, and
+preflight rejects unexpected CRLF/mixed line endings. A selected
+`semantic_check` still requires the preceding golden artifacts in the same
+output directory. Consult [the parity matrix](webmscore-parity.md) before
+attributing an older lane result to the v2 host.
+
+### A5 S5 migration evidence and open checks
+
+**EXECUTED, Windows:** the v2 runner subset `music_core`, `host_api`,
+`export_job`, `runtime_assets`, `archives`, `native_edit`, `linked_tie`,
+`imports_midi`, `open_data`, `imports_gp`, `tool_schema`, `positions` and
+`repeats` passed. `music_core` is a retained compiled legacy C++ test until S6;
+it is not a live v2 wire assertion. A separate run also passed `async_session`,
+`transport`, `compat_corpus`, `oracle_harness` and `mcp_smoke`. The engine
+tests must be rebuilt from the pinned fork: an initial gtest run accidentally
+used an old executable and failed its inventory and two cases, and the apparent
+pass of the old `noqt_support_test` executable was not evidence for the pin.
+
+The fork removed `noqt_support_test` in its EngineContext refactor
+(`748af0277f`): its IoC registration, removed runtime filesystem/settings and
+legacy audio-initialization assertions no longer describe the current design.
+The `noqt_probe` lane instead checks a fresh pinned engine's Qt-free MusicXML
+import, layout and MusicXML/MIDI export; `assets` and `runtime_assets` cover
+the current asset ownership. This does not claim to reproduce the deleted
+test's entire filesystem/settings coverage; the engine `io_boundary_test`
+owns the current byte-view and Unicode stream/seek boundary checks.
+
+**EXECUTED, Windows:** the focused v2 golden overlap comparison retains the
+existing comparator and allow-list and found one unapproved MSCX difference;
+the source and evidence are described in [webmscore-parity.md](webmscore-parity.md).
+The strict v2 version-header assertion also fails as tracked in
+`DEFECT-ENGRAVE-014`. The full v2 lane migration and full lane run remain open;
+no new goldens or allowances were written.
 
 ## Roadmap-engrave A4 S0: engine build in the fork (2026-10-30)
 
