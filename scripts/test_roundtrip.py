@@ -33,7 +33,7 @@ KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
         "musicxml": ("f386eae23b9c8cb7", "The same GP grace-after notes become grace-before on the following chord; the corrected 5.00 parser changes the digest representation."),
     },
     "drums_import.musicxml": {
-        "mscz_text": ("3a759cb7769875f9", "The only content change is the same synthesized title size element; hunk context and line numbers differ in 5.00 serialization."),
+        "mscz_text": ("77d7cc79933f0666", "The same title size 24 is synthesized on reopen as in v1 (text digest 3a759cb7769875f9); this digest pins its v2 XML location and value."),
     },
     "custom_part_name.mscx": {
         "musicxml": ("05dd75d215fedcc1", "invisible fff dynamic is not exported"),
@@ -50,7 +50,7 @@ KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
         "idempotence": ("efa1ff9698e4b076", "the tie re-attached to moved grace note is dropped on second import"),
     },
     "linked_parts.mscx:excerpt:0": {
-        "mscz_text": ("77d073cac18ac443", "Same dropped excerpt name, style block and links as 4.7.6; the dropped 5.00 style block contains additional upstream style fields. Both current runs produced the same digest."),
+        "mscz_text": ("ed93cce937e37df7", "Standalone excerpt reopen loses only the root name Flute; the historical v1 text digest 77d073cac18ac443 also covered lost style and links, which v2 preserves."),
         "musicxml": ("fb3d4f6354501cb7", "Same grace conversion and backward cross-staff tie as the linked master; parser representation changed."),
         "idempotence": ("efa1ff9698e4b076", "the tie re-attached to moved grace note is dropped on second import"),
     },
@@ -128,6 +128,78 @@ def normalize_mscx_text(text: str) -> str:
     text = re.sub(r"[ \t]*<program(?:Version|Revision)>[^<]*</program(?:Version|Revision)>\r?\n", "", text)
     text = re.sub(r"<([a-zA-Z0-9_]+)([^>]*)></\1>", r"<\1\2/>", text)
     return text
+
+
+# The archive writer supplies these A4 defaults when a score is saved and
+# reopened.  Only this complete, ordered insertion, at a Score's own Style,
+# is normalized; an existing or different page setting remains observable.
+PAGE_STYLE_DEFAULTS = (
+    ("pageWidth", "8.26772"), ("pageHeight", "11.6929"),
+    ("pagePrintableWidth", "7.08661"), ("pageEvenLeftMargin", "0.590551"),
+    ("pageOddLeftMargin", "0.590551"), ("pageEvenTopMargin", "0.590551"),
+    ("pageEvenBottomMargin", "0.590551"), ("pageOddTopMargin", "0.590551"),
+    ("pageOddBottomMargin", "0.590551"),
+)
+
+
+def _xml_text(value: str | None) -> str:
+    return value if value and value.strip() else ""
+
+
+def _xml_value(element: ET.Element) -> tuple:
+    """Represent the complete XML subtree, ignoring indentation only."""
+    return (element.tag, tuple(sorted(element.attrib.items())), _xml_text(element.text),
+            _xml_text(element.tail), tuple(_xml_value(child) for child in element))
+
+
+def compare_mscz_xml(before: str, after: str) -> list[tuple]:
+    """Compare complete score XML after the narrowly documented page-style insertion.
+
+    All other elements, ordering, attributes and non-whitespace text are compared.
+    In particular, the standalone excerpt name and synthesized title size are
+    reported as losses, with fixture-specific digests, rather than discarded.
+    """
+    left = ET.fromstring(normalize_mscx_text(before))
+    right = ET.fromstring(normalize_mscx_text(after))
+    left_scores, right_scores = list(left.iter("Score")), list(right.iter("Score"))
+    if len(left_scores) == len(right_scores):
+        tags = {tag for tag, _ in PAGE_STYLE_DEFAULTS}
+        for a, b in zip(left_scores, right_scores):
+            style_a, style_b = a.find("Style"), b.find("Style")
+            if style_a is None or style_b is None:
+                continue
+            prefix = list(style_b)[:len(PAGE_STYLE_DEFAULTS)]
+            if (not any(child.tag in tags for child in style_a)
+                    and [(child.tag, child.text) for child in prefix] == list(PAGE_STYLE_DEFAULTS)
+                    and not any(child.attrib or len(child) or _xml_text(child.tail) for child in prefix)
+                    and not any(child.tag in tags for child in list(style_b)[len(prefix):])):
+                for child in prefix:
+                    style_b.remove(child)
+
+    differences: list[tuple] = []
+
+    def compare(a: ET.Element, b: ET.Element, path: str) -> None:
+        for field, av, bv in (
+            ("tag", a.tag, b.tag),
+            ("attributes", tuple(sorted(a.attrib.items())), tuple(sorted(b.attrib.items()))),
+            ("text", _xml_text(a.text), _xml_text(b.text)),
+            ("tail", _xml_text(a.tail), _xml_text(b.tail)),
+        ):
+            if av != bv:
+                differences.append((f"{path}/{field}", av, bv))
+        ac, bc = list(a), list(b)
+        matcher = difflib.SequenceMatcher(a=[x.tag for x in ac], b=[x.tag for x in bc], autojunk=False)
+        for operation, ai, aj, bi, bj in matcher.get_opcodes():
+            if operation == "equal":
+                for index in range(aj - ai):
+                    child = ac[ai + index]
+                    compare(child, bc[bi + index], f"{path}/{child.tag}[{ai + index}]")
+            else:
+                differences.append((f"{path}/children[{ai}:{aj}]", tuple(map(_xml_value, ac[ai:aj])),
+                                    tuple(map(_xml_value, bc[bi:bj]))))
+
+    compare(left, right, f"/{left.tag}")
+    return differences
 
 
 def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
@@ -840,10 +912,7 @@ class RoundTripRunner:
         known = None if self.no_losses else KNOWN_LOSSES.get(fixture, {}).get(phase)
         if not diffs:
             return
-        if phase == "mscz_text":
-            digest = hashlib.sha256("\n".join(diffs).encode("utf-8")).hexdigest()[:16]
-        else:
-            digest = hashlib.sha256(repr(diffs).encode("utf-8")).hexdigest()[:16]
+        digest = hashlib.sha256(repr(diffs).encode("utf-8")).hexdigest()[:16]
         if known and known[0] == digest:
             result["losses"].append((phase, f"{len(diffs)} differences, digest {digest}: {known[1]}"))
             return
@@ -851,10 +920,7 @@ class RoundTripRunner:
         result[key], result["status"] = "failed", "failed"
         result["failures"].append((phase, f"{len(diffs)} differences, digest {digest}"
                                    + (f" (recorded {known[0]})" if known else "")))
-        if phase == "mscz_text":
-            result["failures"].extend((f"{phase}:{idx}", line.rstrip("\r\n")) for idx, line in enumerate(diffs[:40]))
-        else:
-            result["failures"].extend((f"{phase}:{p}", f"{va!r} vs {vb!r}") for p, va, vb in diffs[:40])
+        result["failures"].extend((f"{phase}:{p}", f"{va!r} vs {vb!r}") for p, va, vb in diffs[:40])
 
     async def execute_case(self, case_id: str, fixture_ref: str, doc_id: str, excerpt_id: str | None = None) -> dict[str, Any]:
         out = self.output_dir
@@ -941,11 +1007,10 @@ class RoundTripRunner:
             result["mscz_roundtrip"], result["status"] = "failed", "failed"
             result["failures"].extend([("mscz_rt:" + p, f"A={va!r} vs B={vb!r}") for p, va, vb in diffs_mscz[:40]])
 
-        # MSCZ text check
-        norm_A = normalize_mscx_text(path_A.read_text("utf-8"))
-        norm_B = normalize_mscx_text(path_B.read_text("utf-8"))
-        diff_lines = list(difflib.unified_diff(norm_A.splitlines(), norm_B.splitlines(), fromfile="A", tofile="B", lineterm=""))
-        self.check_phase(result, fixture_ref, "mscz_text", diff_lines)
+        # Full XML comparison still catches properties outside the music parser;
+        # only the exact documented page-style default insertion is normalized.
+        xml_diffs = compare_mscz_xml(path_A.read_text("utf-8"), path_B.read_text("utf-8"))
+        self.check_phase(result, fixture_ref, "mscz_text", xml_diffs)
 
         # 3. MusicXML round trip -> C
         path_xml1 = out / f"{prefix}_1.musicxml"

@@ -38,7 +38,28 @@ if str(SCRIPTS) not in sys.path:
 import check_semantic_dump as csd
 import golden
 from test_rendered_page import TestPngInkControls, TestRenderedPageControls, TestSvgGeometry
-from test_roundtrip import parse_mscx
+from test_roundtrip import PAGE_STYLE_DEFAULTS, compare_mscz_xml, parse_mscx
+
+
+class TestRoundTripXmlControls(unittest.TestCase):
+    def test_only_the_exact_default_page_block_is_normalized(self):
+        defaults = "".join(f"<{name}>{value}</{name}>" for name, value in PAGE_STYLE_DEFAULTS)
+        before = '<museScore><Score><Style><spatium>1.75</spatium></Style><Note pitch="60"/></Score></museScore>'
+        after = before.replace('<spatium>', defaults + '<spatium>')
+        self.assertEqual(compare_mscz_xml(before, after), [])
+        self.assertTrue(compare_mscz_xml(before, after.replace('8.26772', '8.26773')))
+        self.assertTrue(compare_mscz_xml(before, after.replace('pitch="60"', 'pitch="61"')))
+        self.assertTrue(compare_mscz_xml(before, after.replace('</Score>', '<unknown>1</unknown></Score>')))
+        self.assertTrue(compare_mscz_xml(before, after.replace('</pageWidth>', '</pageWidth>content')))
+        explicit = before.replace('<spatium>', '<pageWidth>9</pageWidth><spatium>')
+        self.assertTrue(compare_mscz_xml(explicit, after))
+
+    def test_excerpt_name_loss_remains_visible(self):
+        before = '<museScore><Score><name>Flute</name></Score></museScore>'
+        after = '<museScore><Score/></museScore>'
+        differences = compare_mscz_xml(before, after)
+        self.assertEqual(len(differences), 1)
+        self.assertIn('Flute', repr(differences))
 
 
 class TestV2GoldenInventory(unittest.TestCase):
