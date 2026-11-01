@@ -341,6 +341,7 @@ def write_capture_manifest(target: Path, platform: str, source_commit: str, engi
         "binary_sha256": binary_sha, "soundfont_sha256": soundfont_sha,
         "extractor_sha256": file_sha256(ROOT / "scripts" / "golden.py"),
         "capture_script_sha256": file_sha256(Path(__file__)),
+        "fixture_helper_sha256": file_sha256(ROOT / "scripts" / "v2_fixtures.py"),
         "version_proof_sha256": file_sha256(target / "version.mscx"),
         "fixture_sha256": {name: file_sha256(path) for name, path in fixtures.items()},
         "audio_sha256": {name: file_sha256(target / name / "audio.json") for name in fixtures},
@@ -368,6 +369,9 @@ def make_current_audio_capture(binary: Path, resources: Path, soundfont: Path,
                                engine_source: Path, capture_root: Path) -> tuple[str, str]:
     platform = golden_platform()
     destination = capture_destination(capture_root, platform)
+    status = subprocess.run(['git', 'status', '--porcelain'], cwd=ROOT, capture_output=True,
+                            text=True, encoding='utf-8', check=True).stdout
+    assert not status.strip(), "capture requires a clean superproject checkout"
     source_commit = git_revision(ROOT)
     engine_commit = git_revision(engine_source)
     binary_sha, soundfont_sha = file_sha256(binary), file_sha256(soundfont)
@@ -375,6 +379,7 @@ def make_current_audio_capture(binary: Path, resources: Path, soundfont: Path,
     fixture_hashes = {name: file_sha256(path) for name, path in fixtures.items()}
     extractor_sha = file_sha256(ROOT / "scripts" / "golden.py")
     script_sha = file_sha256(Path(__file__))
+    fixture_helper_sha = file_sha256(ROOT / "scripts" / "v2_fixtures.py")
     capture_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f"{platform}-capture-", dir=capture_root) as temporary:
         target = Path(temporary)
@@ -388,6 +393,7 @@ def make_current_audio_capture(binary: Path, resources: Path, soundfont: Path,
             "fixture inventory or inputs changed during capture")
         assert file_sha256(ROOT / "scripts" / "golden.py") == extractor_sha, "extractor changed during capture"
         assert file_sha256(Path(__file__)) == script_sha, "capture script changed during capture"
+        assert file_sha256(ROOT / "scripts" / "v2_fixtures.py") == fixture_helper_sha, "fixture helper changed during capture"
         write_capture_manifest(target, platform, source_commit, engine_commit,
                                binary_sha, soundfont_sha, fixtures)
         destination = capture_destination(capture_root, platform)
@@ -416,6 +422,8 @@ def read_audio_capture(tree: Path, platform: str, source_commit: str, engine_com
         f"{platform} feature extractor is stale")
     assert manifest.get("capture_script_sha256") == file_sha256(Path(__file__)), (
         f"{platform} capture script is stale")
+    assert manifest.get("fixture_helper_sha256") == file_sha256(ROOT / "scripts" / "v2_fixtures.py"), (
+        f"{platform} fixture helper is stale")
     proof = tree / "version.mscx"
     assert proof.is_file() and manifest.get("version_proof_sha256") == file_sha256(proof), (
         f"{platform} version proof missing or changed")
