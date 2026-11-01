@@ -69,6 +69,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 
 | `engrave-16` | `5fd08f45cb` | `32f0a26e5b` | `da3885cb` | Engine follow-up batch (`fix/audio-io-and-assets`, `a504476c3b`; this merge has its tree): audio storage failures return public `ErrorCode::Io` through an internal IO category, encoder finalization carries a `muse::Ret` status and preserves the first encode/finalize error (injected-failure test followed by a byte-identical render), `set_soundfonts` validates eagerly but defers audio startup and live-handle refresh until rendering, and `Engine::runtime_fonts()`/`RuntimeFontInfo` expose retained runtime font metadata. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0) at `a504476` with success-path audio and render bytes unchanged. |
 
+| `engrave-17` | `2386f06d5f` | `32f0a26e5b` | `da3885cb` | Host resource budgets (`feat/byte-budgets`, `b89d44aa0e`; this merge has its tree): `CaptureOptions` gives score-file and position capture a byte budget plus cancellation (`ErrorCode::Cancelled`, position sizing helpers), and `AudioOptions::max_bytes`/`max_write_bytes` are enforced by the audio file device before writing, deleting the intermediate file and publishing nothing on failure. MIDI capture returns `Unsupported` for bounded capture; the workspace estimate is not a hard process-memory bound. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0) with unchanged success-path codec hashes. |
+
 The superproject's `.gitmodules` now tracks `branch = main`.
 
 ## History: mcp/v4.7.x (frozen)
