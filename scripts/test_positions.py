@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import asyncio
+import base64
 import json
 import math
 import os
@@ -10,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from test_export_options import REPEAT_FIXTURE_MUSICXML, bar, read_png_dimensions
+from test_export_options import REPEAT_FIXTURE_MUSICXML, read_png_dimensions
 
 
 def timed_fixture():
@@ -54,9 +55,38 @@ def mmrest_fixture():
 </part></score-partwise>"""
 
 
+def multipage_fixture():
+    root = ET.Element('score-partwise', version='4.0')
+    listing = ET.SubElement(root, 'part-list')
+    for index, name in enumerate(('Violin', 'Cello')):
+        part = ET.SubElement(listing, 'score-part', id=f'P{index + 1}')
+        ET.SubElement(part, 'part-name').text = name
+    for index in range(2):
+        part = ET.SubElement(root, 'part', id=f'P{index + 1}')
+        for number in range(1, 61):
+            measure = ET.SubElement(part, 'measure', number=str(number))
+            if number == 1:
+                attrs = ET.SubElement(measure, 'attributes')
+                ET.SubElement(attrs, 'divisions').text = '1'
+                time = ET.SubElement(attrs, 'time')
+                ET.SubElement(time, 'beats').text = '4'
+                ET.SubElement(time, 'beat-type').text = '4'
+                clef = ET.SubElement(attrs, 'clef')
+                ET.SubElement(clef, 'sign').text = 'G' if index == 0 else 'F'
+                ET.SubElement(clef, 'line').text = '2' if index == 0 else '4'
+            for step in ('C', 'E', 'G', 'C'):
+                note = ET.SubElement(measure, 'note')
+                p = ET.SubElement(note, 'pitch')
+                ET.SubElement(p, 'step').text = step
+                ET.SubElement(p, 'octave').text = '4' if index == 0 else '3'
+                ET.SubElement(note, 'duration').text = '1'
+                ET.SubElement(note, 'type').text = 'quarter'
+    return ET.tostring(root, encoding='unicode')
+
+
 def check_geometry(data, pages):
-    assert set(data) == {'pageSize', 'elements', 'events'}
-    size = data['pageSize']
+    assert set(data) == {'page_size', 'elements', 'events'}
+    size = data['page_size']
     assert size['width'] > 0 and size['height'] > 0
     elements = data['elements']
     assert [x['id'] for x in elements] == list(range(len(elements)))
@@ -95,14 +125,30 @@ async def run(args):
                     return r.structured_content if r.structured_content is not None else json.loads(r.content[0].text)
                 async def export(doc, fmt, name, **kw):
                     path = out/name
-                    r = await call('score_export', {'documentId': doc, 'format': fmt, 'path': str(path), **kw})
-                    assert path.stat().st_size == r['bytes']
-                    return path
+                    if fmt in ('measurePositions', 'segmentPositions'):
+                        kind, options = 'positions', {'position_kind': 'measure' if fmt == 'measurePositions' else 'segment'}
+                    elif fmt == 'png':
+                        kind, options = 'render', {'format': fmt}
+                    else:
+                        kind, options = 'score', {'format': fmt}
+                    options.update(kw)
+                    directory = fmt == 'png'
+                    if directory: path.mkdir(exist_ok=True)
+                    r = await call('score_export', {'document': doc, 'action': 'run', 'kind': kind,
+                        'options': options, 'destination': {'kind': 'directory' if directory else 'file', 'path': str(path)}})
+                    assert len(r['artifacts']) == 1
+                    artifact = Path(r['artifacts'][0]['path'])
+                    assert artifact.stat().st_size == int(r['artifacts'][0]['size'])
+                    return artifact
+                async def open_xml(xml):
+                    return await call('score_open', {'data': base64.b64encode(xml.encode()).decode(), 'format': 'musicxml'})
+                async def pages(doc):
+                    return (await call('score_outline', {'document': doc}))['outline']['pages']
                 tools = await client.list_tools()
                 schema = next(t.input_schema for t in tools.tools if t.name == 'score_export')
-                assert {'measurePositions', 'segmentPositions'} <= set(schema['properties']['format']['enum'])
-                doc = (await call('score_open', {'musicxml': timed_fixture()}))['documentId']
-                before = await export(doc, 'midi', 'before.mid', expandRepeats=False)
+                assert any(x['properties']['kind'].get('const') == 'positions' for x in schema['oneOf'])
+                doc = (await open_xml(timed_fixture()))['document']
+                before = await export(doc, 'midi', 'before.mid', midi_expand_repeats=False)
                 mappings = {}
                 for fmt, ids, times in [
                     ('measurePositions', [0,1,0,1], [0,2000,6000,8000]),
@@ -113,7 +159,9 @@ async def run(args):
                     check_geometry(data, 1)
                     assert len(data['elements']) == (2 if fmt == 'measurePositions' else 6)
                     if fmt == 'segmentPositions':
-                        assert all(type(e['x']) is int and type(e['y']) is int for e in data['elements'])
+                        # The public DTO serializes these truncated coordinates as
+                        # JSON numbers (possibly with a decimal point), not integers.
+                        assert all(float(e['x']).is_integer() and float(e['y']).is_integer() for e in data['elements'])
                     assert [e['elid'] for e in data['events']] == ids
                     assert [e['position'] for e in data['events']] == times
                     again = await export(doc, fmt, fmt+'-again.json')
@@ -123,45 +171,45 @@ async def run(args):
                     measure = mappings['measurePositions']['elements'][0 if i < 4 else 1]
                     assert segment['page'] == measure['page']
                     assert measure['x'] - 1 <= segment['x'] <= measure['x'] + measure['sx']
-                after = await export(doc, 'midi', 'after.mid', expandRepeats=False)
+                after = await export(doc, 'midi', 'after.mid', midi_expand_repeats=False)
                 assert before.read_bytes() == after.read_bytes()
-                png = await export(doc, 'png', 'page.png', pngDpi=144)
+                png = await export(doc, 'png', 'png-page', dpi=144)
                 w,h = read_png_dimensions(png)
-                size = mappings['measurePositions']['pageSize']
+                size = mappings['measurePositions']['page_size']
                 assert (w,h) == (math.ceil(size['width']*144/1200), math.ceil(size['height']*144/1200))
                 sentinel = out/'sentinel.json'
                 for fmt in ('measurePositions', 'segmentPositions'):
-                    for option in [{'page':0}, {'expandRepeats':False}, {'pngDpi':144}]:
+                    for option in [{'page':0}, {'midi_expand_repeats':False}, {'dpi':144}]:
                         sentinel.write_bytes(b'unchanged')
-                        await call('score_export', {'documentId':doc,'format':fmt,'path':str(sentinel), **option}, True)
+                        await call('score_export', {'document': doc, 'action': 'run', 'kind': 'positions',
+                            'options': {'position_kind': 'measure' if fmt == 'measurePositions' else 'segment', **option},
+                            'destination': {'kind': 'file', 'path': str(sentinel)}}, True)
                         assert sentinel.read_bytes() == b'unchanged'
-                await call('score_close', {'documentId': doc})
-                score = {'title':'Position pages', 'tempo':120, 'parts':[
-                    {'name':'Violin','midiProgram':41,'measures':[bar(60,64,67,72) for _ in range(60)]},
-                    {'name':'Cello','midiProgram':43,'measures':[bar(48,52,55,60) for _ in range(60)]}]}
-                opened = await call('score_create', {'score':score})
-                assert opened['pages'] >= 2
+                await call('score_close', {'document': doc})
+                opened = await open_xml(multipage_fixture())
+                page_count = await pages(opened['document'])
+                assert page_count >= 2
                 for fmt, count, interval in [('measurePositions',60,2000),('segmentPositions',240,500)]:
-                    path = await export(opened['documentId'],fmt,'pages-'+fmt+'.json')
+                    path = await export(opened['document'],fmt,'pages-'+fmt+'.json')
                     data = json.loads(path.read_text('utf-8'))
-                    check_geometry(data, opened['pages'])
+                    check_geometry(data, page_count)
                     assert len(data['elements']) == count and len(data['events']) == count
-                    assert set(x['page'] for x in data['elements']) == set(range(opened['pages']))
+                    assert set(x['page'] for x in data['elements']) == set(range(page_count))
                     assert [e['position'] for e in data['events']] == [i*interval for i in range(count)]
-                await call('score_close', {'documentId': opened['documentId']})
+                await call('score_close', {'document': opened['document']})
                 # Upstream PositionJsonWriter iterates firstMeasureMM/nextMeasureMM:
                 # the four-measure rest is one element whose playback position spans
                 # the whole rest (4 * 2000 ms at the default 120 BPM), then measure 5.
-                mmrest = (await call('score_open', {'musicxml': mmrest_fixture()}))['documentId']
+                mmrest = (await open_xml(mmrest_fixture()))['document']
                 for fmt in ('measurePositions', 'segmentPositions'):
                     path = await export(mmrest, fmt, 'mmrest-'+fmt+'.json')
                     data = json.loads(path.read_text('utf-8'))
                     check_geometry(data, 1)
                     assert len(data['elements']) == 2, (fmt, data['elements'])
                     assert [e['position'] for e in data['events']] == [0, 8000], (fmt, data['events'])
-                await call('score_close', {'documentId': mmrest})
+                await call('score_close', {'document': mmrest})
                 evidence.update(status='passed', tempo_repeat_events=mappings,
-                                multipage={'pages':opened['pages'],'measures':60,'segments':240},
+                                multipage={'pages':page_count,'measures':60,'segments':240},
                                 multi_measure_rest={'underlyingMeasures':5,'elements':2,
                                                     'events':[0,8000]},
                                 midi_unchanged=True, png_dimensions=[w,h], invalid_options=6)
@@ -178,12 +226,12 @@ async def run(args):
                     fixture = args.upstream/'src/engraving/tests/repeat_data'/f'{name}.mscx'
                     opened = await call('score_open', {'path':str(fixture.resolve())})
                     for fmt in ('measurePositions', 'segmentPositions'):
-                        path = await export(opened['documentId'],fmt,f'{name}-{fmt}.json')
+                        path = await export(opened['document'],fmt,f'{name}-{fmt}.json')
                         data = json.loads(path.read_text('utf-8'))
-                        check_geometry(data,opened['pages'])
+                        check_geometry(data,await pages(opened['document']))
                         if fmt == 'measurePositions':
                             assert [e['elid']+1 for e in data['events']] == expected, name
-                    await call('score_close', {'documentId':opened['documentId']})
+                    await call('score_close', {'document':opened['document']})
                 evidence['upstream_repeat_fixtures'] = list(cases)
     (out/'evidence.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({k:v for k,v in evidence.items() if k != 'tempo_repeat_events'},ensure_ascii=False))
