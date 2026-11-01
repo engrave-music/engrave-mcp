@@ -71,6 +71,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 
 | `engrave-17` | `2386f06d5f` | `32f0a26e5b` | `da3885cb` | Host resource budgets (`feat/byte-budgets`, `b89d44aa0e`; this merge has its tree): `CaptureOptions` gives score-file and position capture a byte budget plus cancellation (`ErrorCode::Cancelled`, position sizing helpers), and `AudioOptions::max_bytes`/`max_write_bytes` are enforced by the audio file device before writing, deleting the intermediate file and publishing nothing on failure. MIDI capture returns `Unsupported` for bounded capture; the workspace estimate is not a hard process-memory bound. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0) with unchanged success-path codec hashes. |
 
+| `engrave-18` | `7cbeaa52cf` | `32f0a26e5b` | `da3885cb` | API correctness from the A6 API review (`fix/api-correctness`, `4a7043b6f2`; this merge has its tree): segment addresses validate full-width tick terms and reject out-of-range or non-positive denominators with `InvalidArgument` (missing measure still `NotFound`, unmatched segment still `StaleHandle`); query tick comparisons are exact and overflow-free with denominator validation and widened measure-window arithmetic; public `Fraction` ordering/equality compares musical value while representation-sensitive property-default comparison stays component-wise; both audio methods return `Poisoned` before touching score or sink; excerpt/property/render/SoundFont/rollback doc comments corrected. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
+
 The superproject's `.gitmodules` now tracks `branch = main`.
 
 ## History: mcp/v4.7.x (frozen)
