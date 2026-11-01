@@ -1,9 +1,10 @@
-"""Verify schema regeneration, large UTF-8 schemas, and no-op xmake builds."""
+"""Verify v2 registry regeneration, large UTF-8 descriptions and no-op builds."""
 import argparse
 import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -16,31 +17,46 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     binary = args.binary.resolve()
-    schema = ROOT / "native/legacy_tools.json"
-    original = schema.read_bytes()
-    tools = json.loads(original)
-    # Exceeds a single MSVC literal's capacity and exercises UTF-8 boundaries.
-    marker = "xmake schema regeneration 乐谱 " * 800
-    tools[0]["description"] += marker
+    dump = binary.parent / ("registry_dump.exe" if os.name == "nt" else "registry_dump")
+    source = ROOT / "native/schema_defs.cpp"
+    original = source.read_bytes()
+    description = "Open a score; decoded cap 8 MiB, subject to lower transport line budget."
+    marker_unit = "xmake schema regeneration 乐谱 "
+    marker = marker_unit * 800
+    old = ('"' + description + '"').encode("utf-8")
+    replacement = ('([] { std::string s = "' + description + '"; for (int i = 0; i < 800; ++i) '
+                   's += "' + marker_unit + '"; return s; }()).c_str()').encode("utf-8")
+    if original.count(old) != 1:
+        raise RuntimeError("registry description to mutate is missing or ambiguous")
+    changed_source = original.replace(old, replacement, 1)
     environment = dict(os.environ)
     prefix = ROOT / ".pixi/envs/native"
     if os.name == "nt":
         environment["PATH"] = str(prefix / "Library/bin") + os.pathsep + environment.get("PATH", "")
 
-    def build(name):
-        result = subprocess.run(["xmake", "build", "-y", "-j", "4", "musescore_mcp"],
-                                cwd=ROOT, env=environment, capture_output=True, text=True,
-                                encoding="utf-8", errors="replace", timeout=240)
-        log = result.stdout + result.stderr
-        (output / f"{name}.log").write_text(log, encoding="utf-8")
-        result.check_returncode()
-        return log
+    def run(name, command, expected=0, **kwargs):
+        result = subprocess.run(command, cwd=ROOT, env=environment, capture_output=True,
+                                text=True, encoding="utf-8", errors="replace", timeout=240, **kwargs)
+        (output / f"{name}.log").write_text(result.stdout + result.stderr, encoding="utf-8")
+        if result.returncode != expected:
+            raise AssertionError(f"{name}: exit {result.returncode}, expected {expected}: {result.stderr}")
+        return result.stdout
 
+    def build(name):
+        return run(name, ["xmake", "build", "-y", "-j", "4", "registry_dump", "musescore_mcp"])
+
+    schema = ROOT / "native/tools.json"
+    generator = [sys.executable, str(ROOT / "scripts/generate_tool_schema.py"), "--dump", str(dump)]
     try:
-        schema.write_text(json.dumps(tools, ensure_ascii=False, indent=2), encoding="utf-8")
-        changed = build("changed")
-        assert "noqt_engine.cpp" in changed, changed
-        assert changed.count("compiling.release") == 1, changed
+        source.write_bytes(changed_source)
+        log = build("changed")
+        assert "schema_defs.cpp" in log and log.count("compiling.release") == 1, log
+        run("original-schema-rejected", [*generator, "--schema", str(schema), "--check"], expected=1)
+        generated = output / "regenerated.json"
+        run("generate", [*generator, "--schema", str(generated), "--write"])
+        run("generated-schema-check", [*generator, "--schema", str(generated), "--check"])
+        registry = json.loads(generated.read_text(encoding="utf-8"))
+        assert registry[0]["description"] == description + marker
         requests = [
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                 "protocolVersion": "2025-11-25", "capabilities": {},
@@ -48,19 +64,19 @@ def main():
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         ]
-        process = subprocess.run([str(binary), "--resources", str(ROOT / ".runtime/assets")],
-                                 input="".join(json.dumps(r) + "\n" for r in requests),
-                                 env=environment, capture_output=True, text=True, encoding="utf-8",
-                                 timeout=30, check=True)
-        response = next(json.loads(line) for line in process.stdout.splitlines()
-                        if json.loads(line).get("id") == 2)
-        assert response["result"]["tools"][0]["description"].endswith(marker)
+        stdout = run("live-list", [str(binary), "--resources", str(ROOT / ".runtime/assets")],
+                     input="".join(json.dumps(r) + "\n" for r in requests))
+        response = next(json.loads(line) for line in stdout.splitlines() if json.loads(line).get("id") == 2)
+        assert response["result"]["tools"][0]["description"] == description + marker
     finally:
-        schema.write_bytes(original)
+        if source.read_bytes() != changed_source:
+            raise RuntimeError("registry source changed during the test; refusing to overwrite it")
+        source.write_bytes(original)
         build("restored")
+    run("restored-schema-check", [*generator, "--schema", str(schema), "--check"])
     unchanged = build("unchanged")
-    assert "compiling.release" not in unchanged and "linking.release" not in unchanged
-    report = {"schema_regenerated": True, "large_utf8_schema_roundtrip": True,
+    assert "compiling.release" not in unchanged and "linking.release" not in unchanged, unchanged
+    report = {"registry_regenerated": True, "large_utf8_schema_roundtrip": True,
               "one_translation_unit_rebuilt": True, "noop_build": True, "source_restored": True}
     (output / "evidence.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report))
