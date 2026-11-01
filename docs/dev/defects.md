@@ -274,9 +274,9 @@ such engine contract or change is introduced here.
 - **Impact**: Scores that need generated accidentals in 4.70 are refused rather than degraded. Any agent workflow that produces chromatic alterations before a 4.70 export hits this.
 - **Next step**: Implement accidental conversion (or an explicit degraded form with a frozen warning identity) and add a fixture; until then the phase-B contract must keep listing generated accidentals as outside the accepted conversion set.
 
-### 26. Standalone MSCX output drops style blocks and reflows on reopen (DEFECT-ENGRAVE-026)
+### 26. Default 5.00 standalone MSCX style loss (DEFECT-ENGRAVE-026)
 
-- **Status**: Open; measured in the phase-B precision baseline (docs/dev/phase-b-precision.md).
-- **Evidence**: **EXECUTED** on Windows at ngrave-23 (two deterministic passes): MSCZ round trips stay within the accepted -012 tolerances (element displacement ≤ 0.00024 pt, 0 differing pixels, page size ≤ 0.00096 pt), but the same scores written as standalone MSCX reflow on reopen — lyrics.mscx shifts segment positions by 25.26 pt (23,909 differing pixels), epeat70.mscx by 3.84 pt (17,730 pixels), because the MSCX writer omits the explicit page-margin/default style tags that the MSCZ archive carries in score_style.mss. drums_import.musicxml shifts 0.8769 pt in both formats, which is the MusicXML import quantization already catalogued under -015.
-- **Impact**: A score exported as 4.70 MSCX can open in MuseScore 4.7 with different layout than the source, while the same score exported as MSCZ opens exactly. Phase-B warnings do not mention this because nothing is dropped semantically — the style block is.
-- **Next step**: Write the style block (or the relevant page-margin defaults) in standalone MSCX so both formats round-trip within tolerance, or explicitly scope MSCX as a lossy interchange format in the phase-B contract. Until then MSCZ is the format that carries layout faithfully.
+- **Status**: Open; historical default-5.00 precision baseline, not a demonstrated write470 defect.
+- **Evidence**: EXECUTED on Windows at `engrave-23`: default 5.00 MSCX lyrics shifts 25.26 pt / 23,909 differing pixels; repeat70 shifts 3.84 pt / 17,730 pixels. Their 5.00 MSCZ render comparisons have zero differing pixels. Style data is meaningful score data even though schema-1 semantics omits it.
+- **4.70 correction**: Explicit engrave-24 measurements refuse both original styled fixtures in both formats. Thus the expected recurrence of this MSCX style loss is not observable at this pin. SOURCE-REVIEWED: write470 inserts checked Style into output before either format is emitted. No claim about old-reader layout follows from the 5.00 measurements.
+- **Next step**: Repair or restrict default-5.00 standalone MSCX style persistence; measure any newly accepted styled 4.70 fixtures before claiming layout fidelity. See [precision evidence](phase-b-precision.md).
