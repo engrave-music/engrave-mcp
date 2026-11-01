@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import platform
+import time
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -100,18 +101,33 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                         # its frozen 4.90 request is additionally checked separately.
                         versions = ['4.70'] + ([case['target_version']] if case['target_version'] != '4.70' else [])
                         for version in versions:
-                            for fmt in ('mscx', 'mscz'):
-                                label = fmt if version == '4.70' else f'{version}-{fmt}'
+                            for fmt, action in ([(f, 'run') for f in ('mscx', 'mscz')] +
+                                                ([(f, 'start') for f in ('mscx', 'mscz')] if version != '4.70' else [])):
+                                label = fmt if version == '4.70' else f'{version}-{fmt}' + ('-start' if action == 'start' else '')
                                 folder = dest / label
                                 folder.mkdir()
                                 path = folder / f'score.{fmt}'
-                                arguments = {'document': doc, 'action': 'run', 'kind': 'score',
+                                arguments = {'document': doc, 'action': action, 'kind': 'score',
                                     'options': {'format': fmt, 'native_version': version},
                                     'destination': {'kind': 'file', 'path': str(path)}}
                                 request = json.dumps({'name': 'score_export', 'arguments': arguments},
                                                      ensure_ascii=False, separators=(',', ':')).encode()
                                 (folder / 'request.json').write_bytes(request)
                                 value = await call('score_export', arguments)
+                                if action == 'start':
+                                    require(value['ok'], f'job start failed before engine capture: {value}')
+                                    deadline = time.monotonic() + 30
+                                    while True:
+                                        polled = await call('runtime_job', {'job': value['job'], 'action': 'get'})
+                                        require(polled['ok'], f'job poll failed: {polled}')
+                                        status = polled['status']
+                                        if status['state'] in ('succeeded', 'failed', 'cancelled'):
+                                            break
+                                        require(time.monotonic() < deadline, 'job poll timed out')
+                                        await asyncio.sleep(.02)
+                                    require(status['state'] == 'failed', f'unsupported target job did not fail: {status}')
+                                    require(status['export_warnings'] == status['error']['export_warnings'], 'job warning mismatch')
+                                    value = {'ok': False, 'error': status['error'], 'job_status': status}
                                 warnings = value.get('export_warnings') if value['ok'] else value.get('error', {}).get('export_warnings')
                                 save_json(folder / 'warnings.json', warnings)
                                 result = {'source_sha256': record['source_sha256'], 'target_version': version,
@@ -122,6 +138,9 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                                     'warnings_matched': False, 'oracle_matched': None, 'errors': []}
                                 try:
                                     require(path.is_file() == value['ok'], 'host skipped output or published on refusal')
+                                    if version != '4.70':
+                                        require(not value['ok'] and value['error']['code'] == 'Unsupported',
+                                                'unsupported target did not reach engine rejection')
                                     if value['ok']:
                                         require(len(value.get('artifacts', [])) == 1, 'host artifact count mismatch')
                                         artifact = value['artifacts'][0]
@@ -143,7 +162,7 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                                     # Always compare successful output, even when warnings failed.
                                     if value['ok']:
                                         try:
-                                            compare_xml(path, case.get('xml_checks', {}))
+                                            compare_xml(path, case.get('xml_checks', {}), source)
                                         except Exception as error:
                                             result['errors'].append(str(error))
                                         proc = run_dump(binary, assets, path, folder, 'oracle', oracle_env)
@@ -173,6 +192,7 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                     required = {'mscx', 'mscz'}
                     if case['target_version'] != '4.70':
                         required |= {f"{case['target_version']}-{fmt}" for fmt in ('mscx', 'mscz')}
+                        required |= {f"{case['target_version']}-{fmt}-start" for fmt in ('mscx', 'mscz')}
                     if set(record['formats']) != required:
                         record['errors'].append('host silently skipped fixture or format')
                     record['status'] = 'failed' if record['errors'] or any(

@@ -209,7 +209,31 @@ def xml_roots(path: Path):
     return [ET.parse(path).getroot()]
 
 
-def compare_xml(path: Path, checks: dict) -> None:
+def eid_associations(path: Path) -> dict:
+    """Bind EIDs to owners and score/staff/measure/voice/object positions.
+
+    Same-tag ordinals ignore unrelated serializer additions. Musical fields
+    distinguish equal-type owners as well as the chord/note category swap.
+    Lists retain duplicate EIDs so duplication cannot hide a moved identity.
+    """
+    result = {}
+    fields = ('pitch', 'tpc', 'durationType', 'duration', 'sigN', 'sigD',
+              'concertClefType', 'transposingClefType')
+    def visit(element, context):
+        eid = element.findtext('eid')
+        if eid:
+            result.setdefault(eid, []).append((context, tuple(
+                (key, element.findtext(key)) for key in fields if element.find(key) is not None)))
+        counts = {}
+        for child in element:
+            counts[child.tag] = counts.get(child.tag, 0) + 1
+            visit(child, context + ((child.tag, counts[child.tag]),))
+    for index, root in enumerate(xml_roots(path)):
+        visit(root, ((root.tag, index),))
+    return result
+
+
+def compare_xml(path: Path, checks: dict, identity_source: Path | None = None) -> None:
     roots = xml_roots(path)
     require(all(root.tag == "museScore" and root.get("version") == "4.70" for root in roots), "output is not declared 4.70")
     forbidden = {"SharedPart", "sharedPart", "StaveSharingLabel", "PageLocks", "pageLock", "InstrumentLabel",
@@ -222,6 +246,11 @@ def compare_xml(path: Path, checks: dict) -> None:
     if checks.get("eids"):
         eids = {element.text for root in roots for element in root.iter("eid")}
         require(set(checks["eids"]).issubset(eids), "expected EIDs missing from output XML")
+        require(identity_source is not None, "EID association source is required")
+        expected, actual = eid_associations(identity_source), eid_associations(path)
+        for eid in checks['eids']:
+            require(eid in expected and actual.get(eid) == expected[eid],
+                    f"EID association differs for {eid}: expected {expected.get(eid)!r}, got {actual.get(eid)!r}")
     if checks.get("ordinary_bracket"):
         b = checks["ordinary_bracket"]
         found = False
@@ -271,6 +300,30 @@ def mutation_tests(root: Path, case_dir: Path, binary: Path, assets: Path, oracl
     altered_warnings = copy.deepcopy(warnings)
     altered_warnings[0]["object"]["id"] = "wrong-object"
     names.append(expect_comparator_rejection("wrong_object_warning", lambda: compare_warnings(warnings, altered_warnings)))
+
+    identity_source = root / 'ids.mscx'
+    checks = next(case['xml_checks'] for case in read_json(root / 'manifest.json')['cases'] if case['id'] == 'ids')
+    compare_xml(identity_source, checks, identity_source)
+    swapped = case_dir / 'swapped-ids.mscx'
+    tree = ET.parse(identity_source)
+    chord = tree.find('.//Chord/eid')
+    note = tree.find('.//Chord/Note/eid')
+    require(chord is not None and note is not None and chord.text != note.text, 'ID mutation is vacuous')
+    chord.text, note.text = note.text, chord.text
+    tree.write(swapped, encoding='utf-8', xml_declaration=True)
+    # Establish that membership and old-reader semantics still pass this control.
+    require({e.text for e in tree.iter('eid')} == {e.text for r in xml_roots(identity_source) for e in r.iter('eid')},
+            'ID swap changed membership')
+    swap_proc = run_dump(binary, assets, swapped, case_dir, 'swapped-ids-oracle', oracle_env)
+    require(swap_proc.returncode == 0 and not swap_proc.stderr, 'ID swap oracle control failed')
+    compare_semantics(read_json(root / 'expected/ids.json'), json.loads(swap_proc.stdout))
+    try:
+        compare_xml(swapped, checks, identity_source)
+    except GateError as error:
+        require(str(error).startswith('EID association differs for '), 'ID swap failed for unrelated reason')
+        names.append('swapped_id_association')
+    else:
+        raise GateError('comparator accepted mutation: swapped_id_association')
 
     corpus = ROOT / "tests/compat-corpus/engrave-19"
     source, reference = corpus / "created.json.mscz", corpus / "created.json.semantic.json"
@@ -357,7 +410,7 @@ def run_case(case: dict, fixture_root: Path, output: Path, binary: Path, assets:
         record["output_sha256"] = file_sha(score) if score else None
         if read_path is not None:
             if score is not None:
-                compare_xml(score, case.get("xml_checks", {}))
+                compare_xml(score, case.get("xml_checks", {}), source)
             proc = run_dump(binary, assets, read_path, dest, "output-oracle", oracle_env)
             record["output_oracle"] = {"exit": proc.returncode, "stdout_sha256": sha(proc.stdout), "stderr_sha256": sha(proc.stderr)}
             require(proc.returncode == 0 and not proc.stderr, f"{name}: oracle failed or reported diagnostics")

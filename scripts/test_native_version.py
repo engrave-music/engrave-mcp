@@ -43,8 +43,8 @@ async def run(args):
                     options = {'format':fmt}
                     if version is not None: options['native_version'] = version
                     value = await call('score_export', {'document':doc,'action':action,'kind':'score',
-                        'options':options,'destination':{'kind':'file','path':str(path)}}, refused and (action=='run' or version=='4.90'))
-                    if action == 'start' and version != '4.90':
+                        'options':options,'destination':{'kind':'file','path':str(path)}}, refused and action=='run')
+                    if action == 'start':
                         deadline = time.monotonic()+30
                         while True:
                             status = (await call('runtime_job', {'job':value['job'],'action':'get'}))['status']
@@ -83,8 +83,16 @@ async def run(args):
                     assert ET.fromstring(z.read(score)).attrib['version']=='4.70'
                 for action in ('run','start'):
                     bad, path = await export(doc,'bad-'+action,'4.90',action,refused=True)
-                    assert bad['error']=={'code':'InvalidArgument',
-                        'message':'arguments do not match the declared score_export schema'}
+                    assert bad['error']['code']=='Unsupported', bad
+                    expected = json.loads((ROOT/'tests/phase_b/expected/unsupported_target.warnings.json').read_text())
+                    assert bad['error']['export_warnings']==expected, bad
+                    if action=='start': assert bad['export_warnings']==expected, bad
+                    for malformed in (490, '', 'x'*65):
+                        invalid = await call('score_export', {'document':doc, 'action':action, 'kind':'score',
+                            'options':{'format':'mscx','native_version':malformed},
+                            'destination':{'kind':'file','path':str(out/'malformed.mscx')}}, failed=True)
+                        assert invalid['error']['code']=='InvalidArgument', invalid
+                        assert not (out/'malformed.mscx').exists()
                 refused_source = ROOT/'tests/phase_b/page_locks.source.mscx'
                 refused_doc = (await call('score_open', {'path':str(refused_source)}))['document']
                 failures=[]
