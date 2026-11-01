@@ -2,19 +2,23 @@
 """Replay the pinned 4.7.6 oracle or verify externally captured write470 results.
 
 Baseline mode tests this harness with reviewed 4.70 projections and synthetic
-warnings. It is not a writer test. Writer-results mode requires one actual
-result envelope, warning file, and (on success) MSCZ per case; B2 must connect
-its real export paths to this interface.
+warnings. Producer mode drives the real MCP host in both native formats.
+Writer-results mode independently verifies supplied captures. Only actual
+producer output is evidence of the source-to-writer-to-oracle route.
 """
 from __future__ import annotations
 
 import argparse
+import asyncio
+import base64
 import copy
+import inspect
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -144,10 +148,44 @@ def validate_manifest(root: Path, manifest_path: Path):
 
 
 def run_dump(binary: Path, assets: Path, source: Path, log_dir: Path, label: str, env: dict[str, str]):
-    proc = subprocess.run([str(binary), str(assets), str(source)], env=env, capture_output=True, timeout=60)
+    if '__ssh' in env:
+        code = ('import sys,subprocess,tempfile,json,base64,os\n'
+                f'with tempfile.NamedTemporaryFile(suffix={source.suffix!r}) as f:\n'
+                ' f.write(sys.stdin.buffer.read()); f.flush()\n'
+                f' p=subprocess.run([{str(binary)!r},{str(assets)!r},f.name],'
+                f'env={{"LD_LIBRARY_PATH":{env["LD_LIBRARY_PATH"]!r}}},capture_output=True,timeout=60)\n'
+                ' print(json.dumps({"exit":p.returncode,"stdout":base64.b64encode(p.stdout).decode(),'
+                '"stderr":base64.b64encode(p.stderr).decode()}))\n')
+        response = remote_python(env['__ssh'], code, source.read_bytes())
+        value = json.loads(response)
+        proc = subprocess.CompletedProcess(['ssh', env['__ssh'], str(binary), str(source)], value['exit'],
+            base64.b64decode(value['stdout']), base64.b64decode(value['stderr']))
+    else:
+        proc = subprocess.run([str(binary), str(assets), str(source)], env=env, capture_output=True, timeout=60)
     (log_dir / f"{label}.stdout").write_bytes(proc.stdout)
     (log_dir / f"{label}.stderr").write_bytes(proc.stderr)
     return proc
+
+
+def remote_python(host: str, code: str, data: bytes = b'') -> bytes:
+    command = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', host,
+               'python3 -c ' + shlex.quote(code)]
+    proc = subprocess.run(command, input=data, capture_output=True, timeout=90)
+    require(proc.returncode == 0, f"remote oracle command failed ({proc.returncode}): {shlex.join(command)}\n"
+            + proc.stderr.decode('utf-8', errors='replace'))
+    return proc.stdout
+
+
+def remote_preflight(args):
+    # Execute the same archive/inventory verifier on physical Linux, before any
+    # host export. No local ELF substitute or relaxed remote hash validation.
+    code = ('import sys,os,hashlib,re,tarfile\nfrom pathlib import Path\n'
+            f'ARCHIVE_SHA={ARCHIVE_SHA!r}\nBINARY_SHA={BINARY_SHA!r}\n'
+            + '\n'.join(inspect.getsource(item) for item in
+                        (GateError, require, sha, file_sha, inside, preflight_oracle))
+            + f'\nprint(preflight_oracle(Path({args.oracle_archive.as_posix()!r}),'
+            f'Path({args.oracle_executable.as_posix()!r}),Path({args.oracle_assets.as_posix()!r})))\n')
+    return remote_python(args.oracle_ssh, code).decode().strip()
 
 
 def compare_semantics(expected, actual) -> None:
@@ -344,18 +382,38 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, help="override manifest for negative tests")
     parser.add_argument("--current-binary", type=Path)
     parser.add_argument("--current-assets", type=Path)
+    parser.add_argument("--oracle-ssh", help="Physical Linux oracle host, e.g. linux-host; oracle paths are remote absolute paths")
+    parser.add_argument("--host-binary", type=Path)
+    parser.add_argument("--host-resources", type=Path)
+    parser.add_argument("--host-sha256", help="Required expected SHA-256 of the producer executable")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--baseline", action="store_true", help="oracle projections and synthetic warnings; not a writer gate")
     mode.add_argument("--writer-results", type=Path, help="actual export result directories from the writer")
+    mode.add_argument("--producer", action="store_true", help="Export every source through the real MCP host")
     args = parser.parse_args()
     try:
         require((args.current_binary is None) == (args.current_assets is None), "specify both current binary and current assets")
         fixture_root = args.fixture_root.resolve()
         manifest_path = args.manifest.resolve() if args.manifest else fixture_root / "manifest.json"
         cases = validate_manifest(fixture_root, manifest_path)
-        oracle_root = preflight_oracle(args.oracle_archive.resolve(), args.oracle_executable, args.oracle_assets)
-        binary, assets = args.oracle_executable.resolve(), args.oracle_assets.resolve()
-        oracle_env = {"LD_LIBRARY_PATH": str(oracle_root / "lib")}
+        if args.producer:
+            require(args.host_binary is not None and args.host_resources is not None and args.host_sha256,
+                    'producer requires --host-binary, --host-resources and --host-sha256')
+            require(file_sha(args.host_binary) == args.host_sha256, 'host binary SHA-256 mismatch')
+        if args.oracle_ssh:
+            oracle_root = remote_preflight(args)
+            # PurePosixPath preserves Linux paths on Windows.
+            from pathlib import PurePosixPath
+            binary, assets = PurePosixPath(args.oracle_executable.as_posix()), PurePosixPath(args.oracle_assets.as_posix())
+            oracle_env = {'LD_LIBRARY_PATH': oracle_root + '/lib', '__ssh': args.oracle_ssh}
+        else:
+            require(sys.platform.startswith('linux'),
+                    'Linux ELF oracle requires --oracle-ssh <linux-host> --oracle-archive /path/to/oracles/mcp-4.7.6-4.tar.gz '
+                    '--oracle-executable /path/to/oracles/mcp-4.7.6-4/bin/semantic_dump '
+                    '--oracle-assets /path/to/oracles/mcp-4.7.6-4/assets')
+            oracle_root = preflight_oracle(args.oracle_archive.resolve(), args.oracle_executable, args.oracle_assets)
+            binary, assets = args.oracle_executable.resolve(), args.oracle_assets.resolve()
+            oracle_env = {"LD_LIBRARY_PATH": str(oracle_root / "lib")}
         current_binary = args.current_binary.resolve() if args.current_binary else None
         current_assets = args.current_assets.resolve() if args.current_assets else None
         if current_binary:
@@ -368,6 +426,16 @@ def main() -> int:
         mutation_dir.mkdir()
         mutations = mutation_tests(fixture_root, mutation_dir, binary, assets, oracle_env)
         save_json(mutation_dir / "record.json", mutations)
+        if args.producer:
+            from phase_b_producer import produce
+            records = asyncio.run(produce(args, cases, fixture_root, output, binary, assets, oracle_env))
+            require(len(records) == len(cases) > 0, 'producer skipped fixtures')
+            summary = {'mode': 'producer', 'platform': sys.platform,
+                       'oracle_host': args.oracle_ssh or 'local Linux',
+                       'host_sha256': args.host_sha256, 'oracle_archive_sha256': ARCHIVE_SHA,
+                       'oracle_binary_sha256': BINARY_SHA, 'mutations': mutations, 'cases': records}
+            save_json(output / 'summary.json', summary)
+            return 1 if any(record['status'] != 'passed' for record in records) else 0
         results = []
         for case in cases:
             results.append(run_case(case, fixture_root, output, binary, assets, oracle_env, current_binary,

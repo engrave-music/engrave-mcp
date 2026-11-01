@@ -74,7 +74,7 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         "assets": ["assets_test"], "archives": ["archive_test", "engrave-mcp"],
         "async_session": ["engrave-mcp-test"], "golden": ["engrave-mcp", "semantic_dump"],
         "semantic_check": [], "oracle_harness": [], "compat_corpus": ["semantic_dump"],
-        "phase_b_oracle": ["semantic_dump"],
+        "phase_b_oracle": [],
         "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
         "engine_audio": ["engine_audio_probe", "engrave-mcp"],
         "tool_schema": ["registry_dump", "registry_test"],
@@ -471,8 +471,6 @@ def run_lane(
 
     if lane == "phase_b_oracle":
         cmd = [py, str(repo_root / "scripts/test_phase_b_oracle.py"),
-               "--current-binary", str(build_dir / f"semantic_dump{exe_suffix}"),
-               "--current-assets", str(assets),
                "--output", str(output / "phase-b-oracle"), *phase_b_args]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -584,6 +582,10 @@ def main() -> None:
     parser.add_argument("--phase-b-oracle-executable", type=Path, help="Extracted Linux 4.7.6 semantic_dump")
     parser.add_argument("--phase-b-oracle-assets", type=Path, help="Extracted 4.7.6 oracle assets")
     parser.add_argument("--phase-b-writer-results", type=Path, help="Actual write470 result directories")
+    parser.add_argument("--phase-b-producer", action="store_true", help="Real MCP source-to-oracle producer")
+    parser.add_argument("--host-binary", type=Path, help="Producer MCP executable")
+    parser.add_argument("--host-sha256", help="Required expected producer binary SHA-256")
+    parser.add_argument("--phase-b-oracle-ssh", help="Physical Linux oracle host (linux-host); oracle paths are remote")
     parser.add_argument("--phase-b-baseline", action="store_true", help="Replay projections only; not writer acceptance")
 
     args = parser.parse_args()
@@ -633,19 +635,28 @@ def main() -> None:
     phase_b_args: list[str] = []
     phase_b_requested = (args.phase_b_oracle_archive, args.phase_b_oracle_executable,
                          args.phase_b_oracle_assets, args.phase_b_baseline,
-                         args.phase_b_writer_results)
+                         args.phase_b_writer_results, args.phase_b_producer, args.phase_b_oracle_ssh, args.host_binary, args.host_sha256)
     if "phase_b_oracle" not in selected_lanes and any(phase_b_requested):
         parser.error("phase B options require selecting --only phase_b_oracle")
     if "phase_b_oracle" in selected_lanes:
         if not all((args.phase_b_oracle_archive, args.phase_b_oracle_executable, args.phase_b_oracle_assets)):
             parser.error("phase_b_oracle requires --phase-b-oracle-archive, --phase-b-oracle-executable and --phase-b-oracle-assets")
-        if args.phase_b_baseline == (args.phase_b_writer_results is not None):
-            parser.error("phase_b_oracle requires exactly one of --phase-b-baseline or --phase-b-writer-results")
-        phase_b_args = ["--oracle-archive", str(args.phase_b_oracle_archive.resolve()),
-                        "--oracle-executable", str(args.phase_b_oracle_executable.resolve()),
-                        "--oracle-assets", str(args.phase_b_oracle_assets.resolve())]
-        phase_b_args += (["--baseline"] if args.phase_b_baseline else
-                         ["--writer-results", str(args.phase_b_writer_results.resolve())])
+        if sum((args.phase_b_baseline, args.phase_b_writer_results is not None, args.phase_b_producer)) != 1:
+            parser.error("phase_b_oracle requires exactly one of --phase-b-baseline, --phase-b-writer-results, --phase-b-producer")
+        phase_b_args = ["--oracle-archive", args.phase_b_oracle_archive.as_posix(),
+                        "--oracle-executable", args.phase_b_oracle_executable.as_posix(),
+                        "--oracle-assets", args.phase_b_oracle_assets.as_posix()]
+        if args.phase_b_oracle_ssh:
+            phase_b_args += ["--oracle-ssh", args.phase_b_oracle_ssh]
+        if args.phase_b_producer:
+            if not args.host_binary or not args.host_sha256:
+                parser.error("producer requires --host-binary and --host-sha256")
+            phase_b_args += ["--producer", "--host-binary", str(args.host_binary.resolve()),
+                             "--host-sha256", args.host_sha256, "--host-resources", str(assets)]
+        elif args.phase_b_baseline:
+            phase_b_args += ["--baseline"]
+        else:
+            phase_b_args += ["--writer-results", str(args.phase_b_writer_results.resolve())]
 
     check_preflight_binaries(build_dir, exe_suffix, selected_lanes)
 
