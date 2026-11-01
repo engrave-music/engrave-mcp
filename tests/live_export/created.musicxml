@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work>
+    <work-title>Native Evening / 原生晚曲</work-title>
+  </work>
+  <part-list>
+<score-part id="P1"><part-name>Violin</part-name><score-instrument id="P1-I1"><instrument-name>Violin</instrument-name></score-instrument><midi-instrument id="P1-I1"><midi-channel>1</midi-channel><midi-program>41</midi-program></midi-instrument></score-part>
+<score-part id="P2"><part-name>Piano</part-name><score-instrument id="P2-I1"><instrument-name>Piano</instrument-name></score-instrument><midi-instrument id="P2-I1"><midi-channel>2</midi-channel><midi-program>1</midi-program></midi-instrument></score-part>
+<score-part id="P3"><part-name>Cello</part-name><score-instrument id="P3-I1"><instrument-name>Cello</instrument-name></score-instrument><midi-instrument id="P3-I1"><midi-channel>3</midi-channel><midi-program>43</midi-program></midi-instrument></score-part>
+</part-list>
+<part id="P1">
+<measure number="1">
+<attributes><divisions>480</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>100</per-minute></metronome></direction-type><sound tempo="100"/></direction><note><pitch><step>G</step><octave>4</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>A</step><octave>4</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>B</step><octave>4</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>D</step><octave>5</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+</measure>
+<measure number="2">
+<note><pitch><step>C</step><octave>5</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>B</step><octave>4</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>A</step><octave>4</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><rest/><duration>480</duration><voice>1</voice><type>quarter</type></note>
+</measure>
+</part>
+<part id="P2">
+<measure number="1">
+<attributes><divisions>480</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><note><pitch><step>C</step><octave>3</octave></pitch><duration>1920</duration><voice>1</voice><type>whole</type></note>
+<note><chord/><pitch><step>G</step><octave>3</octave></pitch><duration>1920</duration><voice>1</voice><type>whole</type></note>
+<note><chord/><pitch><step>C</step><octave>4</octave></pitch><duration>1920</duration><voice>1</voice><type>whole</type></note>
+</measure>
+<measure number="2">
+<note><pitch><step>D</step><octave>3</octave></pitch><duration>1920</duration><voice>1</voice><type>whole</type></note>
+<note><chord/><pitch><step>A</step><octave>3</octave></pitch><duration>1920</duration><voice>1</voice><type>whole</type></note>
+<note><chord/><pitch><step>D</step><octave>4</octave></pitch><duration>1920</duration><voice>1</voice><type>whole</type></note>
+</measure>
+</part>
+<part id="P3">
+<measure number="1">
+<attributes><divisions>480</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><note><pitch><step>C</step><octave>3</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>C</step><octave>3</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>G</step><octave>3</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>G</step><octave>3</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+</measure>
+<measure number="2">
+<note><pitch><step>D</step><octave>3</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>D</step><octave>3</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>A</step><octave>3</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+<note><pitch><step>A</step><octave>3</octave></pitch><duration>480</duration><voice>1</voice><type>quarter</type></note>
+</measure>
+</part>
+</score-partwise>

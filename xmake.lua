@@ -294,3 +294,15 @@ target("export_job_test")
         add_files(path.join(native_dir, "utf8.manifest"))
     end
 target_end()
+
+-- M1 direct public API oracle; no worker or snapshot in either comparison.
+target("live_export_test")
+    set_kind("binary")
+    set_default(false)
+    add_deps("muse_generated", "v2_store")
+    add_files(path.join(native_dir, "live_export_test.cpp"), path.join(native_dir, "api_output.cpp"),
+        path.join(native_dir, "background_job.cpp"))
+    if is_plat("windows") then
+        add_files(path.join(native_dir, "utf8.manifest"))
+    end
+target_end()

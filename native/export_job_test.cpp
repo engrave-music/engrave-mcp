@@ -2,6 +2,7 @@
 #include "audio_budget.h"
 #include "host_api.h"
 #include "export_job.h"
+#include "export_timing.h"
 #include "worker_v2.h"
 #include "background_job.h"
 
@@ -543,6 +544,22 @@ int main(int argc, char** argv) {
                 };
                 const auto prefix = std::string(selection.empty() ? "master-" : "excerpt-");
                 save(output_dir / (prefix + "direct." + format), expected);
+                auto live_req = req;
+                const auto live_dir = scratch / (prefix + "live-" + format);
+                fs::create_directory(live_dir);
+                live_req.destination = {live_dir / "output", false};
+                if (req.render_options.format != engrave::RenderFormat::Pdf) live_req.destination = {live_dir, true};
+                ExportTiming timing("live-test", live_dir);
+                auto live = live_export(document, live_req, JobLimits{}, [] { return false; },
+                    std::chrono::steady_clock::now(), timing);
+                require(bool(live), "live render failed");
+                auto live_path = fs::u8path(live->at("artifacts").at(0).at("path").get<std::string>());
+                std::ifstream live_in(live_path, std::ios::binary);
+                std::string live_bytes((std::istreambuf_iterator<char>(live_in)), {});
+                require(live_bytes.size() == expected.size() &&
+                    std::equal(expected.begin(), expected.end(), reinterpret_cast<const std::byte*>(live_bytes.data())),
+                    "live render differs from direct engine bytes");
+
                 save(output_dir / (prefix + "worker." + format), result[0]);
                 return {};
             });
