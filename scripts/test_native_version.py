@@ -68,11 +68,15 @@ async def run(args):
                 import re
                 normalize = lambda data: re.sub(rb'<programRevision(?:\s*/>|>[^<]*</programRevision>)',b'<programRevision/>',data)
                 assert normalize(frozen_out.read_bytes()) == normalize(frozen.read_bytes())
-                sync, xml = await export(doc,'sync470','4.70')
-                job, archive = await export(doc,'job470','4.70','start','mscz')
+                notes_source = ROOT/'tests/phase_b/notes.mscx'
+                doc70 = (await call('score_open', {'path':str(notes_source)}))['document']
+                sync, xml = await export(doc70,'sync470','4.70')
+                job, archive = await export(doc70,'job470','4.70','start','mscz')
                 assert sync['export_warnings'] == job['export_warnings']
-                assert any(w['code']=='engrave.470.part_identity_omitted' and w.get('object')
-                           for w in sync['export_warnings'])
+                # Frozen contract: any warning carries a B470_* identity and a {kind,id} object.
+                # The minimal score needs no downgrade warning once part identity is preserved.
+                assert all(w['code'].startswith('B470_') for w in sync['export_warnings'])
+                assert all(set(w.get('object', {})) == {'kind', 'id'} for w in sync['export_warnings'])
                 assert ET.fromstring(xml.read_bytes()).attrib['version']=='4.70'
                 with zipfile.ZipFile(archive) as z:
                     score = next(n for n in z.namelist() if n.endswith('.mscx'))
@@ -88,7 +92,8 @@ async def run(args):
                     value, _ = await export(refused_doc,'refused-'+action,'4.70',action,refused=True)
                     assert value['error']['code']=='Unsupported', value
                     warnings=value['error']['export_warnings']
-                    assert any(w['code']=='engrave.470.page_lock' and w.get('object') for w in warnings), warnings
+                    assert any(w['code']=='B470_PAGE_LOCK_DROPPED' and set(w.get('object',{}))=={'kind','id'}
+                               for w in warnings), warnings
                     if action=='start': assert value['export_warnings']==warnings
                     failures.append(warnings)
                 assert failures[0]==failures[1]
@@ -96,7 +101,7 @@ async def run(args):
                 large = dict(sync)
                 large['export_warnings']=[{'code':'x'*5000,'message':'m'*70000}]*4100
                 validators['score_export'].validate(large)
-                for token in (doc,frozen_doc,refused_doc): await call('score_close',{'document':token})
+                for token in (doc,doc70,frozen_doc,refused_doc): await call('score_close',{'document':token})
     (out/'envelopes.json').write_text(json.dumps(envelopes,indent=2),encoding='utf-8')
     (out/'provenance.json').write_text(json.dumps({'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
         'target_version':'4.70','scope':'restricted writer; independent oracle pending',

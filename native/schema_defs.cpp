@@ -112,7 +112,7 @@ Json declared_tools() {
     op("add",{{"anchor",r},{"type",text},{"props",props}},J::array({"props"})); d["op"]=one(ops);
     d["diagnostic"]=object({{"severity",en({"info","warning"})},{"message",str(65536)}});
     const J diagnostics=array(ref("diagnostic"));
-    d["export_warning"]=object({{"code",str()},{"message",str()},{"object",eid}},J::array({"code","message"}));
+    d["export_warning"]=object({{"code",str()},{"message",str()},{"object",object({{"kind",str(128)},{"id",str(256)}})}},J::array({"code","message"}));
     d["error"]=object({{"code",en({"InvalidArgument","InvalidInput","UnsupportedFormat","NotFound","StaleHandle","ResourceLimit","Unsupported","Io","RevisionConflict","EditRejected","Poisoned","EngineFailure","Cancelled","DeadlineExceeded","WorkerFailed"})},{"message",str(65536)},{"op_index",integer(0,1023)},{"document",doc},{"current_revision",u},{"published_artifacts",array(text)},{"export_warnings",array(ref("export_warning"))}},J::array({"code","message"}));
     d["property"]=object({{"name",text},{"value",ref("value")},{"is_default",b},{"styled",b}});
     d["box"]=object({{"page",idx},{"x",n},{"y",n},{"width",n},{"height",n}});

@@ -318,7 +318,7 @@ Json encode(const std::vector<engrave::ExportWarning>& warnings) {
     Json result = Json::array();
     for (const auto& warning : warnings) {
         Json item = {{"code", warning.code}, {"message", warning.message}};
-        if (warning.object) item["object"] = engrave::to_string(*warning.object);
+        if (warning.object) item["object"] = Json{{"kind", warning.object->kind}, {"id", warning.object->id}};
         result.push_back(std::move(item));
     }
     return result;
