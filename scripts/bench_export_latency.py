@@ -23,8 +23,29 @@ class Client:
         self.log = self.log_path.open("w", encoding="utf-8")
         args = [str(binary.resolve()), "--resources", str(resources.resolve())]
         if soundfont: args += ["--soundfont", str(soundfont.resolve())]
+        # Windows priority is explicit: ordinary children need not inherit High.
+        high = os.environ.get("ENGRAVE_MCP_BENCH_HIGH_PRIORITY") == "1"
+        if high and os.name != "nt": raise RuntimeError("High protocol requires Windows")
+        if high:
+            import ctypes
+            from ctypes import wintypes
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.GetCurrentProcess.restype = wintypes.HANDLE
+            kernel.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            kernel.GetPriorityClass.argtypes = [wintypes.HANDLE]
+            if not kernel.SetPriorityClass(kernel.GetCurrentProcess(), 128): raise ctypes.WinError()
         self.p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=self.log, env=dict(os.environ, ENGRAVE_MCP_PROFILE_EXPORT="1"))
+            stderr=self.log, creationflags=subprocess.HIGH_PRIORITY_CLASS if high else 0, env=dict(os.environ, ENGRAVE_MCP_PROFILE_EXPORT="1"))
+        if high:
+            parent = kernel.GetPriorityClass(kernel.GetCurrentProcess())
+            child = kernel.GetPriorityClass(wintypes.HANDLE(int(self.p._handle)))
+            proof = dict(parent_pid=os.getpid(), child_pid=self.p.pid,
+                         parent_priority=parent, child_priority=child)
+            (output / "priority.json").write_text(json.dumps(proof, indent=2))
+            print("PRIORITY " + json.dumps(proof), flush=True)
+            if parent != 128 or child != 128:
+                self.p.kill(); self.p.wait()
+                raise RuntimeError(f"High priority verification failed: {proof}")
         self.q = queue.Queue()
         self.ident = 0
         self.pending = {}
