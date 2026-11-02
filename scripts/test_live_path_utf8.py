@@ -45,13 +45,40 @@ def main():
                     assert not error.get('published_artifacts'), error
                     assert sorted(os.listdir(os.fsencode(target))) == before
                 results[f'invalid_target_partial_{partial}'] = 'passed (SVG and PDF)'
+        elif os.name == 'nt':
+            # Python's Windows filesystem calls use Win32 wide-character APIs.
+            # Extended paths let us create real, reachable unpaired surrogates;
+            # the request itself contains only well-formed Unicode.
+            for surrogate in ('\ud800', '\udcff'):
+                target = Path('\\\\?\\' + str(a.output/('unpaired_' + surrogate)))
+                target.mkdir()
+                alias = a.output/f'invalid-alias-音楽-😀-{ord(surrogate):04x}'
+                try:
+                    alias.symlink_to(target, target_is_directory=True)
+                    assert alias.is_dir() and os.path.samefile(alias, target)
+                    before = sorted(os.listdir(a.output))
+                    errors = {}
+                    for fmt, dest in [('svg', alias), ('pdf', alias/'out.pdf')]:
+                        error = export(dest, False, fmt)['error']
+                        assert error['code'] == 'InvalidArgument', error
+                        assert str(dest) in error['message'] and 'UTF-8' in error['message'], error
+                        assert not error.get('published_artifacts'), error
+                        assert os.listdir(target) == [], os.listdir(target)
+                        assert sorted(os.listdir(a.output)) == before
+                        errors[fmt] = error
+                    results[f'unpaired_{ord(surrogate):04x}'] = dict(
+                        result='passed', reachable=True, errors=errors, no_artifacts_or_staging=True)
+                finally:
+                    if alias.is_symlink():
+                        alias.unlink()
+                    target.rmdir()
         else:
             results['invalid_target'] = 'skipped: POSIX byte filenames only'
 
         for partial in (False, True):
             target = a.output/f'valid_音楽_é_😀_{partial}'
             target.mkdir()
-            alias = a.output/f'valid-alias-{partial}'
+            alias = a.output/f'valid-alias-音楽-😀-{partial}'
             try:
                 alias.symlink_to(target, target_is_directory=True)
                 route = 'symlink'

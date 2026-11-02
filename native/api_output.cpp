@@ -168,6 +168,7 @@ Result<ExportRequest> decode_export(const Json& j) {
         const auto& destination = j.at("destination");
         result.destination.directory = destination.at("kind") == "directory";
         result.destination.path = detail::path(destination.at("path"));
+        result.destination.requested_path = destination.at("path").get<std::string>();
         if (result.destination.path.empty()) invalid("destination path is empty");
         const auto& options = j.at("options");
         const auto selection = options.contains("score") ? detail::score(options.at("score")) : engrave::ScoreSel{};
@@ -272,14 +273,29 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         try {
             cleanup.destination = request.destination.directory ? fs::canonical(request.destination.path) : normalize_output_path(request.destination.path);
         } catch (const std::invalid_argument& e) { invalid(e.what()); }
+        auto invalid_resolved_path = [&] {
+            // Preserve the well-formed JSON request, including its separators;
+            // never convert the unrepresentable resolved path for diagnostics.
+            invalid("destination '" + request.destination.requested_path +
+                "' resolves to a path that is not valid UTF-8; use a destination with a UTF-8 resolved path");
+        };
+        auto report_path_text = [&](const fs::path& path) -> std::string {
+            try {
+                return detail::path_text(path);
+            } catch (const std::exception&) {
+                // Windows generic_u8string() throws for unpaired UTF-16
+                // surrogates before the JSON UTF-8 validator can run.
+                invalid_resolved_path();
+                throw; // invalid_resolved_path always throws DecodeError
+            }
+        };
         auto validate_report_path = [&](const fs::path& path) {
             try {
                 // Use the wire encoder's strict UTF-8 rules; replacement would
                 // make both success and partial-error paths unusable.
-                (void)Json(detail::path_text(path)).dump();
+                (void)Json(report_path_text(path)).dump();
             } catch (const Json::type_error&) {
-                invalid("destination '" + detail::path_text(request.destination.path) +
-                    "' resolves to a path that is not valid UTF-8; use a destination with a UTF-8 resolved path");
+                invalid_resolved_path();
             }
         };
         validate_report_path(cleanup.destination);
@@ -299,7 +315,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             if (bytes.empty()) throw detail::DecodeError{HostError{"EngineFailure", "export produced an empty artifact"}};
             if (bytes.size() > limits.output_bytes - total) throw detail::DecodeError{HostError{"ResourceLimit", "export exceeds output byte limit"}};
             const auto destination = request.destination.directory ? cleanup.destination / name : cleanup.destination;
-            if (detail::path_text(destination).size() > 4096) throw detail::DecodeError{HostError{"ResourceLimit", "artifact path exceeds limit"}};
+            if (report_path_text(destination).size() > 4096) throw detail::DecodeError{HostError{"ResourceLimit", "artifact path exceeds limit"}};
             auto path = cleanup.stage / name;
             std::ofstream out(path, std::ios::binary | std::ios::trunc);
             out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -446,7 +462,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             }
             timing.add("engine_call", start);
             const auto destination = request.destination.directory ? cleanup.destination / "output" : cleanup.destination;
-            if (detail::path_text(destination).size() > 4096)
+            if (report_path_text(destination).size() > 4096)
                 throw detail::DecodeError{HostError{"ResourceLimit", "artifact path exceeds limit"}};
             staged.push_back({path, {mime, destination, bytes}});
         }

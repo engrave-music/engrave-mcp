@@ -5,7 +5,7 @@
 namespace music::v2 {
 struct ExportTiming;
 enum class ExportKind { Score, Render, Audio, Positions };
-struct Destination { std::filesystem::path path; bool directory=false; };
+struct Destination { std::filesystem::path path; bool directory=false; std::string requested_path; };
 struct ExportRequest {
     std::string document;
     std::optional<std::uint64_t> expected_revision;
