@@ -42,6 +42,7 @@ struct Handle {
 struct LocalSecurity {
     PSECURITY_DESCRIPTOR descriptor = nullptr;
     PACL dacl = nullptr;
+    bool protected_dacl = false;
     ~LocalSecurity() { if (descriptor) LocalFree(descriptor); }
 };
 // A protected DACL that grants only the current user full control and lets
@@ -321,6 +322,11 @@ void publish_output(const std::filesystem::path& staged, const std::filesystem::
         }
         if (!created) throw std::runtime_error("Cannot allocate publication ACL probe");
     }
+    SECURITY_DESCRIPTOR_CONTROL control = 0;
+    DWORD revision = 0;
+    if (!GetSecurityDescriptorControl(acl.descriptor, &control, &revision))
+        throw std::runtime_error("Cannot inspect publication DACL control");
+    acl.protected_dacl = (control & SE_DACL_PROTECTED) != 0;
     if (!MoveFileExW(staged.c_str(), destination_path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
         windows_error("Cannot publish output");
     if (on_visible) on_visible();
@@ -328,7 +334,9 @@ void publish_output(const std::filesystem::path& staged, const std::filesystem::
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL, nullptr));
     if (published.value == INVALID_HANDLE_VALUE) windows_error("Cannot open published output for ACL");
-    const auto result = SetSecurityInfo(published.value, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+    const SECURITY_INFORMATION dacl_info = DACL_SECURITY_INFORMATION |
+        (acl.protected_dacl ? PROTECTED_DACL_SECURITY_INFORMATION : UNPROTECTED_DACL_SECURITY_INFORMATION);
+    const auto result = SetSecurityInfo(published.value, SE_FILE_OBJECT, dacl_info,
         nullptr, nullptr, acl.dacl, nullptr);
     if (result != ERROR_SUCCESS)
         throw std::system_error(static_cast<int>(result), std::system_category(),

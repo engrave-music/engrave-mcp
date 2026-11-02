@@ -31,8 +31,7 @@ static void require(bool condition, const char* message) {
 }
 
 #ifdef _WIN32
-static std::set<std::wstring> dacl_sids(const fs::path& path, bool* protected_dacl = nullptr) {
-    PACL dacl = nullptr;
+static std::set<std::wstring> dacl_sids(const fs::path& path, bool* protected_dacl = nullptr) {    PACL dacl = nullptr;
     PSECURITY_DESCRIPTOR descriptor = nullptr;
     const auto result = GetNamedSecurityInfoW(path.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
         nullptr, nullptr, &dacl, nullptr, &descriptor);
@@ -71,6 +70,27 @@ static std::set<std::wstring> dacl_sids(const fs::path& path, bool* protected_da
     return sids;
 }
 
+static std::wstring dacl_sddl(const fs::path& path) {
+    PACL dacl = nullptr;
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    const auto result = GetNamedSecurityInfoW(path.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+        nullptr, nullptr, &dacl, nullptr, &descriptor);
+    if (result != ERROR_SUCCESS)
+        throw std::system_error(static_cast<int>(result), std::system_category(),
+                                "GetNamedSecurityInfoW failed");
+    struct FreeDescriptor {
+        PSECURITY_DESCRIPTOR value;
+        ~FreeDescriptor() { if (value) LocalFree(value); }
+    } free_descriptor{descriptor};
+    LPWSTR text = nullptr;
+    require(ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, SDDL_REVISION_1,
+        DACL_SECURITY_INFORMATION, &text, nullptr) != FALSE,
+        "ConvertSecurityDescriptorToStringSecurityDescriptorW failed");
+    std::wstring sddl(text);
+    LocalFree(text);
+    return sddl;
+}
+
 static void check_private_acl(const fs::path& stage, bool require_protected = true) {
     bool protected_dacl = false;
     const auto sids = dacl_sids(stage, &protected_dacl);
@@ -81,7 +101,7 @@ static void check_private_acl(const fs::path& stage, bool require_protected = tr
     require(!sids.contains(L"S-1-5-32-545"), "staging grants BUILTIN\\Users");
 }
 
-static void grant_users_full(const fs::path& path) {
+static void grant_users_full(const fs::path& path, bool protect = false) {
     PSID users = nullptr;
     require(ConvertStringSidToSidW(L"S-1-5-32-545", &users) != FALSE, "ConvertStringSidToSidW failed");
     struct FreeSid {
@@ -95,8 +115,10 @@ static void grant_users_full(const fs::path& path) {
     require(InitializeAcl(acl, acl_size, ACL_REVISION) != FALSE, "InitializeAcl failed");
     require(AddAccessAllowedAce(acl, ACL_REVISION, GENERIC_ALL, users) != FALSE,
             "AddAccessAllowedAce failed");
+    const SECURITY_INFORMATION information = DACL_SECURITY_INFORMATION |
+        (protect ? PROTECTED_DACL_SECURITY_INFORMATION : UNPROTECTED_DACL_SECURITY_INFORMATION);
     const auto result = SetNamedSecurityInfoW(const_cast<LPWSTR>(path.c_str()), SE_FILE_OBJECT,
-        DACL_SECURITY_INFORMATION, nullptr, nullptr, acl, nullptr);
+        information, nullptr, nullptr, acl, nullptr);
     require(result == ERROR_SUCCESS, "SetNamedSecurityInfoW failed");
 }
 
@@ -109,6 +131,7 @@ static void check_publication_acl(const fs::path& parent) {
     { std::ofstream(existing, std::ios::binary) << "old"; }
     grant_users_full(existing);
     require(dacl_sids(existing).contains(L"S-1-5-32-545"), "test ACE was not set");
+    const auto ordinary_before = dacl_sddl(existing);
 
     const auto stage = music::create_private_directory(directory);
     { std::ofstream(stage / "new", std::ios::binary) << "new"; }
@@ -118,8 +141,17 @@ static void check_publication_acl(const fs::path& parent) {
 
     { std::ofstream(stage / "replacement", std::ios::binary) << "replacement"; }
     music::publish_output(stage / "replacement", existing);
-    require(dacl_sids(existing).contains(L"S-1-5-32-545"),
-            "replacement publication lost the destination ACL");
+    require(dacl_sddl(existing) == ordinary_before,
+            "replacement publication changed the ordinary destination DACL");
+
+    const auto protected_existing = directory / "protected.pdf";
+    { std::ofstream(protected_existing, std::ios::binary) << "old protected"; }
+    grant_users_full(protected_existing, true);
+    const auto protected_before = dacl_sddl(protected_existing);
+    { std::ofstream(stage / "protected", std::ios::binary) << "new protected"; }
+    music::publish_output(stage / "protected", protected_existing);
+    require(dacl_sddl(protected_existing) == protected_before,
+            "protected replacement publication changed the destination DACL");
 }
 
 static void check_path_grammar() {
