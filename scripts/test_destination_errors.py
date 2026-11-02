@@ -113,6 +113,19 @@ def main():
             finally:
                 acl('/remove:d', f'*{sid}', '/T')
             assert list(target.iterdir()) == []
+            try:
+                acl('/deny', f'*{sid}:(OI)(CI)(AD)')
+                probe = target/'denied-probe'
+                try:
+                    probe.mkdir()
+                except PermissionError:
+                    check('access_denied_creation', target/'missing'/'nested', 'Io')
+                else:
+                    probe.rmdir()
+                    results['access_denied_creation'] = 'not reproducible: mkdir succeeds with inherited deny ADD_SUBDIRECTORY'
+            finally:
+                acl('/remove:d', f'*{sid}', '/T')
+            assert list(target.iterdir()) == []
 
         # A real rename failure, without an injected fault or metadata refusal.
         conflict = a.output/'conflict'
