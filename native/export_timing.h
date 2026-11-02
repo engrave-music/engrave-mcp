@@ -6,8 +6,8 @@
 #include <filesystem>
 namespace music::v2 {
 // Engine render returns encoded bytes: engine_call includes draw + encode.
-// response runs through the synchronous report; transport serialization follows
-// after the owner completes.
+// response runs through the synchronous report callback (including transport
+// serialization/write) and session resume.
 struct ExportTiming {
     using Clock = std::chrono::steady_clock;
     Json phases = Json::object();

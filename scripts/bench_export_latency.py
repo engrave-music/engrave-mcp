@@ -1,8 +1,9 @@
 """Native JSON-RPC latency benchmark; raw samples and server phases are retained.
 
 Engine call includes encoding (the public API returns encoded bytes). Report
-preflight is its own phase; response ends after the synchronous report, and
-client total includes transport serialization.
+preflight is its own phase; response includes the synchronous report callback's
+transport serialization/write and session resume; client total adds client-side
+transport.
 """
 import argparse
 import json
@@ -144,7 +145,7 @@ def main():
     a = p.parse_args()
     assert a.warm >= 50 and a.cold >= 10
     a.output = a.output.resolve()
-    report = {"warm":[], "cold":[], "phase_semantics":"engine_call includes encoding; encode_write is host staging; report_preflight is report-bound calculation; response ends after synchronous reporting; transport serialization follows"}
+    report = {"warm":[], "cold":[], "phase_semantics":"engine_call includes encoding; encode_write is host staging; report_preflight is report-bound calculation; response includes synchronous report serialization/write and session resume; client total adds client transport"}
     for mode in ("live",):
         for fixture in ("repeat70.mscx", "lyrics.mscx"):
             out = a.output/mode/fixture
