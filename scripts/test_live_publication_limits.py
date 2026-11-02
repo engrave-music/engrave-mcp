@@ -48,6 +48,7 @@ def main():
             assert response1['error']['code'] == -32603, response1
             wait_log(c, 'WATCHDOG_CLAIMED')
             wait_log(c, 'PUBLICATION_SECOND_FLUSH')
+            wait_log(c, 'WATCHDOG_LOCK_WAITING')
             response2 = c.receive(second)['result']['structuredContent']
             if partial:
                 assert response2['error']['code'] == 'Io', response2

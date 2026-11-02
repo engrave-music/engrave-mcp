@@ -107,7 +107,7 @@ def barrier(a, dead, report=True):
         h.marker('WRITE_REGISTERED')
         # The next owner cannot start while the report write holds the mutex.
         h.export(queued, 31)
-        h.send('notifications/cancelled', dict(requestId=31))
+        if not dead: h.send('notifications/cancelled', dict(requestId=31))
         h.send('tools/list', {}, 12)
         assert not list(queued.iterdir())
         if dead: h.p.stdout.close()
