@@ -77,7 +77,7 @@ async def main():
                     "target": {"kind": "id", "id": note}, "props": ["pitch"]})
                 assert properties["properties"][0]["value"] == {"kind": "int", "value": "74"}
 
-                async def export(kind, options, destination, action="run"):
+                async def export(kind, options, destination):
                     value = await call("score_export", {"document": doc, "kind": kind,
                         "options": options, "destination": destination})
                     assert value["source_revision"] == edited["revision"]

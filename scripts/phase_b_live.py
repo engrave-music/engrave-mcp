@@ -130,44 +130,39 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                  'object': {'kind': 'tie', 'id': eid}} for eid in sorted(warning_ids)]
                             from test_phase_b_oracle import compare_warnings
                             for fmt in ('mscx', 'mscz'):
-                                sync_warnings = None
-                                for action in ('run',):
-                                    folder = dest/f'{fmt}-{action}'
-                                    folder.mkdir()
-                                    path = folder/f'score.{fmt}'
-                                    refused = scenario == 'one_end'
-                                    value = await call('score_export', {'document': doc, 'expected_revision': revision,
-                                        'kind': 'score', 'options': {'format': fmt, 'native_version': '4.70'},
-                                        'destination': {'kind': 'file', 'path': str(path)}}, ok=not refused)
-                                    require(value.get('source_revision', revision) == revision, 'wrong export revision')
-                                    if refused:
-                                        require(value['error']['code'] == 'Unsupported', 'wrong refusal')
-                                        warnings = value['error']['export_warnings']
-                                        require(not path.exists() and value.get('artifacts', []) == [], 'published refusal')
-                                    else:
-                                        require(value['source_revision'] == revision, 'wrong source revision')
-                                        warnings = value['export_warnings']
-                                        require(path.is_file() and len(value['artifacts']) == 1, 'missing artifact')
-                                        compare_xml(path, {})
-                                        proc = run_dump(binary, assets, path, folder, 'oracle', oracle_env)
-                                        require(proc.returncode == 0 and not proc.stderr, 'oracle failed')
-                                        actual = json.loads(proc.stdout)
-                                        save_json(folder/'associations.json', association_report(expected, actual))
-                                        compare_semantics(expected, actual)
-                                    compare_warnings(expected_warnings, warnings)
-                                    if action == 'run':
-                                        sync_warnings = warnings
-                                    else:
-                                        require(warnings == sync_warnings, 'warning arrays differ')
-                                    record['formats'][f'{fmt}-{action}'] = {'warnings': warnings, 'refused': refused,
-                                        'output_sha256': file_sha(path) if path.exists() else None}
+                                # Retain the historical -run evidence key for existing comparators.
+                                folder = dest/f'{fmt}-run'
+                                folder.mkdir()
+                                path = folder/f'score.{fmt}'
+                                refused = scenario == 'one_end'
+                                value = await call('score_export', {'document': doc, 'expected_revision': revision,
+                                    'kind': 'score', 'options': {'format': fmt, 'native_version': '4.70'},
+                                    'destination': {'kind': 'file', 'path': str(path)}}, ok=not refused)
+                                require(value.get('source_revision', revision) == revision, 'wrong export revision')
+                                if refused:
+                                    require(value['error']['code'] == 'Unsupported', 'wrong refusal')
+                                    warnings = value['error']['export_warnings']
+                                    require(not path.exists() and value.get('artifacts', []) == [], 'published refusal')
+                                else:
+                                    require(value['source_revision'] == revision, 'wrong source revision')
+                                    warnings = value['export_warnings']
+                                    require(path.is_file() and len(value['artifacts']) == 1, 'missing artifact')
+                                    compare_xml(path, {})
+                                    proc = run_dump(binary, assets, path, folder, 'oracle', oracle_env)
+                                    require(proc.returncode == 0 and not proc.stderr, 'oracle failed')
+                                    actual = json.loads(proc.stdout)
+                                    save_json(folder/'associations.json', association_report(expected, actual))
+                                    compare_semantics(expected, actual)
+                                compare_warnings(expected_warnings, warnings)
+                                record['formats'][f'{fmt}-run'] = {'warnings': warnings, 'refused': refused,
+                                    'output_sha256': file_sha(path) if path.exists() else None}
                             record['revision'] = revision
                         except Exception as error:
                             record['errors'].append(str(error))
                         finally:
                             if doc is not None:
                                 await call('score_close', {'document': doc})
-                        require(len(record['formats']) == 4 or record['errors'], 'skipped exports')
+                        require(len(record['formats']) == 2 or record['errors'], 'skipped exports')
                         record['status'] = 'failed' if record['errors'] else 'passed'
                         save_json(dest/'result.json', record)
                         records.append(record)

@@ -1,4 +1,4 @@
-"""Exercise v2 session scheduling, capture, cancellation and shutdown over stdio."""
+"""Exercise v2 session scheduling, live export, cancellation and shutdown over stdio."""
 from __future__ import annotations
 
 import argparse
@@ -15,7 +15,7 @@ RETIRED = {"score_get", "score_replace_measures", "score_query_region", "score_s
            "score_generate_excerpts", "score_list_excerpts", "runtime_add_font", "runtime_set_soundfont", "runtime_job",
            "score_export_start", "score_job_get", "score_job_cancel", "score_audio_tracks"}
 
-def export(doc, path, action=None):
+def export(doc, path):
     return {"document": doc, "kind": "score", "options": {"format": "musicxml"},
             "destination": {"kind": "file", "path": str(path)}}
 
@@ -110,7 +110,7 @@ async def run(args):
         assert all(x["revision"] in (base, revision) for x in responses[4:]), responses[4:]
 
         reference = out / "reference.musicxml"
-        direct = await client.tool("score_export", export(doc, reference, "run"))
+        direct = await client.tool("score_export", export(doc, reference))
         assert direct["source_revision"] == revision and reference.stat().st_size > 0
         snapshot_path = out / "snapshot.test-slow.musicxml"
         snapshot = await client.tool("score_export", {**export(doc, snapshot_path), "expected_revision": revision})
@@ -124,22 +124,21 @@ async def run(args):
         assert snapshot_path.read_bytes() == reference.read_bytes()
 
         # A failed second page publication must retain its first published path
-        # in both a waiting export error and an inspected background job.
+        # in the synchronous export error.
         partial_doc = (await client.tool("score_open", {"path": str(ROOT / "fixtures/golden/linked_parts.mscx")}))["document"]
         measure = (await client.tool("score_outline", {"document": partial_doc}))["outline"]["measures"][0]["id"]
         await client.tool("score_edit", {"document": partial_doc, "ops": [{"op": "set_layout_break",
             "measure": {"kind": "id", "id": measure}, "kind": "page", "on": True}]})
-        for action in ("live",):
-            directory = out / f"partial-{action}"
-            directory.mkdir(exist_ok=True)
-            (directory / "page-0001.png").unlink(missing_ok=True)
-            (directory / "page-0002.png").mkdir(exist_ok=True)
-            result = await client.tool("score_export", {"document": partial_doc, "kind": "render",
-                "options": {"format": "png", "dpi": 36, "last_page": 1},
-                "destination": {"kind": "directory", "path": str(directory)}}, error=True)
-            assert result["error"]["code"] == "Io" and len(result["error"]["published_artifacts"]) == 1, result
-            assert Path(result["error"]["published_artifacts"][0]).resolve() == (directory / "page-0001.png").resolve(), result
-            assert (directory / "page-0001.png").is_file()
+        directory = out / "partial-live"
+        directory.mkdir(exist_ok=True)
+        (directory / "page-0001.png").unlink(missing_ok=True)
+        (directory / "page-0002.png").mkdir(exist_ok=True)
+        result = await client.tool("score_export", {"document": partial_doc, "kind": "render",
+            "options": {"format": "png", "dpi": 36, "last_page": 1},
+            "destination": {"kind": "directory", "path": str(directory)}}, error=True)
+        assert result["error"]["code"] == "Io" and len(result["error"]["published_artifacts"]) == 1, result
+        assert Path(result["error"]["published_artifacts"][0]).resolve() == (directory / "page-0001.png").resolve(), result
+        assert (directory / "page-0001.png").is_file()
         await client.tool("score_close", {"document": partial_doc})
 
         doc = (await client.tool("score_create", {"template_id": "Treble_Clef"}))["document"]
