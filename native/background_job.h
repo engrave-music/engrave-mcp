@@ -8,14 +8,16 @@
 #include <system_error>
 
 namespace music {
-// Destination metadata probes: missing/non-directory paths are invalid inputs;
-// all other filesystem errors propagate as system_error (API code Io).
+// Missing paths return not_found; non-directory components are invalid inputs.
+// Other filesystem errors propagate as system_error (API code Io).
 std::filesystem::file_status output_path_status(const std::filesystem::path& path);
+// Create missing directories recursively, after the caller validates encoding.
+// Creation errors are Io; any parents already created may remain.
 void require_output_directory(const std::filesystem::path& path);
 // Canonical form used for export destinations. Rejects a
-// missing, "." or ".." filename and requires an existing parent directory.
+// missing, "." or ".." filename. Does not create directories.
 // Returns canonical(path) when the file already exists, otherwise
-// canonical(parent) / filename.
+// weakly_canonical(absolute(path)), resolving existing prefixes.
 std::filesystem::path normalize_output_path(const std::filesystem::path& path);
 [[nodiscard]] std::filesystem::path current_executable_path();
 // A directory-sync failure occurs after visibility commits. Callers must

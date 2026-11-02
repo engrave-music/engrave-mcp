@@ -267,8 +267,15 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
     try {
         check();
         try {
-            if (request.destination.directory) require_output_directory(request.destination.path);
-            cleanup.destination = request.destination.directory ? fs::canonical(request.destination.path) : normalize_output_path(request.destination.path);
+            // Probe without mutation, then resolve existing prefixes even when
+            // the leaf or parents are missing. Encoding validation must precede
+            // recursive creation (including through symlinks).
+            if (request.destination.directory) {
+                const auto status = output_path_status(request.destination.path);
+                if (fs::exists(status) && !fs::is_directory(status))
+                    throw std::invalid_argument("destination must be a directory");
+                cleanup.destination = fs::weakly_canonical(fs::absolute(request.destination.path));
+            } else cleanup.destination = normalize_output_path(request.destination.path);
         } catch (const std::invalid_argument& e) {
             invalid("destination '" + request.destination.requested_path + "': " + e.what());
         }
@@ -302,6 +309,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             if (request.destination.directory) require_output_directory(cleanup.destination);
             else if (fs::is_directory(output_path_status(cleanup.destination)))
                 invalid("file destination '" + request.destination.requested_path + "' is a directory");
+            else require_output_directory(cleanup.destination.parent_path());
         } catch (const std::invalid_argument& e) {
             invalid("destination '" + request.destination.requested_path + "': " + e.what());
         }

@@ -84,15 +84,40 @@ std::filesystem::path create_private_directory(const std::filesystem::path& pare
 std::filesystem::file_status output_path_status(const std::filesystem::path& path) {
     std::error_code error;
     const auto status = std::filesystem::status(path, error);
-    if (error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory)
+    if (error == std::errc::not_a_directory)
+        throw std::invalid_argument("destination contains a non-directory component");
+    if (error == std::errc::no_such_file_or_directory)
         return std::filesystem::file_status(std::filesystem::file_type::not_found);
     if (error) throw std::filesystem::filesystem_error("Cannot inspect export destination", path, error);
     return status;
 }
 
 void require_output_directory(const std::filesystem::path& path) {
-    if (!std::filesystem::is_directory(output_path_status(path)))
-        throw std::invalid_argument("destination directory must exist and be a directory");
+    const auto status = output_path_status(path);
+    if (std::filesystem::exists(status)) {
+        if (!std::filesystem::is_directory(status))
+            throw std::invalid_argument("destination must be a directory");
+        return;
+    }
+    // Windows may report PATH_NOT_FOUND for a child of a regular file.
+    // Inspect the missing chain before creation so wrong types stay inputs,
+    // while access and other metadata errors still propagate as Io.
+    for (auto parent = path.parent_path(); !parent.empty();) {
+        const auto ancestor = output_path_status(parent);
+        if (std::filesystem::exists(ancestor)) {
+            if (!std::filesystem::is_directory(ancestor))
+                throw std::invalid_argument("destination contains a non-directory component");
+            break;
+        }
+        const auto next = parent.parent_path();
+        if (next == parent) break;
+        parent = next;
+    }
+    std::error_code error;
+    std::filesystem::create_directories(path, error);
+    if (error)
+        throw std::filesystem::filesystem_error(
+            "Cannot create export directory; created parents may remain", path, error);
 }
 
 std::filesystem::path normalize_output_path(const std::filesystem::path& path) {
@@ -102,9 +127,7 @@ std::filesystem::path normalize_output_path(const std::filesystem::path& path) {
         throw std::invalid_argument("Export path must name a file");
     if (std::filesystem::exists(output_path_status(path)))
         return std::filesystem::canonical(path);
-    const auto absolute = std::filesystem::absolute(path);
-    require_output_directory(absolute.parent_path());
-    return std::filesystem::canonical(absolute.parent_path()) / absolute.filename();
+    return std::filesystem::weakly_canonical(std::filesystem::absolute(path));
 }
 
 void publish_output(const std::filesystem::path& staged, const std::filesystem::path& destination,
