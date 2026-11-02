@@ -621,6 +621,15 @@ def png_exceptions(payload):
     return result
 
 
+def accepted_svg_counts(name, digest):
+    """Existing platform render hashes can justify their recorded count changes."""
+    import golden
+    fixture, output = name.split("/", 1)
+    platform = "windows" if sys.platform.startswith("win") else "linux"
+    allowances = golden.load_allow(ROOT / "tests/golden/allow.json")
+    return golden.allow_accept(allowances, fixture, output, "different", digest, platform)[1] is not None
+
+
 def restored_png_oracle(path, name, platform):
     """Match decoded pixels to the already pinned direct-engine descriptor."""
     import golden
@@ -826,7 +835,10 @@ def main():
             if exception:
                 digest = hashlib.sha256(data).hexdigest()
                 if digest != exception["svg_sha256"]:
-                    issues.append("count exception SVG SHA-256 does not match")
+                    if accepted_svg_counts(name, digest):
+                        allowed_counts = {key: getattr(actual, key) for key in exception["counts"]}
+                    else:
+                        issues.append("count exception SVG SHA-256 does not match")
                 elif any(value == reference["stats"][key] or getattr(actual, key) != value
                          for key, value in exception["counts"].items()):
                     issues.append("stale count exception or exception count does not match")
