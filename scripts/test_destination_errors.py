@@ -52,10 +52,40 @@ def main():
                 error = c.tool('score_export', args, False)['error']
                 assert error['code'] == code, error
                 assert not error.get('published_artifacts'), error
-                if code == 'InvalidArgument':
-                    assert str(dest) in error['message'], error
+                assert str(dest) in error['message'], error
                 errors[fmt] = error
             results[label] = errors
+
+        if os.name == 'nt':
+            # Use raw strings: pathlib would discard empty path components.
+            invalid_names = ['bad<name', 'bad>name', 'bad:name', 'bad"name',
+                             'bad|name', 'bad?name', 'bad*name', 'bad\x01name',
+                             'NUL', 'COM1', 'con.txt', 'PRN.ext', 'AUX', 'LPT9.log',
+                             'trailing.', 'trailing ', 'empty//component', 'trailing/']
+            for index, name in enumerate(invalid_names):
+                for fmt in ('svg', 'pdf'):
+                    root = a.output/f'invalid-{index}-{fmt}'
+                    for position, suffix in [('leaf', name), ('parent', name+'/nested/out')]:
+                        dest = str(root/position/'missing')+'/'+suffix
+                        args = export_args(doc, fmt, a.output, True)
+                        args['destination']['path'] = dest
+                        error = c.tool('score_export', args, False)['error']
+                        assert error['code'] == 'InvalidArgument', error
+                        assert dest in error['message'], error
+                        assert not error.get('published_artifacts'), error
+                        assert not root.exists(), f'Invalid destination created parents: {dest}'
+                        results[f'syntax_{index}_{fmt}_{position}'] = error
+
+        for fmt in ('svg', 'pdf'):
+            root = a.output/f'invalid-nul-{fmt}'
+            for dest in ('', str(root/'missing')+'/bad\0name'):
+                args = export_args(doc, fmt, a.output, True)
+                args['destination']['path'] = dest
+                error = c.tool('score_export', args, False)['error']
+                assert error['code'] == 'InvalidArgument', error
+                assert "destination '"+dest+"'" in error['message'], error
+                assert not error.get('published_artifacts') and not root.exists(), error
+                results[f'decode_{fmt}_{bool(dest)}'] = error
 
         regular = a.output/'regular'
         regular.write_text('not a directory')
@@ -63,6 +93,7 @@ def main():
         for fmt, dest in [('svg', regular), ('pdf', a.output/'missing')]:
             error = export(fmt, dest, False)['error']
             assert error['code'] == 'InvalidArgument' and not error.get('published_artifacts'), error
+            assert str(dest) in error['message'], error
             results[f'wrong_type_{fmt}'] = error
         blocked = a.output/'blocked'
         target = blocked/'existing'
@@ -134,6 +165,7 @@ def main():
         args = export_args(doc, 'svg', conflict, True)
         error = c.tool('score_export', args, False)['error']
         assert error['code'] == 'Io' and not error.get('published_artifacts'), error
+        assert str(conflict) in error['message'], error
         assert sorted(p.name for p in conflict.iterdir()) == ['page-0001.svg']
         results['publication_conflict'] = error
         # Recursive creation succeeds, then page two fails naturally at rename.
