@@ -21,6 +21,7 @@ LANE_NAMES = [
     "host_api",
     "live_export",
     "live_audio",
+    "audio_budget",
     "runtime_assets",
     "score_edit",
     "score_audio",
@@ -70,6 +71,7 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         "host_api": ["host_api_test"],
         "live_export": ["live_export_test", "engrave-mcp-test"],
         "live_audio": ["engrave-mcp", "engrave-mcp-test"],
+        "audio_budget": ["engrave-mcp-test"],
         "runtime_assets": ["engrave-mcp-test"], "score_edit": ["score_edit_test"],
         "score_audio": ["score_audio_test"], "score_positions": ["score_positions_test"],
         "noqt_probe": ["noqt_probe"], "excerpts": ["excerpts_test"],
@@ -229,6 +231,14 @@ def run_lane(
         else:
             cmd += ["--test-binary", str(build_dir / f"engrave-mcp-test{exe_suffix}"), "--soundfont", str(soundfont)]
         return subprocess.run(cmd, cwd=repo_root, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
+    if lane == "audio_budget":
+        for script in ("test_audio_output_budget.py", "test_audio_repeat_budget.py"):
+            cmd = [py, str(repo_root / "scripts" / script), "--binary", str(build_dir / f"engrave-mcp-test{exe_suffix}"),
+                   "--resources", str(assets), "--soundfont", str(soundfont), "--output", str(output / script.removesuffix(".py"))]
+            result = subprocess.run(cmd, cwd=repo_root, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+            if result: return result
+        return 0
 
     if lane == "runtime_assets":
         cmd = [py, str(repo_root / "scripts/test_runtime_assets_mcp.py"),

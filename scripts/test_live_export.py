@@ -97,7 +97,7 @@ def main():
         r=c.tool("score_export",export_args(doc,"svg",partial,True),False)
         assert r["error"]["code"]=="Io",r
         assert r["error"]["published_artifacts"]==[str((partial/"page-0001.svg").resolve()).replace("\\","/")],r
-        assert not list(partial.glob(".musescore-job-*"))
+        assert not list(partial.glob(".engrave-stage-*"))
         c.tool("score_export",export_args(doc,"pdf",out/"multi.pdf",True))
         # Queue an export behind a known running owner task, cancel before engine use.
         sleeper=c.send("tools/call",{"name":"test_owner_sleep","arguments":{}})
@@ -128,7 +128,7 @@ def main():
                 assert failure["error"]["code"]=="Io",failure
                 assert not failure["error"].get("published_artifacts"),failure
                 assert dest.read_bytes()==b"old destination" if existing else not dest.exists()
-                assert not list(dest.parent.glob(".musescore-job-*"))
+                assert not list(dest.parent.glob(".engrave-stage-*"))
             c.close()
     (a.output/"comparison.json").write_text(json.dumps(results,indent=2))
     (a.output/"comparison.json").write_text(json.dumps(results,indent=2))

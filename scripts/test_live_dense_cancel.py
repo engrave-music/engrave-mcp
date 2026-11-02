@@ -120,7 +120,7 @@ def main():
                 row['responses'].append(reply)
                 assert reply.get('error', {}).get('code') == -32800, reply
                 assert not path.exists()
-                assert not list(out.rglob('.musescore-job-*'))
+                assert not list(out.rglob('.engrave-stage-*'))
                 save()
             arm.unlink()
             recovery = out/(label+'-recovery.wav')

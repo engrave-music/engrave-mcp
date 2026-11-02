@@ -62,6 +62,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
 #endif
 
     explicit Impl(engrave::EngineOptions options) {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        if (const auto* bytes = std::getenv("ENGRAVE_MCP_TEST_OUTPUT_BYTES"))
+            limits.output_bytes = std::stoull(bytes);
+#endif
         validate_registry();
         validate_handlers(handlers);
         std::promise<void> ready;

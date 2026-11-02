@@ -7,7 +7,6 @@
 #include <system_error>
 
 namespace music {
-bool same_output_path(const std::filesystem::path& first, const std::filesystem::path& second);
 // Canonical form used for export destinations. Rejects a
 // missing, "." or ".." filename and requires an existing parent directory.
 // Returns canonical(path) when the file already exists, otherwise

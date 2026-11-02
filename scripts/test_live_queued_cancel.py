@@ -74,7 +74,7 @@ def main():
         result['frames'] = len(samples)
         result['sha256'] = hashlib.sha256(running_path.read_bytes()).hexdigest()
         assert not queued_path.exists()
-        assert not list(out.rglob('.musescore-job-*'))
+        assert not list(out.rglob('.engrave-stage-*'))
         reference = out/'reference.wav'
         c.tool('score_export', args(reference)['arguments'])
         assert hashlib.sha256(reference.read_bytes()).hexdigest() == result['sha256']
@@ -95,7 +95,7 @@ def main():
             assert reply.get('error', {}).get('code') == -32800 or reply.get('result', {}).get('structuredContent', {}).get('ok'), reply
         c.tool('score_outline', {'document':doc})
         assert c.q.empty() and not c.pending, 'duplicate response'
-        assert not list(out.rglob('.musescore-job-*'))
+        assert not list(out.rglob('.engrave-stage-*'))
         result['passed'] = True
     finally:
         if c.p.poll() is None: c.close()

@@ -1,19 +1,10 @@
 #include "background_job.h"
-#include <array>
-#include <algorithm>
-#include <atomic>
-#include <cstdio>
 #include <cstdlib>
 #include <cerrno>
-#include <fstream>
-#include <functional>
-#include <mutex>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <system_error>
-#include <thread>
-#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -64,19 +55,10 @@ std::filesystem::path current_executable_path() {
 #endif
 }
 
-bool same_output_path(const std::filesystem::path& first, const std::filesystem::path& second) {
-#ifdef _WIN32
-    const auto a = first.lexically_normal().wstring(), b = second.lexically_normal().wstring();
-    return CompareStringOrdinal(a.c_str(), static_cast<int>(a.size()), b.c_str(), static_cast<int>(b.size()), TRUE) == CSTR_EQUAL;
-#else
-    return first.lexically_normal() == second.lexically_normal();
-#endif
-}
-
 std::filesystem::path create_private_directory(const std::filesystem::path& parent) {
     std::random_device random;
     for (int i = 0; i != 16; ++i) {
-        auto path = parent / (".musescore-job-" + std::to_string(random()) + "-" + std::to_string(random()));
+        auto path = parent / (".engrave-stage-" + std::to_string(random()) + "-" + std::to_string(random()));
         std::error_code error;
         if (std::filesystem::create_directory(path, error)) {
 #ifndef _WIN32
@@ -84,15 +66,15 @@ std::filesystem::path create_private_directory(const std::filesystem::path& pare
                                          std::filesystem::perm_options::replace, error);
             if (error) {
                 std::filesystem::remove(path);
-                throw std::system_error(error, "Cannot restrict job directory permissions");
+                throw std::system_error(error, "Cannot restrict staging directory permissions");
             }
 #endif
             return path;
         }
         if (error && error != std::errc::file_exists)
-            throw std::system_error(error, "Cannot create job directory");
+            throw std::system_error(error, "Cannot create staging directory");
     }
-    throw std::runtime_error("Cannot allocate unique job directory");
+    throw std::runtime_error("Cannot allocate unique staging directory");
 }
 
 std::filesystem::path normalize_output_path(const std::filesystem::path& path) {
