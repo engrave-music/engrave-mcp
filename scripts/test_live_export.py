@@ -68,10 +68,9 @@ def main():
         out=a.output/(mode or "default")
         c=Client(a.binary,a.resources,out,mode)
         doc=c.tool("score_open",{"path":str(ROOT/"fixtures/golden/repeat70.mscx")})["document"]
-        bad=export_args(doc,"pdf",out/"missing-parent"/"out.pdf")
-        assert c.tool("score_export",bad,False)["error"]["code"]=="InvalidArgument"
-        bad=export_args(doc,"svg",out/"missing-directory")
-        assert c.tool("score_export",bad,False)["error"]["code"]=="InvalidArgument"
+        for fmt, dest in [('pdf', out/'missing-parent'/'out.pdf'), ('svg', out/'missing-directory')]:
+            created = c.tool('score_export', export_args(doc, fmt, dest))
+            assert all(Path(item['path']).is_file() for item in created['artifacts']), created
         hashes={}
         for fmt in ("mscz","mscx","musicxml","mxl","midi","pdf","svg","png"):
             path=out/fmt
