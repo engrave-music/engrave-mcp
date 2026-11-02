@@ -137,8 +137,8 @@ static void check_publication_acl(const fs::path& parent) {
     const auto stage = music::create_private_directory(directory);
     { std::ofstream(stage / "new", std::ios::binary) << "new"; }
     music::publish_output(stage / "new", directory / "new.pdf");
-    require(dacl_sids(directory / "new.pdf") == dacl_sids(reference),
-            "new publication ACL differs from a normally created file");
+    require(dacl_sddl(directory / "new.pdf") == dacl_sddl(reference),
+            "new publication DACL differs from a normally created file");
 
     { std::ofstream(stage / "replacement", std::ios::binary) << "replacement"; }
     music::publish_output(stage / "replacement", existing);
