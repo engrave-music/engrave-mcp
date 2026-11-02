@@ -272,6 +272,17 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         try {
             cleanup.destination = request.destination.directory ? fs::canonical(request.destination.path) : normalize_output_path(request.destination.path);
         } catch (const std::invalid_argument& e) { invalid(e.what()); }
+        auto validate_report_path = [&](const fs::path& path) {
+            try {
+                // Use the wire encoder's strict UTF-8 rules; replacement would
+                // make both success and partial-error paths unusable.
+                (void)Json(detail::path_text(path)).dump();
+            } catch (const Json::type_error&) {
+                invalid("destination '" + detail::path_text(request.destination.path) +
+                    "' resolves to a path that is not valid UTF-8; use a destination with a UTF-8 resolved path");
+            }
+        };
+        validate_report_path(cleanup.destination);
         if (request.destination.directory && !fs::is_directory(cleanup.destination)) invalid("destination directory must exist");
         if (!request.destination.directory && fs::is_directory(cleanup.destination)) invalid("file destination is a directory");
 #ifdef MUSIC_ASYNC_TEST_HOOKS
@@ -442,6 +453,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         // Preflight both complete and worst-case partial reports before any rename.
         Json all = Json::array(), paths = Json::array();
         for (const auto& file : staged) {
+            validate_report_path(file.artifact.path);
             all.push_back(encode(file.artifact));
             paths.push_back(detail::path_text(file.artifact.path));
         }
