@@ -61,6 +61,7 @@ def main():
             invalid_names = ['bad<name', 'bad>name', 'bad:name', 'bad"name',
                              'bad|name', 'bad?name', 'bad*name', 'bad\x01name',
                              'NUL', 'COM1', 'con.txt', 'PRN.ext', 'AUX', 'LPT9.log',
+                             'COM\u00b9', 'lpt\u00b2.log',
                              'trailing.', 'trailing ', 'empty//component', 'trailing/']
             for index, name in enumerate(invalid_names):
                 for fmt in ('svg', 'pdf'):

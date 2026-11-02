@@ -107,9 +107,14 @@ void validate_output_path_syntax(const std::filesystem::path& path) {
                 if (c < 32 || std::wstring_view(L"<>:\"|?*").find(c) != std::wstring_view::npos) reject();
             auto base = component.substr(0, component.find(L'.'));
             for (auto& c : base) if (c >= L'a' && c <= L'z') c -= L'a' - L'A';
+            // Windows also treats the ISO-8859-1 superscript digits as device
+            // digits: COM¹/²/³ and LPT¹/²/³ are reserved exactly like COM1–9.
+            auto device_digit = [](wchar_t c) {
+                return (c >= L'1' && c <= L'9') || c == L'\u00B9' || c == L'\u00B2' || c == L'\u00B3';
+            };
             if (base == L"CON" || base == L"PRN" || base == L"AUX" || base == L"NUL" ||
                 (base.size() == 4 && (base.substr(0, 3) == L"COM" || base.substr(0, 3) == L"LPT") &&
-                 base[3] >= L'1' && base[3] <= L'9')) reject();
+                 device_digit(base[3]))) reject();
         }
         if (end == std::wstring::npos) break;
         start = end + 1;
