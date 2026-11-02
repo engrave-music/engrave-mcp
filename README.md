@@ -6,7 +6,7 @@
 
 ## MCP 工具
 
-服务提供以下十个工具：
+服务提供以下九个工具：
 
 1. `score_open`：从路径或数据打开乐谱。
 2. `score_create`：从引擎模板创建乐谱。
@@ -15,7 +15,7 @@
 5. `score_query`：查询元素、属性或音轨。
 6. `score_describe`：查询元素属性和样式目录。
 7. `score_edit`：以原子批次编辑乐谱。
-8. `score_export`：导出乐谱、页面、音频或位置数据，并支持后台任务。
+8. `score_export`：在当前文档上同步导出乐谱、页面、音频或位置数据。
 9. `runtime_info`：查询运行环境，或添加字体、替换 SoundFont。
 
 参数、输出、错误与版本约束见 [v2 registry 文档](docs/dev/a5-registry.md) 和生成的 [工具 schema](native/tools.json)。例如，`score_create` 的 `arguments` 可以是：

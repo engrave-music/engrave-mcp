@@ -620,6 +620,19 @@ def png_exceptions(payload):
     return result
 
 
+def restored_png_oracle(path, name, platform):
+    """Match decoded pixels to the already pinned direct-engine descriptor."""
+    import golden
+    fixture, output = name.split("/", 1)
+    migrations = golden.read_v2_migrations(ROOT / "tests/golden" / platform)
+    pin = migrations.get((fixture, output + ".json"))
+    if not pin or pin.get("kind") not in ("snapshot", "snapshot-precision"):
+        return False
+    descriptor = json.dumps(golden.describe_png(path), indent=1, sort_keys=True,
+                            ensure_ascii=False, allow_nan=False) + "\n"
+    return hashlib.sha256(descriptor.encode()).hexdigest() == pin["direct_sha256"]
+
+
 def png_stats(path):
     """Measure visible ink after compositing RGBA over white, in page coordinates."""
     import numpy as np
@@ -851,7 +864,9 @@ def main():
                 issues = png_issues(actual, reference)
                 platform = "windows" if sys.platform.startswith("win") else "linux"
                 pin = png_pins.get((platform, name))
-                if pin:
+                if pin and not issues and restored_png_oracle(actual_png[name], name, platform):
+                    detail = " (exact direct-render oracle restored)"
+                elif pin:
                     digest = hashlib.sha256(actual_png[name].read_bytes()).hexdigest()
                     if digest != pin["png_sha256"]:
                         issues.append("precision exception PNG SHA-256 does not match")

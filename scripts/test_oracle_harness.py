@@ -74,7 +74,7 @@ class TestRoundTripXmlControls(unittest.TestCase):
 
 
 class TestV2GoldenInventory(unittest.TestCase):
-    def test_snapshot_pin_precedes_existing_pedal_allowances(self):
+    def test_restored_direct_pin_matches_existing_pedal_allowances(self):
         migrations = golden.read_v2_migrations(ROOT / "tests/golden/windows")
         allowances = golden.load_allow(ROOT / "tests/golden/allow.json")
         real_sha256 = golden.sha256
@@ -111,9 +111,9 @@ class TestV2GoldenInventory(unittest.TestCase):
                     with mock.patch.object(golden, "read_v2_migrations", return_value={}):
                         self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 0)
                     with mock.patch.object(golden, "read_v2_migrations", return_value={(fixture, name): pin}):
-                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 1)
+                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 0)
                         result = json.loads((report / "report.json").read_text(encoding="utf-8"))
-                        self.assertEqual(result["fixtures"][fixture][name]["status"], "different")
+                        self.assertEqual(result["fixtures"][fixture][name]["status"], "allowed")
                         target.write_bytes(b"host")
                         self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 0)
                         target.unlink()
@@ -145,6 +145,17 @@ class TestV2GoldenInventory(unittest.TestCase):
                 self.assertFalse(golden.precision_png_accept(pin, "0" * 64))
                 self.assertFalse(golden.precision_png_accept(pin, None))
 
+    def test_snapshot_guard_accepts_only_recorded_direct_or_snapshot_bytes(self):
+        entries = golden.read_v2_migrations(ROOT / "tests/golden/windows")
+        for pin in entries.values():
+            if pin.get("kind") not in ("snapshot", "snapshot-precision"):
+                continue
+            old = pin["baseline_sha256"]
+            self.assertFalse(golden.snapshot_pin_mismatch(pin, old, pin["direct_sha256"]))
+            self.assertFalse(golden.snapshot_pin_mismatch(pin, old, pin["actual_sha256"]))
+            self.assertTrue(golden.snapshot_pin_mismatch(pin, "0" * 64, pin["direct_sha256"]))
+            self.assertTrue(golden.snapshot_pin_mismatch(pin, old, "0" * 64))
+
     def test_precision_png_comparator_requires_the_raw_file_hash(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -158,7 +169,7 @@ class TestV2GoldenInventory(unittest.TestCase):
             (actual / "fixture" / name).write_bytes(new)
             golden.write_json(baseline / "index.json", {"fixture": {name: golden.sha256(old)}})
             pin = {"kind": "snapshot-precision", "output": name, "baseline_sha256": golden.sha256(old),
-                   "actual_sha256": golden.sha256(new), "raw_png_sha256": "a" * 64,
+                   "actual_sha256": golden.sha256(new), "direct_sha256": golden.sha256(old), "raw_png_sha256": "a" * 64,
                    "reason": "test", "oracle": "test"}
             migrations = {("fixture", name): pin}
             with mock.patch.object(golden, "read_v2_index", return_value=(None, {}, {})), \
@@ -169,11 +180,11 @@ class TestV2GoldenInventory(unittest.TestCase):
                 self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows",
                                                       {"fixture": "b" * 64}), 1)
                 self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows"), 1)
-                # Even an exact return to the old descriptor needs its own
-                # reviewed change; it cannot bypass a host-specific pin.
+                # Returning to the independently pinned direct descriptor is
+                # accepted; unrecorded descriptors still fail the guard.
                 (actual / "fixture" / name).write_bytes(old)
                 self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows",
-                                                      {"fixture": "a" * 64}), 1)
+                                                      {"fixture": "a" * 64}), 0)
 
     def test_writer_precision_rejects_changed_evidence_and_inventory(self):
         with tempfile.TemporaryDirectory() as temporary:

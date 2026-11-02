@@ -1056,10 +1056,10 @@ def v2_migration_accept(entries: dict, fixture: str, output: str,
 
 def snapshot_pin_mismatch(entry: dict | None, baseline_sha: str | None,
                           actual_sha: str | None) -> bool:
-    """Snapshot pins override both tolerant comparisons and older allowances."""
+    """Require an exact recorded snapshot or restored direct-render oracle."""
     return bool(entry and entry.get("kind") in ("snapshot", "snapshot-precision")
                 and (baseline_sha != entry["baseline_sha256"]
-                     or actual_sha != entry["actual_sha256"]))
+                     or actual_sha not in (entry["actual_sha256"], entry["direct_sha256"])))
 
 
 def precision_png_accept(entry: dict, actual_raw_sha: str | None) -> bool:
