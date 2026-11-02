@@ -34,6 +34,8 @@ def context():
     result = dict(utc=utc(), platform=platform.platform(), cpu_count=psutil.cpu_count(),
                   physical_cpu_count=psutil.cpu_count(logical=False),
                   memory_bytes=psutil.virtual_memory().total, psutil=psutil.__version__)
+    battery = psutil.sensors_battery()
+    result['battery'] = battery._asdict() if battery else None
     if os.name == 'nt':
         result['power_plan'] = probe(['powercfg', '/getactivescheme'])
         result['windows'] = probe(['powershell', '-NoProfile', '-Command', "@{defender=(Get-MpComputerStatus | Select-Object AntivirusEnabled,RealTimeProtectionEnabled); thermal=@(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Continue | Select-Object CurrentTemperature); disks=@(Get-Partition | Where-Object DriveLetter | Select-Object DriveLetter,DiskNumber); cpu=(Get-CimInstance Win32_Processor | Select-Object Name,MaxClockSpeed)} | ConvertTo-Json -Depth 5"])
@@ -130,11 +132,25 @@ def main():
     report['hashes'] = {str(Path(x).resolve()):hashlib.sha256(Path(x).read_bytes()).hexdigest()
                         for x in command if Path(x).is_file()}
     stop = threading.Event()
+    gaps = []
+    awake = None
+    if os.name == 'nt':
+        import ctypes
+        awake = ctypes.WinDLL('kernel32').SetThreadExecutionState
+        awake.argtypes = [ctypes.c_uint32]
+        awake.restype = ctypes.c_uint32
+        report['idle_sleep_inhibited'] = bool(awake(0x80000001))
     with (a.output/'telemetry.jsonl').open('w', encoding='utf-8') as stream:
         stream.write(json.dumps(sample())+'\n'); stream.flush()
         def monitor():
+            previous = time.monotonic()
             while not stop.wait(a.interval):
-                stream.write(json.dumps(sample())+'\n'); stream.flush()
+                row = sample()
+                gap = row['monotonic'] - previous
+                if gap > max(10, 5*a.interval):
+                    gaps.append(dict(utc=row['utc'], seconds=gap))
+                previous = row['monotonic']
+                stream.write(json.dumps(row)+'\n'); stream.flush()
         thread = threading.Thread(target=monitor)
         thread.start()
         report['start_utc'] = utc()
@@ -148,11 +164,14 @@ def main():
         finally:
             report['end_utc'] = utc()
             stop.set(); thread.join()
+            if awake:
+                awake(0x80000000)
             stream.write(json.dumps(sample())+'\n')
+            report['telemetry_gaps'] = gaps
             report['after'] = context()
             (a.output/'environment.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     print(json.dumps(dict(command=command, exit=result.returncode)), flush=True)
-    raise SystemExit(result.returncode)
+    raise SystemExit(result.returncode or (2 if gaps else 0))
 
 
 if __name__ == '__main__':
