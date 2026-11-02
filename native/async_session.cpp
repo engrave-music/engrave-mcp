@@ -1,4 +1,5 @@
 #include "async_session.h"
+#include "publication_gate.h"
 #include "api_json_internal.h"
 #include "api_output.h"
 #include "host_api.h"
@@ -145,7 +146,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 try {
                     asio::post(target, [self, task, complete, state, running_cancel, preserve_completed]() mutable {
                         int queued = 0;
-                        if (!state->compare_exchange_strong(queued, 1)) return;
+                        {
+                            std::lock_guard lock(publication_gate.mutex);
+                            if (!state->compare_exchange_strong(queued, 1)) return;
+                        }
                         std::exception_ptr error;
                         T result{};
                         try {
@@ -157,7 +161,11 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         } catch (...) { error = std::current_exception(); }
                         task->reset();
 
-                        state->store(3, std::memory_order_release);
+                        {
+                            std::lock_guard lock(publication_gate.mutex);
+                            if (state->load() == 4) --publication_gate.publishers;
+                            state->store(3, std::memory_order_release);
+                        }
                         complete(error, std::move(result));
                     });
                 } catch (...) {
@@ -211,8 +219,11 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                         return request_cancel->load(std::memory_order_acquire) || self->stopping.load(std::memory_order_acquire);
                     }, submitted, *timing, *runtime, [execution] {
                         if (!execution) return true;
+                        std::lock_guard lock(publication_gate.mutex);
                         int running = 1;
-                        return execution->compare_exchange_strong(running, 4, std::memory_order_acq_rel);
+                        if (!execution->compare_exchange_strong(running, 4, std::memory_order_acq_rel)) return false;
+                        ++publication_gate.publishers;
+                        return true;
                     });
                     if (!output) return std::unexpected(output.error());
                     payload = std::move(*output);

@@ -51,6 +51,9 @@ def main():
     subprocess.run([sys.executable, str(ROOT/"scripts/test_live_publication_cancel.py"),
                     "--binary", str(a.binary), "--resources", str(a.resources),
                     "--output", str(a.output/"publication-cancel")], check=True)
+    subprocess.run([sys.executable, str(ROOT/"scripts/test_live_publication_limits.py"),
+                    "--binary", str(a.binary), "--resources", str(a.resources),
+                    "--output", str(a.output/"publication-limits")], check=True)
     results={}
     for mode in (None,):
         out=a.output/(mode or "default")

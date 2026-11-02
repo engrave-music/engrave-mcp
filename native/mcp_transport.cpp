@@ -1,4 +1,6 @@
 #include "mcp_transport.h"
+#include "publication_gate.h"
+#include "tool_result.h"
 #include "runtime_limits.h"
 
 #include <algorithm>
@@ -80,13 +82,6 @@ constexpr std::size_t kDrainBatch = 64u;
 constexpr std::size_t kMaxResponseBytes = 16u * 1024u * 1024u;
 constexpr std::size_t kOutputBudgetBytes = 48u * 1024u * 1024u;
 constexpr std::size_t kMaxOutputMessages = 256u;
-
-// Successful results carry the payload both as legacy text and as
-// structuredContent. Duplicating a large query payload
-// would exceed the 16 MiB wire cap even though the structured payload itself
-// fits. Above this threshold the legacy text becomes a short pointer to
-// structuredContent, keeping the authoritative structured result intact.
-constexpr std::size_t kMaxLegacyTextBytes = 4u * 1024u * 1024u;
 
 constexpr int kReadError = -1;
 constexpr int kReadEof = 0;
@@ -1434,17 +1429,26 @@ private:
                     timer->async_wait([self, target, timer](const asio::error_code& error) {
                         if (error || target->tool_finished || target->responded ||
                             target->execution->load(std::memory_order_acquire) != 1) return;
-                        int running = 1;
-                        if (!target->execution->compare_exchange_strong(running, 5, std::memory_order_acq_rel)) return;
+                        {
+                            std::lock_guard lock(publication_gate.mutex);
+                            if (publication_gate.publishers) return;
+                            int running = 1;
+                            if (!target->execution->compare_exchange_strong(running, 5, std::memory_order_acq_rel)) return;
+                        }
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                        std::fprintf(stderr, "WATCHDOG_CLAIMED\n"); std::fflush(stderr);
+#endif
                         target->responded = true;
                         // A blocked stdout must not defeat the process watchdog.
-                        std::thread([] {
+                        std::thread([execution = target->execution] {
                             std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                            std::_Exit(70);
+                            std::lock_guard lock(publication_gate.mutex);
+                            if (!publication_gate.publishers && execution->load(std::memory_order_acquire) == 5)
+                                std::_Exit(70);
                         }).detach();
                         asio::co_spawn(self->ioc_, [self, target]() -> asio::awaitable<void> {
                             (void)co_await self->send_error(target->id, -32603,
-                                "Live export cancellation watchdog expired after 5 seconds; session terminated");
+                                "Live export cancellation watchdog expired after 5 seconds; session terminates if export remains blocked");
                         }, asio::detached);
                     });
                 }
@@ -1609,24 +1613,6 @@ private:
             break;
         }
         co_return;
-    }
-
-    static Json make_tool_result(Json payload) {
-        std::string text = payload.dump(-1, ' ', false,
-                                        Json::error_handler_t::replace);
-        if (text.size() > kMaxLegacyTextBytes) {
-            text = "Tool result is available in structuredContent; its "
-                   "serialized form exceeds the legacy text budget.";
-        }
-        Json content_item = Json::object();
-        content_item["type"] = "text";
-        content_item["text"] = std::move(text);
-
-        Json result = Json::object();
-        result["content"] = Json::array({std::move(content_item)});
-        result["isError"] = payload.contains("ok") && payload["ok"] == false;
-        result["structuredContent"] = std::move(payload);
-        return result;
     }
 
     static Json make_tool_error_result(const std::string& code,

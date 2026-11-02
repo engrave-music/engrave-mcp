@@ -3,6 +3,7 @@
 #include "background_job.h"
 #include "export_timing.h"
 #include "audio_budget.h"
+#include "tool_result.h"
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -300,7 +301,9 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             }
             if (request.destination.path.string().find(".test-live-noncooperative") != std::string::npos) {
                 std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n"); std::fflush(stderr);
-                std::this_thread::sleep_for(std::chrono::seconds(30));
+                if (const auto* delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS"))
+                    std::this_thread::sleep_for(std::chrono::milliseconds(std::stoul(delay)));
+                else std::this_thread::sleep_for(std::chrono::seconds(30));
             }
             if (request.destination.path.string().find(".test-live-cancel") != std::string::npos &&
                 ++cancellation_polls == (request.kind == ExportKind::Render ? 2 : 8)) {
@@ -409,6 +412,26 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
                 throw detail::DecodeError{HostError{"ResourceLimit", "artifact path exceeds limit"}};
             staged.push_back({path, {mime, destination, bytes}});
         }
+        // Preflight both complete and worst-case partial reports before any rename.
+        Json all = Json::array(), paths = Json::array();
+        for (const auto& file : staged) {
+            all.push_back(encode(file.artifact));
+            paths.push_back(detail::path_text(file.artifact.path));
+        }
+        Json success{{"ok", true}, {"source_revision", std::to_string(document.revision())},
+            {"artifacts", std::move(all)}, {"export_warnings", encode(warnings)}};
+        // Export exceptions below bound their message to 16 KiB. Control bytes
+        // maximize JSON escaping, including the duplicated legacy text form.
+        Json partial{{"ok", false}, {"error", {{"code", "EngineFailure"},
+            {"message", std::string(16384, '\1')}, {"published_artifacts", std::move(paths)}}}};
+        const auto report_bytes = std::max(export_report_bound(success), export_report_bound(partial));
+        std::size_t report_limit = 16u * 1024u * 1024u;
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        if (const auto* limit = std::getenv("ENGRAVE_MCP_TEST_REPORT_LIMIT")) report_limit = std::stoull(limit);
+        std::fprintf(stderr, "PUBLICATION_REPORT_BOUND %zu\n", report_bytes); std::fflush(stderr);
+#endif
+        if (report_bytes > report_limit)
+            throw detail::DecodeError{HostError{"ResourceLimit", "export artifact report exceeds transport budget"}};
         // All rendering and staging succeeds before any file becomes visible.
         check();
         // Atomically exclude watchdog termination before the first visible file.
@@ -431,15 +454,16 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             {"artifacts", std::move(encoded)}, {"export_warnings", encode(warnings)}};
     } catch (const detail::DecodeError& e) {
         auto error = e.error;
+        error.message.resize(std::min<std::size_t>(error.message.size(), 16384));
         if (error.code == "Cancelled" && !cancelled()) error = HostError{"DeadlineExceeded", "export deadline exceeded"};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
     } catch (const std::system_error& e) {
-        HostError error{"Io", e.what()};
+        HostError error{"Io", std::string(e.what()).substr(0, 16384)};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
     } catch (const std::exception& e) {
-        HostError error{"EngineFailure", e.what()};
+        HostError error{"EngineFailure", std::string(e.what()).substr(0, 16384)};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
     }
