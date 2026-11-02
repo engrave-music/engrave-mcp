@@ -1,5 +1,6 @@
 // Direct regression for the private staging and publication ACL contract.
 #include "background_job.h"
+#include "utf8_text.h"
 
 #include <cstddef>
 #include <filesystem>
@@ -174,6 +175,14 @@ static void check_private_acl(const fs::path& stage, bool = true) {
 }
 #endif
 
+static void check_utf8_prefix() {
+    std::string text(1023, 'a');
+    text += "\xF0\x9F\x98\x80"; // U+1F600, four bytes
+    const auto cut = music::utf8_prefix(text, 1024);
+    require(cut == 1023, "UTF-8 prefix split a code point");
+    require(text.substr(0, cut).size() == 1023, "UTF-8 prefix length mismatch");
+}
+
 int main() {
     try {
         std::random_device random;
@@ -189,6 +198,7 @@ int main() {
             ::umask(previous_umask);
 #endif
             check_private_acl(stage);
+            check_utf8_prefix();
             { std::ofstream probe(stage / "probe", std::ios::binary); probe << "probe"; }
             require(fs::exists(stage / "probe"), "cannot write inside the staging directory");
 #ifdef _WIN32
