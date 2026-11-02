@@ -44,6 +44,10 @@ def main():
                     assert str(dest) in error['message'] and 'UTF-8' in error['message'], error
                     assert not error.get('published_artifacts'), error
                     assert sorted(os.listdir(os.fsencode(target))) == before
+                for fmt, dest in [('svg', alias/'missing'/'nested'), ('pdf', alias/'missing'/'nested'/'out.pdf')]:
+                    error = export(dest, False, fmt)['error']
+                    assert error['code'] == 'InvalidArgument' and not error.get('published_artifacts'), error
+                    assert sorted(os.listdir(os.fsencode(target))) == before
                 results[f'invalid_target_partial_{partial}'] = 'passed (SVG and PDF)'
         elif os.name == 'nt':
             # Python's Windows filesystem calls use Win32 wide-character APIs.
@@ -66,6 +70,10 @@ def main():
                         assert os.listdir(target) == [], os.listdir(target)
                         assert sorted(os.listdir(a.output)) == before
                         errors[fmt] = error
+                    for fmt, dest in [('svg', alias/'missing'/'nested'), ('pdf', alias/'missing'/'nested'/'out.pdf')]:
+                        error = export(dest, False, fmt)['error']
+                        assert error['code'] == 'InvalidArgument' and not error.get('published_artifacts'), error
+                        assert os.listdir(target) == [], os.listdir(target)
                     results[f'unpaired_{ord(surrogate):04x}'] = dict(
                         result='passed', reachable=True, errors=errors, no_artifacts_or_staging=True)
                 finally:
