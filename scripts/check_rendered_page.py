@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 import json
 import math
+import os
 from pathlib import Path
 import re
 import statistics
@@ -714,7 +715,7 @@ async def capture_pages(binary, resources, soundfont, output):
     params = StdioServerParameters(
         command=str(binary.resolve()),
         args=["--resources", str(resources.resolve()), "--soundfont", str(soundfont.resolve())],
-        cwd=str(output))
+        cwd=str(output), env=dict(os.environ))
     with (output / "server-stderr.log").open("w", encoding="utf-8") as log:
         async with stdio_client(params, errlog=log) as (read, write):
             async with ClientSession(read, write) as session:
