@@ -50,9 +50,46 @@ def context():
     return result
 
 
+def windows_processes():
+    # psutil's fallback for protected processes queries the entire Windows
+    # process table once per denied PID. Avoid that expensive observer effect.
+    import ctypes
+    from ctypes import wintypes as w
+    k = ctypes.WinDLL('kernel32', use_last_error=True)
+    k.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]
+    k.OpenProcess.restype = w.HANDLE
+    k.CloseHandle.argtypes = [w.HANDLE]
+    k.GetProcessTimes.argtypes = [w.HANDLE] + [ctypes.POINTER(w.FILETIME)] * 4
+    k.QueryFullProcessImageNameW.argtypes = [w.HANDLE, w.DWORD, w.LPWSTR, ctypes.POINTER(w.DWORD)]
+    class IO(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_ulonglong) for n in ('read_count', 'write_count',
+                    'other_count', 'read_bytes', 'write_bytes', 'other_bytes')]
+    k.GetProcessIoCounters.argtypes = [w.HANDLE, ctypes.POINTER(IO)]
+    rows = []
+    for pid in psutil.pids():
+        handle = k.OpenProcess(0x1000, False, pid)
+        if not handle:
+            continue
+        try:
+            times = [w.FILETIME() for _ in range(4)]
+            if not k.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+                continue
+            name = ctypes.create_unicode_buffer(32768); size = w.DWORD(len(name))
+            if not k.QueryFullProcessImageNameW(handle, 0, name, ctypes.byref(size)):
+                continue
+            io = IO(); have_io = k.GetProcessIoCounters(handle, ctypes.byref(io))
+            rows.append(dict(pid=pid, name=Path(name.value).name,
+                cpu_seconds=sum((t.dwHighDateTime << 32) + t.dwLowDateTime for t in times[2:])/1e7,
+                io={n:getattr(io,n) for n,_ in io._fields_} if have_io else None))
+        finally:
+            k.CloseHandle(handle)
+    return rows
+
+
 def sample():
+    started = time.monotonic()
     processes = []
-    for p in psutil.process_iter(['pid', 'name', 'cpu_times', 'io_counters']):
+    for p in (() if os.name == 'nt' else psutil.process_iter(['pid', 'name', 'cpu_times', 'io_counters'])):
         try:
             info = p.info
             cpu = info.pop('cpu_times')
@@ -62,12 +99,15 @@ def sample():
             processes.append(info)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
+    if os.name == 'nt':
+        processes = windows_processes()
     freq = psutil.cpu_freq()
     disk = psutil.disk_io_counters(perdisk=True)
     return dict(utc=utc(), monotonic=time.monotonic(), cpu_percent=psutil.cpu_percent(),
                 cpu_frequency=freq._asdict() if freq else None,
                 available_memory=psutil.virtual_memory().available,
-                disk={k:v._asdict() for k,v in disk.items()}, processes=processes)
+                disk={k:v._asdict() for k,v in disk.items()}, processes=processes,
+                collection_seconds=time.monotonic()-started)
 
 
 def main():
