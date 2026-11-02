@@ -275,7 +275,7 @@ def regular_diagnostic(a):
     # write would stall for a minute. Validate the shim before testing the host.
     probe = a.output/'diagnostic-probe'; probe.mkdir()
     source = probe/'stall.c'; library = probe/'stall.so'
-    source.write_text("#include <unistd.h>\n#include <dlfcn.h>\n"
+    source.write_text("#define _GNU_SOURCE\n#include <unistd.h>\n#include <dlfcn.h>\n"
         "ssize_t write(int fd,const void* p,size_t n) {\n"
         "if(fd==2) sleep(60);\n"
         "return ((ssize_t(*)(int,const void*,size_t))dlsym(RTLD_NEXT,\"write\"))(fd,p,n); }\n")
