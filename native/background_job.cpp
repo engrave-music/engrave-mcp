@@ -17,6 +17,8 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#include <aclapi.h>
+#pragma comment(lib, "advapi32.lib")
 #else
 #include <fcntl.h>
 #include <unistd.h>
@@ -36,6 +38,55 @@ struct Handle {
 [[noreturn]] void windows_error(const char* what) {
     throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), what);
 }
+// A protected DACL that grants only the current user full control and lets
+// children inherit it. Without this, a staging directory created under a
+// permissive destination inherits Authenticated Users:Modify on Windows.
+struct PrivateDirectorySecurity {
+    std::vector<std::byte> token_buffer;
+    std::vector<std::byte> acl_buffer;
+    SECURITY_DESCRIPTOR descriptor{};
+    SECURITY_ATTRIBUTES attributes{};
+
+    PrivateDirectorySecurity() {
+        HANDLE token = nullptr;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+            windows_error("OpenProcessToken failed");
+        DWORD needed = 0;
+        if (!GetTokenInformation(token, TokenUser, nullptr, 0, &needed) &&
+            GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+            const auto error = GetLastError();
+            CloseHandle(token);
+            throw std::system_error(static_cast<int>(error), std::system_category(),
+                                    "GetTokenInformation failed");
+        }
+        token_buffer.resize(needed);
+        if (!GetTokenInformation(token, TokenUser, token_buffer.data(), needed, &needed)) {
+            const auto error = GetLastError();
+            CloseHandle(token);
+            throw std::system_error(static_cast<int>(error), std::system_category(),
+                                    "GetTokenInformation failed");
+        }
+        CloseHandle(token);
+        const auto* user = reinterpret_cast<const TOKEN_USER*>(token_buffer.data());
+        const auto acl_size = static_cast<DWORD>(sizeof(ACL) + sizeof(ACCESS_ALLOWED_ACE) -
+                              sizeof(DWORD) + GetLengthSid(user->User.Sid));
+        acl_buffer.resize(acl_size);
+        auto* acl = reinterpret_cast<ACL*>(acl_buffer.data());
+        if (!InitializeAcl(acl, acl_size, ACL_REVISION)) windows_error("InitializeAcl failed");
+        if (!AddAccessAllowedAceEx(acl, ACL_REVISION, OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE,
+                                   GENERIC_ALL, user->User.Sid))
+            windows_error("AddAccessAllowedAceEx failed");
+        if (!InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION))
+            windows_error("InitializeSecurityDescriptor failed");
+        if (!SetSecurityDescriptorDacl(&descriptor, TRUE, acl, FALSE))
+            windows_error("SetSecurityDescriptorDacl failed");
+        if (!SetSecurityDescriptorControl(&descriptor, SE_DACL_PROTECTED, SE_DACL_PROTECTED))
+            windows_error("SetSecurityDescriptorControl failed");
+        attributes.nLength = sizeof(attributes);
+        attributes.lpSecurityDescriptor = &descriptor;
+        attributes.bInheritHandle = FALSE;
+    }
+};
 #endif
 }
 std::filesystem::path current_executable_path() {
@@ -62,23 +113,33 @@ std::filesystem::path current_executable_path() {
 
 std::filesystem::path create_private_directory(const std::filesystem::path& parent) {
     std::random_device random;
+#ifdef _WIN32
+    PrivateDirectorySecurity security;
+    for (int i = 0; i != 16; ++i) {
+        auto path = parent / (".engrave-stage-" + std::to_string(random()) + "-" + std::to_string(random()));
+        if (CreateDirectoryW(path.c_str(), &security.attributes)) return path;
+        const auto error = GetLastError();
+        if (error == ERROR_ALREADY_EXISTS) continue;
+        throw std::system_error(static_cast<int>(error), std::system_category(),
+                                "Cannot create staging directory");
+    }
+#else
     for (int i = 0; i != 16; ++i) {
         auto path = parent / (".engrave-stage-" + std::to_string(random()) + "-" + std::to_string(random()));
         std::error_code error;
         if (std::filesystem::create_directory(path, error)) {
-#ifndef _WIN32
             std::filesystem::permissions(path, std::filesystem::perms::owner_all,
                                          std::filesystem::perm_options::replace, error);
             if (error) {
                 std::filesystem::remove(path);
                 throw std::system_error(error, "Cannot restrict staging directory permissions");
             }
-#endif
             return path;
         }
         if (error && error != std::errc::file_exists)
             throw std::system_error(error, "Cannot create staging directory");
     }
+#endif
     throw std::runtime_error("Cannot allocate unique staging directory");
 }
 
@@ -88,6 +149,18 @@ void validate_output_path_syntax(const std::filesystem::path& path) {
     auto separator = [](wchar_t c) { return c == L'/' || c == L'\\'; };
     auto reject = [] { throw std::invalid_argument("invalid Windows destination filename syntax"); };
     if (text.empty()) reject();
+    const bool unc = text.size() >= 2 && separator(text[0]) && separator(text[1]);
+    if (unc) {
+        // Device namespaces (\\., \\?) are not file destinations.
+        if (text.size() >= 4 && (text[2] == L'.' || text[2] == L'?') && separator(text[3])) reject();
+        // A UNC destination requires a non-empty server and share.
+        const auto rest = text.substr(2);
+        const auto first = rest.find_first_of(L"/\\");
+        if (first == std::wstring::npos || first + 1 >= rest.size()) reject();
+        const auto share_end = rest.find_first_of(L"/\\", first + 1);
+        const auto share = rest.substr(first + 1, share_end == std::wstring::npos ? share_end : share_end - first - 1);
+        if (share == L"." || share == L"..") reject();
+    }
     std::size_t start = 0;
     // Only the drive designator and root separators are syntax, not filenames.
     if (text.size() >= 2 && ((text[0] >= L'A' && text[0] <= L'Z') ||

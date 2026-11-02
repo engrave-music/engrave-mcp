@@ -6,6 +6,7 @@
 #include "tool_result.h"
 #include "publication_gate.h"
 #include "terminal_diagnostic.h"
+#include "utf8_text.h"
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -25,6 +26,37 @@
 namespace music::v2 {
 namespace {
 using detail::invalid;
+
+constexpr std::size_t kDiagnosticLimit = 65536;
+
+// Keep the requested destination and the reason in a bounded, UTF-8-safe
+// diagnostic. A very long path is abbreviated in the middle rather than cut
+// mid-code-point or truncated before the reason.
+std::string destination_message(std::string_view requested, std::string_view reason) {
+    constexpr std::string_view prefix = "destination '";
+    constexpr std::string_view mid = "': ";
+    std::string bounded_reason = reason.size() > 8192 ? utf8_abbrev(reason, 8192) : std::string(reason);
+    const auto fixed = prefix.size() + mid.size() + bounded_reason.size();
+    if (fixed >= kDiagnosticLimit) {
+        const auto allowed = kDiagnosticLimit - prefix.size() - mid.size() - 3;
+        return std::string(prefix) + "..." + std::string(mid) + utf8_abbrev(bounded_reason, allowed);
+    }
+    std::string result;
+    result.reserve(kDiagnosticLimit);
+    result.append(prefix);
+    result.append(utf8_abbrev(requested, kDiagnosticLimit - fixed));
+    result.append(mid);
+    result.append(bounded_reason);
+    return result;
+}
+
+HostError with_destination(HostError error, std::string_view requested) {
+    if (error.message.rfind("destination '", 0) == 0)
+        error.message = utf8_prefix(error.message, kDiagnosticLimit);
+    else
+        error.message = destination_message(requested, error.message);
+    return error;
+}
 
 template<class T> void assign_if(const Json& j, const char* key, T& out) {
     if (j.contains(key)) out = j.at(key).get<T>();
@@ -159,7 +191,7 @@ Result<ExportRequest> decode_export(const Json& j) {
     auto destination_error = [&](HostError error) -> Result<ExportRequest> {
         if (j.contains("destination") && j.at("destination").is_object() &&
             j.at("destination").contains("path") && j.at("destination").at("path").is_string())
-            error.message = "destination '" + j.at("destination").at("path").get<std::string>() + "': " + error.message;
+            error.message = destination_message(j.at("destination").at("path").get<std::string>(), error.message);
         return std::unexpected(std::move(error));
     };
     try {
@@ -284,13 +316,13 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
                 cleanup.destination = fs::weakly_canonical(fs::absolute(request.destination.path));
             } else cleanup.destination = normalize_output_path(request.destination.path);
         } catch (const std::invalid_argument& e) {
-            invalid("destination '" + request.destination.requested_path + "': " + e.what());
+            invalid(destination_message(request.destination.requested_path, e.what()));
         }
         auto invalid_resolved_path = [&] {
             // Preserve the well-formed JSON request, including its separators;
             // never convert the unrepresentable resolved path for diagnostics.
-            invalid("destination '" + request.destination.requested_path +
-                "' resolves to a path that is not valid UTF-8; use a destination with a UTF-8 resolved path");
+            invalid(destination_message(request.destination.requested_path,
+                "resolves to a path that is not valid UTF-8; use a destination with a UTF-8 resolved path"));
         };
         auto report_path_text = [&](const fs::path& path) -> std::string {
             try {
@@ -316,10 +348,11 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             validate_output_path_syntax(cleanup.destination);
             if (request.destination.directory) require_output_directory(cleanup.destination);
             else if (fs::is_directory(output_path_status(cleanup.destination)))
-                invalid("file destination '" + request.destination.requested_path + "' is a directory");
+                invalid(destination_message(request.destination.requested_path,
+                    "file destination is a directory"));
             else require_output_directory(cleanup.destination.parent_path());
         } catch (const std::invalid_argument& e) {
-            invalid("destination '" + request.destination.requested_path + "': " + e.what());
+            invalid(destination_message(request.destination.requested_path, e.what()));
         }
 #ifdef MUSIC_ASYNC_TEST_HOOKS
         if (std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING"))
@@ -335,7 +368,9 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             if (bytes.empty()) throw detail::DecodeError{HostError{"EngineFailure", "export produced an empty artifact"}};
             if (bytes.size() > limits.output_bytes - total) throw detail::DecodeError{HostError{"ResourceLimit", "export exceeds output byte limit"}};
             const auto destination = request.destination.directory ? cleanup.destination / name : cleanup.destination;
-            if (report_path_text(destination).size() > 4096) throw detail::DecodeError{HostError{"ResourceLimit", "artifact path exceeds limit"}};
+            if (report_path_text(destination).size() > 4096)
+                throw detail::DecodeError{HostError{"ResourceLimit",
+                    destination_message(request.destination.requested_path, "artifact path exceeds limit")}};
             auto path = cleanup.stage / name;
             std::ofstream out(path, std::ios::binary | std::ios::trunc);
             out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -483,7 +518,8 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             timing.add("engine_call", start);
             const auto destination = request.destination.directory ? cleanup.destination / "output" : cleanup.destination;
             if (report_path_text(destination).size() > 4096)
-                throw detail::DecodeError{HostError{"ResourceLimit", "artifact path exceeds limit"}};
+                throw detail::DecodeError{HostError{"ResourceLimit",
+                    destination_message(request.destination.requested_path, "artifact path exceeds limit")}};
             staged.push_back({path, {mime, destination, bytes}});
         }
         // Preflight both complete and worst-case partial reports before any rename.
@@ -495,10 +531,11 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         }
         Json success{{"ok", true}, {"source_revision", std::to_string(document.revision())},
             {"artifacts", std::move(all)}, {"export_warnings", encode(warnings)}};
-        // Export exceptions below bound their message to 16 KiB. Control bytes
-        // maximize JSON escaping, including the duplicated legacy text form.
+        // Export exceptions below are bounded to the schema's 64 KiB message
+        // limit. Control bytes maximize JSON escaping, including the duplicated
+        // legacy text form.
         Json partial{{"ok", false}, {"error", {{"code", "EngineFailure"},
-            {"message", std::string(16384, '\1')}, {"published_artifacts", std::move(paths)}}}};
+            {"message", std::string(kDiagnosticLimit, '\1')}, {"published_artifacts", std::move(paths)}}}};
         const auto report_bytes = std::max(export_report_bound(success), export_report_bound(partial));
         std::size_t report_limit = 16u * 1024u * 1024u;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
@@ -551,17 +588,20 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
 #endif
         auto error = e.error;
         if (error.code == "Io")
-            error.message = "destination '" + request.destination.requested_path + "': " + error.message;
-        error.message.resize(std::min<std::size_t>(error.message.size(), 16384));
+            error = with_destination(std::move(error), request.destination.requested_path);
+        else
+            error.message.resize(utf8_prefix(error.message, kDiagnosticLimit));
         if (error.code == "Cancelled" && !cancelled()) error = HostError{"DeadlineExceeded", "export deadline exceeded"};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
     } catch (const std::system_error& e) {
-        HostError error{"Io", ("destination '" + request.destination.requested_path + "': " + e.what()).substr(0, 16384)};
+        HostError error{"Io", destination_message(request.destination.requested_path, e.what())};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
     } catch (const std::exception& e) {
-        HostError error{"EngineFailure", std::string(e.what()).substr(0, 16384)};
+        std::string message = e.what();
+        message.resize(utf8_prefix(message, kDiagnosticLimit));
+        HostError error{"EngineFailure", std::move(message)};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
     }

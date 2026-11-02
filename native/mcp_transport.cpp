@@ -3,6 +3,7 @@
 #include "terminal_diagnostic.h"
 #include "tool_result.h"
 #include "runtime_limits.h"
+#include "utf8_text.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1703,7 +1704,8 @@ private:
                                        const std::string& message) {
         Json content_item = Json::object();
         content_item["type"] = "text";
-        const auto bounded_message = message.substr(0, 16384);
+        std::string bounded_message = message;
+        bounded_message.resize(utf8_prefix(bounded_message, 65536));
         content_item["text"] = bounded_message;
 
         Json result = Json::object();

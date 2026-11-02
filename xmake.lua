@@ -305,3 +305,14 @@ if is_plat("linux") then
         add_ldflags("-Wl,--wrap=fsync", {force = true})
     target_end()
 end
+
+-- Private staging permissions/ACL, independent of the engine.
+target("staging_test")
+    set_kind("binary")
+    set_default(false)
+    add_files(path.join(native_dir, "staging_test.cpp"), path.join(native_dir, "background_job.cpp"))
+    if is_plat("windows") then
+        add_files(path.join(native_dir, "utf8.manifest"))
+        add_syslinks("advapi32")
+    end
+target_end()

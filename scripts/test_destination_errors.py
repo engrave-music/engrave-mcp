@@ -77,6 +77,42 @@ def main():
                         assert not root.exists(), f'Invalid destination created parents: {dest}'
                         results[f'syntax_{index}_{fmt}_{position}'] = error
 
+            # Device namespaces and incomplete UNC roots are never destinations.
+            namespace_cases = [
+                ('svg', r'\\.\engrave_mcp_missing_58311\child'),
+                ('pdf', r'\\.\engrave_mcp_missing_58311\out.pdf'),
+                ('svg', r'\\'),
+                ('pdf', r'\\'),
+                ('svg', r'\\localhost'),
+                ('pdf', r'\\localhost'),
+                ('svg', r'\\?\C:\engrave_mcp_missing_58311'),
+                ('pdf', r'\\?\C:\engrave_mcp_missing_58311\out.pdf'),
+            ]
+            for index, (fmt, dest) in enumerate(namespace_cases):
+                args = export_args(doc, fmt, a.output, True)
+                args['destination']['path'] = dest
+                error = c.tool('score_export', args, False)['error']
+                assert error['code'] == 'InvalidArgument', error
+                assert dest in error['message'], error
+                assert not error.get('published_artifacts'), error
+                results[f'namespace_{index}'] = error
+
+            # A long invalid path must not lose the reason or split a code point.
+            # 13 + 4,082 + 1 = 4,096 characters, the schema's limit; the UTF-8
+            # form is 16,342 bytes, so the old 16 KiB message cap lost the reason.
+            long_name = '\U0001F600' * 4082 + '?'
+            long_dest = 'long-invalid/' + long_name
+            args = export_args(doc, 'pdf', a.output, True)
+            args['destination']['path'] = long_dest
+            error = c.tool('score_export', args, False)['error']
+            assert error['code'] == 'InvalidArgument', error
+            message = error['message']
+            assert 'invalid Windows destination filename syntax' in message, message[:200]
+            assert '\ufffd' not in message
+            assert long_name[:8] in message and long_name[-8:] in message
+            assert len(message.encode('utf-8')) <= 65536
+            results['long_utf8_diagnostic'] = {'length': len(message.encode('utf-8')), 'code': error['code']}
+
         for fmt in ('svg', 'pdf'):
             root = a.output/f'invalid-nul-{fmt}'
             for dest in ('', str(root/'missing')+'/bad\0name'):
