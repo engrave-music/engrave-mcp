@@ -184,7 +184,9 @@ def diagnostic_cycles(a):
         h.p.stdout.close()
         h.send('tools/list', {}, 999)
         assert h.p.wait(timeout=5) == 74
-        return dict(cycles=80, base_threads=base, max_threads=max(samples), exit=74)
+        return dict(cycles=80, base_threads=base, max_threads=max(samples), exit=74,
+                    pipe_bytes=pending[0] if os.name == 'posix' else None,
+                    pipe_capacity=capacity if os.name == 'posix' else None)
     finally: h.close()
 
 
@@ -214,7 +216,7 @@ def after_closing(a, timeout=False):
             assert b'cleanup timed out; staging may remain' in h.log, bytes(h.log)
             assert list(blocked.glob('.engrave-stage-*'))
         else: assert not list(out.rglob('.engrave-stage-*'))
-        return dict(after_closing=True, cleanup_timeout=timeout, exit=74)
+        return dict(after_closing=True, cleanup_timeout=timeout, exit=74, elapsed=elapsed)
     finally: h.close()
 
 
@@ -262,7 +264,8 @@ def refused_cleanup(a, watchdog=False):
             assert not list(queued.iterdir())
         assert list(pages.glob('.engrave-stage-*'))
         assert not list(pages.glob('*.svg'))
-        return dict(refused_cleanup=True, watchdog=watchdog, exit=h.p.returncode)
+        return dict(refused_cleanup=True, watchdog=watchdog, exit=h.p.returncode,
+                    elapsed=elapsed if not watchdog else None)
     finally: h.close()
 
 
