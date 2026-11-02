@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
 #endif
             return tools;
         },
-            [&](std::string name, music::Json args, std::shared_ptr<std::atomic<int>> execution) {
+            [&](std::string name, music::Json args, std::shared_ptr<music::RequestExecution> execution) {
                 return session.call(std::move(name), std::move(args), std::move(execution));
             },
             [&] {

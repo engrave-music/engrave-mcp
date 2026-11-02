@@ -318,7 +318,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
                 std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n"); std::fflush(stderr);
                 if (std::getenv("ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE")) {
                     std::unique_lock lock(publication_gate.mutex);
-                    publication_gate.changed.wait(lock, [] { return publication_gate.output_failed; });
+                    publication_gate.changed.wait(lock, [] { return publication_gate.closing; });
                     std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n"); std::fflush(stderr);
                 }
                 else if (const auto* delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS"))
@@ -458,16 +458,21 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         // Once committed, even slow publication must finish and report its subset.
         if (begin_publication && !begin_publication())
             throw detail::DecodeError{HostError{"Cancelled", "watchdog claimed export before publication"}};
-        for (const auto& file : staged) {
+        artifacts.reserve(staged.size()); // all storage allocated before visibility
+        for (auto& file : staged) {
             auto start = ExportTiming::Clock::now();
-            try { publish_output(file.source, file.artifact.path); }
-            catch (const PublicationError& e) {
-                if (e.visible) artifacts.push_back(file.artifact);
-                throw detail::DecodeError{HostError{"Io", e.what()}};
-            }
-            catch (const std::exception& e) { throw detail::DecodeError{HostError{"Io", e.what()}}; }
+            try {
+                publish_output(file.source, file.artifact.path, [&] {
+                    // Runs immediately after rename, before even directory fsync.
+                    static_assert(std::is_nothrow_move_constructible_v<Artifact>);
+                    artifacts.push_back(std::move(file.artifact));
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                    if (const auto* after = std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_RENAME"))
+                        if (artifacts.size() == std::stoul(after)) throw std::runtime_error("Injected post-rename failure");
+#endif
+                });
+            } catch (const std::exception& e) { throw detail::DecodeError{HostError{"Io", e.what()}}; }
             timing.add("publish", start);
-            artifacts.push_back(file.artifact);
         }
         Json encoded = Json::array(); for (const auto& a : artifacts) encoded.push_back(encode(a));
         return Json{{"ok", true}, {"source_revision", std::to_string(document.revision())},

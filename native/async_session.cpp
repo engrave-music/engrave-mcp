@@ -104,8 +104,18 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     template<class T, class Function>
     asio::awaitable<T> dispatch(asio::io_context& target, Function function, bool owner_task,
                                 std::shared_ptr<std::atomic<bool>> running_cancel = {}, bool preserve_completed = false,
-                                std::shared_ptr<std::atomic<int>> execution = {}) {
+                                std::shared_ptr<RequestExecution> execution = {}) {
         if (closing) throw asio::system_error(asio::error::operation_aborted);
+        {
+            // Never block the session's cancellation/timer loop behind stdout.
+            std::unique_lock admission(publication_gate.mutex, std::try_to_lock);
+            if (admission.owns_lock() && publication_gate.closing) {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                std::fprintf(stderr, "ADMISSION_REFUSED_CLOSING\n"); std::fflush(stderr);
+#endif
+                throw asio::system_error(asio::error::operation_aborted);
+            }
+        }
         if (owner_task && owner_pending >= 64)
             throw ToolCallError("ResourceLimit", "Engine queue full (limit 64)");
         auto self = shared_from_this();
@@ -118,7 +128,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 // Each dispatch owns its cancellation, execution state and completion.
                 // The session thread releases queued closures immediately; a stale
                 // owner-queue entry can only observe Cancelled and return.
-                auto state = execution ? execution : std::make_shared<std::atomic<int>>(0);
+                auto state = execution ? execution : std::make_shared<RequestExecution>();
                 auto task = std::make_shared<std::optional<Function>>(std::move(function));
                 auto completion_handler = std::make_shared<decltype(handler)>(std::move(handler));
                 auto guard = std::make_shared<decltype(work)>(std::move(work));
@@ -148,6 +158,15 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         int queued = 0;
                         {
                             std::lock_guard lock(publication_gate.mutex);
+                            if (publication_gate.closing) {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                                std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n"); std::fflush(stderr);
+#endif
+                                if (!state->compare_exchange_strong(queued, 2)) return;
+                                task->reset();
+                                complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), T{});
+                                return;
+                            }
                             if (!state->compare_exchange_strong(queued, 1)) return;
                             ++publication_gate.owner_tasks;
                         }
@@ -165,12 +184,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         {
                             std::lock_guard lock(publication_gate.mutex);
                             --publication_gate.owner_tasks;
-                            if (state->load() == 4) {
-                                // Transfer exclusion to the transport, including partial errors.
-                                state->store(6, std::memory_order_release);
-                            } else {
-                                state->store(3, std::memory_order_release);
-                            }
+                            state->store(3, std::memory_order_release);
                         }
                         publication_gate.changed.notify_all();
                         complete(error, std::move(result));
@@ -191,7 +205,7 @@ AsyncSession::AsyncSession(engrave::EngineOptions options)
 AsyncSession::~AsyncSession() { shutdown(); }
 void AsyncSession::shutdown() noexcept { if (impl_) impl_->shutdown(); }
 
-asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::shared_ptr<std::atomic<int>> execution) {
+asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::shared_ptr<RequestExecution> execution) {
     auto self = impl_;
     if (std::this_thread::get_id() != self->session_thread) throw std::logic_error("AsyncSession called from non-session thread");
     if (self->closing) throw asio::system_error(asio::error::operation_aborted);
@@ -218,36 +232,48 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
         auto payload = co_await self->dispatch<Json>(self->owner_io, [self, request = *request, request_cancel, timing, submitted, execution] {
             timing->add("owner_dispatch", submitted);
             Json payload;
+            std::unique_lock publication(publication_gate.mutex, std::defer_lock);
             auto runtime = self->host->runtime_options();
             if (!runtime) return error_envelope(runtime.error());
-            auto result = self->host->with_document(request.document, request.expected_revision,
-                [&](engrave::Document& document) -> Result<void> {
-                    auto output = live_export(document, request, self->limits, [&] {
-                        return request_cancel->load(std::memory_order_acquire) || self->stopping.load(std::memory_order_acquire);
-                    }, submitted, *timing, *runtime, [execution] {
-                        if (!execution) return true;
-                        std::unique_lock lock(publication_gate.mutex);
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-                        if (publication_gate.writing) {
-                            std::fprintf(stderr, "PUBLICATION_WAITING_FOR_WRITE\n"); std::fflush(stderr);
-                        }
-#endif
-                        publication_gate.changed.wait(lock, [] { return !publication_gate.writing || publication_gate.output_failed; });
-                        if (publication_gate.output_failed) return false;
-                        int running = 1;
-                        if (!execution->compare_exchange_strong(running, 4, std::memory_order_acq_rel)) return false;
-                        ++publication_gate.publishers;
-                        return true;
+            try {
+                auto result = self->host->with_document(request.document, request.expected_revision,
+                    [&](engrave::Document& document) -> Result<void> {
+                        auto output = live_export(document, request, self->limits, [&] {
+                            return request_cancel->load(std::memory_order_acquire) || self->stopping.load(std::memory_order_acquire);
+                        }, submitted, *timing, *runtime, [execution, &publication] {
+                            if (!execution) return true;
+    #ifdef MUSIC_ASYNC_TEST_HOOKS
+                            if (!publication.try_lock()) {
+                                std::fprintf(stderr, "PUBLICATION_LOCK_WAITING\n"); std::fflush(stderr);
+                                publication.lock();
+                            }
+    #else
+                            publication.lock();
+    #endif
+                            if (publication_gate.closing) return false;
+                            int running = 1;
+                            if (!execution->compare_exchange_strong(running, 4, std::memory_order_acq_rel)) return false;
+                            return true;
+                        });
+                        if (!output) return std::unexpected(output.error());
+                        payload = std::move(*output);
+                        return {};
                     });
-                    if (!output) return std::unexpected(output.error());
-                    payload = std::move(*output);
-                    return {};
-                });
-            if (!result) {
-                if (result.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
-                return error_envelope(result.error());
+                if (!result) {
+                    if (result.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
+                    payload = error_envelope(result.error());
+                }
+                if (publication.owns_lock() && execution && execution->report) {
+                    execution->report(std::move(payload));
+                    execution->report_sent.store(true, std::memory_order_release);
+                    return Json{};
+                }
+                return payload;
+            } catch (...) {
+                if (publication.owns_lock() && execution && execution->load() == 4 && execution->report)
+                    execution->report(Json{}); // terminal: trustworthy report unavailable
+                throw;
             }
-            return payload;
         }, true, request_cancel, true, execution);
         timing->finish();
         co_return payload;

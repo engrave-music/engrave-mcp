@@ -95,15 +95,12 @@ std::filesystem::path normalize_output_path(const std::filesystem::path& path) {
     return std::filesystem::canonical(absolute.parent_path()) / absolute.filename();
 }
 
-void publish_output(const std::filesystem::path& staged, const std::filesystem::path& destination) {
+void publish_output(const std::filesystem::path& staged, const std::filesystem::path& destination,
+    const std::function<void()>& on_visible) {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
     if (std::getenv("ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH") && staged.filename() == "page-0002.svg") {
         std::fprintf(stderr, "PUBLICATION_SECOND_FLUSH\n"); std::fflush(stderr);
-        if (std::getenv("ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE")) {
-            std::unique_lock lock(publication_gate.mutex);
-            publication_gate.changed.wait(lock, [] { return publication_gate.output_failed; });
-            std::fprintf(stderr, "FLUSH_OBSERVED_WRITE_FAILURE\n"); std::fflush(stderr);
-        } else std::this_thread::sleep_for(std::chrono::seconds(7));
+        std::this_thread::sleep_for(std::chrono::seconds(7));
     }
     if (std::getenv("ENGRAVE_MCP_TEST_FAIL_FILE_FLUSH"))
         throw PublicationError(EIO, "Injected staged file flush failure", false);
@@ -120,6 +117,7 @@ void publish_output(const std::filesystem::path& staged, const std::filesystem::
     file.reset(); // Close before rename; a failed flush never replaces destination.
     if (!MoveFileExW(staged.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
         windows_error("Cannot publish output");
+    if (on_visible) on_visible();
 #else
     struct Descriptor {
         int fd;
@@ -141,6 +139,7 @@ void publish_output(const std::filesystem::path& staged, const std::filesystem::
     sync(file.fd, "Cannot sync staged output", false);
     if (::rename(staged.c_str(), destination.c_str()) != 0)
         throw PublicationError(errno, "Cannot publish output", false);
+    if (on_visible) on_visible();
     sync(directory.fd, "Cannot sync publication directory", true);
 #endif
 }

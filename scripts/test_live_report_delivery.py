@@ -1,4 +1,4 @@
-"""Publication must exclude watchdog exit through the final stdout write."""
+"""Deterministic publication lock, visible-artifact and terminal resource regressions."""
 import argparse
 import json
 import os
@@ -7,163 +7,205 @@ import queue
 import subprocess
 import threading
 import time
+import psutil
 from bench_export_latency import ROOT, export_args
 
 
-def scenario(a, partial, dead, during_flush=False, wrapper=False, cleanup=False, registration=False):
-    out = a.output / (('partial' if partial else 'complete') +
-                      ('-dead-flush' if during_flush else '-dead' if dead else '-resume') + ('-wrapper' if wrapper else '') + ('-cleanup' if cleanup else '') + ('-registration' if registration else ''))
-    out.mkdir(parents=True)
-    pages = out / 'pages'; pages.mkdir()
-    blocked = out / '.test-live-noncooperative'; blocked.mkdir()
-    log_path = out / 'stderr.log'
-    env = dict(os.environ, ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS='8000' if dead else '60000')
-    barrier = out / 'write-release'
-    env['ENGRAVE_MCP_TEST_WRITE_BARRIER'] = str(barrier)
-    if dead: env['ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE'] = '1'
-    if cleanup: env['ENGRAVE_MCP_TEST_FAIL_CLEANUP'] = '1'
+class Host:
+    def __init__(self, a, out, env=None, drain=True):
+        self.out = out
+        out.mkdir(parents=True)
+        self.p = subprocess.Popen([str(a.binary.resolve()), '--resources', str(a.resources.resolve())],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=dict(os.environ, **(env or {})), bufsize=0)
+        self.lines = queue.Queue()
+        self.log = bytearray()
+        if drain:
+            def read_log():
+                while data := self.p.stderr.readline(): self.log.extend(data)
+            self.reader = threading.Thread(target=read_log, daemon=True)
+            self.reader.start()
+        self.send('initialize', dict(protocolVersion='2025-11-25', capabilities={},
+            clientInfo=dict(name='terminal-contract', version='1')), 1)
+        assert self.read()['id'] == 1
+        self.send('notifications/initialized', {})
+        self.send('tools/call', dict(name='score_open', arguments=dict(path=str(ROOT/'fixtures/golden/repeat70.mscx'))), 2)
+        self.doc = self.read()['result']['structuredContent']['document']
+
+    def send(self, method, params, ident=None):
+        value = dict(jsonrpc='2.0', method=method, params=params)
+        if ident is not None: value['id'] = ident
+        self.p.stdin.write((json.dumps(value)+'\n').encode()); self.p.stdin.flush()
+
+    def read(self):
+        q = queue.Queue()
+        threading.Thread(target=lambda: q.put(self.p.stdout.readline()), daemon=True).start()
+        return json.loads(q.get(timeout=20))
+
+    def wait(self, predicate, label):
+        end = time.monotonic()+20
+        while not predicate():
+            assert self.p.poll() is None, (label, self.p.returncode, bytes(self.log))
+            assert time.monotonic() < end, (label, bytes(self.log))
+            time.sleep(.005)
+
+    def marker(self, label): self.wait(lambda: label.encode() in self.log, label)
+
+    def pages(self):
+        self.send('tools/call', dict(name='score_outline', arguments=dict(document=self.doc)), 3)
+        measure = self.read()['result']['structuredContent']['outline']['measures'][0]['id']
+        self.send('tools/call', dict(name='score_edit', arguments=dict(document=self.doc, ops=[dict(
+            op='set_layout_break', measure=dict(kind='id', id=measure), kind='page', on=True)])), 4)
+        assert self.read()['result']['structuredContent']['ok']
+        pages = self.out/'pages'; pages.mkdir()
+        return pages
+
+    def export(self, pages, ident=30):
+        self.send('tools/call', dict(name='score_export', arguments=export_args(self.doc, 'svg', pages, True)), ident)
+
+    def close(self):
+        if self.p.poll() is None:
+            self.p.stdin.close()
+            try: assert self.p.wait(timeout=10) == 0
+            finally:
+                if self.p.poll() is None: self.p.kill(); self.p.wait()
+        if hasattr(self, 'reader'): self.reader.join(timeout=2)
+        else: self.log.extend(self.p.stderr.read())
+        (self.out/'stderr.log').write_bytes(self.log)
+        self.p.stdout.close(); self.p.stderr.close()
+
+
+def artifact_fault(a, after=None, partial=False, wrapper=False):
+    env = {}
+    if after: env['ENGRAVE_MCP_TEST_THROW_AFTER_RENAME'] = str(after)
     if wrapper: env['ENGRAVE_MCP_TEST_THROW_WRAPPER'] = '1'
-    if during_flush: env['ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH'] = '1'
-    with log_path.open('wb') as log:
-        proc = subprocess.Popen([str(a.binary.resolve()), '--resources', str(a.resources.resolve())],
-                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, env=env, bufsize=0)
-        def send(method, params, ident=None):
-            msg = dict(jsonrpc='2.0', method=method, params=params)
-            if ident is not None: msg['id'] = ident
-            proc.stdin.write((json.dumps(msg)+'\n').encode()); proc.stdin.flush()
-
-        def wait(predicate, label, timeout=25):
-            end = time.monotonic() + timeout
-            while not predicate():
-                assert proc.poll() is None, (label, proc.returncode, log_path.read_text())
-                assert time.monotonic() < end, label
-                time.sleep(.005)
-
-        # A reader is started only for explicit reads; stdout remains undrained
-        # during the watchdog barrier. Queue timeouts bound every response read.
-        def read_one():
-            q = queue.Queue()
-            def read():
-                q.put(proc.stdout.readline())
-            threading.Thread(target=read, daemon=True).start()
-            return json.loads(q.get(timeout=25))
-
-        try:
-            send('initialize', dict(protocolVersion='2025-11-25', capabilities={},
-                                   clientInfo=dict(name='report-delivery', version='1')), 1)
-            assert read_one()['id'] == 1
-            send('notifications/initialized', {})
-            send('tools/call', dict(name='score_open', arguments=dict(path=str(ROOT/'fixtures/golden/repeat70.mscx'))), 2)
-            doc = read_one()['result']['structuredContent']['document']
-            send('tools/call', dict(name='score_outline', arguments=dict(document=doc)), 3)
-            measure = read_one()['result']['structuredContent']['outline']['measures'][0]['id']
-            send('tools/call', dict(name='score_edit', arguments=dict(document=doc, ops=[dict(
-                op='set_layout_break', measure=dict(kind='id', id=measure), kind='page', on=True)])), 4)
-            assert read_one()['result']['structuredContent']['ok']
-            if registration:
-                Path(str(barrier)+'.arm').touch()
-                send('tools/list', {}, 10)
-                wait(lambda: 'WRITE_REGISTERED' in log_path.read_text(), 'registered writer')
-                send('tools/call', dict(name='score_export', arguments=export_args(doc, 'svg', pages, True)), 30)
-                wait(lambda: 'PUBLICATION_WAITING_FOR_WRITE' in log_path.read_text(), 'publication barred by writer')
-                assert not list(pages.glob('*.svg'))
-                send('notifications/cancelled', dict(requestId=30))
-                wait(lambda: 'WATCHDOG_WRITE_DEFERRED' in log_path.read_text(), 'watchdog barred by writer without publisher')
-                assert proc.poll() is None
-                proc.stdout.close(); barrier.touch()
-                assert proc.wait(timeout=25) == 74
-                assert not list(pages.glob('*.svg'))
-                assert not list(pages.glob('.engrave-stage-*'))
-                return dict(registration=True, exit=74)
-            if partial: (pages/'page-0002.svg').mkdir()
-            if not during_flush: Path(str(barrier)+'.arm').touch()
-            send('tools/call', dict(name='score_export', arguments=export_args(doc, 'svg', pages, True)), 30)
-            wait(lambda: (pages/'page-0001.svg').is_file(), 'visible artifact')
-            if during_flush:
-                wait(lambda: 'PUBLICATION_SECOND_FLUSH' in log_path.read_text(), 'active publication')
-                assert list(pages.glob('.engrave-stage-*'))
-                Path(str(barrier)+'.arm').touch()
-                send('tools/list', {}, 10)
-            else:
-                if not cleanup: wait(lambda: not list(pages.glob('.engrave-stage-*')), 'publication cleanup')
-                send('tools/call', dict(name='score_export', arguments=export_args(doc, 'svg', blocked, True)), 31)
-                wait(lambda: 'LIVE_NONCOOPERATIVE' in log_path.read_text(), 'later blocked owner')
-                send('notifications/cancelled', dict(requestId=31))
-                wait(lambda: 'WATCHDOG_REPORT_DEFERRED' in log_path.read_text(), 'locked watchdog recheck')
-                assert proc.poll() is None
-            wait(lambda: 'WRITE_REGISTERED' in log_path.read_text(), 'writer registered under gate')
-            report = None
-            if dead:
-                proc.stdout.close()
-                barrier.touch()
-                assert proc.wait(timeout=25) == 74
-                assert 'exit 74 after publication cleanup' in log_path.read_text()
-                assert ('FLUSH_OBSERVED_WRITE_FAILURE' if during_flush else 'OWNER_OBSERVED_WRITE_FAILURE') in log_path.read_text()
-            else:
-                barrier.touch()
-                while report is None:
-                    response = read_one()
-                    if response['id'] == 30: report = response['result']['structuredContent']
-                if partial or wrapper:
-                    assert report['error']['code'] == ('EngineFailure' if wrapper else 'Io'), report
-                    reported = report['error']['published_artifacts']
-                else:
-                    assert report['ok'], report
-                    reported = [v['path'] for v in report['artifacts']]
-                visible = sorted(p.as_posix() for p in pages.glob('*.svg') if p.is_file())
-                assert visible and visible == sorted(reported), report
-                assert proc.wait(timeout=10) == 70
-            if cleanup:
-                assert list(pages.glob('.engrave-stage-*'))
-                assert 'staging cleanup failed:' in log_path.read_text()
-                assert 'terminal staging cleanup failures:' in log_path.read_text()
-            else:
-                assert not list(pages.glob('.engrave-stage-*'))
-                if dead: assert not list(out.rglob('.engrave-stage-*'))
-            return dict(partial=partial, dead=dead, during_flush=during_flush,
-                        exit=proc.returncode, report=report)
-        finally:
-            if proc.poll() is None: proc.kill(); proc.wait(timeout=5)
-            proc.stdin.close()
-            if not proc.stdout.closed: proc.stdout.close()
-
-
-def full_stderr(a):
-    env = dict(os.environ, ENGRAVE_MCP_TEST_FILL_TERMINAL_STDERR='1')
-    proc = subprocess.Popen([str(a.binary.resolve()), '--resources', str(a.resources.resolve())],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    h = Host(a, a.output/f'fault-{after}-{partial}-{wrapper}', env)
     try:
-        def send(method, params):
-            proc.stdin.write((json.dumps(dict(jsonrpc='2.0', id=1, method=method, params=params))+'\n').encode())
-            proc.stdin.flush()
-        send('initialize', dict(protocolVersion='2025-11-25', capabilities={},
-             clientInfo=dict(name='full-stderr', version='1')))
-        assert json.loads(proc.stdout.readline())['id'] == 1
-        proc.stdout.close()
-        send('tools/list', {})
-        # Never drain stderr until exit. The injected 1 MiB diagnostic exceeds
-        # anonymous pipe capacity on both hosts; its writer cannot complete.
-        assert proc.wait(timeout=10) == 74
-        data = proc.stderr.read()
-        # Windows may buffer the entire pending large write until it completes.
-        # Exit 75 would mean the diagnostic completed rather than timing out.
-        assert len(data) < 1024*1024, len(data)
-        return dict(full_stderr=True, exit=74, diagnostic_bytes=len(data))
-    finally:
-        if proc.poll() is None: proc.kill(); proc.wait()
-        proc.stdin.close(); proc.stderr.close()
+        pages = h.pages()
+        if partial: (pages/'page-0002.svg').mkdir()
+        h.export(pages)
+        result = h.read()['result']['structuredContent']
+        assert result['error']['code'] == ('Io' if after else 'EngineFailure'), result
+        visible = sorted(p.as_posix() for p in pages.glob('*.svg') if p.is_file())
+        assert visible == sorted(result['error']['published_artifacts']) and visible, result
+        if after: assert len(visible) == after
+        assert not list(pages.glob('.engrave-stage-*'))
+        return dict(after=after, partial=partial, wrapper=wrapper, visible=visible)
+    finally: h.close()
+
+
+def barrier(a, dead, report=True):
+    out = a.output/f'barrier-{dead}-{report}'
+    release = out/'release'
+    h = Host(a, out, dict(ENGRAVE_MCP_TEST_WRITE_BARRIER=str(release)))
+    try:
+        pages = h.pages()
+        queued = out/'queued'; queued.mkdir()
+        Path(str(release)+'.arm').touch()
+        if report: h.export(pages)
+        else: h.send('tools/list', {}, 10)
+        h.marker('WRITE_REGISTERED')
+        # The next owner cannot start while the report write holds the mutex.
+        h.export(queued, 31)
+        h.send('notifications/cancelled', dict(requestId=31))
+        h.send('tools/list', {}, 12)
+        assert not list(queued.iterdir())
+        if dead: h.p.stdout.close()
+        release.touch()
+        if dead:
+            assert h.p.wait(timeout=5) == 74
+            h.reader.join(timeout=2)
+            assert b'exit 74' in h.log, bytes(h.log)
+            assert not list(queued.iterdir())
+            assert not list(out.rglob('.engrave-stage-*'))
+        else:
+            seen = {}
+            while not {30, 31, 12} <= seen.keys():
+                r = h.read(); seen[r['id']] = r
+            assert seen[30]['result']['structuredContent']['ok']
+            assert seen[31]['error']['code'] == -32800
+        return dict(dead=dead, report=report, exit=h.p.returncode)
+    finally: h.close()
+
+
+def watchdog_barrier(a):
+    out = a.output/'watchdog-barrier'; release = out/'release'
+    h = Host(a, out, dict(ENGRAVE_MCP_TEST_WRITE_BARRIER=str(release),
+        ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS='60000', ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE='1'))
+    try:
+        pages = out/'.test-live-noncooperative'; pages.mkdir()
+        h.export(pages)
+        h.marker('LIVE_NONCOOPERATIVE')
+        Path(str(release)+'.arm').touch()
+        h.send('tools/list', {}, 10)
+        h.marker('WRITE_REGISTERED')
+        h.send('notifications/cancelled', dict(requestId=30))
+        h.marker('WATCHDOG_CLAIMED'); h.marker('WATCHDOG_LOCK_WAITING')
+        assert h.p.poll() is None
+        h.p.stdout.close(); release.touch()
+        assert h.p.wait(timeout=5) == 74
+        assert not list(out.rglob('.engrave-stage-*'))
+        return dict(watchdog_barrier=True, exit=74)
+    finally: h.close()
+
+
+def diagnostic_cycles(a):
+    h = Host(a, a.output/'diagnostics', dict(ENGRAVE_MCP_TEST_FAIL_CLEANUP='1'), drain=False)
+    try:
+        pages = h.out/('p'*90); pages.mkdir()
+        proc = psutil.Process(h.p.pid)
+        base = proc.num_threads(); samples = []
+        for i in range(80):
+            args = dict(document=h.doc, kind='render', options=dict(format='svg', first_page=1000, last_page=1000),
+                        destination=dict(kind='directory', path=str(pages)))
+            h.send('tools/call', dict(name='score_export', arguments=args), i+100)
+            result = h.read()['result']['structuredContent']
+            assert result['error']['code'] == 'InvalidArgument', result
+            samples.append(proc.num_threads())
+        assert max(samples) <= base, (base, samples)
+        assert len(list(pages.glob('.engrave-stage-*'))) == 80
+        h.p.stdout.close()
+        h.send('tools/list', {}, 999)
+        assert h.p.wait(timeout=5) == 74
+        return dict(cycles=80, base_threads=base, max_threads=max(samples), exit=74)
+    finally: h.close()
+
+
+def after_closing(a, timeout=False):
+    out = a.output/f'after-closing-{timeout}'; release = out/'release'
+    h = Host(a, out, dict(ENGRAVE_MCP_TEST_CLOSING_BARRIER=str(release),
+        ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS='60000'))
+    try:
+        queued = out/'queued'; queued.mkdir()
+        if timeout:
+            blocked = out/'.test-live-noncooperative'; blocked.mkdir()
+            h.export(blocked, 20); h.marker('LIVE_NONCOOPERATIVE')
+            h.export(queued, 21)
+        h.p.stdout.close(); h.send('tools/list', {}, 10)
+        h.marker('CLOSING_REGISTERED')
+        h.export(queued, 22)
+        h.marker('ADMISSION_REFUSED_CLOSING')
+        release.touch()
+        assert h.p.wait(timeout=5) == 74
+        h.reader.join(timeout=2)
+        assert not list(queued.iterdir())
+        if timeout:
+            assert b'cleanup timed out; staging may remain' in h.log, bytes(h.log)
+            assert list(blocked.glob('.engrave-stage-*'))
+        else: assert not list(out.rglob('.engrave-stage-*'))
+        return dict(after_closing=True, cleanup_timeout=timeout, exit=74)
+    finally: h.close()
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    for key in ('binary', 'resources', 'output'): p.add_argument('--'+key, type=Path, required=True)
-    a = p.parse_args(); a.output = a.output.resolve()
-    results = [scenario(a, partial, dead) for partial in (False, True) for dead in (False, True)]
-    results += [scenario(a, partial, True, True) for partial in (False, True)]
-    results += [scenario(a, partial, False, wrapper=True) for partial in (False, True)]
-    results += [scenario(a, False, True, cleanup=True), scenario(a, False, True, registration=True), full_stderr(a)]
+    for k in ('binary', 'resources', 'output'): p.add_argument('--'+k, type=Path, required=True)
+    a=p.parse_args(); a.output=a.output.resolve()
+    results = [artifact_fault(a, after=i) for i in (1, 2)]
+    results += [artifact_fault(a, partial=partial, wrapper=True) for partial in (False, True)]
+    results += [barrier(a, dead, report) for dead,report in ((False,True),(True,True),(True,False))]
+    results += [watchdog_barrier(a), diagnostic_cycles(a), after_closing(a), after_closing(a, True)]
     (a.output/'results.json').write_text(json.dumps(results, indent=2))
-    print('PASS: complete/partial report before watchdog exit; dead stdout exit 74 after cleanup (11 cases)')
-
+    print('PASS: visible paths, real wrapper faults, queued fencing, publication/watchdog lock, 80 bounded diagnostics')
 
 if __name__ == '__main__': main()

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -22,7 +23,8 @@ public:
     bool visible;
 };
 // POSIX: sync staged contents, rename, then sync destination directory.
-void publish_output(const std::filesystem::path& staged, const std::filesystem::path& destination);
+void publish_output(const std::filesystem::path& staged, const std::filesystem::path& destination,
+    const std::function<void()>& on_visible = {});
 // Creates a fresh directory under parent with an unpredictable name (and
 // owner-only permissions on POSIX).
 std::filesystem::path create_private_directory(const std::filesystem::path& parent);

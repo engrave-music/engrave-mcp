@@ -1,6 +1,8 @@
 #pragma once
 #include <nlohmann/json.hpp>
 #include "runtime_limits.h"
+#include <cstdlib>
+#include <stdexcept>
 
 namespace music {
 // Successful results carry the payload both as legacy text and as
@@ -8,7 +10,11 @@ namespace music {
 // would exceed the 16 MiB wire cap even though the structured payload itself
 // fits. Above this threshold the legacy text becomes a short pointer to
 // structuredContent, keeping the authoritative structured result intact.
-inline nlohmann::json make_tool_result(nlohmann::json payload) {
+inline nlohmann::json make_tool_result(nlohmann::json payload, bool publication = false) {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+    if (publication && std::getenv("ENGRAVE_MCP_TEST_THROW_WRAPPER"))
+        throw std::runtime_error("Injected failure inside completed export wrapper");
+#endif
     std::string text = payload.dump(-1, ' ', false,
                                     nlohmann::json::error_handler_t::replace);
     if (text.size() > (4u * 1024u * 1024u)) {

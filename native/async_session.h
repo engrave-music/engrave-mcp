@@ -1,4 +1,5 @@
 #pragma once
+#include "publication_gate.h"
 #include <asio/awaitable.hpp>
 #include <filesystem>
 #include <memory>
@@ -15,7 +16,7 @@ public:
     AsyncSession(const AsyncSession&) = delete;
     AsyncSession& operator=(const AsyncSession&) = delete;
     asio::awaitable<nlohmann::json> call(std::string name, nlohmann::json arguments,
-        std::shared_ptr<std::atomic<int>> execution = {});
+        std::shared_ptr<RequestExecution> execution = {});
     void shutdown() noexcept;
 private:
     struct Impl;

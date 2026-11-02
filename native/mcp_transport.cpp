@@ -123,14 +123,13 @@ struct ReaderEvent {
 
 struct CallState {
     Json id;
-    Json published_payload;
     std::shared_ptr<asio::cancellation_signal> cancel;
     bool cancel_requested = false;
-    bool responded = false;
+    bool response_started = false;
     bool live_export = false;
     // 0 queued, 1 executing, 2 cancelled queued, 3 finished,
-    // 4 publishing, 5 watchdog owns termination, 6 awaiting report write.
-    std::shared_ptr<std::atomic<int>> execution = std::make_shared<std::atomic<int>>(0);
+    // 4 publishing, 5 watchdog owns termination.
+    std::shared_ptr<RequestExecution> execution = std::make_shared<RequestExecution>();
     bool tool_finished = false;
     std::shared_ptr<asio::steady_timer> watchdog;
 };
@@ -139,7 +138,6 @@ using CallStatePtr = std::shared_ptr<CallState>;
 
 struct OutputMessage {
     std::string wire;
-    std::shared_ptr<std::atomic<int>> execution;
 };
 
 // A type-erased suspended coroutine completion handler. The use_awaitable
@@ -652,30 +650,12 @@ private:
             }
 
             const auto& message = output.wire;
+            bool written;
             {
                 std::lock_guard lock(publication_gate.mutex);
-                publication_gate.writing = true;
-            }
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-            if (const auto* barrier = std::getenv("ENGRAVE_MCP_TEST_WRITE_BARRIER")) {
-                const std::filesystem::path arm = std::string(barrier) + ".arm";
-                if (std::filesystem::exists(arm)) {
-                    std::filesystem::remove(arm);
-                    std::fprintf(stderr, "WRITE_REGISTERED\n"); std::fflush(stderr);
-                    while (!std::filesystem::exists(barrier))
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                }
-            }
-#endif
-            const bool written = write_all(message.data(), message.size());
-            {
-                std::lock_guard lock(publication_gate.mutex);
-                publication_gate.writing = false;
-                if (!written) publication_gate.output_failed = true;
-                int reporting = 6;
-                if (written && output.execution && output.execution->compare_exchange_strong(reporting, 3))
-                    --publication_gate.publishers;
-                publication_gate.changed.notify_all();
+                if (publication_gate.closing) return;
+                written = write_report_bytes(message);
+                if (!written) publication_gate.closing = true;
             }
 
             {
@@ -699,6 +679,42 @@ private:
 
             schedule_output_progress();
         }
+    }
+
+    bool write_report_bytes(const std::string& message) {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        if (const auto* barrier = std::getenv("ENGRAVE_MCP_TEST_WRITE_BARRIER")) {
+            const std::filesystem::path arm = std::string(barrier) + ".arm";
+            if (std::filesystem::exists(arm)) {
+                std::filesystem::remove(arm);
+                std::fprintf(stderr, "WRITE_REGISTERED\n"); std::fflush(stderr);
+                while (!std::filesystem::exists(barrier))
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+#endif
+        return write_all(message.data(), message.size());
+    }
+
+    // Called synchronously on the owner with the publication lock held.
+    void publish_report(const Json& id, Json payload) noexcept {
+        try {
+            if (payload.is_null()) post_writer_failure("published report unavailable", true);
+            Json result;
+            try { result = make_tool_result(payload, true); }
+            catch (...) {
+                result = make_tool_error_result("EngineFailure", "Completed export wrapper failed");
+                Json paths = Json::array();
+                if (payload.contains("artifacts")) {
+                    for (const auto& a : payload.at("artifacts")) paths.push_back(a.at("path"));
+                } else paths = payload.at("error").value("published_artifacts", Json::array());
+                result["structuredContent"]["error"]["published_artifacts"] = std::move(paths);
+            }
+            auto wire = Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}}.dump(-1, ' ', false, Json::error_handler_t::replace);
+            wire.push_back('\n');
+            if (wire.size() > kMaxResponseBytes) post_writer_failure("published report exceeds limit", true);
+            if (!write_report_bytes(wire)) post_writer_failure("stdout write failed", true);
+        } catch (...) { post_writer_failure("cannot construct published report", true); }
     }
 
     bool write_all(const char* data, std::size_t size) noexcept {
@@ -782,26 +798,35 @@ private:
         }
     }
 
-    void post_writer_failure(const char* reason) noexcept {
-        // A broken connection cannot receive reports. Refuse new commits and
-        // terminate distinctly, but allow committed owners to clean staging.
-        {
-            std::lock_guard lock(publication_gate.mutex);
-            publication_gate.output_failed = true;
-        }
+    [[noreturn]] void post_writer_failure(const char* reason, bool owner_cleaned = false) noexcept {
+        std::unique_lock lock(publication_gate.mutex);
+        publication_gate.closing = true; // fences both admission and queued owner starts
         publication_gate.changed.notify_all();
 #ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (std::getenv("ENGRAVE_MCP_TEST_FILL_TERMINAL_STDERR"))
-            if (terminal_diagnostic(std::string(1024 * 1024, 'X'))) std::_Exit(75);
+        if (const auto* barrier = std::getenv("ENGRAVE_MCP_TEST_CLOSING_BARRIER")) {
+            std::fprintf(stderr, "CLOSING_REGISTERED\n"); std::fflush(stderr);
+            while (!std::filesystem::exists(barrier)) {
+                lock.unlock();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                lock.lock();
+            }
+        }
 #endif
-        try { terminal_diagnostic(std::string("mcp transport terminal: ") + reason + "; exit 74 after publication cleanup\n"); }
-        catch (...) {}
-        std::unique_lock lock(publication_gate.mutex);
-        publication_gate.changed.wait(lock, [] { return !publication_gate.owner_tasks; });
-        const auto failures = publication_gate.cleanup_failures;
-        lock.unlock();
-        try { if (failures) terminal_diagnostic("terminal staging cleanup failures: " + std::to_string(failures) + " (directories may remain)\n"); }
-        catch (...) {}
+        {
+            std::lock_guard output_lock(out_mutex_);
+            out_abort_ = true;
+            out_messages_.clear();
+        }
+        // Cleanup is attempted by active owners. Never wait indefinitely for
+        // engine/filesystem work; exit also reports possibly unfinished cleanup.
+        const bool cleaned = owner_cleaned || publication_gate.changed.wait_for(lock,
+            std::chrono::milliseconds(500), [] { return publication_gate.owner_tasks == 0; });
+        try {
+            terminal_diagnostic(std::string("mcp transport terminal: ") + reason +
+                "; exit 74 after publication cleanup; cleanup failures=" +
+                std::to_string(publication_gate.cleanup_failures) +
+                (cleaned ? "; owners cleaned; directories may remain\n" : "; cleanup timed out; staging may remain\n"));
+        } catch (...) {}
         std::_Exit(74);
     }
 
@@ -862,8 +887,7 @@ private:
         resume_output_waiters();
     }
 
-    bool commit_output(std::size_t reserved, std::string& message,
-                       std::shared_ptr<std::atomic<int>> execution) noexcept {
+    bool commit_output(std::size_t reserved, std::string& message) noexcept {
         const std::size_t actual = message.size();
         try {
             std::lock_guard<std::mutex> lock(out_mutex_);
@@ -879,7 +903,7 @@ private:
                 return false;
             }
             try {
-                out_messages_.push_back({std::move(message), std::move(execution)});
+                out_messages_.push_back({std::move(message)});
             } catch (...) {
                 if (out_budget_used_ >= reserved) {
                     out_budget_used_ -= reserved;
@@ -939,8 +963,7 @@ private:
     // Response serialisation and writer submission
     // ---------------------------------------------------------------------
 
-    asio::awaitable<WireStatus> send_wire(const Json& value,
-                                         std::shared_ptr<std::atomic<int>> execution = {}) {
+    asio::awaitable<WireStatus> send_wire(const Json& value) {
         if (fatal_.load(std::memory_order_acquire)) {
             co_return WireStatus::Failed;
         }
@@ -964,7 +987,6 @@ private:
             wire.push_back('\n');
         } catch (...) {
             release_output_reservation(kMaxResponseBytes);
-            if (execution && execution->load() == 6) post_writer_failure("cannot serialise published artifact report");
             fatal_shutdown("cannot serialise MCP response");
             co_return WireStatus::Failed;
         }
@@ -974,24 +996,21 @@ private:
             co_return WireStatus::TooLarge;
         }
 
-        if (!commit_output(kMaxResponseBytes, wire, execution)) {
-            if (execution && execution->load() == 6) post_writer_failure("cannot queue published artifact report");
+        if (!commit_output(kMaxResponseBytes, wire)) {
             fatal_shutdown("cannot queue MCP response");
             co_return WireStatus::Failed;
         }
         co_return WireStatus::Ok;
     }
 
-    asio::awaitable<WireStatus> send_result_status(const Json& id, Json result,
-                                                  std::shared_ptr<std::atomic<int>> execution = {}) {
+    asio::awaitable<WireStatus> send_result_status(const Json& id, Json result) {
         try {
             Json response = Json::object();
             response["jsonrpc"] = "2.0";
             response["id"] = id;
             response["result"] = std::move(result);
-            co_return co_await send_wire(response, execution);
+            co_return co_await send_wire(response);
         } catch (...) {
-            if (execution && execution->load() == 6) post_writer_failure("cannot build published artifact report");
             fatal_shutdown("cannot build MCP result response");
             co_return WireStatus::Failed;
         }
@@ -1476,34 +1495,28 @@ private:
                     target->watchdog = timer;
                     auto self = shared_from_this();
                     timer->async_wait([self, target, timer](const asio::error_code& error) {
-                        if (error || target->tool_finished || target->responded ||
+                        if (error || target->tool_finished || target->response_started ||
                             target->execution->load(std::memory_order_acquire) != 1) return;
-                        {
-                            std::lock_guard lock(publication_gate.mutex);
-                            int running = 1;
-                            if (!target->execution->compare_exchange_strong(running, 5, std::memory_order_acq_rel)) return;
-                        }
+                        int running = 1;
+                        if (!target->execution->compare_exchange_strong(running, 5, std::memory_order_acq_rel)) return;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
                         std::fprintf(stderr, "WATCHDOG_CLAIMED\n"); std::fflush(stderr);
 #endif
-                        target->responded = true;
+                        target->response_started = true;
                         // Decoupled exit waits for all committed reports. The
                         // identity check still prevents an old exit killing new work.
                         std::thread([execution = target->execution] {
                             std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                            std::unique_lock lock(publication_gate.mutex);
+                            std::unique_lock lock(publication_gate.mutex, std::defer_lock);
 #ifdef MUSIC_ASYNC_TEST_HOOKS
-                            if (publication_gate.publishers) {
-                                std::fprintf(stderr, "WATCHDOG_REPORT_DEFERRED\n"); std::fflush(stderr);
+                            if (!lock.try_lock()) {
+                                std::fprintf(stderr, "WATCHDOG_LOCK_WAITING\n"); std::fflush(stderr);
+                                lock.lock();
                             }
-                            if (publication_gate.writing) {
-                                std::fprintf(stderr, "WATCHDOG_WRITE_DEFERRED\n"); std::fflush(stderr);
-                            }
+#else
+                            lock.lock();
 #endif
-                            publication_gate.changed.wait(lock, [&] {
-                                return (!publication_gate.publishers && !publication_gate.writing) || publication_gate.output_failed || execution->load(std::memory_order_acquire) != 5;
-                            });
-                            if (!publication_gate.output_failed && execution->load(std::memory_order_acquire) == 5)
+                            if (!publication_gate.closing && execution->load(std::memory_order_acquire) == 5)
                                 std::_Exit(70);
                         }).detach();
                         asio::co_spawn(self->ioc_, [self, target]() -> asio::awaitable<void> {
@@ -1531,6 +1544,11 @@ private:
             call->id = id;
             call->live_export = name == "score_export";
             call->cancel = std::make_shared<asio::cancellation_signal>();
+            if (call->live_export) {
+                call->execution->report = [self = shared_from_this(), id](Json payload) {
+                    self->publish_report(id, std::move(payload));
+                };
+            }
             inflight_.push_back(call);
         } catch (...) {
             allocation_failed = true;
@@ -1560,7 +1578,7 @@ private:
         }
         if (spawn_failed) {
             erase_inflight(call);
-            if (call->responded) {
+            if (call->response_started) {
                 co_return true;
             }
             co_return co_await send_error(
@@ -1605,7 +1623,13 @@ private:
                 asio::disable_cancellation());
 
             if (fatal_.load(std::memory_order_acquire)) {
-                call->responded = true;
+                call->response_started = true;
+                erase_inflight(call);
+                maybe_finish_graceful();
+                co_return;
+            }
+            if (call->execution->report_sent.load(std::memory_order_acquire)) {
+                call->response_started = true;
                 erase_inflight(call);
                 maybe_finish_graceful();
                 co_return;
@@ -1617,12 +1641,7 @@ private:
                 co_return;
             }
 
-            if (call->execution->load() == 6) call->published_payload = std::move(payload);
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-            if (!call->published_payload.is_null() && std::getenv("ENGRAVE_MCP_TEST_THROW_WRAPPER"))
-                throw std::runtime_error("Injected completed export wrapper failure");
-#endif
-            Json result = make_tool_result(call->published_payload.is_null() ? std::move(payload) : call->published_payload);
+            Json result = make_tool_result(std::move(payload));
             co_await deliver_tool_result(call, std::move(result));
             co_return;
         } catch (const ToolCallError& error) {
@@ -1680,18 +1699,6 @@ private:
         co_return;
     }
 
-    static void attach_published(const CallStatePtr& call, Json& result) {
-        if (call->execution->load() != 6) return;
-        Json paths = Json::array();
-        const auto& payload = call->published_payload;
-        if (payload.contains("artifacts")) {
-            for (const auto& artifact : payload.at("artifacts")) paths.push_back(artifact.at("path"));
-        } else if (payload.contains("error")) {
-            paths = payload.at("error").value("published_artifacts", Json::array());
-        } else throw std::runtime_error("Published export report unavailable");
-        result["structuredContent"]["error"]["published_artifacts"] = std::move(paths);
-    }
-
     static Json make_tool_error_result(const std::string& code,
                                        const std::string& message) {
         Json content_item = Json::object();
@@ -1707,27 +1714,25 @@ private:
     }
 
     asio::awaitable<void> deliver_tool_result(CallStatePtr call, Json result) {
-        if (call->responded || fatal_.load(std::memory_order_acquire)) {
-            call->responded = true;
+        if (call->response_started || fatal_.load(std::memory_order_acquire)) {
+            call->response_started = true;
             erase_inflight(call);
             maybe_finish_graceful();
             co_return;
         }
-        call->responded = true;
+        call->response_started = true;
 
         const WireStatus status =
-            co_await send_result_status(call->id, std::move(result), call->execution);
+            co_await send_result_status(call->id, std::move(result));
         if (status == WireStatus::TooLarge &&
             !fatal_.load(std::memory_order_acquire)) {
             Json fallback = make_tool_error_result(
                 "ResourceLimit",
                 "Tool response exceeds the 16 MiB transport limit; "
                 "the requested operation may already have completed.");
-            attach_published(call, fallback);
             const WireStatus fallback_status =
-                co_await send_result_status(call->id, std::move(fallback), call->execution);
+                co_await send_result_status(call->id, std::move(fallback));
             if (fallback_status == WireStatus::TooLarge) {
-                if (call->execution->load() == 6) post_writer_failure("published artifact fallback exceeds transport limit");
                 fatal_shutdown("tool resource-limit response exceeded 16 MiB");
             }
         } else if (status == WireStatus::Failed) {
@@ -1742,28 +1747,25 @@ private:
     asio::awaitable<void> deliver_tool_error(const CallStatePtr& call,
                                              std::string code,
                                              std::string message) {
-        if (call->responded || fatal_.load(std::memory_order_acquire)) {
-            call->responded = true;
+        if (call->response_started || fatal_.load(std::memory_order_acquire)) {
+            call->response_started = true;
             erase_inflight(call);
             maybe_finish_graceful();
             co_return;
         }
-        call->responded = true;
+        call->response_started = true;
 
         Json result = make_tool_error_result(code, message);
-        attach_published(call, result);
         const WireStatus status =
-            co_await send_result_status(call->id, std::move(result), call->execution);
+            co_await send_result_status(call->id, std::move(result));
         if (status == WireStatus::TooLarge &&
             !fatal_.load(std::memory_order_acquire)) {
             // Fall back to a tiny bounded resource error.
             Json fallback = make_tool_error_result(
                 "ResourceLimit",
                 "Tool error exceeds the 16 MiB transport limit.");
-            attach_published(call, fallback);
-            if (co_await send_result_status(call->id, std::move(fallback), call->execution) ==
+            if (co_await send_result_status(call->id, std::move(fallback)) ==
                 WireStatus::TooLarge) {
-                if (call->execution->load() == 6) post_writer_failure("published artifact fallback exceeds transport limit");
                 fatal_shutdown("tool error response exceeded 16 MiB");
             }
         }
@@ -1775,24 +1777,22 @@ private:
 
     asio::awaitable<void> deliver_generic_error(const CallStatePtr& call,
                                                 std::string message) {
-        if (call->responded || fatal_.load(std::memory_order_acquire)) {
-            call->responded = true;
+        if (call->response_started || fatal_.load(std::memory_order_acquire)) {
+            call->response_started = true;
             erase_inflight(call);
             maybe_finish_graceful();
             co_return;
         }
-        call->responded = true;
+        call->response_started = true;
 
         if (message.empty()) {
             message = "Unknown application error";
         }
         Json result = make_tool_error_result(
             "EngineFailure", message);
-        attach_published(call, result);
         const WireStatus status =
-            co_await send_result_status(call->id, std::move(result), call->execution);
+            co_await send_result_status(call->id, std::move(result));
         if (status == WireStatus::TooLarge) {
-            if (call->execution->load() == 6) post_writer_failure("published artifact fallback exceeds transport limit");
             fatal_shutdown("generic tool error response exceeded 16 MiB");
         }
 
@@ -1802,12 +1802,12 @@ private:
     }
 
     asio::awaitable<void> deliver_cancelled(const CallStatePtr& call) {
-        if (call->responded) {
+        if (call->response_started) {
             erase_inflight(call);
             maybe_finish_graceful();
             co_return;
         }
-        call->responded = true;
+        call->response_started = true;
 
         if (!fatal_.load(std::memory_order_acquire)) {
             (void)co_await send_error(call->id, -32800, "Request cancelled");
@@ -1820,14 +1820,12 @@ private:
 
     asio::awaitable<void> finish_call(CallStatePtr call,
                                       std::exception_ptr error) {
-        if (error && call->execution->load() == 6)
-            post_writer_failure("unable to construct published artifact report");
-        if (call->responded) {
+        if (call->response_started) {
             erase_inflight(call);
             maybe_finish_graceful();
             co_return;
         }
-        call->responded = true;
+        call->response_started = true;
 
         if (fatal_.load(std::memory_order_acquire)) {
             erase_inflight(call);

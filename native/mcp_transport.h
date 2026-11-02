@@ -1,4 +1,5 @@
 #pragma once
+#include "publication_gate.h"
 #include <functional>
 #include <memory>
 #include <atomic>
@@ -24,7 +25,7 @@ public:
     std::string code;
 };
 
-using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std::shared_ptr<std::atomic<int>>)>;
+using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std::shared_ptr<RequestExecution>)>;
 
 // Asynchronous MCP stdio server. The local io_context is run on the caller's
 // SESSION thread; list_tools, call_tool and shutdown are invoked there, so a
@@ -32,10 +33,11 @@ using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std
 //
 // A dedicated jthread reads stdin and admits complete lines into a bounded
 // queue, applying backpressure when the queue or output budget is exhausted.
-// A second dedicated jthread is the only writer to stdout: it uses OS-native
+// A second dedicated jthread writes ordinary replies using OS-native
 // writes (partial writes/EINTR aware) and a bounded byte+message queue, so an
 // unread or blocked stdout never blocks the io/session thread, timers, or job
-// cancellation.
+// cancellation. Published export reports write synchronously on the engine
+// owner under the same publication mutex as the ordinary writer.
 //
 // call_tool is co_spawned on the session executor and may await isolated engine
 // work. shutdown is invoked exactly once on the session thread on EOF or a
