@@ -123,6 +123,7 @@ def main():
             dest=a.output/(mode+"-"+seam)/"old.pdf"
             for existing in (False,True):
                 if existing: dest.write_bytes(b"old destination")
+                else: dest.unlink(missing_ok=True)
                 failure=c.tool("score_export",export_args(doc,"pdf",dest),False)
                 assert failure["error"]["code"]=="Io",failure
                 assert not failure["error"].get("published_artifacts"),failure
