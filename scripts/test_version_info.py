@@ -223,8 +223,8 @@ async def run(args):
             await export(fixture_document, 'svg', before_dir)
             before_svg = before_dir / 'page-0001.svg'
             header_before, footer_before_low, footer_before_high = version_runs(before_svg)
-            assert header_before == footer_before_high, "owner render must show the written snapshot version"
-            assert header_before != footer_before_low, "owner render must not show the source version"
+            assert header_before == footer_before_low, "live render must show the source version"
+            assert header_before != footer_before_high, "live render must preserve owner provenance"
             assert await outline_version(fixture_document) == '4.5.0'
 
             region = await call('score_query', {'document': fixture_document, 'mode': 'elements',
@@ -239,11 +239,11 @@ async def run(args):
             after_svg = after_dir / 'page-0001.svg'
             header_after, footer_after_low, footer_after_high = version_runs(after_svg)
             assert header_after == header_before, "editing changed the written snapshot version header"
-            assert header_after == footer_after_high, "edited $v does not match the written version"
-            assert header_after != footer_after_low, "edited $v still matches the source version"
+            assert header_after == footer_after_low, "edited $v does not match the source version"
+            assert header_after != footer_after_high, "editing changed owner provenance"
             report["svg_header"] = {"encoding": "cairo-glyph-paths",
-                                    "unedited_snapshot": expected_version,
-                                    "edited_snapshot": expected_version}
+                                    "unedited_live": "4.5.0",
+                                    "edited_live": "4.5.0"}
 
             # Excerpt generation must also preserve the owner source version.
             outline = (await call('score_outline', {'document': fixture_document}))['outline']
