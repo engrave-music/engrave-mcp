@@ -11,6 +11,8 @@ struct PublicationGate {
     std::size_t publishers = 0;
     std::size_t owner_tasks = 0;
     bool output_failed = false;
+    bool writing = false;
+    std::size_t cleanup_failures = 0;
     std::condition_variable changed;
 };
 inline PublicationGate publication_gate;

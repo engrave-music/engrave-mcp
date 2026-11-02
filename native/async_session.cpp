@@ -226,7 +226,13 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                         return request_cancel->load(std::memory_order_acquire) || self->stopping.load(std::memory_order_acquire);
                     }, submitted, *timing, *runtime, [execution] {
                         if (!execution) return true;
-                        std::lock_guard lock(publication_gate.mutex);
+                        std::unique_lock lock(publication_gate.mutex);
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                        if (publication_gate.writing) {
+                            std::fprintf(stderr, "PUBLICATION_WAITING_FOR_WRITE\n"); std::fflush(stderr);
+                        }
+#endif
+                        publication_gate.changed.wait(lock, [] { return !publication_gate.writing || publication_gate.output_failed; });
                         if (publication_gate.output_failed) return false;
                         int running = 1;
                         if (!execution->compare_exchange_strong(running, 4, std::memory_order_acq_rel)) return false;

@@ -10,14 +10,19 @@ import time
 from bench_export_latency import ROOT, export_args
 
 
-def scenario(a, partial, dead, during_flush=False):
+def scenario(a, partial, dead, during_flush=False, wrapper=False, cleanup=False, registration=False):
     out = a.output / (('partial' if partial else 'complete') +
-                      ('-dead-flush' if during_flush else '-dead' if dead else '-resume'))
+                      ('-dead-flush' if during_flush else '-dead' if dead else '-resume') + ('-wrapper' if wrapper else '') + ('-cleanup' if cleanup else '') + ('-registration' if registration else ''))
     out.mkdir(parents=True)
     pages = out / 'pages'; pages.mkdir()
     blocked = out / '.test-live-noncooperative'; blocked.mkdir()
     log_path = out / 'stderr.log'
     env = dict(os.environ, ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS='8000' if dead else '60000')
+    barrier = out / 'write-release'
+    env['ENGRAVE_MCP_TEST_WRITE_BARRIER'] = str(barrier)
+    if dead: env['ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE'] = '1'
+    if cleanup: env['ENGRAVE_MCP_TEST_FAIL_CLEANUP'] = '1'
+    if wrapper: env['ENGRAVE_MCP_TEST_THROW_WRAPPER'] = '1'
     if during_flush: env['ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH'] = '1'
     with log_path.open('wb') as log:
         proc = subprocess.Popen([str(a.binary.resolve()), '--resources', str(a.resources.resolve())],
@@ -55,31 +60,52 @@ def scenario(a, partial, dead, during_flush=False):
             send('tools/call', dict(name='score_edit', arguments=dict(document=doc, ops=[dict(
                 op='set_layout_break', measure=dict(kind='id', id=measure), kind='page', on=True)])), 4)
             assert read_one()['result']['structuredContent']['ok']
+            if registration:
+                Path(str(barrier)+'.arm').touch()
+                send('tools/list', {}, 10)
+                wait(lambda: 'WRITE_REGISTERED' in log_path.read_text(), 'registered writer')
+                send('tools/call', dict(name='score_export', arguments=export_args(doc, 'svg', pages, True)), 30)
+                wait(lambda: 'PUBLICATION_WAITING_FOR_WRITE' in log_path.read_text(), 'publication barred by writer')
+                assert not list(pages.glob('*.svg'))
+                send('notifications/cancelled', dict(requestId=30))
+                wait(lambda: 'WATCHDOG_WRITE_DEFERRED' in log_path.read_text(), 'watchdog barred by writer without publisher')
+                assert proc.poll() is None
+                proc.stdout.close(); barrier.touch()
+                assert proc.wait(timeout=25) == 74
+                assert not list(pages.glob('*.svg'))
+                assert not list(pages.glob('.engrave-stage-*'))
+                return dict(registration=True, exit=74)
             if partial: (pages/'page-0002.svg').mkdir()
-            for ident in range(10, 20): send('tools/list', {}, ident)
+            if not during_flush: Path(str(barrier)+'.arm').touch()
             send('tools/call', dict(name='score_export', arguments=export_args(doc, 'svg', pages, True)), 30)
             wait(lambda: (pages/'page-0001.svg').is_file(), 'visible artifact')
             if during_flush:
                 wait(lambda: 'PUBLICATION_SECOND_FLUSH' in log_path.read_text(), 'active publication')
                 assert list(pages.glob('.engrave-stage-*'))
+                Path(str(barrier)+'.arm').touch()
+                send('tools/list', {}, 10)
             else:
-                wait(lambda: not list(pages.glob('.engrave-stage-*')), 'publication cleanup')
+                if not cleanup: wait(lambda: not list(pages.glob('.engrave-stage-*')), 'publication cleanup')
                 send('tools/call', dict(name='score_export', arguments=export_args(doc, 'svg', blocked, True)), 31)
                 wait(lambda: 'LIVE_NONCOOPERATIVE' in log_path.read_text(), 'later blocked owner')
                 send('notifications/cancelled', dict(requestId=31))
                 wait(lambda: 'WATCHDOG_REPORT_DEFERRED' in log_path.read_text(), 'locked watchdog recheck')
                 assert proc.poll() is None
+            wait(lambda: 'WRITE_REGISTERED' in log_path.read_text(), 'writer registered under gate')
             report = None
             if dead:
                 proc.stdout.close()
+                barrier.touch()
                 assert proc.wait(timeout=25) == 74
                 assert 'exit 74 after publication cleanup' in log_path.read_text()
+                assert ('FLUSH_OBSERVED_WRITE_FAILURE' if during_flush else 'OWNER_OBSERVED_WRITE_FAILURE') in log_path.read_text()
             else:
+                barrier.touch()
                 while report is None:
                     response = read_one()
                     if response['id'] == 30: report = response['result']['structuredContent']
-                if partial:
-                    assert report['error']['code'] == 'Io', report
+                if partial or wrapper:
+                    assert report['error']['code'] == ('EngineFailure' if wrapper else 'Io'), report
                     reported = report['error']['published_artifacts']
                 else:
                     assert report['ok'], report
@@ -87,8 +113,13 @@ def scenario(a, partial, dead, during_flush=False):
                 visible = sorted(p.as_posix() for p in pages.glob('*.svg') if p.is_file())
                 assert visible and visible == sorted(reported), report
                 assert proc.wait(timeout=10) == 70
-            assert not list(pages.glob('.engrave-stage-*'))
-            if dead: assert not list(out.rglob('.engrave-stage-*'))
+            if cleanup:
+                assert list(pages.glob('.engrave-stage-*'))
+                assert 'staging cleanup failed:' in log_path.read_text()
+                assert 'terminal staging cleanup failures:' in log_path.read_text()
+            else:
+                assert not list(pages.glob('.engrave-stage-*'))
+                if dead: assert not list(out.rglob('.engrave-stage-*'))
             return dict(partial=partial, dead=dead, during_flush=during_flush,
                         exit=proc.returncode, report=report)
         finally:
@@ -97,14 +128,42 @@ def scenario(a, partial, dead, during_flush=False):
             if not proc.stdout.closed: proc.stdout.close()
 
 
+def full_stderr(a):
+    env = dict(os.environ, ENGRAVE_MCP_TEST_FILL_TERMINAL_STDERR='1')
+    proc = subprocess.Popen([str(a.binary.resolve()), '--resources', str(a.resources.resolve())],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    try:
+        def send(method, params):
+            proc.stdin.write((json.dumps(dict(jsonrpc='2.0', id=1, method=method, params=params))+'\n').encode())
+            proc.stdin.flush()
+        send('initialize', dict(protocolVersion='2025-11-25', capabilities={},
+             clientInfo=dict(name='full-stderr', version='1')))
+        assert json.loads(proc.stdout.readline())['id'] == 1
+        proc.stdout.close()
+        send('tools/list', {})
+        # Never drain stderr until exit. The injected 1 MiB diagnostic exceeds
+        # anonymous pipe capacity on both hosts; its writer cannot complete.
+        assert proc.wait(timeout=10) == 74
+        data = proc.stderr.read()
+        # Windows may buffer the entire pending large write until it completes.
+        # Exit 75 would mean the diagnostic completed rather than timing out.
+        assert len(data) < 1024*1024, len(data)
+        return dict(full_stderr=True, exit=74, diagnostic_bytes=len(data))
+    finally:
+        if proc.poll() is None: proc.kill(); proc.wait()
+        proc.stdin.close(); proc.stderr.close()
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for key in ('binary', 'resources', 'output'): p.add_argument('--'+key, type=Path, required=True)
     a = p.parse_args(); a.output = a.output.resolve()
     results = [scenario(a, partial, dead) for partial in (False, True) for dead in (False, True)]
     results += [scenario(a, partial, True, True) for partial in (False, True)]
+    results += [scenario(a, partial, False, wrapper=True) for partial in (False, True)]
+    results += [scenario(a, False, True, cleanup=True), scenario(a, False, True, registration=True), full_stderr(a)]
     (a.output/'results.json').write_text(json.dumps(results, indent=2))
-    print('PASS: complete/partial report before watchdog exit; dead stdout exit 74 after cleanup (6 cases)')
+    print('PASS: complete/partial report before watchdog exit; dead stdout exit 74 after cleanup (11 cases)')
 
 
 if __name__ == '__main__': main()

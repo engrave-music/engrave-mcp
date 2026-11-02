@@ -4,6 +4,8 @@
 #include "export_timing.h"
 #include "audio_budget.h"
 #include "tool_result.h"
+#include "publication_gate.h"
+#include "terminal_diagnostic.h"
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -230,7 +232,20 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         fs::path destination, stage;
         ~Cleanup() {
             std::error_code ec;
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+            if (!stage.empty() && std::getenv("ENGRAVE_MCP_TEST_FAIL_CLEANUP"))
+                ec = std::make_error_code(std::errc::permission_denied);
+            else
+#endif
             if (!stage.empty()) fs::remove_all(stage, ec);
+            if (ec) {
+                {
+                    std::lock_guard lock(publication_gate.mutex);
+                    ++publication_gate.cleanup_failures;
+                }
+                try { terminal_diagnostic("staging cleanup failed: " + stage.string() + ": " + ec.message() + "\n"); }
+                catch (...) {}
+            }
         }
     } cleanup;
     std::vector<Artifact> artifacts;
@@ -301,7 +316,12 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             }
             if (request.destination.path.string().find(".test-live-noncooperative") != std::string::npos) {
                 std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n"); std::fflush(stderr);
-                if (const auto* delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS"))
+                if (std::getenv("ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE")) {
+                    std::unique_lock lock(publication_gate.mutex);
+                    publication_gate.changed.wait(lock, [] { return publication_gate.output_failed; });
+                    std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n"); std::fflush(stderr);
+                }
+                else if (const auto* delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS"))
                     std::this_thread::sleep_for(std::chrono::milliseconds(std::stoul(delay)));
                 else std::this_thread::sleep_for(std::chrono::seconds(30));
             }

@@ -1,5 +1,6 @@
 #include "mcp_transport.h"
 #include "publication_gate.h"
+#include "terminal_diagnostic.h"
 #include "tool_result.h"
 #include "runtime_limits.h"
 
@@ -122,6 +123,7 @@ struct ReaderEvent {
 
 struct CallState {
     Json id;
+    Json published_payload;
     std::shared_ptr<asio::cancellation_signal> cancel;
     bool cancel_requested = false;
     bool responded = false;
@@ -650,11 +652,28 @@ private:
             }
 
             const auto& message = output.wire;
-            const bool written = write_all(message.data(), message.size());
-            if (written && output.execution) {
+            {
                 std::lock_guard lock(publication_gate.mutex);
+                publication_gate.writing = true;
+            }
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+            if (const auto* barrier = std::getenv("ENGRAVE_MCP_TEST_WRITE_BARRIER")) {
+                const std::filesystem::path arm = std::string(barrier) + ".arm";
+                if (std::filesystem::exists(arm)) {
+                    std::filesystem::remove(arm);
+                    std::fprintf(stderr, "WRITE_REGISTERED\n"); std::fflush(stderr);
+                    while (!std::filesystem::exists(barrier))
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
+#endif
+            const bool written = write_all(message.data(), message.size());
+            {
+                std::lock_guard lock(publication_gate.mutex);
+                publication_gate.writing = false;
+                if (!written) publication_gate.output_failed = true;
                 int reporting = 6;
-                if (output.execution->compare_exchange_strong(reporting, 3))
+                if (written && output.execution && output.execution->compare_exchange_strong(reporting, 3))
                     --publication_gate.publishers;
                 publication_gate.changed.notify_all();
             }
@@ -770,10 +789,19 @@ private:
             std::lock_guard lock(publication_gate.mutex);
             publication_gate.output_failed = true;
         }
-        std::fprintf(stderr, "mcp transport terminal: %s; exit 74 after publication cleanup\n", reason);
-        std::fflush(stderr);
+        publication_gate.changed.notify_all();
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        if (std::getenv("ENGRAVE_MCP_TEST_FILL_TERMINAL_STDERR"))
+            if (terminal_diagnostic(std::string(1024 * 1024, 'X'))) std::_Exit(75);
+#endif
+        try { terminal_diagnostic(std::string("mcp transport terminal: ") + reason + "; exit 74 after publication cleanup\n"); }
+        catch (...) {}
         std::unique_lock lock(publication_gate.mutex);
         publication_gate.changed.wait(lock, [] { return !publication_gate.owner_tasks; });
+        const auto failures = publication_gate.cleanup_failures;
+        lock.unlock();
+        try { if (failures) terminal_diagnostic("terminal staging cleanup failures: " + std::to_string(failures) + " (directories may remain)\n"); }
+        catch (...) {}
         std::_Exit(74);
     }
 
@@ -936,6 +964,7 @@ private:
             wire.push_back('\n');
         } catch (...) {
             release_output_reservation(kMaxResponseBytes);
+            if (execution && execution->load() == 6) post_writer_failure("cannot serialise published artifact report");
             fatal_shutdown("cannot serialise MCP response");
             co_return WireStatus::Failed;
         }
@@ -945,7 +974,8 @@ private:
             co_return WireStatus::TooLarge;
         }
 
-        if (!commit_output(kMaxResponseBytes, wire, std::move(execution))) {
+        if (!commit_output(kMaxResponseBytes, wire, execution)) {
+            if (execution && execution->load() == 6) post_writer_failure("cannot queue published artifact report");
             fatal_shutdown("cannot queue MCP response");
             co_return WireStatus::Failed;
         }
@@ -959,8 +989,9 @@ private:
             response["jsonrpc"] = "2.0";
             response["id"] = id;
             response["result"] = std::move(result);
-            co_return co_await send_wire(response, std::move(execution));
+            co_return co_await send_wire(response, execution);
         } catch (...) {
+            if (execution && execution->load() == 6) post_writer_failure("cannot build published artifact report");
             fatal_shutdown("cannot build MCP result response");
             co_return WireStatus::Failed;
         }
@@ -1465,9 +1496,12 @@ private:
                             if (publication_gate.publishers) {
                                 std::fprintf(stderr, "WATCHDOG_REPORT_DEFERRED\n"); std::fflush(stderr);
                             }
+                            if (publication_gate.writing) {
+                                std::fprintf(stderr, "WATCHDOG_WRITE_DEFERRED\n"); std::fflush(stderr);
+                            }
 #endif
                             publication_gate.changed.wait(lock, [&] {
-                                return !publication_gate.publishers || execution->load(std::memory_order_acquire) != 5;
+                                return (!publication_gate.publishers && !publication_gate.writing) || publication_gate.output_failed || execution->load(std::memory_order_acquire) != 5;
                             });
                             if (!publication_gate.output_failed && execution->load(std::memory_order_acquire) == 5)
                                 std::_Exit(70);
@@ -1583,7 +1617,12 @@ private:
                 co_return;
             }
 
-            Json result = make_tool_result(std::move(payload));
+            if (call->execution->load() == 6) call->published_payload = std::move(payload);
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+            if (!call->published_payload.is_null() && std::getenv("ENGRAVE_MCP_TEST_THROW_WRAPPER"))
+                throw std::runtime_error("Injected completed export wrapper failure");
+#endif
+            Json result = make_tool_result(call->published_payload.is_null() ? std::move(payload) : call->published_payload);
             co_await deliver_tool_result(call, std::move(result));
             co_return;
         } catch (const ToolCallError& error) {
@@ -1641,6 +1680,18 @@ private:
         co_return;
     }
 
+    static void attach_published(const CallStatePtr& call, Json& result) {
+        if (call->execution->load() != 6) return;
+        Json paths = Json::array();
+        const auto& payload = call->published_payload;
+        if (payload.contains("artifacts")) {
+            for (const auto& artifact : payload.at("artifacts")) paths.push_back(artifact.at("path"));
+        } else if (payload.contains("error")) {
+            paths = payload.at("error").value("published_artifacts", Json::array());
+        } else throw std::runtime_error("Published export report unavailable");
+        result["structuredContent"]["error"]["published_artifacts"] = std::move(paths);
+    }
+
     static Json make_tool_error_result(const std::string& code,
                                        const std::string& message) {
         Json content_item = Json::object();
@@ -1672,9 +1723,11 @@ private:
                 "ResourceLimit",
                 "Tool response exceeds the 16 MiB transport limit; "
                 "the requested operation may already have completed.");
+            attach_published(call, fallback);
             const WireStatus fallback_status =
                 co_await send_result_status(call->id, std::move(fallback), call->execution);
             if (fallback_status == WireStatus::TooLarge) {
+                if (call->execution->load() == 6) post_writer_failure("published artifact fallback exceeds transport limit");
                 fatal_shutdown("tool resource-limit response exceeded 16 MiB");
             }
         } else if (status == WireStatus::Failed) {
@@ -1698,6 +1751,7 @@ private:
         call->responded = true;
 
         Json result = make_tool_error_result(code, message);
+        attach_published(call, result);
         const WireStatus status =
             co_await send_result_status(call->id, std::move(result), call->execution);
         if (status == WireStatus::TooLarge &&
@@ -1706,8 +1760,10 @@ private:
             Json fallback = make_tool_error_result(
                 "ResourceLimit",
                 "Tool error exceeds the 16 MiB transport limit.");
+            attach_published(call, fallback);
             if (co_await send_result_status(call->id, std::move(fallback), call->execution) ==
                 WireStatus::TooLarge) {
+                if (call->execution->load() == 6) post_writer_failure("published artifact fallback exceeds transport limit");
                 fatal_shutdown("tool error response exceeded 16 MiB");
             }
         }
@@ -1732,9 +1788,11 @@ private:
         }
         Json result = make_tool_error_result(
             "EngineFailure", message);
+        attach_published(call, result);
         const WireStatus status =
             co_await send_result_status(call->id, std::move(result), call->execution);
         if (status == WireStatus::TooLarge) {
+            if (call->execution->load() == 6) post_writer_failure("published artifact fallback exceeds transport limit");
             fatal_shutdown("generic tool error response exceeded 16 MiB");
         }
 
@@ -1762,6 +1820,8 @@ private:
 
     asio::awaitable<void> finish_call(CallStatePtr call,
                                       std::exception_ptr error) {
+        if (error && call->execution->load() == 6)
+            post_writer_failure("unable to construct published artifact report");
         if (call->responded) {
             erase_inflight(call);
             maybe_finish_graceful();
