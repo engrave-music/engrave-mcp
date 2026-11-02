@@ -52,7 +52,7 @@ std::string destination_message(std::string_view requested, std::string_view rea
 
 HostError with_destination(HostError error, std::string_view requested) {
     if (error.message.rfind("destination '", 0) == 0)
-        error.message = utf8_prefix(error.message, kDiagnosticLimit);
+        error.message.resize(utf8_prefix(error.message, kDiagnosticLimit));
     else
         error.message = destination_message(requested, error.message);
     return error;

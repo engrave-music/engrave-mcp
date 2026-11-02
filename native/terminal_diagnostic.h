@@ -1,4 +1,5 @@
 #pragma once
+#include "utf8_text.h"
 #include <string_view>
 #ifdef _WIN32
 #include <windows.h>
@@ -11,7 +12,7 @@ namespace music {
 // One synchronous nonblocking attempt, no threads or retained messages.
 // Pipes that cannot be made nonblocking are deliberately skipped.
 inline bool terminal_diagnostic(std::string_view message) noexcept {
-    message = message.substr(0, 1024);
+    message = message.substr(0, utf8_prefix(message, 1024));
 #ifdef _WIN32
     HANDLE handle = ::GetStdHandle(STD_ERROR_HANDLE);
     if (::GetFileType(handle) != FILE_TYPE_PIPE) return false;

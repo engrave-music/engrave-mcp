@@ -21,6 +21,7 @@
 #pragma comment(lib, "advapi32.lib")
 #else
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -38,6 +39,11 @@ struct Handle {
 [[noreturn]] void windows_error(const char* what) {
     throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), what);
 }
+struct LocalSecurity {
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    PACL dacl = nullptr;
+    ~LocalSecurity() { if (descriptor) LocalFree(descriptor); }
+};
 // A protected DACL that grants only the current user full control and lets
 // children inherit it. Without this, a staging directory created under a
 // permissive destination inherits Authenticated Users:Modify on Windows.
@@ -126,18 +132,19 @@ std::filesystem::path create_private_directory(const std::filesystem::path& pare
 #else
     for (int i = 0; i != 16; ++i) {
         auto path = parent / (".engrave-stage-" + std::to_string(random()) + "-" + std::to_string(random()));
-        std::error_code error;
-        if (std::filesystem::create_directory(path, error)) {
-            std::filesystem::permissions(path, std::filesystem::perms::owner_all,
-                                         std::filesystem::perm_options::replace, error);
-            if (error) {
-                std::filesystem::remove(path);
-                throw std::system_error(error, "Cannot restrict staging directory permissions");
+        // Create at the final mode atomically; a create-then-chmod window would
+        // let another local process enter the staging directory.
+        if (::mkdir(path.c_str(), 0700) == 0) {
+            if (::chmod(path.c_str(), 0700) != 0) {
+                const auto error = errno;
+                ::rmdir(path.c_str());
+                throw std::system_error(error, std::generic_category(),
+                                        "Cannot restrict staging directory permissions");
             }
             return path;
         }
-        if (error && error != std::errc::file_exists)
-            throw std::system_error(error, "Cannot create staging directory");
+        if (errno == EEXIST) continue;
+        throw std::system_error(errno, std::generic_category(), "Cannot create staging directory");
     }
 #endif
     throw std::runtime_error("Cannot allocate unique staging directory");
@@ -170,6 +177,7 @@ void validate_output_path_syntax(const std::filesystem::path& path) {
         if (start == 1 && start < text.size() && separator(text[start])) ++start; // UNC
     }
     if (start == text.size()) return; // root directory
+    std::size_t component_index = 0;
     for (;;) {
         const auto end = text.find_first_of(L"/\\", start);
         const auto component = text.substr(start, end == std::wstring::npos ? end : end - start);
@@ -185,10 +193,15 @@ void validate_output_path_syntax(const std::filesystem::path& path) {
             auto device_digit = [](wchar_t c) {
                 return (c >= L'1' && c <= L'9') || c == L'\u00B9' || c == L'\u00B2' || c == L'\u00B3';
             };
-            if (base == L"CON" || base == L"PRN" || base == L"AUX" || base == L"NUL" ||
-                (base.size() == 4 && (base.substr(0, 3) == L"COM" || base.substr(0, 3) == L"LPT") &&
-                 device_digit(base[3]))) reject();
+            // The UNC server is a hostname, not a filename: a DNS name such as
+            // con.example.com is valid even though a file named con is reserved.
+            const bool unc_server = unc && component_index == 0;
+            if (!unc_server &&
+                (base == L"CON" || base == L"PRN" || base == L"AUX" || base == L"NUL" ||
+                 (base.size() == 4 && (base.substr(0, 3) == L"COM" || base.substr(0, 3) == L"LPT") &&
+                  device_digit(base[3])))) reject();
         }
+        ++component_index;
         if (end == std::wstring::npos) break;
         start = end + 1;
     }
@@ -257,6 +270,8 @@ void publish_output(const std::filesystem::path& staged, const std::filesystem::
         throw PublicationError(EIO, "Injected staged file flush failure", false);
 #endif
 #ifdef _WIN32
+    // on_visible moves the Artifact that owns [destination]; keep a stable copy.
+    const auto destination_path = destination;
     // FlushFileBuffers makes staged contents durable before the name is visible
     // (subject to the filesystem/device honoring flushes). WRITE_THROUGH is kept,
     // but its documented copy/delete guarantee does not establish directory-entry
@@ -266,9 +281,58 @@ void publish_output(const std::filesystem::path& staged, const std::filesystem::
     if (file.value == INVALID_HANDLE_VALUE) windows_error("Cannot open staged output for flush");
     if (!FlushFileBuffers(file.value)) windows_error("Cannot flush staged output");
     file.reset(); // Close before rename; a failed flush never replaces destination.
-    if (!MoveFileExW(staged.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    // Capture the DACL a normal destination has: the existing file's DACL, or
+    // the ACL a new file inherits from the destination directory. A rename
+    // preserves the staged file's private DACL, so restore this one once the
+    // name is visible.
+    LocalSecurity acl;
+    if (GetFileAttributesW(destination_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        const auto result = GetNamedSecurityInfoW(destination_path.c_str(), SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION, nullptr, nullptr, &acl.dacl, nullptr, &acl.descriptor);
+        if (result != ERROR_SUCCESS)
+            throw std::system_error(static_cast<int>(result), std::system_category(),
+                                    "Cannot inspect publication ACL");
+    } else {
+        const auto missing = GetLastError();
+        if (missing != ERROR_FILE_NOT_FOUND && missing != ERROR_PATH_NOT_FOUND)
+            throw std::system_error(static_cast<int>(missing), std::system_category(),
+                                    "Cannot inspect publication destination");
+        auto parent = destination_path.parent_path();
+        if (parent.empty()) parent = ".";
+        std::random_device random;
+        bool created = false;
+        for (int attempt = 0; attempt != 16 && !created; ++attempt) {
+            const auto probe = parent / (".engrave-acl-" + std::to_string(random()) +
+                                         "-" + std::to_string(random()));
+            Handle handle(CreateFileW(probe.c_str(), READ_CONTROL | DELETE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW,
+                FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr));
+            if (handle.value == INVALID_HANDLE_VALUE) {
+                if (GetLastError() == ERROR_FILE_EXISTS) continue;
+                windows_error("Cannot create publication ACL probe");
+            }
+            const auto result = GetSecurityInfo(handle.value, SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION, nullptr, nullptr, &acl.dacl, nullptr, &acl.descriptor);
+            handle.reset(); // delete-on-close removes the probe
+            if (result != ERROR_SUCCESS)
+                throw std::system_error(static_cast<int>(result), std::system_category(),
+                                        "Cannot inspect publication ACL");
+            created = true;
+        }
+        if (!created) throw std::runtime_error("Cannot allocate publication ACL probe");
+    }
+    if (!MoveFileExW(staged.c_str(), destination_path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
         windows_error("Cannot publish output");
     if (on_visible) on_visible();
+    Handle published(CreateFileW(destination_path.c_str(), WRITE_DAC | READ_CONTROL,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, nullptr));
+    if (published.value == INVALID_HANDLE_VALUE) windows_error("Cannot open published output for ACL");
+    const auto result = SetSecurityInfo(published.value, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+        nullptr, nullptr, acl.dacl, nullptr);
+    if (result != ERROR_SUCCESS)
+        throw std::system_error(static_cast<int>(result), std::system_category(),
+                                "Cannot apply publication ACL");
 #else
     struct Descriptor {
         int fd;
