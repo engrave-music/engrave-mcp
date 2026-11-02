@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import queue
+import shutil
+import sys
 import subprocess
 import threading
 import time
@@ -12,15 +14,16 @@ from bench_export_latency import ROOT, export_args
 
 
 class Host:
-    def __init__(self, a, out, env=None, drain=True):
+    def __init__(self, a, out, env=None, drain=True, regular=False):
         self.out = out
         out.mkdir(parents=True)
+        self.regular = open(out/"regular-stderr.log", "wb") if regular else None
         self.p = subprocess.Popen([str(a.binary.resolve()), '--resources', str(a.resources.resolve())],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.regular or subprocess.PIPE,
             env=dict(os.environ, **(env or {})), bufsize=0)
         self.lines = queue.Queue()
         self.log = bytearray()
-        if drain:
+        if drain and not regular:
             def read_log():
                 while data := self.p.stderr.readline(): self.log.extend(data)
             self.reader = threading.Thread(target=read_log, daemon=True)
@@ -70,25 +73,28 @@ class Host:
             finally:
                 if self.p.poll() is None: self.p.kill(); self.p.wait()
         if hasattr(self, 'reader'): self.reader.join(timeout=2)
+        elif self.regular: self.regular.close()
         else: self.log.extend(self.p.stderr.read())
         (self.out/'stderr.log').write_bytes(self.log)
-        self.p.stdout.close(); self.p.stderr.close()
+        self.p.stdout.close()
+        if self.p.stderr: self.p.stderr.close()
 
 
-def artifact_fault(a, after=None, partial=False, wrapper=False):
+def artifact_fault(a, after=None, partial=False, wrapper=False, boundary=None):
     env = {}
     if after: env['ENGRAVE_MCP_TEST_THROW_AFTER_RENAME'] = str(after)
     if wrapper: env['ENGRAVE_MCP_TEST_THROW_WRAPPER'] = '1'
-    h = Host(a, a.output/f'fault-{after}-{partial}-{wrapper}', env)
+    if boundary: env['ENGRAVE_MCP_TEST_THROW_'+boundary] = '1'
+    h = Host(a, a.output/f'fault-{after}-{partial}-{wrapper}-{boundary}', env)
     try:
         pages = h.pages()
         if partial: (pages/'page-0002.svg').mkdir()
         h.export(pages)
         result = h.read()['result']['structuredContent']
-        assert result['error']['code'] == ('Io' if after else 'EngineFailure'), result
+        assert result['error']['code'] == ('Io' if after and not boundary else 'EngineFailure'), result
         visible = sorted(p.as_posix() for p in pages.glob('*.svg') if p.is_file())
         assert visible == sorted(result['error']['published_artifacts']) and visible, result
-        if after: assert len(visible) == after
+        assert len(visible) == (after if after else (1 if partial else 2))
         assert not list(pages.glob('.engrave-stage-*'))
         return dict(after=after, partial=partial, wrapper=wrapper, visible=visible)
     finally: h.close()
@@ -106,7 +112,9 @@ def barrier(a, dead, report=True):
         else: h.send('tools/list', {}, 10)
         h.marker('WRITE_REGISTERED')
         # The next owner cannot start while the report write holds the mutex.
+        enqueued = h.log.count(b'OWNER_ENQUEUED')
         h.export(queued, 31)
+        h.wait(lambda: h.log.count(b'OWNER_ENQUEUED') > enqueued, 'queued owner admitted')
         if not dead: h.send('notifications/cancelled', dict(requestId=31))
         h.send('tools/list', {}, 12)
         assert not list(queued.iterdir())
@@ -152,6 +160,9 @@ def watchdog_barrier(a):
 def diagnostic_cycles(a):
     h = Host(a, a.output/'diagnostics', dict(ENGRAVE_MCP_TEST_FAIL_CLEANUP='1'), drain=False)
     try:
+        if os.name == 'posix':
+            import fcntl
+            fcntl.fcntl(h.p.stderr, fcntl.F_SETPIPE_SZ, 4096)
         pages = h.out/('p'*90); pages.mkdir()
         proc = psutil.Process(h.p.pid)
         base = proc.num_threads(); samples = []
@@ -162,6 +173,12 @@ def diagnostic_cycles(a):
             result = h.read()['result']['structuredContent']
             assert result['error']['code'] == 'InvalidArgument', result
             samples.append(proc.num_threads())
+        if os.name == 'posix':
+            import array, termios
+            pending = array.array('i', [0])
+            fcntl.ioctl(h.p.stderr, termios.FIONREAD, pending)
+            capacity = fcntl.fcntl(h.p.stderr, fcntl.F_GETPIPE_SZ)
+            assert pending[0] > capacity-1024, (pending[0], capacity)
         assert max(samples) <= base, (base, samples)
         assert len(list(pages.glob('.engrave-stage-*'))) == 80
         h.p.stdout.close()
@@ -185,8 +202,12 @@ def after_closing(a, timeout=False):
         h.marker('CLOSING_REGISTERED')
         h.export(queued, 22)
         h.marker('ADMISSION_REFUSED_CLOSING')
+        start = time.monotonic()
         release.touch()
-        assert h.p.wait(timeout=5) == 74
+        assert h.p.wait(timeout=2) == 74
+        elapsed = time.monotonic()-start
+        assert elapsed < 1.5, elapsed
+        if timeout: assert elapsed >= .45, elapsed
         h.reader.join(timeout=2)
         assert not list(queued.iterdir())
         if timeout:
@@ -197,12 +218,94 @@ def after_closing(a, timeout=False):
     finally: h.close()
 
 
+def after_report(a):
+    h = Host(a, a.output/'after-report', dict(ENGRAVE_MCP_TEST_THROW_AFTER_REPORT='1'))
+    try:
+        h.export(h.pages())
+        assert h.read()['result']['structuredContent']['ok']
+        h.send('tools/list', {}, 99)
+        assert h.read()['id'] == 99 # a duplicate response would precede this
+        return dict(after_report=True, responses=1)
+    finally: h.close()
+
+
+def refused_cleanup(a, watchdog=False):
+    out = a.output/f'refused-cleanup-{watchdog}'
+    admission, terminal = out/'admit', out/'terminal'
+    h = Host(a, out, dict(ENGRAVE_MCP_TEST_ADMISSION_BARRIER=str(admission),
+        ENGRAVE_MCP_TEST_CLOSING_BARRIER=str(terminal),
+        ENGRAVE_MCP_TEST_CLEANUP_BARRIER=str(out/'never-release')))
+    try:
+        pages = h.pages()
+        h.export(pages)
+        h.marker('PUBLICATION_READY')
+        if watchdog:
+            h.send('notifications/cancelled', dict(requestId=30))
+            h.marker('WATCHDOG_CLAIMED')
+            admission.touch()
+            h.marker('CLEANUP_BLOCKED')
+            # The watchdog must acquire the fence despite blocked cleanup.
+            assert h.p.wait(timeout=2) == 70
+        else:
+            queued = out/'queued'; queued.mkdir()
+            enqueued = h.log.count(b'OWNER_ENQUEUED')
+            h.export(queued, 31)
+            h.wait(lambda: h.log.count(b'OWNER_ENQUEUED') > enqueued, 'queued owner admitted')
+            h.p.stdout.close(); h.send('tools/list', {}, 90)
+            h.marker('CLOSING_REGISTERED')
+            admission.touch()
+            h.marker('CLEANUP_BLOCKED')
+            start = time.monotonic(); terminal.touch()
+            assert h.p.wait(timeout=2) == 74
+            elapsed = time.monotonic()-start
+            assert .45 <= elapsed < 1.5, elapsed
+            assert not list(queued.iterdir())
+        assert list(pages.glob('.engrave-stage-*'))
+        assert not list(pages.glob('*.svg'))
+        return dict(refused_cleanup=True, watchdog=watchdog, exit=h.p.returncode)
+    finally: h.close()
+
+
+def regular_diagnostic(a):
+    if os.name != 'posix': return dict(regular_stderr='POSIX only')
+    # Interpose the exact POSIX write used by terminal_diagnostic: any stderr
+    # write would stall for a minute. Validate the shim before testing the host.
+    probe = a.output/'diagnostic-probe'; probe.mkdir()
+    source = probe/'stall.c'; library = probe/'stall.so'
+    source.write_text("#include <unistd.h>\n#include <dlfcn.h>\n"
+        "ssize_t write(int fd,const void* p,size_t n) {\n"
+        "if(fd==2) sleep(60);\n"
+        "return ((ssize_t(*)(int,const void*,size_t))dlsym(RTLD_NEXT,\"write\"))(fd,p,n); }\n")
+    subprocess.run([shutil.which('cc'), '-shared', '-fPIC', str(source), '-o', str(library), '-ldl'], check=True)
+    env = dict(os.environ, LD_PRELOAD=str(library))
+    with open(probe/'probe.log', 'wb') as dest:
+        try:
+            subprocess.run([sys.executable, '-c', 'import os; os.write(2,b"blocked")'],
+                           env=env, stderr=dest, timeout=.25, check=True)
+            raise AssertionError('stderr write shim did not stall')
+        except subprocess.TimeoutExpired: pass
+    h = Host(a, a.output/'regular-stderr', dict(LD_PRELOAD=str(library)), regular=True)
+    try:
+        initial = (h.out/'regular-stderr.log').stat().st_size
+        h.p.stdout.close()
+        start = time.monotonic(); h.send('tools/list', {}, 90)
+        assert h.p.wait(timeout=2) == 74
+        elapsed = time.monotonic()-start
+        assert elapsed < 1.5, elapsed
+        assert (h.out/'regular-stderr.log').stat().st_size == initial
+        return dict(regular_stderr='skipped', exit=74, elapsed=elapsed)
+    finally: h.close()
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for k in ('binary', 'resources', 'output'): p.add_argument('--'+k, type=Path, required=True)
     a=p.parse_args(); a.output=a.output.resolve()
     results = [artifact_fault(a, after=i) for i in (1, 2)]
     results += [artifact_fault(a, partial=partial, wrapper=True) for partial in (False, True)]
+    results += [artifact_fault(a, after=1, boundary='ERROR_REPORT'),
+                artifact_fault(a, boundary='DOCUMENT_CALLBACK'), after_report(a),
+                refused_cleanup(a), refused_cleanup(a, True), regular_diagnostic(a)]
     results += [barrier(a, dead, report) for dead,report in ((False,True),(True,True),(True,False))]
     results += [watchdog_barrier(a), diagnostic_cycles(a), after_closing(a), after_closing(a, True)]
     (a.output/'results.json').write_text(json.dumps(results, indent=2))
