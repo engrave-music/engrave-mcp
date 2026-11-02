@@ -48,6 +48,9 @@ def main():
                     raise RuntimeError(f"MSCZ content mismatch: {folder}/{name}")
     if sys.platform == "win32":
         subprocess.run([sys.executable,str(ROOT/"scripts/test_live_golden.py"),"--output",str(oracle)],check=True)
+    subprocess.run([sys.executable, str(ROOT/"scripts/test_live_publication_cancel.py"),
+                    "--binary", str(a.binary), "--resources", str(a.resources),
+                    "--output", str(a.output/"publication-cancel")], check=True)
     results={}
     for mode in (None,):
         out=a.output/(mode or "default")
