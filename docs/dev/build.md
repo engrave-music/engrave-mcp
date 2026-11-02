@@ -18,7 +18,7 @@
 ## 1. 架构设计与约束
 
 - **构建系统**：以 `xmake.lua` 与显式源码清单为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux x86_64 均已验证）。引擎的 xmake 构建（引擎 targets、目录通配符与固定版本包 recipe）位于引擎 Fork 检出内（`xmake/engrave.lua`、`xmake/packages/`）；本仓库 `xmake.lua` 只保留宿主 targets，并通过 `includes()` 从 `vendor/musescore`（或 `--musescore_source` 指定的检出）引入引擎构建。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块；该检出必须带有 `xmake/engrave.lua`）。
-- **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件，以及 MuseScore 4 音频引擎（`muse_audio_engine`：FluidSynth 合成、混音、混响与 SoundTrackWriter）及其编码器 LAME（MP3）、libFLAC、Opus/libopusenc（Ogg）、fdk-aac（AAC），全部来自子模块并以 Qt-free 方式编译；音频仅在 `--worker` 子进程中渲染。libsndfile 已从构建依赖和 pixi 环境中移除；测试分析用的 Python `soundfile` wheel 自带其运行时副本，因此解码检查不依赖系统 libsndfile。捆绑的原生依赖包括 FreeType、HarfBuzz、FluidSynth、FLAC、Opus/libopusenc、LAME 与 fdk-aac（Brotli 依赖已移除）。
+- **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件，以及 MuseScore 4 音频引擎（`muse_audio_engine`：FluidSynth 合成、混音、混响与 SoundTrackWriter）及其编码器 LAME（MP3）、libFLAC、Opus/libopusenc（Ogg）、fdk-aac（AAC），全部来自子模块并以 Qt-free 方式编译；音频在单一引擎 owner 线程内同步渲染（M4 live-only）。libsndfile 已从构建依赖和 pixi 环境中移除；测试分析用的 Python `soundfile` wheel 自带其运行时副本，因此解码检查不依赖系统 libsndfile。捆绑的原生依赖包括 FreeType、HarfBuzz、FluidSynth、FLAC、Opus/libopusenc、LAME 与 fdk-aac（Brotli 依赖已移除）。
 - **底层适配**：采用原生文件系统、进程内设置、FreeType/HarfBuzz 字体引擎和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
 
 ---
@@ -81,7 +81,7 @@ python scripts/prepare.py                 # 再校验并分发资源
 
 xmake 的 `muse_generated` 在构建目录写入引擎版本信息；宿主 v2 定义由独立的 `registry_dump` 生成到 `native/tools.json`，`registry_check` 检查生成结果和处理器。`native/legacy_tools.json` 只属于历史 v1 基线，不参与生产构建。引擎各模块源码通过 `xmake/engrave.lua` 中的目录通配符直接引入。
 
-引擎适配层与其回归测试、探针位于 fork，由 `engrave` 及 `xmake/tests.lua` 构建。本仓库 `native/` 的生产代码和测试都只能包含 `engrave/...` 公共引擎头文件；`native_include_check` 在构建宿主目标前检查这一规则，lane runner 的源码预检也执行它。v2 store、registry、worker、job manager 与 transport 不再链接 v1 facade。zlib 与 Cairo 由包含方提供：本仓库取自 pixi `native` 环境；宿主 `xmake.lua` 接受 `--cairo_prefix=<prefix>`（`<prefix>/include/cairo`、`<prefix>/lib`，非 Windows 平台写入 rpath），linux-host 构建须传入该参数。
+引擎适配层与其回归测试、探针位于 fork，由 `engrave` 及 `xmake/tests.lua` 构建。本仓库 `native/` 的生产代码和测试都只能包含 `engrave/...` 公共引擎头文件；`native_include_check` 在构建宿主目标前检查这一规则，lane runner 的源码预检也执行它。v2 store、registry 与 transport 不再链接 v1 facade。zlib 与 Cairo 由包含方提供：本仓库取自 pixi `native` 环境；宿主 `xmake.lua` 接受 `--cairo_prefix=<prefix>`（`<prefix>/include/cairo`、`<prefix>/lib`，非 Windows 平台写入 rpath），linux-host 构建须传入该参数。
 
 增量测试检查长 UTF-8 registry 描述、修改 schema 只重编译 `schema_defs.cpp`，以及恢复后的无变化构建不编译/链接。验收命令：
 
@@ -101,7 +101,7 @@ pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 *(日常开发可使用 `./scripts/build-native.ps1 -Jobs 12`。)*
 
 包装脚本默认同时构建 `engrave_mcp`、`engrave_mcp_test`、`registry_dump`、
-`registry_check`、`host_api_test` 和 `export_job_test`；可用 `-Targets` 指定子集。
+`registry_check` 和 `host_api_test`；可用 `-Targets` 指定子集。
 S2 的独立验收（必须在原生 DLL 目录已加入 PATH 的环境中运行）：
 
 ```powershell
@@ -179,4 +179,4 @@ Linux 使用显式 `gcc@` / `g++@` 工具类型识别 Pixi 的编译器，确保
 | **图像元素** | 暂不支持嵌入式光栅图及外部图片对象（images unsupported）。 |
 | **排版与文字** | 尚未实现完整的全字集回退（font fallback）；不支持从右到左（RTL）书写文字。 |
 | **绘制模型** | 仅支持定义明确的纯色画刷（solid brushes）与指定混合模式，渐变/复杂贴图绘制受限。 |
-| **后台导出** | 默认最多 2 个导出 worker、8 个活动任务；具体限制由 `runtime_info` 返回。 |
+| **同步导出** | 单一引擎 owner 线程串行执行；无 worker 或 job。大小限制由 `runtime_info` 返回。 |
