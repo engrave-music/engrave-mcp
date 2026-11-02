@@ -54,6 +54,9 @@ def main():
     subprocess.run([sys.executable, str(ROOT/"scripts/test_live_publication_limits.py"),
                     "--binary", str(a.binary), "--resources", str(a.resources),
                     "--output", str(a.output/"publication-limits")], check=True)
+    subprocess.run([sys.executable, str(ROOT/"scripts/test_destination_errors.py"),
+                    "--binary", str(a.binary), "--resources", str(a.resources),
+                    "--output", str(a.output/"destination-errors")], check=True)
     results={}
     subprocess.run([sys.executable, str(ROOT/"scripts/test_live_path_utf8.py"),
                     "--binary", str(a.binary), "--resources", str(a.resources),
