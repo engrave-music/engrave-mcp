@@ -1,4 +1,4 @@
-"""Exercise live audio preflight and encoder quotas using the test host."""
+"""Exercise live audio encoder and staging quotas using the test host."""
 from __future__ import annotations
 
 import argparse
@@ -78,7 +78,12 @@ def main():
         "wav16_large_budget": live_budget(args, source, {"format": "wav", "bit_depth": 16}, 2 * wav_budget, "success"),
         "wav24": live_budget(args, source, {"format": "wav", "bit_depth": 24}, wav_budget, "ResourceLimit"),
         "mp3_128": live_budget(args, source, {"format": "mp3", "bitrate_kbps": 128}, mp3_budget, "success"),
-        "mp3_512": live_budget(args, source, {"format": "mp3", "bitrate_kbps": 512}, mp3_budget, "ResourceLimit")}
+        "mp3_512": live_budget(args, source, {"format": "mp3", "bitrate_kbps": 512}, mp3_budget, "success")}
+    # Nominal bitrate is not an encoded-size bound. Test the encoder's actual
+    # file extent, including header rewrites, rather than a duration estimate.
+    evidence["mp3_512_one_byte_short"] = live_budget(args, source,
+        {"format": "mp3", "bitrate_kbps": 512},
+        2 * evidence["mp3_512"]["output_bytes"] - 1, "ResourceLimit")
     assert evidence["wav16"]["sha256"] == evidence["wav16_large_budget"]["sha256"]
     (args.output / "audio-budget-evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     print(json.dumps(evidence, indent=2))

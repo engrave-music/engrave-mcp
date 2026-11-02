@@ -1,4 +1,4 @@
-"""Check repeat-aware audio projection against live and encoded WAV exports."""
+"""Check repeat-aware audio duration and exact encoder quotas on live WAV exports."""
 from __future__ import annotations
 
 import argparse
@@ -87,8 +87,8 @@ def main():
         options = {"format": "wav", "use_repeats": repeats}
         expected = projection(seconds)
         produced = live_budget(args, short, options, 2 * expected, "success")
-        rejected = live_budget(args, short, options, 2 * expected - 1, "ResourceLimit")
-        assert "projected audio" in rejected["message"], rejected
+        rejected = live_budget(args, short, options, 2 * produced["output_bytes"] - 1, "ResourceLimit")
+        assert "audio intermediate byte limit exceeded" in rejected["message"], rejected
         # WAV is uncompressed: at most half a second of rounding, 4096 header
         # bytes, and one millisecond for the engine's time truncation.
         difference = expected - produced["output_bytes"]
@@ -96,7 +96,7 @@ def main():
         results["repeats" if repeats else "no_repeats"] = {
             "seconds": seconds, "projected_bytes": expected,
             "encoded_bytes": produced["output_bytes"], "projection_minus_encoded": difference,
-            "one_byte_below_projection": rejected["result"]}
+            "one_byte_below_encoded_size": rejected["result"]}
     # Use the actual captured 1000-repeat snapshot with a budget that fits
     # its unexpanded WAV and is far below the expanded projection.
     results["large_no_repeat_bounded"] = live_budget(

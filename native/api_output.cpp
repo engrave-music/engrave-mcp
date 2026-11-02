@@ -371,23 +371,12 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             const auto rate = runtime.audio_sample_rate;
             if (options.sample_rate && options.sample_rate != rate)
                 throw detail::DecodeError{HostError{"Unsupported", "audio sample rate differs from the engine rate"}};
-            const auto outline = engine_value(document.outline(options.score));
-            std::optional<double> duration;
-            if (options.use_repeats) duration = outline.duration;
-            else {
-                const auto master = options.score.excerpt ? engine_value(document.outline()) : outline;
-                try {
-                    auto positions = document.positions(engrave::PositionKind::Measure, {}, capture);
-                    if (positions) duration = unexpanded_audio_seconds(master, *positions);
-                } catch (const std::runtime_error&) {
-                    // Preflight: unavailable positions cannot bound
-                    // the unexpanded duration; retain the encoder quota.
-                }
-                check();
-            }
+            // The engine derives playback duration and checks its global projection
+            // after the cancellable model build. Do not ask outline() for it:
+            // outline also scans lyrics/metadata without cancellation. Per-request
+            // byte quotas below are enforced by the encoder before any sink call.
+            check();
             const auto limit = audio_file_budget(limits.output_bytes);
-            if (duration && projected_audio_bytes(options, *duration, rate) > limit)
-                throw detail::DecodeError{HostError{"ResourceLimit", "projected audio exceeds output byte limit"}};
             options.max_bytes = limit;
             options.max_write_bytes = audio_write_budget(limit);
             const auto path = cleanup.stage / "output";
