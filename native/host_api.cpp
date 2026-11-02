@@ -288,8 +288,12 @@ Json HostApi::runtime_info(const Json& j) { return boundary([&] {
                    {"output_bytes",std::to_string(impl_->limits.output_bytes)},{"deadline_ms",impl_->limits.deadline.count()},{"cancellation","cooperative"},
                    {"transport_request_bytes",transport_request_limit}}}};
 }); }
-Result<void> HostApi::with_document(std::string_view token,std::optional<std::uint64_t> expected,const std::function<Result<void>(engrave::Document&)>& fn) {
+Result<void> HostApi::with_document(std::string_view token,std::optional<std::uint64_t> expected,const std::function<Result<void>(engrave::Document&)>& fn, const std::vector<std::string>* visible_paths) {
     const std::string key(token); bool entered=false;
+    auto failure = [&](HostError error) -> Result<void> {
+        if (visible_paths) error.published_artifacts = *visible_paths;
+        return std::unexpected(std::move(error));
+    };
     try {
         impl_->check_thread(); auto& doc=impl_->get(key,expected);
         if (!impl_->borrowed.insert(key).second) return std::unexpected(HostError{"InvalidArgument","document is already in use by with_document",{},key});
@@ -297,9 +301,9 @@ Result<void> HostApi::with_document(std::string_view token,std::optional<std::ui
         entered=true;
         return fn(doc);
     }
-    catch(const detail::DecodeError& e) { return std::unexpected(e.error); }
-    catch(const std::exception& e) { if(entered) impl_->needs_recovery_check.insert(key); return std::unexpected(HostError{"EngineFailure",e.what(),{},key}); }
-    catch(...) { if(entered) impl_->needs_recovery_check.insert(key); return std::unexpected(HostError{"EngineFailure","unknown engine failure",{},key}); }
+    catch(const detail::DecodeError& e) { return failure(e.error); }
+    catch(const std::exception& e) { if(entered) impl_->needs_recovery_check.insert(key); return failure(HostError{"EngineFailure",e.what(),{},key}); }
+    catch(...) { if(entered) impl_->needs_recovery_check.insert(key); return failure(HostError{"EngineFailure","unknown engine failure",{},key}); }
 }
 Result<engrave::EngineOptions> HostApi::runtime_options() const {
     try { impl_->check_thread(); return impl_->asset_options(); }

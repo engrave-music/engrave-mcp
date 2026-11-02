@@ -226,13 +226,20 @@ Json encode(const Artifact& artifact) {
 
 Result<Json> live_export(engrave::Document& document, const ExportRequest& request, const ExportLimits& limits,
     const std::function<bool()>& cancelled, std::chrono::steady_clock::time_point submitted, ExportTiming& timing,
-    const engrave::EngineOptions& runtime, const std::function<bool()>& begin_publication) {
+    const engrave::EngineOptions& runtime, const std::function<bool()>& begin_publication,
+    std::vector<std::string>* visible_paths) {
     namespace fs = std::filesystem;
     struct Cleanup {
         fs::path destination, stage;
         ~Cleanup() {
             std::error_code ec;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
+            if (!stage.empty()) {
+                if (const auto* barrier = std::getenv("ENGRAVE_MCP_TEST_CLEANUP_BARRIER")) {
+                    std::fprintf(stderr, "CLEANUP_BLOCKED\n"); std::fflush(stderr);
+                    while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
             if (!stage.empty() && std::getenv("ENGRAVE_MCP_TEST_FAIL_CLEANUP"))
                 ec = std::make_error_code(std::errc::permission_denied);
             else
@@ -456,9 +463,20 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         check();
         // Atomically exclude watchdog termination before the first visible file.
         // Once committed, even slow publication must finish and report its subset.
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        if (const auto* barrier = std::getenv("ENGRAVE_MCP_TEST_ADMISSION_BARRIER")) {
+            std::fprintf(stderr, "PUBLICATION_READY\n"); std::fflush(stderr);
+            while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+#endif
         if (begin_publication && !begin_publication())
             throw detail::DecodeError{HostError{"Cancelled", "watchdog claimed export before publication"}};
         artifacts.reserve(staged.size()); // all storage allocated before visibility
+        std::vector<std::string> prepared_paths;
+        if (visible_paths) {
+            visible_paths->reserve(staged.size());
+            for (const auto& file : staged) prepared_paths.push_back(detail::path_text(file.artifact.path));
+        }
         for (auto& file : staged) {
             auto start = ExportTiming::Clock::now();
             try {
@@ -466,6 +484,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
                     // Runs immediately after rename, before even directory fsync.
                     static_assert(std::is_nothrow_move_constructible_v<Artifact>);
                     artifacts.push_back(std::move(file.artifact));
+                    if (visible_paths) visible_paths->push_back(std::move(prepared_paths[artifacts.size()-1]));
 #ifdef MUSIC_ASYNC_TEST_HOOKS
                     if (const auto* after = std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_RENAME"))
                         if (artifacts.size() == std::stoul(after)) throw std::runtime_error("Injected post-rename failure");
@@ -478,6 +497,10 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         return Json{{"ok", true}, {"source_revision", std::to_string(document.revision())},
             {"artifacts", std::move(encoded)}, {"export_warnings", encode(warnings)}};
     } catch (const detail::DecodeError& e) {
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        if (!artifacts.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_ERROR_REPORT"))
+            throw std::runtime_error("Injected error report construction failure");
+#endif
         auto error = e.error;
         error.message.resize(std::min<std::size_t>(error.message.size(), 16384));
         if (error.code == "Cancelled" && !cancelled()) error = HostError{"DeadlineExceeded", "export deadline exceeded"};

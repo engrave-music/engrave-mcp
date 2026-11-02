@@ -189,6 +189,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         publication_gate.changed.notify_all();
                         complete(error, std::move(result));
                     });
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                    if (owner_task) { std::fprintf(stderr, "OWNER_ENQUEUED\n"); std::fflush(stderr); }
+#endif
                 } catch (...) {
                     if (owner_task) --self->owner_pending;
                     if (slot.is_connected()) slot.clear();
@@ -232,6 +235,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
         auto payload = co_await self->dispatch<Json>(self->owner_io, [self, request = *request, request_cancel, timing, submitted, execution] {
             timing->add("owner_dispatch", submitted);
             Json payload;
+            std::vector<std::string> visible_paths;
             std::unique_lock publication(publication_gate.mutex, std::defer_lock);
             auto runtime = self->host->runtime_options();
             if (!runtime) return error_envelope(runtime.error());
@@ -250,22 +254,26 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
     #else
                             publication.lock();
     #endif
-                            if (publication_gate.closing) return false;
+                            if (publication_gate.closing) { publication.unlock(); return false; }
                             int running = 1;
-                            if (!execution->compare_exchange_strong(running, 4, std::memory_order_acq_rel)) return false;
+                            if (!execution->compare_exchange_strong(running, 4, std::memory_order_acq_rel)) { publication.unlock(); return false; }
                             return true;
-                        });
+                        }, &visible_paths);
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                        if (!visible_paths.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK"))
+                            throw 42; // exercise the non-standard exception boundary too
+#endif
                         if (!output) return std::unexpected(output.error());
                         payload = std::move(*output);
                         return {};
-                    });
+                    }, &visible_paths);
                 if (!result) {
                     if (result.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
                     payload = error_envelope(result.error());
                 }
                 if (publication.owns_lock() && execution && execution->report) {
                     execution->report(std::move(payload));
-                    execution->report_sent.store(true, std::memory_order_release);
+                    execution->mark_report_sent();
                     return Json{};
                 }
                 return payload;
@@ -275,6 +283,10 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                 throw;
             }
         }, true, request_cancel, true, execution);
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+        if (execution && execution->was_reported() && std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_REPORT"))
+            throw std::runtime_error("Injected post-report completion failure");
+#endif
         timing->finish();
         co_return payload;
     }

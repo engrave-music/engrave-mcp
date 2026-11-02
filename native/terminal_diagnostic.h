@@ -5,6 +5,7 @@
 #else
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #endif
 namespace music {
 // One synchronous nonblocking attempt, no threads or retained messages.
@@ -20,6 +21,10 @@ inline bool terminal_diagnostic(std::string_view message) noexcept {
     return ::WriteFile(handle, message.data(), static_cast<DWORD>(message.size()), &written, nullptr)
         && written == message.size();
 #else
+    // O_NONBLOCK does not bound regular-file/device writes. Only pipes have
+    // the required semantics here; unsupported stderr destinations are skipped.
+    struct stat info{};
+    if (::fstat(STDERR_FILENO, &info) < 0 || !S_ISFIFO(info.st_mode)) return false;
     const int flags = ::fcntl(STDERR_FILENO, F_GETFL);
     if (flags < 0 || ::fcntl(STDERR_FILENO, F_SETFL, flags | O_NONBLOCK) < 0) return false;
     return ::write(STDERR_FILENO, message.data(), message.size()) == static_cast<ssize_t>(message.size());

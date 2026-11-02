@@ -25,7 +25,8 @@ public:
     Json runtime_info(const Json&); // get, add_font(path), set_soundfonts(files)
     Result<void> with_document(std::string_view token,
         std::optional<std::uint64_t> expected_revision,
-        const std::function<Result<void>(engrave::Document&)>&);
+        const std::function<Result<void>(engrave::Document&)>&,
+        const std::vector<std::string>* visible_paths = nullptr);
     // Current private asset paths; valid until the next owner-thread runtime change.
     Result<engrave::EngineOptions> runtime_options() const;
 private:

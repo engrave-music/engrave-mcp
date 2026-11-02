@@ -1578,7 +1578,7 @@ private:
         }
         if (spawn_failed) {
             erase_inflight(call);
-            if (call->response_started) {
+            if (call->response_started || call->execution->was_reported()) {
                 co_return true;
             }
             co_return co_await send_error(
@@ -1628,7 +1628,7 @@ private:
                 maybe_finish_graceful();
                 co_return;
             }
-            if (call->execution->report_sent.load(std::memory_order_acquire)) {
+            if (call->execution->was_reported()) {
                 call->response_started = true;
                 erase_inflight(call);
                 maybe_finish_graceful();
@@ -1714,7 +1714,7 @@ private:
     }
 
     asio::awaitable<void> deliver_tool_result(CallStatePtr call, Json result) {
-        if (call->response_started || fatal_.load(std::memory_order_acquire)) {
+        if (call->response_started || call->execution->was_reported() || fatal_.load(std::memory_order_acquire)) {
             call->response_started = true;
             erase_inflight(call);
             maybe_finish_graceful();
@@ -1747,7 +1747,7 @@ private:
     asio::awaitable<void> deliver_tool_error(const CallStatePtr& call,
                                              std::string code,
                                              std::string message) {
-        if (call->response_started || fatal_.load(std::memory_order_acquire)) {
+        if (call->response_started || call->execution->was_reported() || fatal_.load(std::memory_order_acquire)) {
             call->response_started = true;
             erase_inflight(call);
             maybe_finish_graceful();
@@ -1777,7 +1777,7 @@ private:
 
     asio::awaitable<void> deliver_generic_error(const CallStatePtr& call,
                                                 std::string message) {
-        if (call->response_started || fatal_.load(std::memory_order_acquire)) {
+        if (call->response_started || call->execution->was_reported() || fatal_.load(std::memory_order_acquire)) {
             call->response_started = true;
             erase_inflight(call);
             maybe_finish_graceful();
@@ -1802,7 +1802,7 @@ private:
     }
 
     asio::awaitable<void> deliver_cancelled(const CallStatePtr& call) {
-        if (call->response_started) {
+        if (call->response_started || call->execution->was_reported()) {
             erase_inflight(call);
             maybe_finish_graceful();
             co_return;
@@ -1820,7 +1820,7 @@ private:
 
     asio::awaitable<void> finish_call(CallStatePtr call,
                                       std::exception_ptr error) {
-        if (call->response_started) {
+        if (call->response_started || call->execution->was_reported()) {
             erase_inflight(call);
             maybe_finish_graceful();
             co_return;
