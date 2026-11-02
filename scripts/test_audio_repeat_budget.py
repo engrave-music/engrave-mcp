@@ -39,7 +39,7 @@ async def capture(args, repeats):
 
 async def capture_mid_measure_end(args):
     # The extra 2/4 bar puts the unexpanded end inside the next expanded 4/4
-    # bar. The public measure-position API cannot provide that tick's time.
+    # bar. Cover this duration edge case with the encoder's actual file cap.
     xml = REPEAT_FIXTURE_MUSICXML.replace('direction="backward"', 'direction="backward" times="1000"')
     extra = '''    <measure number="3">
       <attributes><time><beats>2</beats><beat-type>4</beat-type></time></attributes>
@@ -63,8 +63,8 @@ async def capture_mid_measure_end(args):
 
 
 def projection(seconds):
-    # Stereo 32-bit WAV: rounded seconds, half-second slack, 3-second tail,
-    # and 4096 bytes for the header, as in native/audio_budget.h.
+    # Legacy conservative projection, used only to choose generous test budgets:
+    # stereo 32-bit WAV, rounding slack, playback tail and header slack.
     return math.ceil((seconds + 3.5) * 44100) * 8 + 4096
 
 
@@ -103,8 +103,8 @@ def main():
         args, large, {"format": "wav", "use_repeats": False}, 2 * projection(4), "success")
     results["mid_measure_no_repeat_at_encoded_size"] = live_budget(
         args, mid_measure, {"format": "wav", "use_repeats": False}, 2 * mid_measure_size, "success")
-    # This score cannot be projected, so the engine itself must stop the file
-    # one byte below its actual extent and deliver no bytes to the sink.
+    # The engine must stop one byte below the actual extent and deliver no
+    # bytes to the sink, independent of measure boundaries or duration estimates.
     results["mid_measure_engine_overrun"] = live_budget(
         args, mid_measure, {"format": "wav", "use_repeats": False}, 2 * mid_measure_size - 1, "ResourceLimit")
     assert "audio intermediate byte limit exceeded" in results["mid_measure_engine_overrun"]["message"]
