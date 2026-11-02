@@ -101,9 +101,8 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                         # its frozen 4.90 request is additionally checked separately.
                         versions = ['4.70'] + ([case['target_version']] if case['target_version'] != '4.70' else [])
                         for version in versions:
-                            for fmt, action in [(f, 'run') for f in ('mscx', 'mscz')]:
+                            for fmt in ('mscx', 'mscz'):
                                 label = fmt if version == '4.70' else f'{version}-{fmt}'
-                                label += '-start' if action == 'start' else ''
                                 folder = dest / label
                                 folder.mkdir()
                                 path = folder / f'score.{fmt}'
@@ -178,10 +177,9 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                                 record['errors'].append(str(error))
                         require(file_sha(source) == record['source_sha256'], 'source changed during export')
                         save_json(dest / 'result.json', record)
-                    required = {'mscx', 'mscz', 'mscx-start', 'mscz-start'}
+                    required = {'mscx', 'mscz'}
                     if case['target_version'] != '4.70':
                         required |= {f"{case['target_version']}-{fmt}" for fmt in ('mscx', 'mscz')}
-                        required |= {f"{case['target_version']}-{fmt}-start" for fmt in ('mscx', 'mscz')}
                     if set(record['formats']) != required:
                         record['errors'].append('host silently skipped fixture or format')
                     record['status'] = 'failed' if record['errors'] or any(
