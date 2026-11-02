@@ -45,13 +45,13 @@ used = cpu(child)-before
 child.stdin.close()
 assert child.wait(timeout=5) == 0
 child.stdout.close()
-# Leave stdin open while a broken stdout forces fatal shutdown. This exercises
-# waking a reader blocked inside the OS read, including the check/read race.
+# Leave stdin open while broken stdout takes the documented terminal path.
+# Exit 74 must not depend on waking a reader blocked inside the OS read.
 for _ in range(30):
     child = start()
     child.stdout.close()
     send(child, 'tools/list', {})
-    assert child.wait(timeout=5) == 1
+    assert child.wait(timeout=5) == 74
     child.stdin.close()
 report = dict(idle_wall_seconds=seconds, idle_cpu_seconds=used,
     idle_cpu_percent=used/seconds*100, broken_stdout_open_stdin_sessions=30)
