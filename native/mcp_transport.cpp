@@ -131,7 +131,8 @@ struct CallState {
     bool cancel_requested = false;
     bool responded = false;
     bool live_export = false;
-    // 0 queued, 1 executing on owner, 2 cancelled before execution, 3 finished.
+    // 0 queued, 1 executing, 2 cancelled queued, 3 finished,
+    // 4 publication committed (watchdog excluded), 5 watchdog owns termination.
     std::shared_ptr<std::atomic<int>> execution = std::make_shared<std::atomic<int>>(0);
     bool tool_finished = false;
     std::shared_ptr<asio::steady_timer> watchdog;
@@ -1433,6 +1434,8 @@ private:
                     timer->async_wait([self, target, timer](const asio::error_code& error) {
                         if (error || target->tool_finished || target->responded ||
                             target->execution->load(std::memory_order_acquire) != 1) return;
+                        int running = 1;
+                        if (!target->execution->compare_exchange_strong(running, 5, std::memory_order_acq_rel)) return;
                         target->responded = true;
                         // A blocked stdout must not defeat the process watchdog.
                         std::thread([] {

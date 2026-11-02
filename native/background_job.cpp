@@ -1,5 +1,8 @@
 #include "background_job.h"
 #include <cstdlib>
+#include <chrono>
+#include <thread>
+#include <cstdio>
 #include <cerrno>
 #include <random>
 #include <stdexcept>
@@ -93,6 +96,10 @@ std::filesystem::path normalize_output_path(const std::filesystem::path& path) {
 
 void publish_output(const std::filesystem::path& staged, const std::filesystem::path& destination) {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
+    if (std::getenv("ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH") && staged.filename() == "page-0002.svg") {
+        std::fprintf(stderr, "PUBLICATION_SECOND_FLUSH\n"); std::fflush(stderr);
+        std::this_thread::sleep_for(std::chrono::seconds(7));
+    }
     if (std::getenv("ENGRAVE_MCP_TEST_FAIL_FILE_FLUSH"))
         throw PublicationError(EIO, "Injected staged file flush failure", false);
 #endif

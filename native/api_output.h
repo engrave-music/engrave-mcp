@@ -25,5 +25,6 @@ Result<ExportRequest> decode_export(const Json&);
 Json encode(const Artifact&);
 Result<Json> live_export(engrave::Document&, const ExportRequest&, const ExportLimits&,
     const std::function<bool()>& cancelled, std::chrono::steady_clock::time_point submitted, ExportTiming&,
-    const engrave::EngineOptions& runtime = {});
+    const engrave::EngineOptions& runtime = {},
+    const std::function<bool()>& begin_publication = {});
 }

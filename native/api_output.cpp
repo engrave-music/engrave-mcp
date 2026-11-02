@@ -223,7 +223,7 @@ Json encode(const Artifact& artifact) {
 
 Result<Json> live_export(engrave::Document& document, const ExportRequest& request, const ExportLimits& limits,
     const std::function<bool()>& cancelled, std::chrono::steady_clock::time_point submitted, ExportTiming& timing,
-    const engrave::EngineOptions& runtime) {
+    const engrave::EngineOptions& runtime, const std::function<bool()>& begin_publication) {
     namespace fs = std::filesystem;
     struct Cleanup {
         fs::path destination, stage;
@@ -410,7 +410,11 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             staged.push_back({path, {mime, destination, bytes}});
         }
         // All rendering and staging succeeds before any file becomes visible.
-        check(); // Publication commits the request; later cancellation observes its result.
+        check();
+        // Atomically exclude watchdog termination before the first visible file.
+        // Once committed, even slow publication must finish and report its subset.
+        if (begin_publication && !begin_publication())
+            throw detail::DecodeError{HostError{"Cancelled", "watchdog claimed export before publication"}};
         for (const auto& file : staged) {
             auto start = ExportTiming::Clock::now();
             try { publish_output(file.source, file.artifact.path); }
