@@ -8,6 +8,10 @@
 #include <system_error>
 
 namespace music {
+// Destination metadata probes: missing/non-directory paths are invalid inputs;
+// all other filesystem errors propagate as system_error (API code Io).
+std::filesystem::file_status output_path_status(const std::filesystem::path& path);
+void require_output_directory(const std::filesystem::path& path);
 // Canonical form used for export destinations. Rejects a
 // missing, "." or ".." filename and requires an existing parent directory.
 // Returns canonical(path) when the file already exists, otherwise

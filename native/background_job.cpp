@@ -81,17 +81,29 @@ std::filesystem::path create_private_directory(const std::filesystem::path& pare
     throw std::runtime_error("Cannot allocate unique staging directory");
 }
 
+std::filesystem::file_status output_path_status(const std::filesystem::path& path) {
+    std::error_code error;
+    const auto status = std::filesystem::status(path, error);
+    if (error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory)
+        return std::filesystem::file_status(std::filesystem::file_type::not_found);
+    if (error) throw std::filesystem::filesystem_error("Cannot inspect export destination", path, error);
+    return status;
+}
+
+void require_output_directory(const std::filesystem::path& path) {
+    if (!std::filesystem::is_directory(output_path_status(path)))
+        throw std::invalid_argument("destination directory must exist and be a directory");
+}
+
 std::filesystem::path normalize_output_path(const std::filesystem::path& path) {
     if (path.empty()) throw std::invalid_argument("Export path is required");
     const auto filename = path.filename();
     if (filename.empty() || filename == "." || filename == "..")
         throw std::invalid_argument("Export path must name a file");
-    std::error_code error;
-    if (std::filesystem::exists(path, error) && !error)
+    if (std::filesystem::exists(output_path_status(path)))
         return std::filesystem::canonical(path);
     const auto absolute = std::filesystem::absolute(path);
-    if (!std::filesystem::is_directory(absolute.parent_path(), error) || error)
-        throw std::invalid_argument("Export parent directory must exist");
+    require_output_directory(absolute.parent_path());
     return std::filesystem::canonical(absolute.parent_path()) / absolute.filename();
 }
 

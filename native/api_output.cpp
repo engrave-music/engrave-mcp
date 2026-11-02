@@ -266,13 +266,12 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
     };
     try {
         check();
-        if (request.destination.directory) {
-            std::error_code ec;
-            if (!fs::is_directory(request.destination.path, ec) || ec) invalid("destination directory must exist");
-        }
         try {
+            if (request.destination.directory) require_output_directory(request.destination.path);
             cleanup.destination = request.destination.directory ? fs::canonical(request.destination.path) : normalize_output_path(request.destination.path);
-        } catch (const std::invalid_argument& e) { invalid(e.what()); }
+        } catch (const std::invalid_argument& e) {
+            invalid("destination '" + request.destination.requested_path + "': " + e.what());
+        }
         auto invalid_resolved_path = [&] {
             // Preserve the well-formed JSON request, including its separators;
             // never convert the unrepresentable resolved path for diagnostics.
@@ -299,8 +298,13 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             }
         };
         validate_report_path(cleanup.destination);
-        if (request.destination.directory && !fs::is_directory(cleanup.destination)) invalid("destination directory must exist");
-        if (!request.destination.directory && fs::is_directory(cleanup.destination)) invalid("file destination is a directory");
+        try {
+            if (request.destination.directory) require_output_directory(cleanup.destination);
+            else if (fs::is_directory(output_path_status(cleanup.destination)))
+                invalid("file destination '" + request.destination.requested_path + "' is a directory");
+        } catch (const std::invalid_argument& e) {
+            invalid("destination '" + request.destination.requested_path + "': " + e.what());
+        }
 #ifdef MUSIC_ASYNC_TEST_HOOKS
         if (std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING"))
             throw std::system_error(EIO, std::generic_category(), "Injected staging directory failure");
