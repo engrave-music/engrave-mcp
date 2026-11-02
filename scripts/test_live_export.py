@@ -55,6 +55,9 @@ def main():
                     "--binary", str(a.binary), "--resources", str(a.resources),
                     "--output", str(a.output/"publication-limits")], check=True)
     results={}
+    subprocess.run([sys.executable, str(ROOT/"scripts/test_live_report_delivery.py"),
+                    "--binary", str(a.binary), "--resources", str(a.resources),
+                    "--output", str(a.output/"report-delivery")], check=True)
     for mode in (None,):
         out=a.output/(mode or "default")
         c=Client(a.binary,a.resources,out,mode)

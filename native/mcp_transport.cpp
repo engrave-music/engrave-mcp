@@ -127,13 +127,18 @@ struct CallState {
     bool responded = false;
     bool live_export = false;
     // 0 queued, 1 executing, 2 cancelled queued, 3 finished,
-    // 4 publication committed (watchdog excluded), 5 watchdog owns termination.
+    // 4 publishing, 5 watchdog owns termination, 6 awaiting report write.
     std::shared_ptr<std::atomic<int>> execution = std::make_shared<std::atomic<int>>(0);
     bool tool_finished = false;
     std::shared_ptr<asio::steady_timer> watchdog;
 };
 
 using CallStatePtr = std::shared_ptr<CallState>;
+
+struct OutputMessage {
+    std::string wire;
+    std::shared_ptr<std::atomic<int>> execution;
+};
 
 // A type-erased suspended coroutine completion handler. The use_awaitable
 // handler is move-only, so it cannot live directly in std::function.
@@ -621,7 +626,7 @@ private:
 
     void writer_loop() {
         for (;;) {
-            std::string message;
+            OutputMessage output;
             {
                 std::unique_lock<std::mutex> lock(out_mutex_);
                 out_cv_.wait(lock, [&] {
@@ -640,11 +645,19 @@ private:
                     continue;
                 }
 
-                message = std::move(out_messages_.front());
+                output = std::move(out_messages_.front());
                 out_messages_.pop_front();
             }
 
+            const auto& message = output.wire;
             const bool written = write_all(message.data(), message.size());
+            if (written && output.execution) {
+                std::lock_guard lock(publication_gate.mutex);
+                int reporting = 6;
+                if (output.execution->compare_exchange_strong(reporting, 3))
+                    --publication_gate.publishers;
+                publication_gate.changed.notify_all();
+            }
 
             {
                 std::lock_guard<std::mutex> lock(out_mutex_);
@@ -751,16 +764,17 @@ private:
     }
 
     void post_writer_failure(const char* reason) noexcept {
-        try {
-            auto self = shared_from_this();
-            const std::string text = reason != nullptr
-                ? std::string(reason)
-                : std::string("stdout write failure");
-            asio::post(ioc_.get_executor(), [self, text]() {
-                self->fatal_shutdown(text);
-            });
-        } catch (...) {
+        // A broken connection cannot receive reports. Refuse new commits and
+        // terminate distinctly, but allow committed owners to clean staging.
+        {
+            std::lock_guard lock(publication_gate.mutex);
+            publication_gate.output_failed = true;
         }
+        std::fprintf(stderr, "mcp transport terminal: %s; exit 74 after publication cleanup\n", reason);
+        std::fflush(stderr);
+        std::unique_lock lock(publication_gate.mutex);
+        publication_gate.changed.wait(lock, [] { return !publication_gate.owner_tasks; });
+        std::_Exit(74);
     }
 
     void post_writer_exited() noexcept {
@@ -820,7 +834,8 @@ private:
         resume_output_waiters();
     }
 
-    bool commit_output(std::size_t reserved, std::string& message) noexcept {
+    bool commit_output(std::size_t reserved, std::string& message,
+                       std::shared_ptr<std::atomic<int>> execution) noexcept {
         const std::size_t actual = message.size();
         try {
             std::lock_guard<std::mutex> lock(out_mutex_);
@@ -836,7 +851,7 @@ private:
                 return false;
             }
             try {
-                out_messages_.push_back(std::move(message));
+                out_messages_.push_back({std::move(message), std::move(execution)});
             } catch (...) {
                 if (out_budget_used_ >= reserved) {
                     out_budget_used_ -= reserved;
@@ -896,7 +911,8 @@ private:
     // Response serialisation and writer submission
     // ---------------------------------------------------------------------
 
-    asio::awaitable<WireStatus> send_wire(const Json& value) {
+    asio::awaitable<WireStatus> send_wire(const Json& value,
+                                         std::shared_ptr<std::atomic<int>> execution = {}) {
         if (fatal_.load(std::memory_order_acquire)) {
             co_return WireStatus::Failed;
         }
@@ -929,19 +945,21 @@ private:
             co_return WireStatus::TooLarge;
         }
 
-        if (!commit_output(kMaxResponseBytes, wire)) {
+        if (!commit_output(kMaxResponseBytes, wire, std::move(execution))) {
+            fatal_shutdown("cannot queue MCP response");
             co_return WireStatus::Failed;
         }
         co_return WireStatus::Ok;
     }
 
-    asio::awaitable<WireStatus> send_result_status(const Json& id, Json result) {
+    asio::awaitable<WireStatus> send_result_status(const Json& id, Json result,
+                                                  std::shared_ptr<std::atomic<int>> execution = {}) {
         try {
             Json response = Json::object();
             response["jsonrpc"] = "2.0";
             response["id"] = id;
             response["result"] = std::move(result);
-            co_return co_await send_wire(response);
+            co_return co_await send_wire(response, std::move(execution));
         } catch (...) {
             fatal_shutdown("cannot build MCP result response");
             co_return WireStatus::Failed;
@@ -1431,7 +1449,6 @@ private:
                             target->execution->load(std::memory_order_acquire) != 1) return;
                         {
                             std::lock_guard lock(publication_gate.mutex);
-                            if (publication_gate.publishers) return;
                             int running = 1;
                             if (!target->execution->compare_exchange_strong(running, 5, std::memory_order_acq_rel)) return;
                         }
@@ -1439,11 +1456,20 @@ private:
                         std::fprintf(stderr, "WATCHDOG_CLAIMED\n"); std::fflush(stderr);
 #endif
                         target->responded = true;
-                        // A blocked stdout must not defeat the process watchdog.
+                        // Decoupled exit waits for all committed reports. The
+                        // identity check still prevents an old exit killing new work.
                         std::thread([execution = target->execution] {
                             std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                            std::lock_guard lock(publication_gate.mutex);
-                            if (!publication_gate.publishers && execution->load(std::memory_order_acquire) == 5)
+                            std::unique_lock lock(publication_gate.mutex);
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                            if (publication_gate.publishers) {
+                                std::fprintf(stderr, "WATCHDOG_REPORT_DEFERRED\n"); std::fflush(stderr);
+                            }
+#endif
+                            publication_gate.changed.wait(lock, [&] {
+                                return !publication_gate.publishers || execution->load(std::memory_order_acquire) != 5;
+                            });
+                            if (!publication_gate.output_failed && execution->load(std::memory_order_acquire) == 5)
                                 std::_Exit(70);
                         }).detach();
                         asio::co_spawn(self->ioc_, [self, target]() -> asio::awaitable<void> {
@@ -1639,7 +1665,7 @@ private:
         call->responded = true;
 
         const WireStatus status =
-            co_await send_result_status(call->id, std::move(result));
+            co_await send_result_status(call->id, std::move(result), call->execution);
         if (status == WireStatus::TooLarge &&
             !fatal_.load(std::memory_order_acquire)) {
             Json fallback = make_tool_error_result(
@@ -1647,7 +1673,7 @@ private:
                 "Tool response exceeds the 16 MiB transport limit; "
                 "the requested operation may already have completed.");
             const WireStatus fallback_status =
-                co_await send_result_status(call->id, std::move(fallback));
+                co_await send_result_status(call->id, std::move(fallback), call->execution);
             if (fallback_status == WireStatus::TooLarge) {
                 fatal_shutdown("tool resource-limit response exceeded 16 MiB");
             }
@@ -1673,14 +1699,14 @@ private:
 
         Json result = make_tool_error_result(code, message);
         const WireStatus status =
-            co_await send_result_status(call->id, std::move(result));
+            co_await send_result_status(call->id, std::move(result), call->execution);
         if (status == WireStatus::TooLarge &&
             !fatal_.load(std::memory_order_acquire)) {
             // Fall back to a tiny bounded resource error.
             Json fallback = make_tool_error_result(
                 "ResourceLimit",
                 "Tool error exceeds the 16 MiB transport limit.");
-            if (co_await send_result_status(call->id, std::move(fallback)) ==
+            if (co_await send_result_status(call->id, std::move(fallback), call->execution) ==
                 WireStatus::TooLarge) {
                 fatal_shutdown("tool error response exceeded 16 MiB");
             }
@@ -1707,7 +1733,7 @@ private:
         Json result = make_tool_error_result(
             "EngineFailure", message);
         const WireStatus status =
-            co_await send_result_status(call->id, std::move(result));
+            co_await send_result_status(call->id, std::move(result), call->execution);
         if (status == WireStatus::TooLarge) {
             fatal_shutdown("generic tool error response exceeded 16 MiB");
         }
@@ -1866,7 +1892,7 @@ private:
     // queued and currently-writing messages.
     std::mutex out_mutex_;
     std::condition_variable out_cv_;
-    std::deque<std::string> out_messages_;
+    std::deque<OutputMessage> out_messages_;
     std::size_t out_budget_used_ = 0;
     std::size_t out_message_slots_ = 0;
     bool out_abort_ = false;

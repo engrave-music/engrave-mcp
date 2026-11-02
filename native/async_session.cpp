@@ -149,6 +149,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         {
                             std::lock_guard lock(publication_gate.mutex);
                             if (!state->compare_exchange_strong(queued, 1)) return;
+                            ++publication_gate.owner_tasks;
                         }
                         std::exception_ptr error;
                         T result{};
@@ -163,9 +164,15 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
 
                         {
                             std::lock_guard lock(publication_gate.mutex);
-                            if (state->load() == 4) --publication_gate.publishers;
-                            state->store(3, std::memory_order_release);
+                            --publication_gate.owner_tasks;
+                            if (state->load() == 4) {
+                                // Transfer exclusion to the transport, including partial errors.
+                                state->store(6, std::memory_order_release);
+                            } else {
+                                state->store(3, std::memory_order_release);
+                            }
                         }
+                        publication_gate.changed.notify_all();
                         complete(error, std::move(result));
                     });
                 } catch (...) {
@@ -220,6 +227,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                     }, submitted, *timing, *runtime, [execution] {
                         if (!execution) return true;
                         std::lock_guard lock(publication_gate.mutex);
+                        if (publication_gate.output_failed) return false;
                         int running = 1;
                         if (!execution->compare_exchange_strong(running, 4, std::memory_order_acq_rel)) return false;
                         ++publication_gate.publishers;

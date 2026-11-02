@@ -1,6 +1,7 @@
 #pragma once
 #include <mutex>
 #include <cstddef>
+#include <condition_variable>
 
 namespace music {
 // Process-wide: exit must hold this lock and observe no publisher. Owner
@@ -8,6 +9,9 @@ namespace music {
 struct PublicationGate {
     std::mutex mutex;
     std::size_t publishers = 0;
+    std::size_t owner_tasks = 0;
+    bool output_failed = false;
+    std::condition_variable changed;
 };
 inline PublicationGate publication_gate;
 }
