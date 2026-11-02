@@ -156,6 +156,12 @@ engrave::AudioOptions effective_mix(engrave::Document& document, const ExportReq
 }
 
 Result<ExportRequest> decode_export(const Json& j) {
+    auto destination_error = [&](HostError error) -> Result<ExportRequest> {
+        if (j.contains("destination") && j.at("destination").is_object() &&
+            j.at("destination").contains("path") && j.at("destination").at("path").is_string())
+            error.message = "destination '" + j.at("destination").at("path").get<std::string>() + "': " + error.message;
+        return std::unexpected(std::move(error));
+    };
     try {
         detail::validate_tool("score_export", j);
         ExportRequest result;
@@ -217,8 +223,8 @@ Result<ExportRequest> decode_export(const Json& j) {
             result.position_kind = options.at("position_kind") == "measure" ? engrave::PositionKind::Measure : engrave::PositionKind::Segment;
         }
         return result;
-    } catch (const detail::DecodeError& e) { return std::unexpected(e.error); }
-      catch (const std::exception& e) { return std::unexpected(HostError{"InvalidArgument", e.what()}); }
+    } catch (const detail::DecodeError& e) { return destination_error(e.error); }
+      catch (const std::exception& e) { return destination_error(HostError{"InvalidArgument", e.what()}); }
 }
 
 Json encode(const Artifact& artifact) {
@@ -267,6 +273,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
     try {
         check();
         try {
+            validate_output_path_syntax(request.destination.path);
             // Probe without mutation, then resolve existing prefixes even when
             // the leaf or parents are missing. Encoding validation must precede
             // recursive creation (including through symlinks).
@@ -306,6 +313,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         };
         validate_report_path(cleanup.destination);
         try {
+            validate_output_path_syntax(cleanup.destination);
             if (request.destination.directory) require_output_directory(cleanup.destination);
             else if (fs::is_directory(output_path_status(cleanup.destination)))
                 invalid("file destination '" + request.destination.requested_path + "' is a directory");
@@ -542,12 +550,14 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             throw std::runtime_error("Injected error report construction failure");
 #endif
         auto error = e.error;
+        if (error.code == "Io")
+            error.message = "destination '" + request.destination.requested_path + "': " + error.message;
         error.message.resize(std::min<std::size_t>(error.message.size(), 16384));
         if (error.code == "Cancelled" && !cancelled()) error = HostError{"DeadlineExceeded", "export deadline exceeded"};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
     } catch (const std::system_error& e) {
-        HostError error{"Io", std::string(e.what()).substr(0, 16384)};
+        HostError error{"Io", ("destination '" + request.destination.requested_path + "': " + e.what()).substr(0, 16384)};
         for (const auto& a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
     } catch (const std::exception& e) {

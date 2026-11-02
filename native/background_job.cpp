@@ -8,6 +8,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -79,6 +80,43 @@ std::filesystem::path create_private_directory(const std::filesystem::path& pare
             throw std::system_error(error, "Cannot create staging directory");
     }
     throw std::runtime_error("Cannot allocate unique staging directory");
+}
+
+void validate_output_path_syntax(const std::filesystem::path& path) {
+#ifdef _WIN32
+    const auto& text = path.native();
+    auto separator = [](wchar_t c) { return c == L'/' || c == L'\\'; };
+    auto reject = [] { throw std::invalid_argument("invalid Windows destination filename syntax"); };
+    if (text.empty()) reject();
+    std::size_t start = 0;
+    // Only the drive designator and root separators are syntax, not filenames.
+    if (text.size() >= 2 && ((text[0] >= L'A' && text[0] <= L'Z') ||
+                            (text[0] >= L'a' && text[0] <= L'z')) && text[1] == L':') start = 2;
+    if (start < text.size() && separator(text[start])) {
+        ++start;
+        if (start == 1 && start < text.size() && separator(text[start])) ++start; // UNC
+    }
+    if (start == text.size()) return; // root directory
+    for (;;) {
+        const auto end = text.find_first_of(L"/\\", start);
+        const auto component = text.substr(start, end == std::wstring::npos ? end : end - start);
+        if (component.empty()) reject();
+        if (component != L"." && component != L"..") {
+            if (component.back() == L'.' || component.back() == L' ') reject();
+            for (auto c : component)
+                if (c < 32 || std::wstring_view(L"<>:\"|?*").find(c) != std::wstring_view::npos) reject();
+            auto base = component.substr(0, component.find(L'.'));
+            for (auto& c : base) if (c >= L'a' && c <= L'z') c -= L'a' - L'A';
+            if (base == L"CON" || base == L"PRN" || base == L"AUX" || base == L"NUL" ||
+                (base.size() == 4 && (base.substr(0, 3) == L"COM" || base.substr(0, 3) == L"LPT") &&
+                 base[3] >= L'1' && base[3] <= L'9')) reject();
+        }
+        if (end == std::wstring::npos) break;
+        start = end + 1;
+    }
+#else
+    (void)path; // POSIX component names have no additional restrictions.
+#endif
 }
 
 std::filesystem::file_status output_path_status(const std::filesystem::path& path) {

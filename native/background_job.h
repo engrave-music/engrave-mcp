@@ -8,10 +8,12 @@
 #include <system_error>
 
 namespace music {
+// Pure platform syntax check, before metadata probes or directory creation.
+void validate_output_path_syntax(const std::filesystem::path& path);
 // Missing paths return not_found; non-directory components are invalid inputs.
 // Other filesystem errors propagate as system_error (API code Io).
 std::filesystem::file_status output_path_status(const std::filesystem::path& path);
-// Create missing directories recursively, after the caller validates encoding.
+// Create missing directories recursively, after the caller validates syntax and encoding.
 // Creation errors are Io; any parents already created may remain.
 void require_output_directory(const std::filesystem::path& path);
 // Canonical form used for export destinations. Rejects a
