@@ -99,7 +99,8 @@ def main():
 
             # A long invalid path must not lose the reason or split a code point.
             # 13 + 4,082 + 1 = 4,096 characters, the schema's limit; the UTF-8
-            # form is 16,342 bytes, so the old 16 KiB message cap lost the reason.
+            # form is 16,342 bytes, so the 16 KiB diagnostic abbreviates the path
+            # in the middle while retaining its ends and the reason.
             long_name = '\U0001F600' * 4082 + '?'
             long_dest = 'long-invalid/' + long_name
             args = export_args(doc, 'pdf', a.output, True)
@@ -110,7 +111,7 @@ def main():
             assert 'invalid Windows destination filename syntax' in message, message[:200]
             assert '\ufffd' not in message
             assert long_name[:8] in message and long_name[-8:] in message
-            assert len(message.encode('utf-8')) <= 65536
+            assert len(message.encode('utf-8')) <= 16384
             results['long_utf8_diagnostic'] = {'length': len(message.encode('utf-8')), 'code': error['code']}
 
         for fmt in ('svg', 'pdf'):

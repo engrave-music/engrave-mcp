@@ -1705,7 +1705,7 @@ private:
         Json content_item = Json::object();
         content_item["type"] = "text";
         std::string bounded_message = message;
-        bounded_message.resize(utf8_prefix(bounded_message, 65536));
+        bounded_message.resize(utf8_prefix(bounded_message, 16384));
         content_item["text"] = bounded_message;
 
         Json result = Json::object();

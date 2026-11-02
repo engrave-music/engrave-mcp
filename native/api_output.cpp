@@ -27,7 +27,7 @@ namespace music::v2 {
 namespace {
 using detail::invalid;
 
-constexpr std::size_t kDiagnosticLimit = 65536;
+constexpr std::size_t kDiagnosticLimit = 16384;
 
 // Keep the requested destination and the reason in a bounded, UTF-8-safe
 // diagnostic. A very long path is abbreviated in the middle rather than cut
@@ -531,12 +531,14 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         }
         Json success{{"ok", true}, {"source_revision", std::to_string(document.revision())},
             {"artifacts", std::move(all)}, {"export_warnings", encode(warnings)}};
-        // Export exceptions below are bounded to the schema's 64 KiB message
-        // limit. Control bytes maximize JSON escaping, including the duplicated
-        // legacy text form.
+        // Export exceptions below are bounded to our 16 KiB diagnostic cap,
+        // not the schema's larger message ceiling. Control bytes maximize JSON
+        // escaping, including the duplicated legacy text form.
         Json partial{{"ok", false}, {"error", {{"code", "EngineFailure"},
             {"message", std::string(kDiagnosticLimit, '\1')}, {"published_artifacts", std::move(paths)}}}};
+        const auto report_start = ExportTiming::Clock::now();
         const auto report_bytes = std::max(export_report_bound(success), export_report_bound(partial));
+        timing.add("report_preflight", report_start);
         std::size_t report_limit = 16u * 1024u * 1024u;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
         if (const auto* limit = std::getenv("ENGRAVE_MCP_TEST_REPORT_LIMIT")) report_limit = std::stoull(limit);
