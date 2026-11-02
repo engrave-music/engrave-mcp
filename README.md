@@ -17,7 +17,6 @@
 7. `score_edit`：以原子批次编辑乐谱。
 8. `score_export`：导出乐谱、页面、音频或位置数据，并支持后台任务。
 9. `runtime_info`：查询运行环境，或添加字体、替换 SoundFont。
-10. `runtime_job`：查询或取消后台任务。
 
 参数、输出、错误与版本约束见 [v2 registry 文档](docs/dev/a5-registry.md) 和生成的 [工具 schema](native/tools.json)。例如，`score_create` 的 `arguments` 可以是：
 
@@ -66,3 +65,5 @@ pixi run -e native python scripts/test_transport.py $env:ENGRAVE_MCP_BINARY
 ## 仓库与基线
 
 引擎固定为 `vendor/musescore` 子模块，版本和 fork 台账见 [fork 文档](docs/dev/fork.md)。`build/`、`.upstream/`、`.runtime/`、`artifacts/` 和 `notes/` 不纳入版本控制；持久设计记录位于 `docs/dev/`，对照数据位于 `tests/golden/`。
+
+导出直接在当前文档上同步执行；没有后台任务或导出模式开关。渲染、音频或写谱崩溃会终止整个会话，所有未保存文档修改都会丢失。

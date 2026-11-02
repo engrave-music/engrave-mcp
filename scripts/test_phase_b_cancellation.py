@@ -104,17 +104,17 @@ def main():
         opened = client.call('score_open', dict(path=str(source)))
         assert opened['ok'], opened
         def arguments(action, fmt, destination):
-            return dict(document=opened['document'], action=action, kind='score',
+            return dict(document=opened['document'], kind='score',
                 options=dict(format=fmt, native_version='4.70'),
                 destination=dict(kind='file', path=str(destination)))
-        for action in ('run', 'start'):
+        for action in ('live',):
             for fmt in ('mscx', 'mscz'):
                 for reason in ('cancel', 'deadline'):
                     destination = out/f'{action}-{fmt}.test-470-converting-{reason}.{fmt}'
                     offset = (out/'stderr.log').stat().st_size
                     request = client.send('tools/call', dict(name='score_export',
                         arguments=arguments(action, fmt, destination)))
-                    record = dict(action=action, format=fmt, reason=reason, stage='Converting',
+                    record = dict(format=fmt, reason=reason, stage='Converting',
                         observed=False, units=0, destination=str(destination))
                     records.append(record)
                     until = time.monotonic()+15
@@ -146,7 +146,7 @@ def main():
                     assert recovery['ok'], recovery
                     assert ET.parse(recovery_path).getroot().attrib['version'] == '4.70'
                     record['recovery'] = recovery
-        assert len(records) == 8 and all(r['observed'] and r['units'] > 0 for r in records)
+        assert len(records) == 4 and all(r['observed'] and r['units'] > 0 for r in records)
         complete = True
     finally:
         client.close()

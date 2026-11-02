@@ -942,7 +942,7 @@ class RoundTripRunner:
 
         # 1. Export MSCX of D (A)
         path_A = out / f"{prefix}_A.mscx"
-        exp_args: dict[str, Any] = {"document": doc_id, "action": "run", "kind": "score",
+        exp_args: dict[str, Any] = {"document": doc_id, "kind": "score",
             "options": {"format": "mscx"}, "destination": {"kind": "file", "path": str(path_A)}}
         if excerpt_id is not None:
             exp_args["options"]["score"] = {"excerpt": excerpt_id}
@@ -966,7 +966,7 @@ class RoundTripRunner:
         doc_B = opened_B["document"]
         path_B = out / f"{prefix}_B.mscx"
         try:
-            await self.must("score_export", {"document": doc_B, "action": "run", "kind": "score",
+            await self.must("score_export", {"document": doc_B, "kind": "score",
                 "options": {"format": "mscx"}, "destination": {"kind": "file", "path": str(path_B)}})
 
             # Check excerpts preservation on reopened MSCZ of master scores
@@ -994,7 +994,7 @@ class RoundTripRunner:
                                 p_exc_a = out / f"{prefix}_exc_{idx}_A.mscx"
                                 p_exc_b = out / f"{prefix}_exc_{idx}_B.mscx"
                                 for document, excerpt, path in ((doc_id, e_a['id'], p_exc_a), (doc_B, e_b['id'], p_exc_b)):
-                                    await self.must('score_export', {'document': document, 'action': 'run', 'kind': 'score',
+                                    await self.must('score_export', {'document': document, 'kind': 'score',
                                         'options': {'format': 'mscx', 'score': {'excerpt': excerpt}},
                                         'destination': {'kind': 'file', 'path': str(path)}})
                                 sem_exc_a = parse_mscx(p_exc_a.read_text("utf-8"))
@@ -1035,7 +1035,7 @@ class RoundTripRunner:
         path_xml2 = out / f"{prefix}_2.musicxml"
         try:
             for fmt, path in (('mscx', path_C), ('musicxml', path_xml2)):
-                await self.must('score_export', {'document': doc_C, 'action': 'run', 'kind': 'score',
+                await self.must('score_export', {'document': doc_C, 'kind': 'score',
                     'options': {'format': fmt}, 'destination': {'kind': 'file', 'path': str(path)}})
         finally:
             await self.call("score_close", {"document": doc_C})
@@ -1053,7 +1053,7 @@ class RoundTripRunner:
             return result
         path_D = out / f"{prefix}_D.mscx"
         try:
-            await self.must('score_export', {'document': opened_D['document'], 'action': 'run', 'kind': 'score',
+            await self.must('score_export', {'document': opened_D['document'], 'kind': 'score',
                 'options': {'format': 'mscx'}, 'destination': {'kind': 'file', 'path': str(path_D)}})
         finally:
             await self.call("score_close", {"document": opened_D["document"]})

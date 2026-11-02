@@ -43,7 +43,7 @@ async def run(args):
             {'op': 'add_text', 'at': address, 'style': 'staff', 'text': '音乐 🎵\nsecond line'}]})
         for fmt in ('mscx', 'musicxml'):
             path = out / f'valid.{fmt}'
-            await client.tool('score_export', {'document': doc, 'action': 'run', 'kind': 'score',
+            await client.tool('score_export', {'document': doc, 'kind': 'score',
                 'options': {'format': fmt}, 'destination': {'kind': 'file', 'path': str(path)}})
             tree = ET.parse(path)
             assert title.encode('utf-8') in path.read_bytes()

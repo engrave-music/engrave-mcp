@@ -138,12 +138,11 @@ Json declared_tools() {
     d["type_info"]=object({{"type",text},{"props",array(ref("prop_info"))}});
     d["style_info"]=object({{"name",text},{"kind",kinds},{"unit",units},{"enum_tokens",array(text)},{"default_value",ref("value")}});
     d["artifact"]=object({{"mime",str(128)},{"path",text},{"size",u}});
-    d["job"]=object({{"job",str(128)},{"state",en({"queued","running","succeeded","failed","cancelled"})},{"source_revision",u},{"artifacts",array(ref("artifact"))},{"error",nullable(ref("error"))},{"export_warnings",array(ref("export_warning"))}},J::array({"job","state","source_revision","artifacts","error"}));
     const J formats=en({"mscz","mscx","musicxml","mxl","midi","guitarpro","mnx"});
     const J export_formats=en({"mscz","mscx","musicxml","mxl","midi"});
     d["capabilities"]=object({{"engine_version",text},{"import_formats",array(formats)},{"export_formats",array(export_formats)},{"render_formats",array(en({"pdf","png","svg"}))},{"audio_formats",array(en({"wav","flac","opus","mp3","aac"}))},{"soundfonts",array(text,256)},{"audio_sample_rate",idx}});
     d["template"]=object({{"id",text},{"title",text},{"category",text},{"path",text}});
-    d["limits"]=object({{"input_bytes",idx},{"base64_chars",idx},{"batch_ops",idx},{"query_results",idx},{"output_bytes",u},{"queue_capacity",idx},{"deadline_ms",idx},{"export_workers",idx},{"snapshot_bytes",u},{"transport_request_bytes",idx},{"worker_request_bytes",idx}});
+    d["limits"]=object({{"input_bytes",idx},{"base64_chars",idx},{"batch_ops",idx},{"query_results",idx},{"output_bytes",u},{"deadline_ms",idx},{"cancellation",lit("cooperative")},{"transport_request_bytes",idx}});
     J tools=J::array();
     auto tool=[&](const char* name,const char* description,J input,J output) {
         auto out = schema(one(J::array({output,object({{"ok",lit(false)},{"error",ref("error")}})})),d);
@@ -157,7 +156,7 @@ Json declared_tools() {
     input=object({{"template_id",text},{"template_path",text},{"title",text},{"subtitle",text},{"composer",text},{"lyricist",text}},J::array());
     input["oneOf"]={J{{"required",{"template_id"}},{"not",{{"required",{"template_path"}}}}},J{{"required",{"template_path"}},{"not",{{"required",{"template_id"}}}}}};
     tool("score_create","Create from exactly one engine template.",input,opened);
-    tool("score_close","Destroy on owner thread; captured jobs remain independent.",object({{"document",doc}}),success(J::object()));
+    tool("score_close","Destroy the document on its owner thread.",object({{"document",doc}}),success(J::object()));
     tool("score_outline","Read structure and source revision; expected_revision guards the read.",object({{"document",doc},{"expected_revision",u},{"score",score}},J::array({"document"})),success({{"revision",u},{"outline",ref("outline")}}));
     J query=object({{"score",score},{"types",array(text)},{"first_measure",idx},{"measure_count",integer(1,128)},{"from_measure",eid},{"to_measure",eid},{"staves",array(idx)},{"voices",array(integer(0,3),4)},{"from_tick",f},{"to_tick",f},{"props",array(text)},{"layout_boxes",b},{"limit",integer(1,4096)},{"cursor",integer(0,4096)}},J::array());
     query["not"]={{"allOf",J::array({J{{"anyOf",J::array({J{{"required",{"first_measure"}}},J{{"required",{"measure_count"}}}})}},J{{"anyOf",J::array({J{{"required",{"from_measure"}}},J{{"required",{"to_measure"}}}})}}})}};
@@ -184,7 +183,7 @@ Json declared_tools() {
     J exports=J::array();
     for(auto& entry:J::array({J::array({"score",score_options}),J::array({"render",render_options}),J::array({"audio",audio_options}),J::array({"positions",object({{"score",score},{"position_kind",en({"measure","segment"})}},J::array({"position_kind"}))})}))
     {
-        J variant=object({{"document",doc},{"expected_revision",u},{"action",en({"run","start"})},{"kind",lit(entry[0])},{"options",entry[1]},{"destination",destination}},J::array({"document","action","kind","options","destination"}));
+        J variant=object({{"document",doc},{"expected_revision",u},{"kind",lit(entry[0])},{"options",entry[1]},{"destination",destination}},J::array({"document","kind","options","destination"}));
         if(entry[0]=="render") {
             variant["if"]={{"properties",{{"options",{{"properties",{{"format",en({"png","svg"})}}}}}}}};
             variant["then"]={{"properties",{{"destination",{{"properties",{{"kind",lit("directory")}}}}}}}};
@@ -192,9 +191,8 @@ Json declared_tools() {
         } else variant["properties"]["destination"]=object({{"kind",lit("file")},{"path",text}});
         exports.push_back(variant);
     }
-    tool("score_export","run waits; start queues. Capture source revision. Select master or excerpt for score, render, audio and positions. PNG/SVG require a directory with page-0001.ext names. Stage all; failed publication returns Io/published_artifacts and cleans remaining staging. Positions map Document::positions measure/segment to JSON page_size, elements and events: page-local 1200-DPI geometry, result-local element IDs and repeat-expanded milliseconds; see docs/dev/a5-registry.md.",one(exports),one(J::array({success({{"action",lit("start")},{"job",str(128)},{"source_revision",u}}),object({{"ok",lit(true)},{"action",lit("run")},{"source_revision",u},{"artifacts",array(ref("artifact"))},{"export_warnings",array(ref("export_warning"))}},J::array({"ok","action","source_revision","artifacts"}))})));
-    tool("runtime_info","Inspect runtime or add_font(path)/set_soundfonts(files) on owner thread. Empty files disables audio. Changes preserve document revisions; fonts trigger relayout. Existing jobs retain captured immutable assets; sample rate stays fixed.",one(J::array({object({{"action",lit("get")}},J::array()),object({{"action",lit("add_font")},{"path",text}}),object({{"action",lit("set_soundfonts")},{"files",array(text,256)}})})),success({{"tool_revision",lit("2")},{"capabilities",ref("capabilities")},{"templates",array(ref("template"))},{"fonts",array(text)},{"limits",ref("limits")}}));
-    tool("runtime_job","Inspect or cancel retained job; terminal cancellation is idempotent.",object({{"action",en({"get","cancel"})},{"job",str(128)}}),success({{"status",ref("job")}}));
+    tool("score_export","Export synchronously from the live document. Report source revision. Select master or excerpt for score, render, audio and positions. PNG/SVG require a directory with page-0001.ext names. Stage all; failed publication returns Io/published_artifacts and cleans remaining staging. Positions map Document::positions measure/segment to JSON page_size, elements and events: page-local 1200-DPI geometry, result-local element IDs and repeat-expanded milliseconds; see docs/dev/a5-registry.md.",one(exports),object({{"ok",lit(true)},{"source_revision",u},{"artifacts",array(ref("artifact"))},{"export_warnings",array(ref("export_warning"))}},J::array({"ok","source_revision","artifacts"})));
+    tool("runtime_info","Inspect runtime or add_font(path)/set_soundfonts(files) on owner thread. Empty files disables audio. Changes preserve document revisions; fonts trigger relayout. Sample rate stays fixed.",one(J::array({object({{"action",lit("get")}},J::array()),object({{"action",lit("add_font")},{"path",text}}),object({{"action",lit("set_soundfonts")},{"files",array(text,256)}})})),success({{"tool_revision",lit("2")},{"capabilities",ref("capabilities")},{"templates",array(ref("template"))},{"fonts",array(text)},{"limits",ref("limits")}}));
     return tools;
 }
 }

@@ -88,7 +88,7 @@ async def run(args):
                     return r.structured_content if r.structured_content is not None else json.loads(r.content[0].text)
                 serial = 0
                 async def export(doc, fmt, dest):
-                    await call('score_export', {'document': doc, 'action': 'run', 'kind': 'score',
+                    await call('score_export', {'document': doc, 'kind': 'score',
                         'options': {'format': fmt}, 'destination': {'kind': 'file', 'path': str(dest)}})
                 async def score_xml(doc):
                     nonlocal serial

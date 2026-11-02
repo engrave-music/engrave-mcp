@@ -1,6 +1,5 @@
 #pragma once
 #include "api_json.h"
-#include "runtime_snapshot.h"
 #include "runtime_limits.h"
 #include <functional>
 #include <memory>
@@ -9,10 +8,10 @@ namespace music::v2 {
 // S2 implementation. Construct/use/destroy only on Engine's owner thread.
 // Impl owns Engine first, then Documents; close all documents before Engine.
 // Session nonce + monotonic counter tokens are never reused. No Document escapes
-// to I/O or worker threads; with_document is synchronous on the owner thread.
+// to I/O threads; with_document is synchronous on the owner thread.
 class HostApi {
 public:
-    static Result<std::unique_ptr<HostApi>> create(const engrave::EngineOptions&, JobLimits = {});
+    static Result<std::unique_ptr<HostApi>> create(const engrave::EngineOptions&, ExportLimits = {});
     ~HostApi();
     HostApi(const HostApi&)=delete;
     HostApi& operator=(const HostApi&)=delete;
@@ -27,8 +26,8 @@ public:
     Result<void> with_document(std::string_view token,
         std::optional<std::uint64_t> expected_revision,
         const std::function<Result<void>(engrave::Document&)>&);
-    // Capture immutable asset paths and their lifetime together on the owner thread.
-    Result<RuntimeSnapshot> capture_runtime() const;
+    // Current private asset paths; valid until the next owner-thread runtime change.
+    Result<engrave::EngineOptions> runtime_options() const;
 private:
     struct Impl;
     explicit HostApi(std::unique_ptr<Impl>);

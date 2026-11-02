@@ -122,7 +122,7 @@ async def run(args):
             async def export(document, fmt, path, action='run'):
                 render = fmt == 'svg'
                 if render: path.mkdir(exist_ok=True)
-                return await call('score_export', {'document': document, 'action': action,
+                return await call('score_export', {'document': document,
                     'kind': 'render' if render else 'score', 'options': {'format': fmt},
                     'destination': {'kind': 'directory' if render else 'file', 'path': str(path)}})
 
@@ -176,7 +176,7 @@ async def run(args):
             fixture = await call("score_open", {"path": str(fixture_mscx_path)})
             fixture_document = fixture['document']
 
-            # Both synchronous and background exports must leave the owner alone.
+            # Both repeated synchronous exports must leave the owner alone.
             metadata_before = await outline_version(fixture_document)
             assert metadata_before == '4.5.0', metadata_before
 
@@ -186,16 +186,9 @@ async def run(args):
             metadata_after = await outline_version(fixture_document)
             assert metadata_after == '4.5.0', metadata_after
 
-            # Metadata-file export was removed in v2. The queued MSCZ export
+            # Metadata-file export was removed in v2. The repeated MSCZ export
             # still must not alter the owner document's source version.
-            job = await export(fixture_document, 'mscz', out / 'header-background.mscz', 'start')
-            deadline = time.monotonic() + 60
-            status = (await call('runtime_job', {'action': 'get', 'job': job['job']}))['status']
-            while status["state"] not in ("succeeded", "failed", "cancelled"):
-                assert time.monotonic() < deadline, f"background metadata export stalled: {job}"
-                await asyncio.sleep(0.02)
-                status = (await call('runtime_job', {'action': 'get', 'job': job['job']}))['status']
-            assert status["state"] == "succeeded", status
+            await export(fixture_document, 'mscz', out / 'header-background.mscz')
             metadata_background = await outline_version(fixture_document)
             assert metadata_background == '4.5.0', metadata_background
             report["fixture_metadata"] = {"before_mscz": metadata_before,

@@ -68,14 +68,14 @@ int main(int argc,char** argv) {
         fs::copy_file(original_sf,sf_input);
         { std::ofstream f(invalid_sf,std::ios::binary); f << "not a soundfont"; }
         engrave::EngineOptions options; options.resources=assets; options.fonts={font_input}; options.soundfonts={sf_input};
-        music::v2::JobLimits configured;
-        configured.queue_capacity=3; configured.snapshot_bytes=123456; configured.output_bytes=234567;
+        music::v2::ExportLimits configured;
+        configured.output_bytes=234567;
         configured.deadline=std::chrono::milliseconds(3456);
         auto made=HostApi::create(options,configured); require(bool(made),made?"":made.error().message);
         auto host=std::move(*made);
-        auto initial=host->capture_runtime(); require(bool(initial),"initial capture failed");
-        require(initial->asset_lease && initial->options.fonts.size()==1 && initial->options.soundfonts.size()==1,"startup assets absent");
-        const auto initial_font=initial->options.fonts[0], initial_sf=initial->options.soundfonts[0];
+        auto initial=host->runtime_options(); require(bool(initial),"initial capture failed");
+        require(initial->fonts.size()==1 && initial->soundfonts.size()==1,"startup assets absent");
+        const auto initial_font=initial->fonts[0], initial_sf=initial->soundfonts[0];
         require(initial_font!=font_input && initial_sf!=sf_input,"startup assets were not copied");
         const auto font_bytes=read(initial_font), sf_bytes=read(initial_sf);
         { std::ofstream f(font_input,std::ios::binary|std::ios::trunc); f << "changed"; }
@@ -85,10 +85,8 @@ int main(int argc,char** argv) {
         auto info=ok(*host,"runtime_info",Json::object());
         require(info.at("tool_revision")=="2" && !info.at("templates").empty(),"runtime catalogue is empty");
         const auto& limits=info.at("limits");
-        require(limits.at("queue_capacity")==3 && limits.at("snapshot_bytes")=="123456" &&
-                limits.at("output_bytes")=="234567" && limits.at("deadline_ms")==3456 &&
-                limits.at("export_workers")==2 && limits.at("transport_request_bytes")==4194304 &&
-                limits.at("worker_request_bytes")==4194304,"runtime limits differ from configuration");
+        require(limits.at("output_bytes")=="234567" && limits.at("deadline_ms")==3456 &&
+                limits.at("transport_request_bytes")==4194304,"runtime limits differ from configuration");
         for (const auto* field : {"title", "subtitle", "composer", "lyricist"}) {
             for (const auto& text : {std::string("bad\xef\xbf\xbe"), std::string("bad\xef\xbf\xbf"), std::string("bad\x01")}) {
                 Json invalid_create={{"template_id","Treble_Clef"},{field,text}};
@@ -289,27 +287,25 @@ int main(int argc,char** argv) {
         require(font_info.at("fonts").size()==2,"runtime font missing");
         auto duplicate_font=ok(*host,"runtime_info",{{"action","add_font"},{"path",path_text(add_font_input)}});
         require(duplicate_font.at("fonts")==font_info.at("fonts"),"duplicate font was not idempotent");
-        auto font_capture=host->capture_runtime(); require(bool(font_capture),"font capture failed");
-        const auto new_font=font_capture->options.fonts.at(1); const auto new_font_bytes=read(new_font);
+        auto font_capture=host->runtime_options(); require(bool(font_capture),"font capture failed");
+        const auto new_font=font_capture->fonts.at(1); const auto new_font_bytes=read(new_font);
         { std::ofstream f(add_font_input,std::ios::binary|std::ios::trunc); f << "changed"; }
-        require(read(new_font)==new_font_bytes && initial->options.fonts.size()==1,"font snapshot changed");
+        require(read(new_font)==new_font_bytes && initial->fonts.size()==1,"font snapshot changed");
         error(*host,"runtime_info",{{"action","add_font"},{"path",path_text(add_font_input)}},"InvalidInput");
-        require(host->capture_runtime()->options.fonts.size()==2,"failed font change altered the selection");
+        require(host->runtime_options()->fonts.size()==2,"failed font change altered the selection");
         auto selected=ok(*host,"runtime_info",{{"action","set_soundfonts"},{"files",Json::array({path_text(replacement_sf)})}});
-        auto replacement=host->capture_runtime(); require(bool(replacement),"soundfont capture failed");
-        const auto selected_path=replacement->options.soundfonts.at(0);
+        auto replacement=host->runtime_options(); require(bool(replacement),"soundfont capture failed");
+        const auto selected_path=replacement->soundfonts.at(0);
         require(read(selected_path)==read(replacement_sf),"selected SoundFont bytes differ");
         error(*host,"runtime_info",{{"action","set_soundfonts"},{"files",Json::array({path_text(invalid_sf)})}},"InvalidInput");
-        auto retained=host->capture_runtime(); require(retained && retained->options.soundfonts.at(0)==selected_path,"failed SoundFont change replaced selection");
+        auto retained=host->runtime_options(); require(retained && retained->soundfonts.at(0)==selected_path,"failed SoundFont change replaced selection");
         ok(*host,"runtime_info",{{"action","set_soundfonts"},{"files",Json::array()}});
-        require(fs::exists(initial_sf) && fs::exists(selected_path),"previous snapshots lost retained files");
+        require(!fs::exists(initial_sf) && !fs::exists(selected_path),"replaced assets survived selection removal");
         auto still_open=ok(*host,"score_outline",{{"document",doc}});
         require(still_open.at("revision")==revision_before_assets,"runtime assets changed document revision");
         // Keep a document open: HostApi's destructor must close it before Engine.
         host.reset();
-        require(fs::exists(initial_font) && fs::exists(initial_sf) && fs::exists(new_font) && fs::exists(selected_path),"snapshots did not outlive host");
-        initial->asset_lease.reset(); font_capture->asset_lease.reset(); replacement->asset_lease.reset(); retained->asset_lease.reset();
-        require(!fs::exists(initial_font) && !fs::exists(initial_sf) && !fs::exists(new_font) && !fs::exists(selected_path),"last lease did not release assets");
+        require(!fs::exists(initial_font) && !fs::exists(initial_sf) && !fs::exists(new_font) && !fs::exists(selected_path),"host did not release assets");
         fs::remove(font_input); fs::remove(add_font_input); fs::remove(sf_input); fs::remove(invalid_sf); fs::remove(old_path); fs::remove(scratch);
         std::cout << "host_api_test passed\n";
         return 0;

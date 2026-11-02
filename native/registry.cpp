@@ -1,7 +1,6 @@
 #include "registry.h"
 #include "api_json.h"
 #include "host_api.h"
-#include "export_job.h"
 #include <set>
 #include <stdexcept>
 namespace music::v2 {
@@ -14,9 +13,8 @@ constexpr std::array specs={
     ToolSpec{"score_query",HandlerId::Query,Scheduling::Owner},
     ToolSpec{"score_describe",HandlerId::Describe,Scheduling::Owner},
     ToolSpec{"score_edit",HandlerId::Edit,Scheduling::Owner},
-    ToolSpec{"score_export",HandlerId::Export,Scheduling::ExportJob},
-    ToolSpec{"runtime_info",HandlerId::RuntimeInfo,Scheduling::Owner},
-    ToolSpec{"runtime_job",HandlerId::Job,Scheduling::JobManager}};
+    ToolSpec{"score_export",HandlerId::Export,Scheduling::Owner},
+    ToolSpec{"runtime_info",HandlerId::RuntimeInfo,Scheduling::Owner}};
 consteval bool complete() {
     std::array<int,static_cast<std::size_t>(HandlerId::Count)> counts{};
     for(auto& s:specs) ++counts[static_cast<std::size_t>(s.handler)];

@@ -135,7 +135,7 @@ async def run(args):
                 await client.initialize()
 
                 async def score_export(document, fmt, target):
-                    return await call(client, 'score_export', {'document': document, 'action': 'run', 'kind': 'score',
+                    return await call(client, 'score_export', {'document': document, 'kind': 'score',
                         'options': {'format': fmt}, 'destination': {'kind': 'file', 'path': str(target)}})
 
                 async def read_document(document, target):

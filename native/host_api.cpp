@@ -1,6 +1,5 @@
 #include "host_api.h"
 #include "api_json_internal.h"
-#include "worker_v2.h"
 
 #include <algorithm>
 #include <array>
@@ -117,9 +116,8 @@ template<class T> Json encoded_array(const std::vector<T>& values) {
 }
 
 // Each asset has a private, read-only file in a unique OS temporary directory.
-// The host owns the current lease; snapshots share its asset objects. The last
-// lease removes each file and its private directory, even after HostApi dies.
-struct RuntimeAssetLease {
+// The host owns the private copies for the current engine selection.
+struct RuntimeAssets {
     std::vector<std::shared_ptr<const AssetFile>> fonts, soundfonts;
 };
 
@@ -128,8 +126,8 @@ struct HostApi::Impl {
     std::string session=nonce();
     std::uint64_t next=1;
     engrave::EngineOptions options;
-    JobLimits limits;
-    std::shared_ptr<const RuntimeAssetLease> assets;
+    ExportLimits limits;
+    std::shared_ptr<const RuntimeAssets> assets;
     std::unique_ptr<engrave::Engine> engine; // destroyed after documents, before assets
     std::unordered_map<std::string,std::unique_ptr<engrave::Document>> documents;
     std::unordered_set<std::string> borrowed;
@@ -160,7 +158,7 @@ struct HostApi::Impl {
         return out;
     }
     void capacity() const { if(documents.size()>=16) throw detail::DecodeError{HostError{"ResourceLimit","at most 16 documents may be open"}}; }
-    engrave::EngineOptions snapshot_options() const {
+    engrave::EngineOptions asset_options() const {
         auto result=options; result.fonts.clear(); result.soundfonts.clear();
         for (const auto& f:assets->fonts) result.fonts.push_back(f->file);
         for (const auto& f:assets->soundfonts) result.soundfonts.push_back(f->file);
@@ -172,16 +170,16 @@ HostApi::HostApi(std::unique_ptr<Impl> impl):impl_(std::move(impl)) {}
 HostApi::~HostApi() {
     if (impl_ && std::this_thread::get_id()!=impl_->owner) std::terminate();
 }
-Result<std::unique_ptr<HostApi>> HostApi::create(const engrave::EngineOptions& options, JobLimits limits) {
+Result<std::unique_ptr<HostApi>> HostApi::create(const engrave::EngineOptions& options, ExportLimits limits) {
     try {
         auto impl=std::make_unique<Impl>();
-        auto assets=std::make_shared<RuntimeAssetLease>();
+        auto assets=std::make_shared<RuntimeAssets>();
         for (const auto& f:options.fonts) assets->fonts.push_back(unwrap(copy_asset(f)));
         for (const auto& f:options.soundfonts) assets->soundfonts.push_back(unwrap(copy_asset(f)));
         impl->assets=std::move(assets); impl->options=options; impl->limits=limits;
         if (!options.resources.empty()) impl->options.resources=fs::absolute(options.resources);
         if (!options.cache_dir.empty()) impl->options.cache_dir=fs::absolute(options.cache_dir);
-        auto engine=engrave::Engine::create(impl->snapshot_options());
+        auto engine=engrave::Engine::create(impl->asset_options());
         if (!engine) return std::unexpected(api_error(engine.error()));
         impl->engine=std::move(*engine);
         return std::unique_ptr<HostApi>(new HostApi(std::move(impl)));
@@ -273,23 +271,22 @@ Json HostApi::runtime_info(const Json& j) { return boundary([&] {
         auto font=unwrap(copy_asset(detail::path(j.at("path"))));
         const bool exists=std::any_of(impl_->assets->fonts.begin(),impl_->assets->fonts.end(),[&](const auto& existing){return same_asset(existing->file,font->file);});
         if (!exists) {
-            auto next=std::make_shared<RuntimeAssetLease>(*impl_->assets); next->fonts.push_back(font);
+            auto next=std::make_shared<RuntimeAssets>(*impl_->assets); next->fonts.push_back(font);
             auto applied=impl_->engine->add_font(font->file); if(!applied) throw detail::DecodeError{api_error(applied.error())};
             impl_->assets=std::move(next);
         }
     } else if(action=="set_soundfonts") {
-        auto next=std::make_shared<RuntimeAssetLease>(*impl_->assets); next->soundfonts.clear(); std::vector<fs::path> paths;
+        auto next=std::make_shared<RuntimeAssets>(*impl_->assets); next->soundfonts.clear(); std::vector<fs::path> paths;
         for(const auto& item:j.at("files")) { auto f=unwrap(copy_asset(detail::path(item))); paths.push_back(f->file); next->soundfonts.push_back(std::move(f)); }
         auto applied=impl_->engine->set_soundfonts(paths); if(!applied) throw detail::DecodeError{api_error(applied.error())};
         impl_->assets=std::move(next);
     }
-    auto caps=impl_->engine->capabilities(); auto opts=impl_->snapshot_options(); caps.soundfonts=opts.soundfonts;
+    auto caps=impl_->engine->capabilities(); auto opts=impl_->asset_options(); caps.soundfonts=opts.soundfonts;
     Json fonts=Json::array(); for(const auto& path:opts.fonts) fonts.push_back(detail::path_text(path));
     return Json{{"ok",true},{"tool_revision","2"},{"capabilities",encode(caps)},{"templates",encoded_array(impl_->engine->templates())},{"fonts",fonts},
         {"limits",{{"input_bytes",engrave::max_input_bytes},{"base64_chars",((engrave::max_input_bytes+2)/3)*4},{"batch_ops",1024},{"query_results",engrave::max_query_results},
-                   {"output_bytes",std::to_string(impl_->limits.output_bytes)},{"queue_capacity",impl_->limits.queue_capacity},{"deadline_ms",impl_->limits.deadline.count()},
-                   {"export_workers",export_worker_count},{"snapshot_bytes",std::to_string(impl_->limits.snapshot_bytes)},
-                   {"transport_request_bytes",transport_request_limit},{"worker_request_bytes",worker_request_limit}}}};
+                   {"output_bytes",std::to_string(impl_->limits.output_bytes)},{"deadline_ms",impl_->limits.deadline.count()},{"cancellation","cooperative"},
+                   {"transport_request_bytes",transport_request_limit}}}};
 }); }
 Result<void> HostApi::with_document(std::string_view token,std::optional<std::uint64_t> expected,const std::function<Result<void>(engrave::Document&)>& fn) {
     const std::string key(token); bool entered=false;
@@ -304,8 +301,8 @@ Result<void> HostApi::with_document(std::string_view token,std::optional<std::ui
     catch(const std::exception& e) { if(entered) impl_->needs_recovery_check.insert(key); return std::unexpected(HostError{"EngineFailure",e.what(),{},key}); }
     catch(...) { if(entered) impl_->needs_recovery_check.insert(key); return std::unexpected(HostError{"EngineFailure","unknown engine failure",{},key}); }
 }
-Result<RuntimeSnapshot> HostApi::capture_runtime() const {
-    try { impl_->check_thread(); return RuntimeSnapshot{impl_->snapshot_options(),impl_->assets}; }
+Result<engrave::EngineOptions> HostApi::runtime_options() const {
+    try { impl_->check_thread(); return impl_->asset_options(); }
     catch(const detail::DecodeError& e) { return std::unexpected(e.error); }
     catch(const std::exception& e) { return std::unexpected(HostError{"EngineFailure",e.what()}); }
 }

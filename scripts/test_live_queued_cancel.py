@@ -37,7 +37,7 @@ def main():
     try:
         doc = c.tool('score_open', {'path':str(score)})['document']
         def args(path):
-            return dict(name='score_export', arguments=dict(document=doc, action='run', kind='audio',
+            return dict(name='score_export', arguments=dict(document=doc, kind='audio',
                 options={'format':'wav'}, destination={'kind':'file', 'path':str(path)}))
         running_path, queued_path = out/'running.wav', out/'queued.wav'
         started = time.perf_counter()

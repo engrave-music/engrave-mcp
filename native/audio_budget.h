@@ -12,7 +12,7 @@
 namespace music::v2 {
 // The engine retains its completed cache file throughout the sink callback.
 // Reserve equal halves for that file and the staged copy, so their combined
-// logical file sizes cannot exceed the job's output budget.
+// logical file sizes cannot exceed the export's output budget.
 inline constexpr std::uint64_t audio_file_budget(std::uint64_t output_budget) noexcept {
     return output_budget / 2;
 }

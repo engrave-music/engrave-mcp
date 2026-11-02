@@ -214,7 +214,7 @@ async def run_roundtrip_for_target(session: ClientSession, doc: str, out_dir: Pa
     # Positions (measure)
     src_pos_m_path = out_dir / f"{target_desc}_src_pos_m.json"
     await session.call_tool("score_export", {
-        "document": doc, "action": "run", "kind": "positions",
+        "document": doc, "kind": "positions",
         "options": {"position_kind": "measure", **opt_score},
         "destination": {"kind": "file", "path": str(src_pos_m_path.resolve())}
     })
@@ -223,7 +223,7 @@ async def run_roundtrip_for_target(session: ClientSession, doc: str, out_dir: Pa
     # Positions (segment)
     src_pos_s_path = out_dir / f"{target_desc}_src_pos_s.json"
     await session.call_tool("score_export", {
-        "document": doc, "action": "run", "kind": "positions",
+        "document": doc, "kind": "positions",
         "options": {"position_kind": "segment", **opt_score},
         "destination": {"kind": "file", "path": str(src_pos_s_path.resolve())}
     })
@@ -232,7 +232,7 @@ async def run_roundtrip_for_target(session: ClientSession, doc: str, out_dir: Pa
     # PDF render
     src_pdf_path = out_dir / f"{target_desc}_src.pdf"
     await session.call_tool("score_export", {
-        "document": doc, "action": "run", "kind": "render",
+        "document": doc, "kind": "render",
         "options": {"format": "pdf", **opt_score},
         "destination": {"kind": "file", "path": str(src_pdf_path.resolve())}
     })
@@ -242,7 +242,7 @@ async def run_roundtrip_for_target(session: ClientSession, doc: str, out_dir: Pa
     src_png_dir = out_dir / f"{target_desc}_src_png"
     src_png_dir.mkdir(parents=True, exist_ok=True)
     await session.call_tool("score_export", {
-        "document": doc, "action": "run", "kind": "render",
+        "document": doc, "kind": "render",
         "options": {"format": "png", "dpi": 144, "first_page": 0, "last_page": 0, **opt_score},
         "destination": {"kind": "directory", "path": str(src_png_dir.resolve())}
     })
@@ -253,7 +253,7 @@ async def run_roundtrip_for_target(session: ClientSession, doc: str, out_dir: Pa
     for fmt in ("mscx", "mscz"):
         export_path = out_dir / f"{target_desc}.{fmt}"
         response = await session.call_tool("score_export", {
-            "document": doc, "action": "run", "kind": "score",
+            "document": doc, "kind": "score",
             "options": {"format": fmt, "native_version": VERSION, **opt_score},
             "destination": {"kind": "file", "path": str(export_path.resolve())}
         })
@@ -279,7 +279,7 @@ async def run_roundtrip_for_target(session: ClientSession, doc: str, out_dir: Pa
         # Reopened positions
         reop_pos_m_path = out_dir / f"{target_desc}_{fmt}_pos_m.json"
         await session.call_tool("score_export", {
-            "document": doc_reop, "action": "run", "kind": "positions",
+            "document": doc_reop, "kind": "positions",
             "options": {"position_kind": "measure"},
             "destination": {"kind": "file", "path": str(reop_pos_m_path.resolve())}
         })
@@ -287,7 +287,7 @@ async def run_roundtrip_for_target(session: ClientSession, doc: str, out_dir: Pa
 
         reop_pos_s_path = out_dir / f"{target_desc}_{fmt}_pos_s.json"
         await session.call_tool("score_export", {
-            "document": doc_reop, "action": "run", "kind": "positions",
+            "document": doc_reop, "kind": "positions",
             "options": {"position_kind": "segment"},
             "destination": {"kind": "file", "path": str(reop_pos_s_path.resolve())}
         })
@@ -296,7 +296,7 @@ async def run_roundtrip_for_target(session: ClientSession, doc: str, out_dir: Pa
         # Reopened PDF render
         reop_pdf_path = out_dir / f"{target_desc}_{fmt}.pdf"
         await session.call_tool("score_export", {
-            "document": doc_reop, "action": "run", "kind": "render",
+            "document": doc_reop, "kind": "render",
             "options": {"format": "pdf"},
             "destination": {"kind": "file", "path": str(reop_pdf_path.resolve())}
         })
@@ -307,7 +307,7 @@ async def run_roundtrip_for_target(session: ClientSession, doc: str, out_dir: Pa
         reop_png_dir = out_dir / f"{target_desc}_{fmt}_png"
         reop_png_dir.mkdir(parents=True, exist_ok=True)
         await session.call_tool("score_export", {
-            "document": doc_reop, "action": "run", "kind": "render",
+            "document": doc_reop, "kind": "render",
             "options": {"format": "png", "dpi": 144, "first_page": 0, "last_page": 0},
             "destination": {"kind": "directory", "path": str(reop_png_dir.resolve())}
         })

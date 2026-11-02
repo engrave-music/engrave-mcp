@@ -4,8 +4,8 @@
 #include <span>
 #include <string_view>
 namespace music::v2 {
-enum class HandlerId { Open, Create, Close, Outline, Query, Describe, Edit, Export, RuntimeInfo, Job, Count };
-enum class Scheduling { Owner, ExportJob, JobManager };
+enum class HandlerId { Open, Create, Close, Outline, Query, Describe, Edit, Export, RuntimeInfo, Count };
+enum class Scheduling { Owner };
 struct ToolSpec {
     std::string_view name;
     HandlerId handler;

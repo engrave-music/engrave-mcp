@@ -335,13 +335,9 @@ async def main() -> None:
             directory = kind == 'render' and fmt in ('svg', 'png')
             destination = out / name
             if directory: destination.mkdir(exist_ok=True)
-            result = await client.tool('score_export', {'document': doc, 'action': action, 'kind': kind,
+            result = await client.tool('score_export', {'document': doc, 'kind': kind,
                 'options': options, 'destination': {'kind': 'directory' if directory else 'file', 'path': str(destination)}})
-            if action == 'start':
-                status = await client.terminal(result['job'])
-                assert status['state'] == 'succeeded', status
-                artifacts = status['artifacts']
-            else: artifacts = result['artifacts']
+            artifacts = result['artifacts']
             assert artifacts and all(Path(item['path']).stat().st_size == int(item['size']) > 0 for item in artifacts)
             return [Path(item['path']) for item in artifacts]
 
@@ -414,7 +410,7 @@ async def main() -> None:
                 sentinel = target / 'keep'
             else: sentinel = target
             sentinel.write_bytes(b'unchanged')
-            await client.tool('score_export', {'document':doc,'action':'run','kind':kind,'options':options,
+            await client.tool('score_export', {'document':doc,'kind':kind,'options':options,
                 'destination':{'kind':'directory' if directory else 'file','path':str(target)}}, error=True)
             assert sentinel.read_bytes() == b'unchanged'
             if directory: assert {x.name for x in target.iterdir()} == {'keep'}
@@ -456,7 +452,7 @@ async def main() -> None:
             '</measure></part>' for i in range(1,17))
         large = await open_xml('<score-partwise version="4.0"><part-list>'+parts+'</part-list>'+bodies+'</score-partwise>')
         assert len((await client.tool('score_query', {'document':large,'mode':'audio_tracks'}))['audio_tracks']['tracks']) == 16
-        native = (await export(large,'score',{'format':'mscz'},'sixteen.mscz',action='start'))[0]
+        native = (await export(large,'score',{'format':'mscz'},'sixteen.mscz'))[0]
         restored = (await client.tool('score_open', {'path':str(native)}))['document']
         assert len((await client.tool('score_query', {'document':restored,'mode':'audio_tracks'}))['audio_tracks']['tracks']) == 16
         await client.tool('score_close', {'document':restored})

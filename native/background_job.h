@@ -8,20 +8,12 @@
 
 namespace music {
 bool same_output_path(const std::filesystem::path& first, const std::filesystem::path& second);
-// Canonical form used for export destinations and reservations. Rejects a
+// Canonical form used for export destinations. Rejects a
 // missing, "." or ".." filename and requires an existing parent directory.
 // Returns canonical(path) when the file already exists, otherwise
 // canonical(parent) / filename.
 std::filesystem::path normalize_output_path(const std::filesystem::path& path);
-void reserve_output_path(const std::filesystem::path& path);
-// Atomically reserve a normalized file or an entire directory tree.
-bool try_reserve_output_path(const std::filesystem::path& path, bool directory);
-void release_output_path(const std::filesystem::path& path);
-bool is_output_path_reserved(const std::filesystem::path& path);
-
 [[nodiscard]] std::filesystem::path current_executable_path();
-std::uint64_t current_process_id() noexcept;
-void enforce_worker_parent(std::uint64_t expected_parent);
 // A directory-sync failure occurs after visibility commits. Callers must
 // include that destination in published_artifacts even though durability failed.
 class PublicationError : public std::system_error {
@@ -31,36 +23,9 @@ public:
     bool visible;
 };
 // POSIX: sync staged contents, rename, then sync destination directory.
-void publish_job_output(const std::filesystem::path& staged, const std::filesystem::path& destination);
+void publish_output(const std::filesystem::path& staged, const std::filesystem::path& destination);
 // Creates a fresh directory under parent with an unpredictable name (and
 // owner-only permissions on POSIX).
 std::filesystem::path create_private_directory(const std::filesystem::path& parent);
-
-class WorkerProcess {
-public:
-    explicit WorkerProcess(const std::filesystem::path& executable,
-                           const std::filesystem::path& request_json,
-                           const std::filesystem::path& stderr_log);
-    ~WorkerProcess() noexcept;
-
-    WorkerProcess(WorkerProcess&&) noexcept;
-    WorkerProcess& operator=(WorkerProcess&&) noexcept;
-
-    WorkerProcess(const WorkerProcess&) = delete;
-    WorkerProcess& operator=(const WorkerProcess&) = delete;
-
-    [[nodiscard]] std::optional<int> poll();
-    void terminate();
-
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
-};
-
-// Host shutdown hook. A synchronous audio export waits on its worker on the
-// engine-owner thread, so stdin EOF must terminate that child before joining
-// the thread. The flag also makes the waiting loop give up with a clear error.
-void request_worker_shutdown() noexcept;
-bool worker_shutdown_requested() noexcept;
 
 } // namespace music

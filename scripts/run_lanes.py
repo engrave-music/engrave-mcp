@@ -19,7 +19,8 @@ import time
 
 LANE_NAMES = [
     "host_api",
-    "export_job",
+    "live_export",
+    "live_audio",
     "runtime_assets",
     "score_edit",
     "score_audio",
@@ -67,7 +68,8 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
     missing = []
     requirements = {
         "host_api": ["host_api_test"],
-        "export_job": ["export_job_test", "engrave-mcp"],
+        "live_export": ["live_export_test", "engrave-mcp-test"],
+        "live_audio": ["engrave-mcp", "engrave-mcp-test"],
         "runtime_assets": ["engrave-mcp-test"], "score_edit": ["score_edit_test"],
         "score_audio": ["score_audio_test"], "score_positions": ["score_positions_test"],
         "noqt_probe": ["noqt_probe"], "excerpts": ["excerpts_test"],
@@ -217,12 +219,16 @@ def run_lane(
                "--output", str(output / "host-api")]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
-    if lane == "export_job":
-        cmd = [py, str(repo_root / "scripts/test_export_job.py"),
-               "--binary", str(build_dir / f"export_job_test{exe_suffix}"),
-               "--host-binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-               "--resources", str(assets), "--soundfont", str(soundfont), "--output", str(output / "export-job")]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
+    if lane in ("live_export", "live_audio"):
+        cmd = [py, str(repo_root / ("scripts/test_" + lane + ".py")),
+               "--binary", str(build_dir / f"{'engrave-mcp-test' if lane == 'live_export' else 'engrave-mcp'}{exe_suffix}"),
+               "--resources", str(assets), "--output", str(output / lane)]
+        if lane == "live_export":
+            cmd += ["--direct-binary", str(build_dir / f"live_export_test{exe_suffix}")]
+        else:
+            cmd += ["--test-binary", str(build_dir / f"engrave-mcp-test{exe_suffix}"), "--soundfont", str(soundfont)]
+        return subprocess.run(cmd, cwd=repo_root, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "runtime_assets":
         cmd = [py, str(repo_root / "scripts/test_runtime_assets_mcp.py"),

@@ -62,7 +62,6 @@ async def main():
 
                 info = await call("runtime_info", {})
                 assert info["tool_revision"] == "2" and info["limits"]["transport_request_bytes"] == 4194304
-                assert info["limits"]["export_workers"] == 2 and info["limits"]["snapshot_bytes"] == "67108864"
                 opened = await call("score_open", {"path": str(ROOT / "fixtures/evening.musicxml")})
                 doc, revision = opened["document"], opened["revision"]
                 outline = await call("score_outline", {"document": doc})
@@ -79,7 +78,7 @@ async def main():
                 assert properties["properties"][0]["value"] == {"kind": "int", "value": "74"}
 
                 async def export(kind, options, destination, action="run"):
-                    value = await call("score_export", {"document": doc, "action": action, "kind": kind,
+                    value = await call("score_export", {"document": doc, "kind": kind,
                         "options": options, "destination": destination})
                     assert value["source_revision"] == edited["revision"]
                     return value
@@ -111,7 +110,7 @@ async def main():
                 for extension in ("mscz", "mxl"):
                     restored = await call("score_open", {"path": str(OUT / f"score.{extension}")})
                     path = OUT / f"reopened-{extension}.musicxml"
-                    await call("score_export", {"document": restored["document"], "action": "run", "kind": "score",
+                    await call("score_export", {"document": restored["document"], "kind": "score",
                         "options": {"format": "musicxml"}, "destination": {"kind": "file", "path": str(path)}})
                     assert canonical_notes(OUT / "score.musicxml") == canonical_notes(path)
                     await call("score_close", {"document": restored["document"]})

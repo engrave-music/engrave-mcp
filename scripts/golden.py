@@ -459,7 +459,7 @@ async def export(session, identity, fmt, dest, **options):
     with tempfile.TemporaryDirectory(prefix="render-", dir=dest.parent) as tmp:
         location = Path(tmp) if directory else dest
         payload, error = await call_tool(session, "score_export", {
-            **identity, "action": "run", "kind": kind, "options": export_options,
+            **identity, "kind": kind, "options": export_options,
             "destination": {"kind": "directory" if directory else "file", "path": str(location)}})
         if error:
             return error
@@ -781,7 +781,7 @@ async def capture_tree(binary, resources, soundfont, target, log_path, golden_ro
         params = StdioServerParameters(
             command=str(binary),
             args=["--resources", str(resources), "--soundfont", str(soundfont)],
-            cwd=str(raw_root))
+            cwd=str(raw_root), env=dict(os.environ))
         with log_path.open("w", encoding="utf-8") as log:
             async with stdio_client(params, errlog=log) as (read, write):
                 async with ClientSession(read, write) as session:

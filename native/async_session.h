@@ -10,7 +10,7 @@ namespace music {
 // Invoke on the session I/O thread. A separate owning OS thread contains the engine.
 class AsyncSession {
 public:
-    explicit AsyncSession(engrave::EngineOptions options, bool live_export = false);
+    explicit AsyncSession(engrave::EngineOptions options);
     ~AsyncSession();
     AsyncSession(const AsyncSession&) = delete;
     AsyncSession& operator=(const AsyncSession&) = delete;

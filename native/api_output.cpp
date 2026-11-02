@@ -15,6 +15,9 @@
 #include <set>
 #include <thread>
 #include <cstdio>
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+#include <engrave/testing/write470.h>
+#endif
 
 namespace music::v2 {
 namespace {
@@ -29,23 +32,23 @@ template<class T> T engine_value(engrave::Result<T> result) {
     return std::move(*result);
 }
 
-void check_capture_cancelled(const engrave::CaptureOptions& capture) {
+void check_request_cancelled(const engrave::CaptureOptions& capture) {
     if (capture.cancelled && capture.cancelled())
         throw detail::DecodeError{HostError{"Cancelled", "export capture cancelled"}};
 }
 
 // Keep only one position object at a time in the JSON encoder. The engine's
-// payload and this byte vector coexist and share the reserved snapshot budget.
+// payload and this byte vector coexist and share the reserved output byte limit.
 std::vector<std::byte> position_json(const engrave::Positions& positions, const engrave::CaptureOptions& capture) {
     const auto limit = capture.max_bytes.value_or(std::numeric_limits<std::uint64_t>::max());
     const auto payload = engrave::position_payload_bytes(positions);
-    if (payload > limit) throw detail::DecodeError{HostError{"ResourceLimit", "position payload exceeds snapshot budget"}};
+    if (payload > limit) throw detail::DecodeError{HostError{"ResourceLimit", "position payload exceeds output byte limit"}};
     const auto available = limit - payload;
     std::vector<std::byte> result;
     auto append = [&](const std::string& part) {
-        check_capture_cancelled(capture);
+        check_request_cancelled(capture);
         if (part.size() > available - result.size())
-            throw detail::DecodeError{HostError{"ResourceLimit", "position JSON exceeds snapshot budget"}};
+            throw detail::DecodeError{HostError{"ResourceLimit", "position JSON exceeds output byte limit"}};
         const auto* data = reinterpret_cast<const std::byte*>(part.data());
         result.insert(result.end(), data, data + part.size());
     };
@@ -90,27 +93,26 @@ engrave::AudioFormat audio_format(const std::string& s) {
     invalid("unknown audio format");
 }
 
-// The public capabilities exposed by HostApi use the host-owned copies. A
-// worker's Engine makes its own copies, so resolve names/paths to indices now.
+// Resolve names and paths against the engine's current private asset copies.
 engrave::SoundFontSelection resolve_soundfont(const engrave::SoundFontSelection& selection,
-                                              const RuntimeSnapshot& runtime) {
+                                              const engrave::EngineOptions& runtime) {
     if (std::holds_alternative<std::monostate>(selection)) return selection;
     if (const auto* index = std::get_if<std::int32_t>(&selection)) {
-        if (*index < 0 || static_cast<std::size_t>(*index) >= runtime.options.soundfonts.size())
+        if (*index < 0 || static_cast<std::size_t>(*index) >= runtime.soundfonts.size())
             invalid("SoundFont index is out of range");
         return *index;
     }
     const auto& name = std::get<std::string>(selection);
-    for (std::size_t i = 0; i < runtime.options.soundfonts.size(); ++i) {
-        const auto& file = runtime.options.soundfonts[i];
+    for (std::size_t i = 0; i < runtime.soundfonts.size(); ++i) {
+        const auto& file = runtime.soundfonts[i];
         if (detail::path_text(file) == name || detail::path_text(file.stem()) == name)
             return static_cast<std::int32_t>(i);
     }
-    throw detail::DecodeError{HostError{"NotFound", "no captured SoundFont named '" + name + "'"}};
+    throw detail::DecodeError{HostError{"NotFound", "no SoundFont named '" + name + "'"}};
 }
 
 engrave::AudioOptions effective_mix(engrave::Document& document, const ExportRequest& request,
-                                   const RuntimeSnapshot& runtime) {
+                                   const engrave::EngineOptions& runtime) {
     auto result = request.audio_options;
     const auto defaults = engine_value(document.audio_tracks(result.score));
     if (defaults.tracks.size() > 256)
@@ -160,7 +162,6 @@ Result<ExportRequest> decode_export(const Json& j) {
             if (!revision) return std::unexpected(revision.error());
             result.expected_revision = *revision;
         }
-        result.action = j.at("action") == "run" ? ExportAction::Run : ExportAction::Start;
         const auto& destination = j.at("destination");
         result.destination.directory = destination.at("kind") == "directory";
         result.destination.path = detail::path(destination.at("path"));
@@ -220,75 +221,23 @@ Json encode(const Artifact& artifact) {
     return {{"mime", artifact.mime}, {"path", detail::path_text(artifact.path)}, {"size", std::to_string(artifact.size)}};
 }
 
-Result<ExportSnapshot> capture_export(engrave::Document& document, RuntimeSnapshot runtime,
-                                      const ExportRequest& request, const engrave::CaptureOptions& capture) {
-    try {
-        ExportSnapshot snapshot;
-        snapshot.source_revision = document.revision();
-        if (request.expected_revision && *request.expected_revision != snapshot.source_revision)
-            return std::unexpected(HostError{"RevisionConflict", "export revision is no longer current", {}, request.document, snapshot.source_revision});
-        snapshot.request = request;
-        snapshot.runtime = std::move(runtime);
-        snapshot.capture_budget = capture.max_bytes.value_or(std::numeric_limits<std::uint64_t>::max());
-        check_capture_cancelled(capture);
-        if (request.kind == ExportKind::Score) {
-            auto options = request.score_options;
-            options.capture = capture;
-            auto result = document.export_score_with_warnings(options);
-            if (!result && result.error().code == engrave::ErrorCode::Unsupported && options.format == engrave::Format::Midi) {
-                check_capture_cancelled(capture);
-                options.capture = {};
-                snapshot.snapshot_budget_enforced = false;
-                result = document.export_score_with_warnings(options);
-            }
-            if (!result && result.error().code == engrave::ErrorCode::Unsupported) {
-                snapshot.capture_error = api_error(result.error());
-                snapshot.export_warnings = result.error().export_warnings;
-            } else {
-                auto output = engine_value(std::move(result));
-                snapshot.captured_score_bytes = std::move(output.bytes);
-                snapshot.export_warnings = std::move(output.warnings);
-            }
-            check_capture_cancelled(capture);
-        } else if (request.kind == ExportKind::Positions) {
-            auto positions = engine_value(document.positions(request.position_kind, request.position_score, capture));
-            snapshot.captured_positions_json = position_json(positions, capture);
-        } else {
-            if (request.kind == ExportKind::Audio) {
-                snapshot.effective_audio = effective_mix(document, request, snapshot.runtime);
-                snapshot.duration_seconds = engine_value(document.outline(request.audio_options.score)).duration;
-            } else {
-                const auto pages = engine_value(document.page_count(request.render_options.score));
-                if (request.render_options.first_page >= pages ||
-                    (request.render_options.last_page != -1 && request.render_options.last_page >= pages))
-                    invalid("render page range is outside the score");
-            }
-            engrave::ExportOptions options; options.format = engrave::Format::Mscz;
-            options.capture = capture;
-            snapshot.mscz = engine_value(document.export_score(options));
-        }
-        check_capture_cancelled(capture);
-        return snapshot;
-    } catch (const detail::DecodeError& e) { return std::unexpected(e.error); }
-}
-Result<Json> live_export(engrave::Document& document, const ExportRequest& request, const JobLimits& limits,
+Result<Json> live_export(engrave::Document& document, const ExportRequest& request, const ExportLimits& limits,
     const std::function<bool()>& cancelled, std::chrono::steady_clock::time_point submitted, ExportTiming& timing,
-    const RuntimeSnapshot& runtime) {
+    const engrave::EngineOptions& runtime) {
     namespace fs = std::filesystem;
     struct Cleanup {
         fs::path destination, stage;
-        bool reserved = false;
         ~Cleanup() {
             std::error_code ec;
             if (!stage.empty()) fs::remove_all(stage, ec);
-            if (reserved) release_output_path(destination);
         }
     } cleanup;
     std::vector<Artifact> artifacts;
     std::vector<engrave::ExportWarning> warnings;
+    bool test_deadline = false;
     auto check = [&] {
         if (cancelled()) throw detail::DecodeError{HostError{"Cancelled", "live export cancelled"}};
-        if (ExportTiming::Clock::now() - submitted >= limits.deadline)
+        if (test_deadline || ExportTiming::Clock::now() - submitted >= limits.deadline)
             throw detail::DecodeError{HostError{"DeadlineExceeded", "export deadline exceeded"}};
     };
     try {
@@ -302,8 +251,6 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         } catch (const std::invalid_argument& e) { invalid(e.what()); }
         if (request.destination.directory && !fs::is_directory(cleanup.destination)) invalid("destination directory must exist");
         if (!request.destination.directory && fs::is_directory(cleanup.destination)) invalid("file destination is a directory");
-        if (!try_reserve_output_path(cleanup.destination, request.destination.directory)) invalid("destination is reserved by another job");
-        cleanup.reserved = true;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
         if (std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING"))
             throw std::system_error(EIO, std::generic_category(), "Injected staging directory failure");
@@ -332,9 +279,25 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         capture.max_bytes = limits.output_bytes;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
         int cancellation_polls = 0;
+        bool conversion_entered = false;
 #endif
         capture.cancelled = [&] {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
+            const auto test_path = request.destination.path.string();
+            if (test_path.find(".test-470-") != std::string::npos && !conversion_entered) {
+                const bool converting = test_path.find("converting") != std::string::npos;
+                const auto progress = engrave::testing::write470_progress();
+                if (progress.stage == (converting ? engrave::testing::Write470Progress::Stage::Converting :
+                                       engrave::testing::Write470Progress::Stage::Serializing) && progress.units >= 2) {
+                    conversion_entered = true;
+                    std::fprintf(stderr, "WRITE470_%s units=%llu\n", converting ? "CONVERTING" : "SERIALIZING",
+                                 static_cast<unsigned long long>(progress.units)); std::fflush(stderr);
+                    test_deadline = test_path.find("deadline") != std::string::npos;
+                    while (!test_deadline && !cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    std::fprintf(stderr, "WRITE470_RETURN units=%llu error=Cancelled\n",
+                                 static_cast<unsigned long long>(progress.units)); std::fflush(stderr);
+                }
+            }
             if (request.destination.path.string().find(".test-live-noncooperative") != std::string::npos) {
                 std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n"); std::fflush(stderr);
                 std::this_thread::sleep_for(std::chrono::seconds(30));
@@ -345,7 +308,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
                 while (!cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 #endif
-            return cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline;
+            return test_deadline || cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline;
         };
         if (request.kind == ExportKind::Score) {
             auto start = ExportTiming::Clock::now();
@@ -405,7 +368,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             auto start = ExportTiming::Clock::now();
             auto options = effective_mix(document, request, runtime);
             options.cancelled = capture.cancelled;
-            const auto rate = runtime.options.audio_sample_rate;
+            const auto rate = runtime.audio_sample_rate;
             if (options.sample_rate && options.sample_rate != rate)
                 throw detail::DecodeError{HostError{"Unsupported", "audio sample rate differs from the engine rate"}};
             const auto outline = engine_value(document.outline(options.score));
@@ -417,7 +380,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
                     auto positions = document.positions(engrave::PositionKind::Measure, {}, capture);
                     if (positions) duration = unexpanded_audio_seconds(master, *positions);
                 } catch (const std::runtime_error&) {
-                    // Match worker preflight: unavailable positions cannot bound
+                    // Preflight: unavailable positions cannot bound
                     // the unexpanded duration; retain the encoder quota.
                 }
                 check();
@@ -461,7 +424,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
         check(); // Publication commits the request; later cancellation observes its result.
         for (const auto& file : staged) {
             auto start = ExportTiming::Clock::now();
-            try { publish_job_output(file.source, file.artifact.path); }
+            try { publish_output(file.source, file.artifact.path); }
             catch (const PublicationError& e) {
                 if (e.visible) artifacts.push_back(file.artifact);
                 throw detail::DecodeError{HostError{"Io", e.what()}};
@@ -471,7 +434,7 @@ Result<Json> live_export(engrave::Document& document, const ExportRequest& reque
             artifacts.push_back(file.artifact);
         }
         Json encoded = Json::array(); for (const auto& a : artifacts) encoded.push_back(encode(a));
-        return Json{{"ok", true}, {"action", "run"}, {"source_revision", std::to_string(document.revision())},
+        return Json{{"ok", true}, {"source_revision", std::to_string(document.revision())},
             {"artifacts", std::move(encoded)}, {"export_warnings", encode(warnings)}};
     } catch (const detail::DecodeError& e) {
         auto error = e.error;

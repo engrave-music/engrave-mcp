@@ -101,44 +101,20 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                         # its frozen 4.90 request is additionally checked separately.
                         versions = ['4.70'] + ([case['target_version']] if case['target_version'] != '4.70' else [])
                         for version in versions:
-                            for fmt, action in ([(f, 'run') for f in ('mscx', 'mscz')] +
-                                                [(f, 'start') for f in ('mscx', 'mscz')]):
+                            for fmt, action in [(f, 'run') for f in ('mscx', 'mscz')]:
                                 label = fmt if version == '4.70' else f'{version}-{fmt}'
                                 label += '-start' if action == 'start' else ''
                                 folder = dest / label
                                 folder.mkdir()
                                 path = folder / f'score.{fmt}'
-                                arguments = {'document': doc, 'action': action, 'kind': 'score',
+                                arguments = {'document': doc, 'kind': 'score',
                                     'options': {'format': fmt, 'native_version': version},
                                     'destination': {'kind': 'file', 'path': str(path)}}
                                 request = json.dumps({'name': 'score_export', 'arguments': arguments},
                                                      ensure_ascii=False, separators=(',', ':')).encode()
                                 (folder / 'request.json').write_bytes(request)
                                 value = await call('score_export', arguments)
-                                if action == 'start':
-                                    require(value['ok'], f'job start failed before engine capture: {value}')
-                                    deadline = time.monotonic() + 30
-                                    while True:
-                                        polled = await call('runtime_job', {'job': value['job'], 'action': 'get'})
-                                        require(polled['ok'], f'job poll failed: {polled}')
-                                        status = polled['status']
-                                        if status['state'] in ('succeeded', 'failed', 'cancelled'):
-                                            break
-                                        require(time.monotonic() < deadline, 'job poll timed out')
-                                        await asyncio.sleep(.02)
-                                    require(status['state'] in ('succeeded', 'failed'), f'job cancelled: {status}')
-                                    if status['state'] == 'failed':
-                                        require(status['artifacts'] == [], 'refused job published artifacts')
-                                        require(status['export_warnings'] == status['error']['export_warnings'], 'job warning mismatch')
-                                        value = {'ok': False, 'error': status['error'], 'job_status': status}
-                                    else:
-                                        value = dict(status, ok=True)
                                 warnings = value.get('export_warnings') if value['ok'] else value.get('error', {}).get('export_warnings')
-                                if action == 'start':
-                                    sync_label = label.removesuffix('-start')
-                                    sync = record['formats'][sync_label]['host_result']
-                                    sync_warnings = sync.get('export_warnings') if sync['ok'] else sync['error'].get('export_warnings')
-                                    require(warnings == sync_warnings, 'sync/async warning arrays differ')
                                 save_json(folder / 'warnings.json', warnings)
                                 result = {'source_sha256': record['source_sha256'], 'target_version': version,
                                     'request_sha256': sha(request), 'host_result': value,

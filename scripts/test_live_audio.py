@@ -20,7 +20,7 @@ def main():
     def opened(c):
         return c.tool('score_open', {'path':str(ROOT/'fixtures/golden/repeat70.mscx')})['document']
     def args(doc, kind, fmt, path, overrides=None):
-        return dict(document=doc, action='run', kind=kind,
+        return dict(document=doc, kind=kind,
                     options=dict(format=fmt, **(overrides or {})),
                     destination=dict(kind='file', path=str(path)))
     def wait_marker(c, marker, offset):
@@ -32,7 +32,7 @@ def main():
         for label, mix in [('default', {}), ('mix', {'master_volume_db':-6, 'master_balance':.3,
                             'tracks':[{'track':0, 'volume_db':-3, 'soundfont':0}]})]:
             hashes = {}
-            for mode in ('isolated', 'live'):
+            for mode in ('fresh', 'live'):
                 c = client(mode, f'parity-{fmt}-{label}-{mode}')
                 try:
                     doc = opened(c)

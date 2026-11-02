@@ -490,7 +490,7 @@
     }
   },
   {
-    "description": "Destroy on owner thread; captured jobs remain independent.",
+    "description": "Destroy the document on its owner thread.",
     "inputSchema": {
       "$defs": {},
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4249,7 +4249,7 @@
     }
   },
   {
-    "description": "run waits; start queues. Capture source revision. Select master or excerpt for score, render, audio and positions. PNG/SVG require a directory with page-0001.ext names. Stage all; failed publication returns Io/published_artifacts and cleans remaining staging. Positions map Document::positions measure/segment to JSON page_size, elements and events: page-local 1200-DPI geometry, result-local element IDs and repeat-expanded milliseconds; see docs/dev/a5-registry.md.",
+    "description": "Export synchronously from the live document. Report source revision. Select master or excerpt for score, render, audio and positions. PNG/SVG require a directory with page-0001.ext names. Stage all; failed publication returns Io/published_artifacts and cleans remaining staging. Positions map Document::positions measure/segment to JSON page_size, elements and events: page-local 1200-DPI geometry, result-local element IDs and repeat-expanded milliseconds; see docs/dev/a5-registry.md.",
     "inputSchema": {
       "$defs": {
         "score": {
@@ -4271,13 +4271,6 @@
         {
           "additionalProperties": false,
           "properties": {
-            "action": {
-              "enum": [
-                "run",
-                "start"
-              ],
-              "type": "string"
-            },
             "destination": {
               "additionalProperties": false,
               "properties": {
@@ -4371,7 +4364,6 @@
           },
           "required": [
             "document",
-            "action",
             "kind",
             "options",
             "destination"
@@ -4407,13 +4399,6 @@
             }
           },
           "properties": {
-            "action": {
-              "enum": [
-                "run",
-                "start"
-              ],
-              "type": "string"
-            },
             "destination": {
               "oneOf": [
                 {
@@ -4536,7 +4521,6 @@
           },
           "required": [
             "document",
-            "action",
             "kind",
             "options",
             "destination"
@@ -4557,13 +4541,6 @@
         {
           "additionalProperties": false,
           "properties": {
-            "action": {
-              "enum": [
-                "run",
-                "start"
-              ],
-              "type": "string"
-            },
             "destination": {
               "additionalProperties": false,
               "properties": {
@@ -4768,7 +4745,6 @@
           },
           "required": [
             "document",
-            "action",
             "kind",
             "options",
             "destination"
@@ -4778,13 +4754,6 @@
         {
           "additionalProperties": false,
           "properties": {
-            "action": {
-              "enum": [
-                "run",
-                "start"
-              ],
-              "type": "string"
-            },
             "destination": {
               "additionalProperties": false,
               "properties": {
@@ -4837,7 +4806,6 @@
           },
           "required": [
             "document",
-            "action",
             "kind",
             "options",
             "destination"
@@ -4984,70 +4952,36 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "oneOf": [
         {
-          "oneOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "action": {
-                  "const": "start"
-                },
-                "job": {
-                  "type": "string"
-                },
-                "ok": {
-                  "const": true
-                },
-                "source_revision": {
-                  "maxLength": 20,
-                  "pattern": "^(0|[1-9][0-9]*)$",
-                  "type": "string"
-                }
+          "additionalProperties": false,
+          "properties": {
+            "artifacts": {
+              "items": {
+                "$ref": "#/$defs/artifact"
               },
-              "required": [
-                "action",
-                "job",
-                "ok",
-                "source_revision"
-              ],
-              "type": "object"
+              "maxItems": 4096,
+              "type": "array"
             },
-            {
-              "additionalProperties": false,
-              "properties": {
-                "action": {
-                  "const": "run"
-                },
-                "artifacts": {
-                  "items": {
-                    "$ref": "#/$defs/artifact"
-                  },
-                  "maxItems": 4096,
-                  "type": "array"
-                },
-                "export_warnings": {
-                  "items": {
-                    "$ref": "#/$defs/export_warning"
-                  },
-                  "type": "array"
-                },
-                "ok": {
-                  "const": true
-                },
-                "source_revision": {
-                  "maxLength": 20,
-                  "pattern": "^(0|[1-9][0-9]*)$",
-                  "type": "string"
-                }
+            "export_warnings": {
+              "items": {
+                "$ref": "#/$defs/export_warning"
               },
-              "required": [
-                "ok",
-                "action",
-                "source_revision",
-                "artifacts"
-              ],
-              "type": "object"
+              "type": "array"
+            },
+            "ok": {
+              "const": true
+            },
+            "source_revision": {
+              "maxLength": 20,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "type": "string"
             }
-          ]
+          },
+          "required": [
+            "ok",
+            "source_revision",
+            "artifacts"
+          ],
+          "type": "object"
         },
         {
           "additionalProperties": false,
@@ -5071,7 +5005,7 @@
     }
   },
   {
-    "description": "Inspect runtime or add_font(path)/set_soundfonts(files) on owner thread. Empty files disables audio. Changes preserve document revisions; fonts trigger relayout. Existing jobs retain captured immutable assets; sample rate stays fixed.",
+    "description": "Inspect runtime or add_font(path)/set_soundfonts(files) on owner thread. Empty files disables audio. Changes preserve document revisions; fonts trigger relayout. Sample rate stays fixed.",
     "inputSchema": {
       "$defs": {},
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5328,10 +5262,10 @@
             "batch_ops": {
               "type": "integer"
             },
-            "deadline_ms": {
-              "type": "integer"
+            "cancellation": {
+              "const": "cooperative"
             },
-            "export_workers": {
+            "deadline_ms": {
               "type": "integer"
             },
             "input_bytes": {
@@ -5345,33 +5279,19 @@
             "query_results": {
               "type": "integer"
             },
-            "queue_capacity": {
-              "type": "integer"
-            },
-            "snapshot_bytes": {
-              "maxLength": 20,
-              "pattern": "^(0|[1-9][0-9]*)$",
-              "type": "string"
-            },
             "transport_request_bytes": {
-              "type": "integer"
-            },
-            "worker_request_bytes": {
               "type": "integer"
             }
           },
           "required": [
             "base64_chars",
             "batch_ops",
+            "cancellation",
             "deadline_ms",
-            "export_workers",
             "input_bytes",
             "output_bytes",
             "query_results",
-            "queue_capacity",
-            "snapshot_bytes",
-            "transport_request_bytes",
-            "worker_request_bytes"
+            "transport_request_bytes"
           ],
           "type": "object"
         },
@@ -5437,258 +5357,6 @@
             "ok",
             "templates",
             "tool_revision"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "error": {
-              "$ref": "#/$defs/error"
-            },
-            "ok": {
-              "const": false
-            }
-          },
-          "required": [
-            "error",
-            "ok"
-          ],
-          "type": "object"
-        }
-      ],
-      "type": "object",
-      "unevaluatedProperties": false
-    }
-  },
-  {
-    "description": "Inspect or cancel retained job; terminal cancellation is idempotent.",
-    "inputSchema": {
-      "$defs": {},
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "action": {
-          "enum": [
-            "get",
-            "cancel"
-          ],
-          "type": "string"
-        },
-        "job": {
-          "maxLength": 128,
-          "type": "string"
-        }
-      },
-      "required": [
-        "action",
-        "job"
-      ],
-      "type": "object",
-      "unevaluatedProperties": false
-    },
-    "name": "runtime_job",
-    "outputSchema": {
-      "$defs": {
-        "artifact": {
-          "additionalProperties": false,
-          "properties": {
-            "mime": {
-              "type": "string"
-            },
-            "path": {
-              "type": "string"
-            },
-            "size": {
-              "maxLength": 20,
-              "pattern": "^(0|[1-9][0-9]*)$",
-              "type": "string"
-            }
-          },
-          "required": [
-            "mime",
-            "path",
-            "size"
-          ],
-          "type": "object"
-        },
-        "error": {
-          "additionalProperties": false,
-          "properties": {
-            "code": {
-              "enum": [
-                "InvalidArgument",
-                "InvalidInput",
-                "UnsupportedFormat",
-                "NotFound",
-                "StaleHandle",
-                "ResourceLimit",
-                "Unsupported",
-                "Io",
-                "RevisionConflict",
-                "EditRejected",
-                "Poisoned",
-                "EngineFailure",
-                "Cancelled",
-                "DeadlineExceeded",
-                "WorkerFailed"
-              ],
-              "type": "string"
-            },
-            "current_revision": {
-              "maxLength": 20,
-              "pattern": "^(0|[1-9][0-9]*)$",
-              "type": "string"
-            },
-            "document": {
-              "maxLength": 128,
-              "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
-              "type": "string"
-            },
-            "export_warnings": {
-              "items": {
-                "$ref": "#/$defs/export_warning"
-              },
-              "type": "array"
-            },
-            "message": {
-              "type": "string"
-            },
-            "op_index": {
-              "type": "integer"
-            },
-            "published_artifacts": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            }
-          },
-          "required": [
-            "code",
-            "message"
-          ],
-          "type": "object"
-        },
-        "export_warning": {
-          "additionalProperties": false,
-          "if": {
-            "properties": {
-              "code": {
-                "pattern": "^B470_"
-              }
-            },
-            "required": [
-              "code"
-            ]
-          },
-          "properties": {
-            "code": {
-              "type": "string"
-            },
-            "message": {
-              "type": "string"
-            },
-            "object": {
-              "additionalProperties": false,
-              "properties": {
-                "id": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "kind": {
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "kind"
-              ],
-              "type": "object"
-            }
-          },
-          "required": [
-            "code",
-            "message"
-          ],
-          "then": {
-            "required": [
-              "object"
-            ]
-          },
-          "type": "object"
-        },
-        "job": {
-          "additionalProperties": false,
-          "properties": {
-            "artifacts": {
-              "items": {
-                "$ref": "#/$defs/artifact"
-              },
-              "maxItems": 4096,
-              "type": "array"
-            },
-            "error": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/error"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "export_warnings": {
-              "items": {
-                "$ref": "#/$defs/export_warning"
-              },
-              "type": "array"
-            },
-            "job": {
-              "type": "string"
-            },
-            "source_revision": {
-              "maxLength": 20,
-              "pattern": "^(0|[1-9][0-9]*)$",
-              "type": "string"
-            },
-            "state": {
-              "enum": [
-                "queued",
-                "running",
-                "succeeded",
-                "failed",
-                "cancelled"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "job",
-            "state",
-            "source_revision",
-            "artifacts",
-            "error"
-          ],
-          "type": "object"
-        }
-      },
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "oneOf": [
-        {
-          "additionalProperties": false,
-          "properties": {
-            "ok": {
-              "const": true
-            },
-            "status": {
-              "$ref": "#/$defs/job"
-            }
-          },
-          "required": [
-            "ok",
-            "status"
           ],
           "type": "object"
         },

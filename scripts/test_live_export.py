@@ -49,7 +49,7 @@ def main():
     if sys.platform == "win32":
         subprocess.run([sys.executable,str(ROOT/"scripts/test_live_golden.py"),"--output",str(oracle)],check=True)
     results={}
-    for mode in (None,"isolated","live"):
+    for mode in (None,):
         out=a.output/(mode or "default")
         c=Client(a.binary,a.resources,out,mode)
         doc=c.tool("score_open",{"path":str(ROOT/"fixtures/golden/repeat70.mscx")})["document"]
@@ -83,7 +83,7 @@ def main():
         assert "export_warnings" in failure["error"]
         assert not (out/"refused.mscz").exists()
         positions=out/"positions.json"
-        c.tool("score_export",dict(document=doc,action="run",kind="positions",options={"position_kind":"measure"},destination={"kind":"file","path":str(positions)}))
+        c.tool("score_export",dict(document=doc,kind="positions",options={"position_kind":"measure"},destination={"kind":"file","path":str(positions)}))
         hashes["positions"]=hashlib.sha256(positions.read_bytes()).hexdigest()
         outline=c.tool("score_outline",{"document":doc})["outline"]
         measure=outline["measures"][0]["id"]
@@ -110,10 +110,10 @@ def main():
         assert not dest.exists()
         phases=c.close()
         modes={x["mode"] for x in phases}
-        assert ("live" in modes)==(mode=="live"),modes
+        assert modes == {"live"}, modes
         results[mode or "default"]=hashes
     # Test-only binary: fail the shared pre-rename flush in both callers.
-    for mode in ("live","isolated"):
+    for mode in ("live",):
         for seam in ("FILE_FLUSH", "STAGING") if mode=="live" else ("FILE_FLUSH",):
             key="ENGRAVE_MCP_TEST_FAIL_"+seam
             os.environ[key]="1"
@@ -130,10 +130,6 @@ def main():
                 assert not list(dest.parent.glob(".musescore-job-*"))
             c.close()
     (a.output/"comparison.json").write_text(json.dumps(results,indent=2))
-    for fmt in results["default"]:
-        if fmt != "pdf": assert results["default"][fmt]==results["isolated"][fmt],fmt
-    for fmt in ("mscz","mscx","musicxml","mxl","midi","positions"):
-        assert results["live"][fmt]==results["isolated"][fmt],fmt
     (a.output/"comparison.json").write_text(json.dumps(results,indent=2))
     print(f"complete: live export passed; {len(folders)} PDF/MSCZ pairs compared; render hash differences retained in comparison.json")
 

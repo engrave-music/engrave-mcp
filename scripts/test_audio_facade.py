@@ -1,4 +1,4 @@
-"""Exercise v2 audio-track queries, mix overrides and captured export jobs."""
+"""Exercise v2 audio-track queries, mix overrides and live exports."""
 from __future__ import annotations
 
 import argparse
@@ -54,17 +54,14 @@ async def run(args):
             values = {'document': doc, 'mode': 'audio_tracks'}
             if score is not None: values['score'] = {'excerpt': score}
             return (await client.tool('score_query', values))['audio_tracks']
-        async def export(doc, filename, options=None, action='run', score=None):
+        async def export(doc, filename, options=None, score=None):
             path = out / filename
             fmt = path.suffix.lstrip('.')
             if fmt == 'ogg': fmt = 'opus'
             values = {'format': fmt, **(options or {})}
             if score is not None: values['score'] = {'excerpt': score}
-            result = await client.tool('score_export', {'document': doc, 'action': action, 'kind': 'audio',
+            result = await client.tool('score_export', {'document': doc, 'kind': 'audio',
                 'options': values, 'destination': {'kind': 'file', 'path': str(path)}})
-            if action == 'start':
-                result = await client.terminal(result['job'])
-                assert result['state'] == 'succeeded', result
             assert path.is_file() and path.stat().st_size > 0
             return path
 
@@ -142,20 +139,20 @@ async def run(args):
             {'tracks': [{'track': ids[0], 'forceMute': True}]},
             {'unexpected': True}, {'tracks': [{'track': ids[0], 'unexpected': True}]},
         ]
-        for action in ('run', 'start'):
+        for action in ('run',):
             for i, bad in enumerate(invalid_options):
                 path = out / f'invalid-{action}-{i}.wav'
                 path.write_bytes(b'unchanged')
-                await client.tool('score_export', {'document': doc, 'action': action, 'kind': 'audio',
+                await client.tool('score_export', {'document': doc, 'kind': 'audio',
                     'options': {'format': 'wav', **bad}, 'destination': {'kind': 'file', 'path': str(path)}}, error=True)
                 assert path.read_bytes() == b'unchanged'
         for fmt, kind in (('svg', 'render'), ('png', 'render'), ('pdf', 'render'), ('midi', 'score'), ('musicxml', 'score')):
-            for action in ('run', 'start'):
+            for action in ('run',):
                 path = out / f'invalid-{fmt}-{action}'
                 directory = fmt in ('svg', 'png')
                 if directory: path.mkdir(exist_ok=True)
                 else: path.write_bytes(b'unchanged')
-                await client.tool('score_export', {'document': doc, 'action': action, 'kind': kind,
+                await client.tool('score_export', {'document': doc, 'kind': kind,
                     'options': {'format': fmt, 'master_volume_db': 0},
                     'destination': {'kind': 'directory' if directory else 'file', 'path': str(path)}}, error=True)
                 if directory: assert not list(path.iterdir())
@@ -201,10 +198,10 @@ async def run(args):
         assert len([t for t in changed_tracks if t['part_id'] == '1']) == 2
         if args.soundfont:
             sync = await export(changed_doc, 'change-sync.wav')
-            asynchronous = await export(changed_doc, 'change-async.wav', action='start')
+            asynchronous = await export(changed_doc, 'change-async.wav')
             assert sync.read_bytes() == asynchronous.read_bytes()
             mixed = await export(changed_doc, 'change-mix-sync.wav', {'tracks': [{'track': changed_tracks[0]['track'], 'mute': True}]})
-            mixed_async = await export(changed_doc, 'change-mix-async.wav', {'tracks': [{'track': changed_tracks[0]['track'], 'mute': True}]}, action='start')
+            mixed_async = await export(changed_doc, 'change-mix-async.wav', {'tracks': [{'track': changed_tracks[0]['track'], 'mute': True}]})
             assert mixed.read_bytes() == mixed_async.read_bytes()
             assert analyze(mixed)['rms'] < analyze(sync)['rms']
         await client.tool('score_close', {'document': changed_doc})

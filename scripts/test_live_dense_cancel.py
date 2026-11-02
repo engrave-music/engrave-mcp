@@ -89,7 +89,7 @@ def main():
         try:
             doc = c.tool('score_open', {'path':str(score)})['document']
             def args(path):
-                return dict(document=doc, action='run', kind='audio', options={'format':'wav'},
+                return dict(document=doc, kind='audio', options={'format':'wav'},
                             destination={'kind':'file', 'path':str(path)})
             # Environment changes apply only to newly launched clients.
             os.environ.pop('ENGRAVE_M2_PHASE_OBSERVER', None)

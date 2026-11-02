@@ -134,7 +134,7 @@ async def run(args):
                     options.update(kw)
                     directory = fmt == 'png'
                     if directory: path.mkdir(exist_ok=True)
-                    r = await call('score_export', {'document': doc, 'action': 'run', 'kind': kind,
+                    r = await call('score_export', {'document': doc, 'kind': kind,
                         'options': options, 'destination': {'kind': 'directory' if directory else 'file', 'path': str(path)}})
                     assert len(r['artifacts']) == 1
                     artifact = Path(r['artifacts'][0]['path'])
@@ -181,7 +181,7 @@ async def run(args):
                 for fmt in ('measurePositions', 'segmentPositions'):
                     for option in [{'page':0}, {'midi_expand_repeats':False}, {'dpi':144}]:
                         sentinel.write_bytes(b'unchanged')
-                        await call('score_export', {'document': doc, 'action': 'run', 'kind': 'positions',
+                        await call('score_export', {'document': doc, 'kind': 'positions',
                             'options': {'position_kind': 'measure' if fmt == 'measurePositions' else 'segment', **option},
                             'destination': {'kind': 'file', 'path': str(sentinel)}}, True)
                         assert sentinel.read_bytes() == b'unchanged'

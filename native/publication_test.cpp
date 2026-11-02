@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
     for (int failure : {0, 1, 2}) {
         { std::ofstream(staged) << "new"; std::ofstream(dest) << "old"; }
         calls = 0; fail_at = failure;
-        try { music::publish_job_output(staged, dest); require(failure == 0); }
+        try { music::publish_output(staged, dest); require(failure == 0); }
         catch (const music::PublicationError& e) {
             require(failure != 0 && e.code().value() == EIO && e.visible == (failure == 2));
         }

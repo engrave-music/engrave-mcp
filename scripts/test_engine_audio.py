@@ -306,7 +306,7 @@ async def capture_current_audio(binary: Path, resources: Path, soundfont: Path,
                     proof_document = created['document']
                     proof = target / "version.mscx"
                     _, error = await golden.call_tool(session, 'score_export', {'document': proof_document,
-                        'action': 'run', 'kind': 'score', 'options': {'format': 'mscx'},
+                        'kind': 'score', 'options': {'format': 'mscx'},
                         'destination': {'kind': 'file', 'path': str(proof)}})
                     assert not error, f"export version proof: {error}"
                     await golden.call_tool(session, "score_close", {'document': proof_document})
@@ -324,7 +324,7 @@ async def capture_current_audio(binary: Path, resources: Path, soundfont: Path,
                         try:
                             wav = raw / "capture.wav"
                             _, error = await golden.call_tool(session, 'score_export', {'document': document,
-                                'action': 'run', 'kind': 'audio', 'options': {'format': 'wav'},
+                                'kind': 'audio', 'options': {'format': 'wav'},
                                 'destination': {'kind': 'file', 'path': str(wav)}})
                             assert not error, f"{name}: audio export failed: {error}"
                             golden.write_json(target / name / "audio.json", golden.describe_audio(wav))
@@ -1515,22 +1515,19 @@ def test_excerpt_rendering_parity(
 async def test_mcp_level_integration(
     binary: Path, resources: Path, soundfont: Path, out_dir: Path, evidence: dict[str, Any],
 ) -> None:
-    """Exercise v2 mix, excerpt, codec job and MIDI output against existing evidence."""
+    """Exercise v2 mix, excerpt, codec and MIDI output against existing evidence."""
     from types import SimpleNamespace
     from v2_client import Client
 
     print('[MCP] Running v2 MCP-level audio integration tests...')
     args = SimpleNamespace(binary=binary, resources=resources, soundfont=soundfont)
     async with Client(args, out_dir) as client:
-        async def export(doc, fmt, path, options=None, action='run', score=None):
+        async def export(doc, fmt, path, options=None, score=None):
             kind = 'score' if fmt == 'midi' else 'audio'
             values = {'format': fmt, **(options or {})}
             if score is not None: values['score'] = {'excerpt': score}
-            result = await client.tool('score_export', {'document': doc, 'action': action, 'kind': kind,
+            result = await client.tool('score_export', {'document': doc, 'kind': kind,
                 'options': values, 'destination': {'kind': 'file', 'path': str(path.resolve())}})
-            if action == 'start':
-                status = await client.terminal(result['job'])
-                assert status['state'] == 'succeeded', status
             assert path.is_file() and path.stat().st_size > 0
             return path
 
@@ -1577,7 +1574,7 @@ async def test_mcp_level_integration(
         nonascii_async = {}
         for fmt in ('wav','flac','opus','mp3','aac'):
             sync = await export(doc,fmt,out_dir/f'mcp_sync.{fmt}')
-            async_path = await export(doc,fmt,nonascii_dir/f'异步 音频.{fmt}',action='start')
+            async_path = await export(doc,fmt,nonascii_dir/f'异步 音频.{fmt}')
             assert sync.read_bytes() == async_path.read_bytes(), fmt
             nonascii_async[fmt] = str(async_path.relative_to(out_dir))
 

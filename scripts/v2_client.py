@@ -77,14 +77,6 @@ class Client:
         assert len(result["content"][0]["text"].encode()) <= 4 * 1024 * 1024
         return payload
 
-    async def terminal(self, job):
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            status = (await self.tool("runtime_job", {"action": "get", "job": job}))["status"]
-            if status["state"] in ("succeeded", "failed", "cancelled"): return status
-            await asyncio.sleep(.02)
-        raise AssertionError("job did not terminate: " + job)
-
     async def close(self):
         self.proc.stdin.close()
         await asyncio.wait_for(self.proc.wait(), 15)

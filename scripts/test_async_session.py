@@ -12,11 +12,11 @@ import psutil
 from v2_client import Client, ROOT, TOOLS, VALIDATORS
 
 RETIRED = {"score_get", "score_replace_measures", "score_query_region", "score_set_pitches",
-           "score_generate_excerpts", "score_list_excerpts", "runtime_add_font", "runtime_set_soundfont",
+           "score_generate_excerpts", "score_list_excerpts", "runtime_add_font", "runtime_set_soundfont", "runtime_job",
            "score_export_start", "score_job_get", "score_job_cancel", "score_audio_tracks"}
 
-def export(doc, path, action="start"):
-    return {"document": doc, "action": action, "kind": "score", "options": {"format": "musicxml"},
+def export(doc, path, action=None):
+    return {"document": doc, "kind": "score", "options": {"format": "musicxml"},
             "destination": {"kind": "file", "path": str(path)}}
 
 
@@ -91,9 +91,8 @@ async def run(args):
             assert result["error"]["code"] == "InvalidArgument", result
         info = await client.tool("runtime_info", {})
         assert info["limits"] == {"input_bytes": 8388608, "base64_chars": 11184812, "batch_ops": 1024,
-            "query_results": 4096, "output_bytes": "1073741824", "queue_capacity": 8, "deadline_ms": 120000,
-            "export_workers": 2, "snapshot_bytes": "67108864", "transport_request_bytes": 4194304,
-            "worker_request_bytes": 4194304}, info["limits"]
+            "query_results": 4096, "output_bytes": "1073741824", "deadline_ms": 120000, "cancellation": "cooperative",
+            "transport_request_bytes": 4194304}, info["limits"]
         doc = (await client.tool("score_open", {"path": str(ROOT / "fixtures/golden/linked_parts.mscx")}))["document"]
         outline = await client.tool("score_outline", {"document": doc})
         base = outline["revision"]
@@ -121,12 +120,7 @@ async def run(args):
         assert changed["revision"] != revision
         conflict = await client.tool("score_export", {**export(doc, out / "stale.musicxml"), "expected_revision": revision}, error=True)
         assert conflict["error"]["code"] == "RevisionConflict"
-        if args.test_hooks:
-            status = (await client.tool("runtime_job", {"action": "get", "job": snapshot["job"]}))["status"]
-            assert status["state"] in ("queued", "running"), status
         await client.tool("score_close", {"document": doc})
-        done = await client.terminal(snapshot["job"])
-        assert done["state"] == "succeeded" and done["source_revision"] == revision, done
         assert snapshot_path.read_bytes() == reference.read_bytes()
 
         # A failed second page publication must retain its first published path
@@ -135,111 +129,27 @@ async def run(args):
         measure = (await client.tool("score_outline", {"document": partial_doc}))["outline"]["measures"][0]["id"]
         await client.tool("score_edit", {"document": partial_doc, "ops": [{"op": "set_layout_break",
             "measure": {"kind": "id", "id": measure}, "kind": "page", "on": True}]})
-        for action in ("run", "start"):
+        for action in ("live",):
             directory = out / f"partial-{action}"
             directory.mkdir(exist_ok=True)
             (directory / "page-0001.png").unlink(missing_ok=True)
             (directory / "page-0002.png").mkdir(exist_ok=True)
-            result = await client.tool("score_export", {"document": partial_doc, "action": action, "kind": "render",
+            result = await client.tool("score_export", {"document": partial_doc, "kind": "render",
                 "options": {"format": "png", "dpi": 36, "last_page": 1},
-                "destination": {"kind": "directory", "path": str(directory)}}, error=action == "run")
-            if action == "start":
-                result = await client.terminal(result["job"])
-                assert result["state"] == "failed", result
+                "destination": {"kind": "directory", "path": str(directory)}}, error=True)
             assert result["error"]["code"] == "Io" and len(result["error"]["published_artifacts"]) == 1, result
             assert Path(result["error"]["published_artifacts"][0]).resolve() == (directory / "page-0001.png").resolve(), result
             assert (directory / "page-0001.png").is_file()
         await client.tool("score_close", {"document": partial_doc})
 
-        if args.test_hooks and args.soundfont:
-            asset_doc = (await client.tool("score_open", {"path": str(ROOT / "fixtures/evening.musicxml")}))["document"]
-            audio_path = out / "asset-lease.test-slow.wav"
-            audio_path.unlink(missing_ok=True)
-            captured = await client.tool("score_export", {"document": asset_doc, "action": "start", "kind": "audio",
-                "options": {"format": "wav"}, "destination": {"kind": "file", "path": str(audio_path)}})
-            changed_runtime = await client.tool("runtime_info", {"action": "set_soundfonts", "files": []})
-            assert changed_runtime["capabilities"]["soundfonts"] == []
-            await client.tool("score_close", {"document": asset_doc})
-            asset_result = await client.terminal(captured["job"])
-            assert asset_result["state"] == "succeeded" and audio_path.stat().st_size > 0, asset_result
-            restored = await client.tool("runtime_info", {"action": "set_soundfonts", "files": [str(args.soundfont.resolve())]})
-            assert len(restored["capabilities"]["soundfonts"]) == 1
-            evidence["captured_audio_asset_survives_runtime_change"] = True
-
         doc = (await client.tool("score_create", {"template_id": "Treble_Clef"}))["document"]
         if args.test_hooks:
-            capture_path = out / "cancel.test-capture-slow.musicxml"
-            capture_path.unlink(missing_ok=True)
-            capture_id, capture_future = client.begin("tools/call", {"name": "score_export", "arguments":
-                export(doc, capture_path, "run")})
-            await client.proc.stdin.drain()
-            for _ in range(300):
-                if (await client.tool("test_capture_state", {}))["polling"]: break
-                await asyncio.sleep(.01)
-            else: raise AssertionError("engine capture did not enter its cancellation callback")
-            await client.notify("notifications/cancelled", {"requestId": capture_id})
-            capture_result = await asyncio.wait_for(capture_future, 10)
-            assert capture_result["error"]["code"] == -32800 and not capture_path.exists(), capture_result
-            late_path = out / "cancel.test-capture-late.musicxml"
-            late_path.unlink(missing_ok=True)
-            late_id, late_future = client.begin("tools/call", {"name": "score_export", "arguments":
-                export(doc, late_path, "run")})
-            await client.proc.stdin.drain()
-            for _ in range(300):
-                if (await client.tool("test_capture_state", {}))["completion_pending"]: break
-                await asyncio.sleep(.01)
-            else: raise AssertionError("capture completion was not held")
-            await client.notify("notifications/cancelled", {"requestId": late_id})
-            late_result = await asyncio.wait_for(late_future, 10)
-            assert late_result["error"]["code"] == -32800 and not late_path.exists(), late_result
-            deadline_path = out / "deadline.test-capture-deadline.musicxml"
-            deadline_path.unlink(missing_ok=True)
-            deadline_result = await client.tool("score_export", export(doc, deadline_path, "run"), error=True)
-            assert deadline_result["error"]["code"] == "DeadlineExceeded" and not deadline_path.exists(), deadline_result
-            jobs = []
-            for i in range(8):
-                path = out / f"capacity-{i}.test-slow.musicxml"
-                path.unlink(missing_ok=True)
-                jobs.append((await client.tool("score_export", export(doc, path)))["job"])
-                if i == 0:
-                    before = (await client.tool("test_capture_count", {}))["count"]
-                    conflict = await client.tool("score_export", export(doc, path), error=True)
-                    assert conflict["error"]["code"] == "InvalidArgument", conflict
-                    bad = await client.tool("score_export", export(doc, out / "missing-parent" / "bad.musicxml"), error=True)
-                    assert bad["error"]["code"] == "InvalidArgument", bad
-                    assert (await client.tool("test_capture_count", {}))["count"] == before
-            before = (await client.tool("test_capture_count", {}))["count"]
-            rejected = await client.tool("score_export", export(doc, out / "overflow.test-slow.musicxml"), error=True)
-            assert rejected["error"]["code"] == "ResourceLimit", rejected
-            assert (await client.tool("test_capture_count", {}))["count"] == before
-            states = [(await client.tool("runtime_job", {"action": "get", "job": j}))["status"]["state"] for j in jobs]
-            assert states.count("running") == 2 and states.count("queued") == 6, states
-            await client.tool("runtime_job", {"action": "cancel", "job": jobs[-1]})
-            assert (await client.terminal(jobs[-1]))["state"] == "cancelled"
-            await client.tool("runtime_job", {"action": "cancel", "job": jobs[0]})
-            assert (await client.terminal(jobs[0]))["state"] == "cancelled"
-            for job_id in jobs[1:-1]: await client.tool("runtime_job", {"action": "cancel", "job": job_id})
-            for job_id in jobs[1:-1]: assert (await client.terminal(job_id))["state"] == "cancelled"
-            assert not list(out.glob("capacity-*.test-slow.musicxml"))
-
-            slow_id, slow_future = client.begin("tools/call", {"name": "score_export", "arguments":
-                export(doc, out / "request-cancel.test-slow.musicxml", "run")})
-            await client.proc.stdin.drain()
-            await asyncio.sleep(.3)
-            await client.notify("notifications/cancelled", {"requestId": slow_id})
-            cancelled = await asyncio.wait_for(slow_future, 15)
-            assert cancelled["error"]["code"] == -32800, cancelled
-            assert not (out / "request-cancel.test-slow.musicxml").exists()
-
             stall_id, stall = client.begin("tools/call", {"name": "test_owner_sleep", "arguments": {}})
             await client.proc.stdin.drain()
             for _ in range(100):
                 if (await client.tool("test_owner_state", {}))["busy"]: break
                 await asyncio.sleep(.01)
             else: raise AssertionError("owner stall did not start")
-            started = time.monotonic()
-            status = await client.tool("runtime_job", {"action": "get", "job": jobs[0]})
-            assert time.monotonic() - started < .8 and status["status"]["state"] == "cancelled"
             queued_id, queued = client.begin("tools/call", {"name": "score_edit", "arguments":
                 {"document": doc, "ops": [{"op": "insert_measures", "count": 1}]}})
             await client.proc.stdin.drain()
@@ -267,42 +177,13 @@ async def run(args):
             assert all(code in (-32000, -32800, None) for code in codes), codes
             await asyncio.wait_for(stall, 10)
 
-            shutdown_path = out / "shutdown.test-slow.musicxml"
-            shutdown_path.unlink(missing_ok=True)
-            active = await client.tool("score_export", export(doc, shutdown_path))
-            for _ in range(100):
-                status = (await client.tool("runtime_job", {"action": "get", "job": active["job"]}))["status"]
-                if status["state"] == "running": break
-                await asyncio.sleep(.02)
-            else: raise AssertionError("shutdown worker did not start")
-            run_path = out / "shutdown-run.test-slow.musicxml"
-            run_path.unlink(missing_ok=True)
-            _, pending_run = client.begin("tools/call", {"name": "score_export", "arguments": export(doc, run_path, "run")})
-            await client.proc.stdin.drain()
-            for _ in range(100):
-                if len(psutil.Process(client.proc.pid).children(recursive=True)) >= 2: break
-                await asyncio.sleep(.02)
-            else: raise AssertionError("pending run worker did not start")
-            children = psutil.Process(client.proc.pid).children(recursive=True)
-            assert len(children) >= 2, "running worker processes not observed"
-            await client.close()
-            result = (await pending_run)["result"]
-            assert result["isError"] and result["structuredContent"]["error"]["code"] == "Cancelled", result
-            VALIDATORS["score_export"].validate(result["structuredContent"])
-            assert not shutdown_path.exists() and not run_path.exists() and not list(out.glob(".musescore-job-*"))
-            assert all(not child.is_running() for child in children), [child.pid for child in children]
-            evidence.update(queue_limit=8, running_limit=2, queued_and_running_cancel=True,
-                            request_cancel=True, capture_cancel=True, capture_completion_cancel=True, capture_deadline=True,
-                            queued_owner_cancel=True, running_owner_committed=True,
-                            job_manager_responsive_while_owner_busy=True, eof_reaped_worker=True,
-                            destination_reservation=True)
         else:
             await client.tool("score_close", {"document": doc})
     await eof_pipeline(args, out)
     evidence["backpressure_responses"] = await transport_backpressure(args, out)
     evidence.update(retired_tools=len(RETIRED), concurrent_edits=4, concurrent_queries=4,
-                    snapshot_revision=revision, close_with_active_job=True, eof_pipeline=True,
-                    published_artifacts_on_run_and_job_error=True,
+                    export_revision=revision, eof_pipeline=True,
+                    published_artifacts_on_error=True,
                     output_schema_validation=True, runtime_limits=info["limits"], status="passed")
     (out / "evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     print(json.dumps(evidence))

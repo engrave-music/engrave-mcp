@@ -42,17 +42,8 @@ async def run(args):
                     path = out/f'{label}.{fmt}'
                     options = {'format':fmt}
                     if version is not None: options['native_version'] = version
-                    value = await call('score_export', {'document':doc,'action':action,'kind':'score',
+                    value = await call('score_export', {'document':doc,'kind':'score',
                         'options':options,'destination':{'kind':'file','path':str(path)}}, refused and action=='run')
-                    if action == 'start':
-                        deadline = time.monotonic()+30
-                        while True:
-                            status = (await call('runtime_job', {'job':value['job'],'action':'get'}))['status']
-                            if status['state'] in ('succeeded','failed','cancelled'): break
-                            assert time.monotonic()<deadline, status
-                            await asyncio.sleep(.02)
-                        assert status['state'] == ('failed' if refused else 'succeeded'), status
-                        value = status
                     assert path.exists() != refused, value
                     return value, path
                 source = ROOT/'vendor/musescore/engrave/tests/data/write470/minimal.mscx'
@@ -71,7 +62,7 @@ async def run(args):
                 notes_source = ROOT/'tests/phase_b/notes.mscx'
                 doc70 = (await call('score_open', {'path':str(notes_source)}))['document']
                 sync, xml = await export(doc70,'sync470','4.70')
-                job, archive = await export(doc70,'job470','4.70','start','mscz')
+                job, archive = await export(doc70,'archive470','4.70','run','mscz')
                 assert sync['export_warnings'] == job['export_warnings']
                 # Frozen contract: any warning carries a B470_* identity and a {kind,id} object.
                 # The minimal score needs no downgrade warning once part identity is preserved.
@@ -81,14 +72,13 @@ async def run(args):
                 with zipfile.ZipFile(archive) as z:
                     score = next(n for n in z.namelist() if n.endswith('.mscx'))
                     assert ET.fromstring(z.read(score)).attrib['version']=='4.70'
-                for action in ('run','start'):
+                for action in ('run',):
                     bad, path = await export(doc,'bad-'+action,'4.90',action,refused=True)
                     assert bad['error']['code']=='Unsupported', bad
                     expected = json.loads((ROOT/'tests/phase_b/expected/unsupported_target.warnings.json').read_text())
                     assert bad['error']['export_warnings']==expected, bad
-                    if action=='start': assert bad['export_warnings']==expected, bad
                     for malformed in (490, '', 'x'*65):
-                        invalid = await call('score_export', {'document':doc, 'action':action, 'kind':'score',
+                        invalid = await call('score_export', {'document':doc,  'kind':'score',
                             'options':{'format':'mscx','native_version':malformed},
                             'destination':{'kind':'file','path':str(out/'malformed.mscx')}}, failed=True)
                         assert invalid['error']['code']=='InvalidArgument', invalid
@@ -97,20 +87,17 @@ async def run(args):
                 degraded_doc = (await call('score_open', {'path':str(degraded_source)}))['document']
                 expected = json.loads((ROOT/'tests/phase_b/expected/page_locks.warnings.json').read_text())
                 for fmt in ('mscx','mscz'):
-                    for action in ('run','start'):
+                    for action in ('run',):
                         value, _ = await export(degraded_doc,'degraded-'+fmt+'-'+action,'4.70',action,fmt)
                         assert value['export_warnings']==expected, value
                 refused_source = ROOT/'tests/phase_b/ties_mismatched.mscx'
                 refused_doc = (await call('score_open', {'path':str(refused_source)}))['document']
                 expected = json.loads((ROOT/'tests/phase_b/expected/ties_mismatched.warnings.json').read_text())
                 for fmt in ('mscx','mscz'):
-                    for action in ('run','start'):
+                    for action in ('run',):
                         value, _ = await export(refused_doc,'refused-'+fmt+'-'+action,'4.70',action,fmt,refused=True)
                         assert value['error']['code']=='Unsupported', value
                         assert value['error']['export_warnings']==expected, value
-                        if action=='start':
-                            assert value['export_warnings']==expected, value
-                            assert value['artifacts']==[], value
                 # Schema controls: engine-owned strings/arrays have no invented request bounds.
                 large = dict(sync)
                 large['export_warnings']=[{'code':'x'*5000,'message':'m'*70000}]*4100

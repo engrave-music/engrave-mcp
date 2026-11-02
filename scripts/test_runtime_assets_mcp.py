@@ -1,4 +1,4 @@
-"""Exercise live asset replacement and captured worker leases through v2 MCP."""
+"""Exercise live asset replacement and private runtime assets through v2 MCP."""
 from __future__ import annotations
 
 import argparse
@@ -35,14 +35,14 @@ async def run(args):
     score_path.write_text(score, encoding='utf-8')
 
     async with Client(args, out) as client:
-        async def export(doc, kind, fmt, path, action='run', excerpt=None):
+        async def export(doc, kind, fmt, path, excerpt=None):
             directory = kind == 'render' and fmt in ('svg', 'png')
             if directory:
                 path.mkdir(exist_ok=True)
             options = {'format': fmt}
             if excerpt is not None:
                 options['score'] = {'excerpt': excerpt}
-            return await client.tool('score_export', {'document': doc, 'action': action, 'kind': kind,
+            return await client.tool('score_export', {'document': doc, 'kind': kind,
                 'options': options, 'destination': {'kind': 'directory' if directory else 'file', 'path': str(path)}})
 
         doc = (await client.tool('score_open', {'path': str(score_path)}))['document']
@@ -53,8 +53,7 @@ async def run(args):
         excerpt_before, excerpt_after = out / 'excerpt-before', out / 'excerpt-after'
         await export(doc, 'render', 'svg', control)
         await export(doc, 'render', 'svg', excerpt_before, excerpt=excerpt)
-        captured = await export(doc, 'render', 'svg', before, 'start')
-        assert (await client.tool('runtime_job', {'action': 'get', 'job': captured['job']}))['status']['state'] in ('queued', 'running')
+        captured = await export(doc, 'render', 'svg', before)
         font = await client.tool('runtime_info', {'action': 'add_font', 'path': str(font_input)})
         font_path = Path(font['fonts'][-1])
         assert font_path != font_input and font_path.read_bytes() == font_input.read_bytes()
@@ -63,9 +62,8 @@ async def run(args):
         font_input.write_bytes(b'invalid font')
         await export(doc, 'render', 'svg', after)
         await export(doc, 'render', 'svg', excerpt_after, excerpt=excerpt)
-        assert (await client.terminal(captured['job']))['state'] == 'succeeded'
         control_svg, before_svg, after_svg = (p / 'page-0001.svg' for p in (control, before, after))
-        assert before_svg.read_bytes() == control_svg.read_bytes(), 'job lost captured fonts'
+        assert before_svg.read_bytes() == control_svg.read_bytes(), 'live export changed after completion'
         assert before_svg.read_bytes() != after_svg.read_bytes(), 'font did not change rendered text'
         assert (excerpt_before / 'page-0001.svg').read_bytes() != (excerpt_after / 'page-0001.svg').read_bytes(), \
             'font did not change rendered excerpt text'
@@ -78,15 +76,13 @@ async def run(args):
         fluid, captured_path, sine, again_path = (out / p for p in
             ('fluid.wav', 'captured.test-slow.wav', 'sine.wav', 'sine-again.wav'))
         await export(audio_doc, 'audio', 'wav', fluid)
-        captured = await export(audio_doc, 'audio', 'wav', captured_path, 'start')
-        assert (await client.tool('runtime_job', {'action': 'get', 'job': captured['job']}))['status']['state'] in ('queued', 'running')
+        captured = await export(audio_doc, 'audio', 'wav', captured_path)
         selected = await client.tool('runtime_info', {'action': 'set_soundfonts', 'files': [str(soundfont_input)]})
         retained_sf = Path(selected['capabilities']['soundfonts'][0])
         assert retained_sf != soundfont_input and retained_sf.read_bytes() == soundfont_input.read_bytes()
         soundfont_input.write_bytes(b'invalid soundfont')
         await export(audio_doc, 'audio', 'wav', sine)
-        assert (await client.terminal(captured['job']))['state'] == 'succeeded'
-        assert captured_path.read_bytes() == fluid.read_bytes(), 'job lost captured SoundFont'
+        assert captured_path.read_bytes() == fluid.read_bytes(), 'live export changed after completion'
         assert sine.read_bytes() != fluid.read_bytes(), 'SoundFont change did not affect audio'
         for path in (fluid, sine):
             audio, rate = sf.read(path, always_2d=True)
@@ -99,8 +95,8 @@ async def run(args):
 
     assert not font_path.exists(), 'retained font survived host shutdown'
     assert not retained_sf.exists(), 'retained SoundFont survived host shutdown'
-    print(json.dumps({'status': 'passed', 'font_worker_relayout': True, 'excerpt_font_relayout': True, 'captured_font': True,
-        'soundfont_worker_selection': True, 'captured_soundfont': True,
+    print(json.dumps({'status': 'passed', 'font_live_relayout': True, 'excerpt_font_relayout': True, 'private_font': True,
+        'soundfont_live_selection': True, 'private_soundfont': True,
         'invalid_soundfont_rollback': True, 'revision_unchanged': True, 'retained_files_cleaned': True}))
 
 

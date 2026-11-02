@@ -22,7 +22,7 @@ def main():
     def opened(label):
         c=Client(a.binary,a.resources,a.output/label,'live',a.soundfont)
         doc=c.tool('score_open',{'path':str(ROOT/'fixtures/golden/repeat70.mscx')})['document']
-        args=dict(document=doc,action='run',kind='audio',options={'format':'wav'},
+        args=dict(document=doc,kind='audio',options={'format':'wav'},
                   destination={'kind':'file','path':str(a.output/(label+'.wav'))})
         return c,args
     def save(): (a.output/'results.json').write_text(json.dumps(result,indent=2))

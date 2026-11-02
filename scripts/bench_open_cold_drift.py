@@ -85,7 +85,7 @@ def main():
                 elif kind == 2:
                     name, args = 'score_export', export_args(doc, 'mscz', a.output/'soak.mscz')
                 elif kind == 3:
-                    name, args = 'score_export', dict(document=doc, action='run', kind='audio',
+                    name, args = 'score_export', dict(document=doc, kind='audio',
                         options=dict(format='wav'), destination=dict(kind='file', path=str(a.output/'soak.wav')))
                 else:
                     name, args = 'score_edit', dict(document=doc, ops=[dict(op='set_layout_break',

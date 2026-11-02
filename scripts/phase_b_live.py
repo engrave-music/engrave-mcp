@@ -131,32 +131,19 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                             from test_phase_b_oracle import compare_warnings
                             for fmt in ('mscx', 'mscz'):
                                 sync_warnings = None
-                                for action in ('run', 'start'):
+                                for action in ('run',):
                                     folder = dest/f'{fmt}-{action}'
                                     folder.mkdir()
                                     path = folder/f'score.{fmt}'
                                     refused = scenario == 'one_end'
                                     value = await call('score_export', {'document': doc, 'expected_revision': revision,
-                                        'action': action, 'kind': 'score', 'options': {'format': fmt, 'native_version': '4.70'},
-                                        'destination': {'kind': 'file', 'path': str(path)}}, ok=not refused or action == 'start')
+                                        'kind': 'score', 'options': {'format': fmt, 'native_version': '4.70'},
+                                        'destination': {'kind': 'file', 'path': str(path)}}, ok=not refused)
                                     require(value.get('source_revision', revision) == revision, 'wrong export revision')
-                                    if action == 'start':
-                                        require(value['source_revision'] == revision, 'wrong captured revision')
-                                        deadline = time.monotonic()+30
-                                        while True:
-                                            status = (await call('runtime_job', {'job': value['job'], 'action': 'get'}))['status']
-                                            if status['state'] in ('failed', 'succeeded', 'cancelled'):
-                                                break
-                                            require(time.monotonic() < deadline, 'job timed out')
-                                            await asyncio.sleep(.02)
-                                        require(status['state'] == ('failed' if refused else 'succeeded'), 'wrong terminal state')
-                                        value = status
                                     if refused:
                                         require(value['error']['code'] == 'Unsupported', 'wrong refusal')
                                         warnings = value['error']['export_warnings']
                                         require(not path.exists() and value.get('artifacts', []) == [], 'published refusal')
-                                        if action == 'start':
-                                            require(warnings == value['export_warnings'], 'status/error warnings differ')
                                     else:
                                         require(value['source_revision'] == revision, 'wrong source revision')
                                         warnings = value['export_warnings']

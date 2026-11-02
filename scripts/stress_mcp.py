@@ -96,8 +96,7 @@ def main():
                         'pitches': [{'pitch': p} for p in (60, 64, 67)]}]})
                     if iteration % 10 == 9:
                         fmt = "wav" if soundfont else "pdf"
-                        call('score_export', {'document': doc, 'action': 'run',
-                            'kind': 'audio' if soundfont else 'render', 'options': {'format': fmt},
+                        call('score_export', {'document': doc, 'kind': 'audio' if soundfont else 'render', 'options': {'format': fmt},
                             'destination': {'kind': 'file', 'path': str((OUT / f'cycle.{fmt}').resolve())}})
                     call("score_close", {"document": doc})
                     if iteration % 10 == 9: samples.append({"cycle": iteration + 1, "private_bytes": memory(process)})

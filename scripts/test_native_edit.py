@@ -115,7 +115,7 @@ async def run(args):
         await client.tool('score_query', {'document': doc, 'mode': 'elements',
                                          'query': {'measure_count': 129}}, error=True)
         export = out / 'edited.musicxml'
-        await client.tool('score_export', {'document': doc, 'action': 'run', 'kind': 'score',
+        await client.tool('score_export', {'document': doc, 'kind': 'score',
             'options': {'format': 'musicxml'}, 'destination': {'kind': 'file', 'path': str(export)}})
         xml = ET.parse(export).getroot()
         assert len(xml.findall('./part')) == 2 and len(xml.findall('./part/measure/note')) == 16

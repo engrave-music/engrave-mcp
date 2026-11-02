@@ -47,13 +47,13 @@ async def run(args):
                     'target': {'kind': 'id', 'id': linked}, 'props': ['pitch']})
                 assert prop['properties'][0]['value']['value'] == '74'
             for fmt in ('musicxml', 'mxl'):
-                await client.tool('score_export', {'document': doc, 'action': 'run', 'kind': 'score',
+                await client.tool('score_export', {'document': doc, 'kind': 'score',
                     'options': {'format': fmt}, 'destination': {'kind': 'file', 'path': str(out / f'{label}.{fmt}')}})
             original = first_tie(out / f'{label}.musicxml')
             assert original == [('D', ['start'], ['start']), (('D' if both else 'B'), ['stop'], ['stop'])], original
             restored = (await client.tool('score_open', {'path': str(out / f'{label}.mxl')}))['document']
             result = out / f'{label}-reopened.musicxml'
-            await client.tool('score_export', {'document': restored, 'action': 'run', 'kind': 'score',
+            await client.tool('score_export', {'document': restored, 'kind': 'score',
                 'options': {'format': 'musicxml'}, 'destination': {'kind': 'file', 'path': str(result)}})
             reimported = first_tie(result)
             if both:

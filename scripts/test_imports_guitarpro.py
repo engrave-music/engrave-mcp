@@ -330,7 +330,7 @@ async def _close(session, document_id):
 
 
 async def _export(session, document, fmt, path):
-    result = await session.call_tool("score_export", {"document": document, "action": "run", "kind": "score",
+    result = await session.call_tool("score_export", {"document": document, "kind": "score",
         "options": {"format": fmt}, "destination": {"kind": "file", "path": str(path)}})
     assert not result.is_error, result
     assert path.stat().st_size == int(result.structured_content['artifacts'][0]['size']) > 0

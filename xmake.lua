@@ -12,7 +12,7 @@
 --   registry_test, registry_check    v2 contract validation
 --   v2_store                         public-API document store
 --   engrave_mcp                    stdio JSON-RPC host (engrave-mcp binary)
---   engrave_mcp_test, host_api_test, export_job_test   host regression binaries
+--   engrave_mcp_test, host_api_test   host regression binaries
 --
 -- Engine targets (muse_global, muse_draw, muse_mpe, engraving, iex_musicxml,
 -- iex_guitarpro, iex_midi, native_fluidsynth, muse_audio_engine,
@@ -283,17 +283,6 @@ target("host_api_test")
     end
 target_end()
 
-target("export_job_test")
-    set_kind("binary")
-    set_default(false)
-    add_deps("muse_generated", "v2_store")
-    add_files(path.join(native_dir, "export_job_test.cpp"), path.join(native_dir, "api_output.cpp"),
-        path.join(native_dir, "worker_v2.cpp"), path.join(native_dir, "background_job.cpp"),
-        path.join(native_dir, "export_job.cpp"))
-    if is_plat("windows") then
-        add_files(path.join(native_dir, "utf8.manifest"))
-    end
-target_end()
 
 -- M1 direct public API oracle; no worker or snapshot in either comparison.
 target("live_export_test")

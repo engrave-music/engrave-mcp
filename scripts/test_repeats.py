@@ -152,7 +152,7 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
                     try:
                         pos_path = output_dir / f"{tname}_positions.json"
                         err_exp, exported = await call("score_export", {
-                            "document": doc_id, "action": "run", "kind": "positions",
+                            "document": doc_id, "kind": "positions",
                             "options": {"position_kind": "measure"},
                             "destination": {"kind": "file", "path": str(pos_path.resolve())},
                         })

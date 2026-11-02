@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / ("build/xmake-windows" if os.name == "nt" else "build/xmake-linux")
 SUFFIX = ".exe" if os.name == "nt" else ""
 NAMES = ["score_open", "score_create", "score_close", "score_outline", "score_query",
-         "score_describe", "score_edit", "score_export", "runtime_info", "runtime_job"]
+         "score_describe", "score_edit", "score_export", "runtime_info"]
 OPS = ["set_property", "reset_property", "set_style", "enter_notes", "set_pitch",
        "set_duration", "remove", "insert_measures", "remove_measures", "set_time_sig",
        "set_key_sig", "insert_clef", "set_layout_break", "add_part", "remove_part",
@@ -99,7 +99,7 @@ def check_cases(tools):
     file = {"kind": "file", "path": "out"}
     directory = {"kind": "directory", "path": "out"}
     def export(kind, options, destination=file):
-        return {"action": "run", "document": doc, "kind": kind,
+        return {"document": doc, "kind": kind,
                 "options": options, "destination": destination}
     cases += [
         ("score_open", {"path": "a.mscz"}, True),
@@ -134,12 +134,13 @@ def check_cases(tools):
         ("score_export", export("positions", {"position_kind": "measure", "score": {"excerpt": "A_A"}}), True),
         ("score_export", export("positions", {"position_kind": "segment"}), True),
         ("score_export", export("positions", {"position_kind": "segment", "expand_repeats": False}), False),
+        ("score_export", {**export("score", {"format":"mscz"}), "action":"run"}, False),
+        ("score_export", {**export("score", {"format":"mscz"}), "action":"start"}, False),
         ("runtime_info", {}, True),
         ("runtime_info", {"action": "get"}, True),
         ("runtime_info", {"action": "add_font", "path": "font.ttf"}, True),
         ("runtime_info", {"action": "set_soundfonts", "files": []}, True),
         ("runtime_info", {"action": "set_soundfonts", "path": "font.sf3"}, False),
-        ("runtime_job", {"action": "cancel", "job": "job-1"}, True),
     ]
     for name, value, valid in cases:
         actual = inputs[name].is_valid(value)
@@ -152,9 +153,8 @@ def check_cases(tools):
     capability = {"engine_version": "5.0.0", "import_formats": ["mscz", "mnx"], "export_formats": ["mscz"],
                   "render_formats": ["png"], "audio_formats": ["opus"], "soundfonts": [], "audio_sample_rate": 44100}
     limits = {"input_bytes": 8388608, "base64_chars": 11184812, "batch_ops": 1024, "query_results": 4096,
-              "output_bytes": "1073741824", "queue_capacity": 8, "deadline_ms": 120000,
-              "export_workers": 2, "snapshot_bytes": "67108864",
-              "transport_request_bytes": 4194304, "worker_request_bytes": 4194304}
+              "output_bytes": "1073741824", "deadline_ms": 120000, "cancellation": "cooperative",
+              "transport_request_bytes": 4194304}
     results = {
         "score_open": [{"document": doc, "revision": "1", "diagnostics": []}],
         "score_create": [{"document": doc, "revision": "1", "diagnostics": []}],
@@ -167,11 +167,8 @@ def check_cases(tools):
                            {"scope": "type", "type": {"type": "Note", "props": []}}],
         "score_edit": [{"revision": "2", "ops": [{"created": [None, "A_A"]}], "created": ["A_A"],
                         "removed": [], "replaced": [], "diagnostics": []}],
-        "score_export": [{"action": "start", "job": "job-1", "source_revision": "2"},
-                         {"action": "run", "source_revision": "2", "artifacts": []}],
+        "score_export": [{"source_revision": "2", "artifacts": []}],
         "runtime_info": [{"tool_revision": "2", "capabilities": capability, "templates": [], "fonts": [], "limits": limits}],
-        "runtime_job": [{"status": {"job": "job-1", "state": "succeeded", "source_revision": "2",
-                                   "artifacts": [], "error": None}}],
     }
     assert set(results) == set(NAMES)
     for name, examples in results.items():

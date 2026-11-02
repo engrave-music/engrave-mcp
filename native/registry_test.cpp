@@ -33,12 +33,12 @@ int main() {
         auto shared = bound;
         shared[1] = shared[0];
         validate_handlers(shared); // Different IDs may use the same callable.
-        require(find_tool("score_export")->scheduling == Scheduling::ExportJob, "wrong export scheduling");
-        require(find_tool("runtime_job")->scheduling == Scheduling::JobManager, "wrong job scheduling");
+        require(find_tool("score_export")->scheduling == Scheduling::Owner, "wrong export scheduling");
+        require(find_tool("runtime_job") == nullptr, "retired job tool resolved");
         require(find_tool("unknown") == nullptr, "unknown tool resolved");
         for (const auto& spec : registry()) {
             require(find_tool(spec.name) == &spec, "registry lookup failed");
-            if (spec.handler != HandlerId::Export && spec.handler != HandlerId::Job)
+            if (spec.handler != HandlerId::Export)
                 require(spec.scheduling == Scheduling::Owner, "wrong owner scheduling");
         }
         std::cout << "registry handler and scheduling checks passed\n";

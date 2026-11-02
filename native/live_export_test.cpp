@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
             for (const char* fmt : {"svg", "pdf", "png", "mscx", "mscz"}) {
                 const bool svg = std::string(fmt)=="svg" || std::string(fmt)=="png", pdf = std::string(fmt)=="pdf";
                 auto target = out / fmt; if (svg) fs::create_directories(target);
-                auto request = decode_export({{"document","doc-oracle-1"},{"action","run"},{"kind",svg||pdf ? "render":"score"},
+                auto request = decode_export({{"document","doc-oracle-1"},{"kind",svg||pdf ? "render":"score"},
                     {"options", svg||pdf ? Json{{"format",fmt},{"first_page",0},{"last_page",pdf ? -1 : 0}}:Json{{"format",fmt}}},
                     {"destination",{{"kind",svg ? "directory":"file"},{"path",target.generic_string()}}}});
                 if (!request) throw std::runtime_error(request.error().message);
@@ -45,16 +45,16 @@ int main(int argc, char** argv) {
                     expected = pdf ? std::move(rendered.document):std::move(rendered.pages.at(0));
                 } else expected = value(doc->export_score(request->score_options));
                 ExportTiming timing("oracle",target);
-                auto actual = live_export(*doc,*request,JobLimits{},[]{return false;},ExportTiming::Clock::now(),timing);
+                auto actual = live_export(*doc,*request,ExportLimits{},[]{return false;},ExportTiming::Clock::now(),timing);
                 if (!actual) throw std::runtime_error(actual.error().message);
                 auto denied_request = *request;
                 denied_request.destination.path = svg ? out / "cancel-dir" : out / "cancel-file";
                 if (svg) fs::create_directories(denied_request.destination.path);
-                auto cancelled = live_export(*doc, denied_request, JobLimits{}, [] { return true; },ExportTiming::Clock::now(),timing);
+                auto cancelled = live_export(*doc, denied_request, ExportLimits{}, [] { return true; },ExportTiming::Clock::now(),timing);
                 if (cancelled || cancelled.error().code != "Cancelled") throw std::runtime_error("cancellation failed");
                 if (svg ? !fs::is_empty(denied_request.destination.path) : fs::exists(denied_request.destination.path))
                     throw std::runtime_error("cancel published an artifact");
-                JobLimits tiny; tiny.output_bytes=1;
+                ExportLimits tiny; tiny.output_bytes=1;
                 auto limited = live_export(*doc, denied_request, tiny, [] { return false; },ExportTiming::Clock::now(),timing);
                 if (limited || limited.error().code != "ResourceLimit") throw std::runtime_error("output limit failed");
                 const auto path = fs::u8path(actual->at("artifacts").at(0).at("path").get<std::string>());
