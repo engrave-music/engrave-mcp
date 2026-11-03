@@ -425,7 +425,7 @@ class TestPngInkControls(unittest.TestCase):
     def test_checked_in_png_exception_matches_the_census(self):
         payload = json.loads(REFERENCE.read_text(encoding="utf-8"))
         pin = page.png_exceptions(payload)[("windows", "drums_import.musicxml/page-0.png")]
-        census = json.loads((ROOT / "docs/dev/a5-output-census.json").read_text(encoding="utf-8"))
+        census = json.loads((ROOT / "tests/golden/output-census.json").read_text(encoding="utf-8"))
         item = next(item for item in census["entries"] if item["fixture"] == "drums_import.musicxml"
                     and item["output"] == "page-0.png.json")
         self.assertEqual(pin["png_sha256"], item["raw_reopened_png_sha256"])

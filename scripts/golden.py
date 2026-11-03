@@ -104,7 +104,7 @@ AUDIO_EXACT = {"sampleRate", "channels", "frames"}
 SILENCE_EVIDENCE = "nonzeroSamples"
 ALLOW_KINDS = ("different", "missing", "extra")
 DEFAULT_PLATFORM = "windows" if sys.platform.startswith("win") else "linux"
-PRECISION_CENSUS = ROOT / "docs/dev/a5-output-census.json"
+PRECISION_CENSUS = ROOT / "tests/golden/output-census.json"
 
 
 def sha256(data: bytes) -> str:
@@ -967,7 +967,7 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
     sources = {source.name: source for source in fixture_files() + supplemental_mnx_files()}
     sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})
     census_path = data.get("precision_census")
-    if census_path is not None and census_path != "docs/dev/a5-output-census.json":
+    if census_path is not None and census_path != "tests/golden/output-census.json":
         raise ValueError("invalid writer-precision census path")
     precision = read_precision_census(data, golden_root.name) if census_path else {}
     precision_keys = set()
