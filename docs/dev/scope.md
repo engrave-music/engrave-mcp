@@ -17,7 +17,7 @@ does not get a fix merely because it is real.
 - POSIX owner-only staging (`0700`) and Windows private staging.
 - The documented destination syntax: normal drive/UNC paths, POSIX paths,
   non-ASCII UTF-8 paths, and the Windows filename rules in
-  [m4-live-default.md](m4-live-default.md#destination-conditions).
+  [tools.md](tools.md#destination-syntax).
 - Per-file publication: a completed file is visible; a later file may fail and
   the error reports exactly the files already published. Multi-file publication
   is not a transaction.

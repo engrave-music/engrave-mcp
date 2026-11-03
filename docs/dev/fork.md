@@ -2,7 +2,7 @@
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/musescore` (shallow, pinned by SHA with an `engrave-<n>` tag per pin).
-The current pin is `engrave-14` (`ab9e33c39b`).
+The current pin is `engrave-31` (`629027f113`).
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
 terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
@@ -55,7 +55,7 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 | `engrave-4` | `d8c21df149` | `2abc2de` | `ecdc6e7` | A4 C++ API. Merges `a4/int` (`d382aad91c`): public headers `engrave/include/engrave/`, library and tests under `engrave/`; the xmake build uses folder globs, so the manifest and its generator are gone, and so are the CMake files it read (trim batch 7; batch 8 removes more uncompiled sources). Engine patches, all goldens identical: EID fixes F1-F3, the `Transaction::push` hook (F4), a PowerTab empty chord becomes a rest, a `layoutPageView` guard, a figured-bass `layoutLines` runaway, a tuplet `doUndoAddElement` marker, and a GPX back-reference that repeats its pattern. Validated on Windows and linux-host (superproject `engrave/a4-int` `cb31e46`, report `notes/a4/validation/FINAL.md`): cold builds, 29/29 lanes on both hosts, audio paired both ways, address-only ASan check (`detect_leaks=0`, not a leak-clean baseline; see `docs/dev/defects.md`), goldens 308/55/0. Accepted with one relaxed guarantee: a failed batch that ran a Snapshot-policy operation is reloaded and may move layout (user decision 2026-10-31; see `docs/dev/defects.md`). |
 | `upstream-final` | `cbffaa078d` | `32f0a26e5b` | `da3885cb` | Not a pin. The last upstream sync (9 files changed after trim, no conflicts); the fork is a hard fork from here and takes upstream fixes by cherry-pick only. Checked on Windows (fork suites, goldens 308/55/0) and linux-host (build only), report `notes/sync32f0/REPORT.md`. |
 | `engrave-5` | `23c743d339` | `32f0a26e5b` | `da3885cb` | Phase C step C1. Merges `a4/drop-3x` (`41565474d6`): the readers for scores before MuseScore 4.6 (read114, read206, read302, read400, read410) are deleted and listed in `TRIM`; such scores fail with `Unsupported`. Fixtures were upgraded once to the current format (`native-format-upgrade.json`). Report `notes/drop3x/REPORT.md`; the merge was built on Windows and passed the ops, handles, op-policy and api suites. |
-| `engrave-6` | `a05c3bc3f5` | `32f0a26e5b` | `da3885cb` | Phase C step C0. Merges `c0/gate` (`bdbb77f87a`, tag `engrave-c0-gate`): test capture and build closure only, production engine sources equal engrave-5. The engine gate `scripts/engine_gate.py` (usage and coverage `docs/dev/c0-gate.md`) checks the engine through the public API; green on Windows and linux-host, and all 211 overlapping artifacts equal the v1 host's. The v1 host is frozen: its targets are opt-in, binaries and replay runner archived under ignored `artifacts/frozen-v1/`. Report `notes/cleanup/c0/REPORT.md`. |
+| `engrave-6` | `a05c3bc3f5` | `32f0a26e5b` | `da3885cb` | Phase C step C0. Merges `c0/gate` (`bdbb77f87a`, tag `engrave-c0-gate`): test capture and build closure only, production engine sources equal engrave-5. The engine gate `scripts/engine_gate.py` (usage and coverage `docs/dev/validation.md`) checks the engine through the public API; green on Windows and linux-host, and all 211 overlapping artifacts equal the v1 host's. The v1 host is frozen: its targets are opt-in, binaries and replay runner archived under ignored `artifacts/frozen-v1/`. Report `notes/cleanup/c0/REPORT.md`. |
 | `engrave-7` | `01af7d3694` | `32f0a26e5b` | `da3885cb` | Phase C steps C2 and C4. C2 (`c2/build`, `dbeb65122e`): tests and probes are opt-in (`--engrave_tests=y`), version metadata in one TU, dead configuration arms removed. C4 (`c4/audio`, `015de81467`): the audio RPC/controller layers are replaced by one offline render session; synthesis, mixer, DSP and all five encoders unchanged. The merged tree passed the engine gate on Windows and linux-host with 0 golden differences. Reports `notes/cleanup/c2/REPORT.md`, `notes/cleanup/c4/REPORT.md`. |
 | `engrave-8` | `ab9321e771` | `32f0a26e5b` | `da3885cb` | Phase C step C3 (`c3/inert`, `f8c434e664`; merged tree equals it): a small stderr diagnostic sink replaces kors logger/profiler, assertions get their own header, and disabled Qt/accessibility/plugin arms are deleted. Touching `log.h` rebuilds 340 TUs instead of 534. Gate green on Windows and linux-host, 0 golden differences. Report `notes/cleanup/c3/REPORT.md`. |
 | `engrave-9` | `fe0b7c6a06` | `32f0a26e5b` | `da3885cb` | MNX import (`mnx/import`, `6ef70fe4fd`; merged tree equals it): pinned mnxdom and json-schema-validator packages, `Format::Mnx`, and 38 test inputs. Import only. Report `notes/mnx/REPORT.md`. |
@@ -99,54 +99,3 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 
 The superproject's `.gitmodules` now tracks `branch = main`.
 
-## History: mcp/v4.7.x (frozen)
-
-webmscore and the `patches/*.patch` queue are retired; the last executable pre-fork state is the local tag `pre-fork-baseline` (`f8e7d26`). The branches `mcp/v4.7.5` and `mcp/v4.7.6` and their `mcp-*` tags represent frozen pre-hard-fork history.
-
-### `mcp/v4.7.5` (base `v4.7.5` = `3654226c`), tag `mcp-4.7.5-1` = `e70fdef0`
-
-| Commit | Topic | Origin |
-| --- | --- | --- |
-| `40ca8e33` | engraving: EngravingConfiguration builds without Qt and UI (NO_QT_SUPPORT branches; Qt builds unchanged) | our patch + webmscore header |
-| `699f3142` | mpe: articulation profiles read with muse JSON instead of QJson | our patch |
-| `35706a70` | midi: Qt-free MIDI export and MidiFile (also in Qt builds: truncated headers throw "unexpected EOF", write failures are reported) | our patch |
-| `b53201e7` | midi: Qt-free MIDI import | our patch |
-| `12139a10` | guitarpro: import fixes (GPX nesting, bounds, PTB) and Qt-free build | our patch |
-| `244d9969` | global: harden ZIP container parsing and read-only seek | our patch |
-| `9894398d` | draw: select the requested face from TrueType collections | our patch |
-| `78760f6d` | engraving: `UndoStack::clearHistory` | our patch |
-| `66894604` | build: missing includes, `RenderingContext` aggregate again (brace-init in buildRenderingCtx), `unsigned short` for `ushort` | our patch |
-| `e70fdef0` | TEMPORARY: no `IApplication` version query in MSCX/MusicXML writers | webmscore; to be reverted in roadmap step 3 |
-
-Dropped from webmscore (source-reviewed, then compiled and executed without them):
-EngravingItem bbox shim, `PrintStackTrace` assert hook, profiler `TIMER_*` arity,
-public `Ret::m_data`, `mpemodule` comments, `__EMSCRIPTEN__` guards, renamed font
-and resource paths (`/fonts/*.woff2`, `:/mpe/*`, `FinaleMaestroText-Regular.otf`),
-the brotli submodule with `FT_CONFIG_OPTION_USE_BROTLI`, and every hunk in files the
-native build does not compile (CMake, web/, audio module, notation, playback, project).
-
-Only the tip is built natively (the native build needs every topic); intermediate
-commits are not built on their own, and no Qt build of the fork is run.
-`.gitmodules` records `branch = mcp/v4.7.6` so `git submodule update --remote`
-stays on the pinned line.
-
-Evidence for this pin is in validation.md ("Roadmap step 1").
-
-### `mcp/v4.7.6` (base `v4.7.6`), tag `mcp-4.7.6-1` = `30387998`
-
-The ten `mcp/v4.7.5` topics cherry-picked without conflicts;
-`git range-diff v4.7.5..mcp-4.7.5-1 v4.7.6..mcp/v4.7.6` reports every patch
-identical (`=`). v4.7.6 adds no source file to the compiled modules.
-Tag `mcp-4.7.6-2` = `e099f16b` adds `Revert "TEMPORARY: ..."` on `mcp/v4.7.6`: the host
-registers an `IApplication` (native/noqt_application.cpp), so the writers report the
-real version again. `mcp/v4.7.6` now carries the nine permanent topics only (net).
-Later pins on `mcp/v4.7.6` (no rebase; each adds commits on top):
-- `mcp-4.7.6-3` = `811634a1`: `bca4331a` audio: `RESOURCE_TYPE_MAP` holds `muse::String` (the
-  only Qt type on the audio engine side); `811634a1` engraving/tests: UTF-16 literals in the
-  playback tests so they build without Qt.
-- `mcp-4.7.6-4` = `6cd717f2`: `d653005f` audio: fixed Ogg stream serial (libopusenc drew it
-  from `rand()`; MSVC's `rand()` state is per-thread, while glibc's is process-global, so
-  repeated Linux exports differed in the serial while Windows happened to repeat);
-  `6cd717f2` opusenc:
-  initialize the OpusTags vendor string (the vendored copy passed an uninitialized stack
-  buffer; released libopusenc 0.2.1 formats it).

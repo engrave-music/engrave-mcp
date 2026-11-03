@@ -1,190 +1,145 @@
-# engrave-mcp 构建与开发者指南
+# Build and test
 
-本文档记录基于固定（pinned）上游代码的原生 C++ engrave-mcp 服务端构建流程、架构约束及验证规范。
+The host is built with **xmake**; **Pixi** provides the pinned toolchain and
+native libraries. The engine's build lives in the fork
+(`vendor/musescore/xmake/engrave.lua`) and is included by the host's
+`xmake.lua`.
 
-## A5 产品名称迁移
+## Prerequisites
 
-| 原名称 | 新名称 | 适用范围 |
-| --- | --- | --- |
-| `musescore-mcp`、`musescore-mcp-test` | `engrave-mcp`、`engrave-mcp-test` | 可执行文件、打包入口与 MCP `serverInfo.name`（测试二进制使用同一服务器名） |
-| `musescore_mcp`、`musescore_mcp_test` | `engrave_mcp`、`engrave_mcp_test` | xmake targets |
-| `MUSIC_MCP_*` | `ENGRAVE_MCP_*` | 活跃客户端、测试及 lane 脚本环境变量；不提供旧名别名 |
-| `musescore-mcp-bootstrap/1` | `engrave-mcp-bootstrap/1` | bootstrap 下载请求的 User-Agent |
+Windows:
+- Git and [Pixi](https://pixi.sh/).
+- Visual Studio 2022 with the x64 C++ toolchain (MSVC 14.51+).
+- xmake 3.1.1+ (the build scripts use the one available on `PATH`).
 
-环境变量由脚本读取；直接运行二进制使用 `--resources` 和 `--soundfont` 参数。仓库目录为 `engrave-mcp`；引擎子模块 `vendor/musescore`、引擎源码选项 `--musescore_source` 与引擎身份不改名。历史 v1 客户端和基线测试脚本保留原有调用方式；`scripts/make_dense_score.py` 的旧作曲者字符串是历史确定性测试数据的一部分。历史文档、归档证据及 fixture/golden 字节中出现的旧路径保持原样。
+Linux (validated on Linux x86_64, GCC 15.3, C++23):
+- Git and Pixi.
+- Cairo in the Pixi environment (passed with `--cairo_prefix`).
+- WSL is not used for this project.
 
-2026-11-03 workspace migration: the local checkout is
-`C:\path\to\engrave-mcp`; the old `C:\path\to\musescore-mcp` path has been removed.
-The existing T3 Code project (same project id, title `engrave-mcp`) retains all
-225 v2 threads and 4,098 context messages. Stale registered worktrees and
-musescore-mcp-* runner directories were removed; branches were preserved.
-Historical evidence paths are not rewritten. The moved pixi environment and
-xmake package cache were recreated because both are non-relocatable.
+> If xmake's bundled aria2 fails to download a package with a TLS handshake
+> error, run `xmake g --downloader=curl` once.
 
----
-
-## 1. 架构设计与约束
-
-- **构建系统**：以 `xmake.lua` 与显式源码清单为**构建系统**，采用 **C++23** 标准（Windows 与 Linux Linux x86_64 均已验证）。引擎的 xmake 构建（引擎 targets、目录通配符与固定版本包 recipe）位于引擎 Fork 检出内（`xmake/engrave.lua`、`xmake/packages/`）；本仓库 `xmake.lua` 只保留宿主 targets，并通过 `includes()` 从 `vendor/musescore`（或 `--musescore_source` 指定的检出）引入引擎构建。旧版 CMake 根配置及历史脚本已移除，最后可执行的 pre-fork 状态留存于本地 Git 标签 `pre-fork-baseline`。构建支持 `release`、`debug` 以及带符号调试的 `releasedbg` 模式，并通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认为 `vendor/musescore` 子模块；该检出必须带有 `xmake/engrave.lua`）。
-- **模块集成**：包含 `engraving`、`global`、`draw`、`mpe`、`musicxml`、`midi` (包含导入/导出适配)、`guitarpro` 导入组件，以及 MuseScore 4 音频引擎（`muse_audio_engine`：FluidSynth 合成、混音、混响与 SoundTrackWriter）及其编码器 LAME（MP3）、libFLAC、Opus/libopusenc（Ogg）、fdk-aac（AAC），全部来自子模块并以 Qt-free 方式编译；音频在单一引擎 owner 线程内同步渲染（M4 live-only）。libsndfile 已从构建依赖和 pixi 环境中移除；测试分析用的 Python `soundfile` wheel 自带其运行时副本，因此解码检查不依赖系统 libsndfile。捆绑的原生依赖包括 FreeType、HarfBuzz、FluidSynth、FLAC、Opus/libopusenc、LAME 与 fdk-aac（Brotli 依赖已移除）。
-- **底层适配**：采用原生文件系统、进程内设置、FreeType/HarfBuzz 字体引擎和 Cairo 绘图后端；乐谱导入、排版和 MIDI 事件生成复用上游实现。设置不持久化。
-
----
-
-## 2. 环境要求
-
-### Windows 构建环境
-- **版本控制与工具**：Git（用于管理工程与拉取 `vendor/musescore` 子模块）。全新克隆需运行 `git submodule update --init --depth 1` 或 `python scripts/bootstrap.py`。
-- **编译器**：Visual Studio x64 MSVC 工具链（推荐 VS 2022 / 18.10+，MSVC 14.51+）；构建脚本自动初始化开发环境，单独打包需在 VS 开发人员终端执行。
-- **包管理器**：Pixi。构建与验证在 `native` 环境（`-e native`，纯原生无 Qt 编译环境）下执行。
-- **构建工具**：xmake ≥ 3.1.1（Windows 使用 3.1.2）。第三方依赖已改为固定版本的 xmake 包：引擎依赖的 recipe 在引擎检出的 `xmake/packages/` 内，宿主专用的 asio 在 `xmake/packages/asio.lua`。首次配置会下载并本地构建它们，不再需要 `7z` 解压 HarfBuzz。
-  > [!TIP]
-  > **下载器配置（机器级）**：在部分 Windows 宿主上，xmake 内置的 aria2 在下载第三方依赖包时可能遭遇 TLS 握手失败（`SSL/TLS handshake failure`）。若遇到包下载中断，可配置 xmake 全局改用 curl：
-  > ```powershell
-  > xmake g --downloader=curl
-  > ```
-
-### Linux 构建环境
-- **验证宿主**：Linux x86_64 (`ssh <linux-host>`, kernel 7.3, Pixi GCC 15.3, C++23)。本项目不使用 WSL（早期 Arch WSL2 验证记录仅作历史保留）。
-- **编译器**：Pixi GCC 15.3，采用 `-std=c++23`、`-O3`、`-fPIC`。
-- **构建工具**：xmake ≥ 3.1.1。
-
----
-
-## 3. 上游代码与资产准备
-
-### 3.1 检出引擎子模块与下载音色库
-引擎源码采用 Git 子模块 `vendor/musescore` 形式引入（锁定至 Fork 仓库 https://github.com/Locietta/engrave ，Tag `engrave-16`，Commit `5fd08f45cb67742cfe43a48f95745821251a6c70`，提交台账参见 `docs/dev/fork.md`）。旧版 webmscore、`.upstream/webmscore`、`patches/*.patch` 以及 Brotli 依赖均已废弃移除。
-
-全新克隆的项目可执行 `git submodule update --init --depth 1` 初始化子模块，或直接运行 `bootstrap.py`。`scripts/bootstrap.py` 会自动执行浅子模块更新（`git submodule update --init --depth 1 -- vendor/musescore`），并按需下载经哈希验证的基础 SF3 音色库；`scripts/prepare.py` 会校验子模块提交与工作区清洁，并从 Git blob 同步运行时资源，**子模块尚未初始化时它会直接拒绝运行**（见 `scripts/prepare.py` 的 `verify_submodule()`）。因此构建脚本必须 bootstrap 在 prepare 之前，`scripts/build-native.ps1` 已按此顺序执行：
+## First checkout
 
 ```powershell
 pixi install -e native --locked
-python scripts/bootstrap.py --soundfont   # 先初始化子模块
-python scripts/prepare.py                 # 再校验并分发资源
+pixi run -e native python scripts/bootstrap.py --soundfont
+pixi run -e native python scripts/prepare.py
 ```
 
-第三方**库**依赖由引擎检出内的本地 xmake recipe 固定（`vendor/musescore/xmake/packages/`，或 `--musescore_source` 指定检出的同名目录）；每个 recipe 都写明版本与归档 SHA-256：freetype 2.14.1（`174d9e53…`）、harfbuzz 12.3.0、flac 1.4.3、lame 3.100（`ddfe36ca…`）、opus 1.5.2、opusenc 0.2.1、fdk-aac 2.0.3、pugixml 1.15、utfcpp v4.1.1（`1ca68016…`）、picojson 111c9be 与 asio 1.36.0（asio 留在本仓库 `xmake/packages/asio.lua`；引擎单独构建时另加固定版本 zlib 1.3.1）。freetype/lame/utfcpp 的 recipe 是从 xmake-repo（修订 `e96d4103633e161d259aa307e02a4d0842207651`）同名 recipe 逐行复制并裁剪到单一版本，版本、归档 URL 与 SHA-256 均未改动，因此依赖解析不再取决于某台机器上的 xmake-repo 修订。
+`bootstrap.py` initializes the `vendor/musescore` submodule and downloads the
+base SoundFont. `prepare.py` verifies the submodule pin and installs the engine's
+hash-pinned asset manifest (345 files, 28,380,646 bytes) into `.runtime/assets`;
+it refuses to run before the submodule exists.
 
-注意区分：只有上述库依赖由本仓库固定版本与校验和；xmake-repo 仍提供构建工具包（cmake、nasm、pkgconf）与仅用于开发测试道的 gtest，它们的 recipe 修订记录在每个已安装包的 `manifest.txt`（`repo.commit`）中，不进入发布产物（freetype 的可选 zlib/libpng/woff2 支持在 `add_requires()` 中全部关闭，因此不会额外引入 xmake-repo 的库依赖）。因此“所有输入都已固定校验和”的说法仅对这些库依赖成立，工具包不在此列。
-
-### 3.2 引擎资产清单与运行时分发 (Runtime Asset Staging)
-引擎在 Phase C 移除了历史 Qt 资源（`.qrc`），改由引擎自身维护权威资产清单 `vendor/musescore/engrave/assets.json`（version 1，包含字体、样式、乐器定义、许可协议与乐谱模板，共 345 个文件，合计 28,380,646 字节）与配套安装校验工具 `vendor/musescore/tools/install_assets.py`。
-
-资产准备与分发：
-1. **主检出（production）**：`scripts/prepare.py` 作为宿主统一的资产准备与校验入口。它先校验 `vendor/musescore` 子模块状态与提交，随后使用引擎安装器验证 `.runtime/assets`。若资产目录缺失或文件哈希不匹配，则在临时目录完整构建后原子替换安装，并写入 `.runtime/assets/assets.json`；若已就绪且哈希完全匹配则跳过写入（保持幂等，退出码 0）。宿主不再解析 QRC，亦不再依赖 `resources.json` 与 `.runtime/assets-manifest.json`。
-2. **独立校验与自定义分发**：可直接调用引擎安装工具进行校验，或分发到构建目录下的独立暂存目录（在多 worktree 如 `engrave/a2` 或测试独立引擎时，**切勿直接修改或覆盖主检出的 `.runtime`**）：
-   ```powershell
-   # 校验已安装的资产目录是否与引擎清单一致
-   python -B vendor/musescore/tools/install_assets.py --verify .runtime/assets
-
-   # 安装到独立暂存目录
-   python -B vendor/musescore/tools/install_assets.py build/scratch_assets
-   ```
-   随后通过命令行将暂存路径传给二进制文件运行：
-   ```powershell
-   build/noqt_probe.exe build/scratch_assets <input.musicxml> <output.musicxml>
-   build/assets_test.exe build/scratch_assets artifacts/assets_test <test_font_path>
-   ```
-
-xmake 的 `muse_generated` 在构建目录写入引擎版本信息；宿主 v2 定义由独立的 `registry_dump` 生成到 `native/tools.json`，`registry_check` 检查生成结果和处理器。`native/legacy_tools.json` 只属于历史 v1 基线，不参与生产构建。引擎各模块源码通过 `xmake/engrave.lua` 中的目录通配符直接引入。
-
-引擎适配层与其回归测试、探针位于 fork，由 `engrave` 及 `xmake/tests.lua` 构建。本仓库 `native/` 的生产代码和测试都只能包含 `engrave/...` 公共引擎头文件；`native_include_check` 在构建宿主目标前检查这一规则，lane runner 的源码预检也执行它。v2 store、registry 与 transport 不再链接 v1 facade。zlib 与 Cairo 由包含方提供：本仓库取自 pixi `native` 环境；宿主 `xmake.lua` 接受 `--cairo_prefix=<prefix>`（`<prefix>/include/cairo`、`<prefix>/lib`，非 Windows 平台写入 rpath），linux-host 构建须传入该参数。
-
-增量测试检查长 UTF-8 registry 描述、修改 schema 只重编译 `schema_defs.cpp`，以及恢复后的无变化构建不编译/链接。验收命令：
-
-```powershell
-pixi run -e native python scripts/test_xmake_incremental.py --binary build/xmake-windows/engrave-mcp.exe --output artifacts/xmake-incremental
-```
-
----
-
-## 4. Windows 原生构建流程
-
-使用原生包装脚本进行编译（禁止直接调用原始 xmake）：
+## Windows build
 
 ```powershell
 pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 ```
-*(日常开发可使用 `./scripts/build-native.ps1 -Jobs 12`。)*
 
-包装脚本默认同时构建 `engrave_mcp`、`engrave_mcp_test`、`registry_dump`、
-`registry_check` 和 `host_api_test`；可用 `-Targets` 指定子集。
-S2 的独立验收（必须在原生 DLL 目录已加入 PATH 的环境中运行）：
+The wrapper enters the Visual Studio developer shell, runs bootstrap/prepare and
+the xmake input check, configures `build/xmake-windows`, and builds these
+targets by default:
 
-```powershell
-.pixi/envs/native/python.exe scripts/test_host_api.py --binary build/xmake-windows/host_api_test.exe --resources .runtime/assets --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 --replacement-soundfont tests/engine_audio/sine.sf2 --output notes/a5/s2
-```
+`engrave_mcp`, `engrave_mcp_test`, `registry_dump`, `registry_check`,
+`host_api_test`.
 
-构建系统支持通过 `--musescore_source=DIR` 选项覆盖引擎源码目录（默认指向 `vendor/musescore`），并提供 `releasedbg` 模式用于带符号排错与性能分析。
-
-### 直接运行构建产物
-构建产物位于 `build/xmake-windows/engrave-mcp.exe`。未经打包直接从构建目录启动时，必须传入资源的绝对路径：
+Build other targets explicitly, for example:
 
 ```powershell
-pixi run -e native build/xmake-windows/engrave-mcp.exe --resources "C:/path/to/engrave-mcp/.runtime/assets" --soundfont "C:/path/to/engrave-mcp/.runtime/soundfonts/FluidR3Mono_GM.sf3"
+pwsh -NoProfile -File scripts/build-native.ps1 -Targets engrave_mcp,live_export_test,staging_test
 ```
-*(注：`--soundfont` 为可选参数。)*
 
----
+`--musescore_source=DIR` overrides the engine checkout. `releasedbg` is available
+for symbolized profiling.
 
-## 5. 打包与独立部署验证
+### Running the dev build
 
-### 5.1 自动化打包
-在 Visual Studio 开发人员终端与 Pixi 原生环境下执行打包脚本：
+The build links Pixi's native libraries, so they must be on `PATH`:
 
 ```powershell
-pixi run -e native python scripts/package_windows.py --no-qt --binary build/xmake-windows/engrave-mcp.exe --output artifacts/windows-next
+$env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
+build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
+  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
 
-- **动作规范**：自动解析并提取运行时完整的 DLL 闭包、静态资源及 SoundFont；**严格拒绝混入任何 Qt 相关动态链接库**。
-- **打包规格**：文件数与体积取决于构建和环境；以生成的 `manifest.json` 为准。
-- **路径自解析**：打包后的可执行文件已具备就近查找同级资产的能力，运行时无需额外传递 `--resources` 绝对路径。
+Without the Pixi DLL directory the process exits during `initialize`; this is a
+loader failure, not a server failure. Packaged builds bundle the DLLs.
 
-### 5.2 独立运行验证标准
-打包产物已完成严格的洁净环境验证：
-- 运行时环境变量 `PATH` 仅保留 `C:\Windows\System32`。
-- 完全脱离桌面版 MuseScore 安装、Node.js、WASM、Python 及 Pixi 运行环境。
-- 当前验收道由 `scripts/run_lanes.py` 列出，包含官方 SDK 冒烟、传输、版本、重复播放、golden 和往返验证；实际结果以对应提交的运行记录为准。
-
----
-
-## 6. 历史 Qt 基线 (Legacy Baseline)
-
-历史 Qt 时代及 C++20 阶段的根目录 `CMakeLists.txt` 与相关历史脚本（`build-cmake-native.ps1/.sh`、`windows.ps1`、`prepare_native.py`、`prepare_noqt_probe.py`、`noqt-probe.ps1`、`run_probe.py` 等）均已移除。
-
-最后可执行的 pre-fork 历史基线状态已通过本地 Git 标签 `pre-fork-baseline` 归档固化。若需回溯比对早期原型或排查迁移差异，可检出该标签查看历史代码；当前主线工程完全基于 `vendor/musescore` 子模块与 xmake 构建体系。
-
----
-
-## 7. Linux 原生构建与 Linux 验证
-
-Linux 构建与验证现已常态化运行于 Linux x86_64 宿主机器（`ssh <linux-host>`，路径 `~/OSS/musescore-mcp`）。早期的 Arch WSL2 x86_64 记录仅作历史保留，现在不再使用 WSL。宿主运行环境为 Linux kernel 7.3、Pixi GCC 15.3、C++23。
-
-### 7.1 构建与打包命令
+## Linux build
 
 ```bash
-pixi install -e native --locked
-pixi run --locked -e native python scripts/bootstrap.py --soundfont
-pixi run --locked -e native python scripts/prepare.py
-bash scripts/build-native.sh 8 build/xmake-linux "$HOME/OSS/musescore-mcp-a4s1/.pixi/envs/native"
-pixi run --locked -e native python scripts/package_linux.py --binary build/xmake-linux/engrave-mcp --output artifacts/linux-next
+bash scripts/build-native.sh 8 build/xmake-linux "$PWD/.pixi/envs/native"
 ```
 
-- **构建产物**：`build/xmake-linux/engrave-mcp`。
-- **打包规格**：`package_linux.py` 提取 ELF 依赖并设置相对 RUNPATH，排除了所有 Qt 依赖；文件数与体积以生成的清单为准。
-- **历史洁净运行验证**：旧版包曾在脱离开发环境 PATH 的环境下通过官方 SDK 冒烟；新版包和测试道须按实际提交重新验证。
+The third argument is the Cairo prefix (`<prefix>/include/cairo`, `<prefix>/lib`).
+The output is `build/xmake-linux/engrave-mcp`.
 
-Linux 使用显式 `gcc@` / `g++@` 工具类型识别 Pixi 的编译器，确保 xmake 正确继承 `-std=c++23`、`-O3` 与 `-fPIC` 参数。FluidSynth C 目标使用 GNU17 以保留上游 `alloca` 扩展；Windows 的该 C 目标仍为 C11。
+## Test binaries
 
----
+Some lanes need targets that the default build does not produce:
 
-## 8. 当前功能边界与已知局限性
+```powershell
+xmake build live_export_test staging_test
+```
 
-| 维度 | 现状说明 |
-| :--- | :--- |
-| **乐谱渲染算法** | 完整保留原生排版、分行、跨小节与记谱逻辑。 |
-| **图像元素** | 暂不支持嵌入式光栅图及外部图片对象（images unsupported）。 |
-| **排版与文字** | 尚未实现完整的全字集回退（font fallback）；不支持从右到左（RTL）书写文字。 |
-| **绘制模型** | 仅支持定义明确的纯色画刷（solid brushes）与指定混合模式，渐变/复杂贴图绘制受限。 |
-| **同步导出** | 单一引擎 owner 线程串行执行；无 worker 或 job。大小限制由 `runtime_info` 返回。 |
+- `live_export_test` — direct public-API oracle for live export.
+- `staging_test` — private staging and Windows ACL contract.
+- `publication_test` — Linux-only fsync ordering/failure injection.
+
+The golden and compatibility lanes also need the engine's `semantic_dump`
+probe, which is opt-in:
+
+```powershell
+xmake f --engrave_tests=y
+xmake build semantic_dump
+```
+
+`--engrave_tests=y` pulls GoogleTest and the engine's own test targets into the
+build graph; it is not part of the production build.
+
+## Packaging
+
+Windows:
+
+```powershell
+pixi run -e native python scripts/package_windows.py --no-qt `
+  --binary build/xmake-windows/engrave-mcp.exe --output artifacts/windows-next
+```
+
+Linux:
+
+```bash
+pixi run --locked -e native python scripts/package_linux.py \
+  --binary build/xmake-linux/engrave-mcp --output artifacts/linux-next
+```
+
+Both packagers collect the runtime DLL/ELF closure, assets and SoundFonts, and
+refuse Qt libraries. A packaged server finds its sibling `assets/` directory
+automatically, so `--resources` is unnecessary. File counts and sizes are
+whatever the generated `manifest.json` records; do not hardcode them.
+
+## Tests and lanes
+
+Run the smoke test first:
+
+```powershell
+pixi run -e native python scripts/mcp_smoke.py
+pixi run -e native python scripts/test_transport.py build/xmake-windows/engrave-mcp.exe
+```
+
+The acceptance runner and its lane list are documented in
+[validation.md](validation.md). It needs a build directory that contains the
+binaries the selected lanes use; pass `--build-dir build/xmake-windows` for the
+Windows build, not the repository's `build/` directory.
+
+## Layout notes
+
+- `native/` host sources may include only public `engrave/...` headers;
+  `native_include_check` enforces this before host targets build.
+- `native/tools.json` is generated by `registry_dump` and checked by
+  `registry_check`; regenerate it instead of editing it by hand.
+- `build/`, `.pixi/`, `.xmake/`, `.runtime/`, `.upstream/`, `artifacts/` and
+  `notes/` are ignored.

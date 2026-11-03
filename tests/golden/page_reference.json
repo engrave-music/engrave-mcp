@@ -3306,7 +3306,7 @@
       "page": "drums_import.musicxml/page-0.png",
       "platform": "windows",
       "png_sha256": "13e77384dd6cd4cdb900068ad60905986697367f626f280db3f6117a1f8b6eeb",
-      "reason": "Individually pinned writer-precision snapshot drift; see docs/dev/a5-output-census.json and DEFECT-ENGRAVE-015."
+      "reason": "Individually pinned writer-precision snapshot drift; see tests/golden/output-census.json and DEFECT-ENGRAVE-015."
     }
   ]
 }

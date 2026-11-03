@@ -4249,7 +4249,7 @@
     }
   },
   {
-    "description": "Export synchronously from the live document. Report source revision. Select master or excerpt for score, render, audio and positions. PNG/SVG require a directory with page-0001.ext names. Stage all; failed publication returns Io/published_artifacts and cleans remaining staging. Positions map Document::positions measure/segment to JSON page_size, elements and events: page-local 1200-DPI geometry, result-local element IDs and repeat-expanded milliseconds; see docs/dev/a5-registry.md.",
+    "description": "Export synchronously from the live document. Report source revision. Select master or excerpt for score, render, audio and positions. PNG/SVG require a directory with page-0001.ext names. Stage all; failed publication returns Io/published_artifacts and cleans remaining staging. Positions map Document::positions measure/segment to JSON page_size, elements and events: page-local 1200-DPI geometry, result-local element IDs and repeat-expanded milliseconds; see docs/dev/tools.md.",
     "inputSchema": {
       "$defs": {
         "score": {

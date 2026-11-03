@@ -21,8 +21,9 @@ fork is a hard fork (one last upstream sync, then cherry-picks only).
   `xmake.lua`, which includes the engine build from `vendor/musescore`; validate Windows
   and Linux.
   Work natively on Windows (PowerShell, `.pixi/envs/native/python.exe`). Linux means the
-  physical host `ssh <linux-host>` (repo `~/OSS/musescore-mcp`); never use WSL for this project.
-  The plan of record is `docs/dev/roadmap-engrave.md` (`roadmap-4.7.6.md` is done/superseded).
+  physical host `ssh <linux-host>` (a separate checkout); never use WSL for this project.
+  Current design and rationale: `docs/dev/design.md`; open issues: `docs/dev/defects.md`;
+  project history: `docs/dev/history.md`.
 - Avoid rewriting music algorithms; preserve an executable baseline for each later refactor.
   Compare every engine change against `tests/golden` (`scripts/golden.py`) with an explicit,
   hash-pinned allow-list.
@@ -37,10 +38,10 @@ fork is a hard fork (one last upstream sync, then cherry-picks only).
   reasoning effort max, in fast mode (fast mode is for Terra only, never Astra); DeepSeek via Pi
   `opencode-go/deepseek-v4.1-flash` (the paid `deepseek/deepseek-flash` only while opencode-go
   is down).
-- Reviews: each roadmap step (A1, A2, ...) ends with a full Terra validation; each phase
-  (A, I, B) gets a final GPT-6 Astra review before it is accepted, looking for remaining
-  defects and poor implementation approaches across the phase. GPT reviews over-flag: triage
-  findings by real impact.
+- Reviews: each implementation step ends with a full Terra validation; each phase gets a
+  final GPT-6 Astra review before it is accepted, looking for remaining defects and poor
+  implementation approaches across the phase. GPT reviews over-flag: triage findings by
+  real impact, and record out-of-scope findings as non-goals instead of chasing them.
 - Do not print credentials or read credential files. Use existing CLI authentication.
 - State which claims are source-reviewed, compiled, or actually executed; never conflate them.
 - Commit each verified milestone as it is reached. Keep review fixes in small follow-up commits; do not defer all commits to the end.

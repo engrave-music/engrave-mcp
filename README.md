@@ -1,52 +1,107 @@
 # engrave-mcp
 
-`engrave-mcp` 是基于 [engrave](https://github.com/Locietta/engrave) 引擎的原生 C++ MCP 服务，通过 stdio JSON-RPC 提供乐谱创建、查询、编辑、排版与导出。引擎是 MuseScore 核心的固定、裁剪分支；运行时不需要 Node.js、WASM 或桌面版 MuseScore。
+`engrave-mcp` is a native C++ MCP server that gives LLM agents a real music
+engraving engine: create, inspect, edit, render and export scores over stdio
+JSON-RPC.
 
-当前服务使用 v2 工具契约。原有 v1 工具及其调用格式不再由服务提供；历史基线单独保留。乐谱交互的目标是让人类和 Agent 都能继续编辑作品，完整的 MuseScore 旧版兼容性不是目标。
+The engine is **engrave**, a pinned hard fork of the MuseScore 5.0 core
+([github.com/Locietta/engrave](https://github.com/Locietta/engrave), consumed as
+`vendor/musescore`). It is compiled into the server. There is no Qt, Node.js,
+WebAssembly or desktop MuseScore dependency at runtime.
 
-## MCP 工具
+The goal is interop, not compatibility: an agent-made score must open and remain
+editable in MuseScore, and a MuseScore score must open and remain editable by
+the agent. MuseScore's legacy surface is not a goal. Only scores from MuseScore
+4.6 onward open. The default MSCZ writer emits 5.00; a bounded 4.70 writer is
+available for MuseScore 4.x interop where the score stays inside its documented
+subset.
 
-服务提供以下九个工具：
+## What it can do
 
-1. `score_open`：从路径或数据打开乐谱。
-2. `score_create`：从引擎模板创建乐谱。
-3. `score_close`：关闭文档。
-4. `score_outline`：查询乐谱结构与版本。
-5. `score_query`：查询元素、属性或音轨。
-6. `score_describe`：查询元素属性和样式目录。
-7. `score_edit`：以原子批次编辑乐谱。
-8. `score_export`：在当前文档上同步导出乐谱、页面、音频或位置数据。
-9. `runtime_info`：查询运行环境，或添加字体、替换 SoundFont。
+- Open MSCZ/MSCX, MusicXML/MXL, MIDI, Guitar Pro (GP3–GP7/GPX/PTB) and MNX.
+- Create a score from an engine template.
+- Read the outline, query elements/measures/segments/properties/audio tracks,
+  and describe element types and style keys.
+- Apply atomic edit batches (23 operations) with strict revisions; a failed
+  batch rolls back.
+- Export score files, PDF/PNG/SVG pages, audio (WAV/FLAC/Opus/MP3/AAC) and
+  position data from the **live** document, with durable publication.
+- Hot-load fonts and replace SoundFonts at runtime.
 
-参数、输出、错误与版本约束见 [v2 registry 文档](docs/dev/a5-registry.md) 和生成的 [工具 schema](native/tools.json)。例如，`score_create` 的 `arguments` 可以是：
+## Quick start (Windows)
 
-```json
-{"template_id": "Treble_Clef", "title": "One Bar Demo"}
-```
-
-使用 `runtime_info` 查看可用模板及格式；编辑内容使用 `score_edit`。
-
-## 构建与测试
-
-Windows 需要 Git、Pixi 和 Visual Studio C++ x64 工具链：
+Prerequisites: Git, [Pixi](https://pixi.sh/), and the Visual Studio C++ x64
+toolchain.
 
 ```powershell
 pixi install -e native --locked
 pixi run -e native python scripts/bootstrap.py --soundfont
+pixi run -e native python scripts/prepare.py
 pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
+```
 
-$env:ENGRAVE_MCP_BINARY = "$PWD/build/xmake-windows/engrave-mcp.exe"
+Run the protocol smoke test against the build:
+
+```powershell
+# The dev build links the Pixi native libraries; put them on PATH first.
+$env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
+
+$env:ENGRAVE_MCP_BINARY   = "$PWD/build/xmake-windows/engrave-mcp.exe"
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
 pixi run -e native python scripts/mcp_smoke.py
-pixi run -e native python scripts/test_transport.py $env:ENGRAVE_MCP_BINARY
 ```
 
-`ENGRAVE_MCP_*` 变量配置这些测试和客户端脚本；直接启动服务时通过 `--resources` 和可选的 `--soundfont` 传入路径。打包后的服务默认查找可执行文件同级的 `assets` 目录。Windows 和 Linux 的构建、打包及验收命令见 [构建指南](docs/dev/build.md)。
+To run the server by hand, pass resources explicitly; `--soundfont` is optional:
 
-## 客户端配置示例
+```powershell
+build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
+  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
+```
 
-构建并打包到 `artifacts/windows-next` 后，可在 MCP 客户端中填写绝对路径：
+A packaged build finds its sibling `assets/` directory automatically. Windows
+and Linux build, test and packaging details are in [docs/dev/build.md](docs/dev/build.md).
+
+## The nine tools
+
+| Tool | What it does |
+|---|---|
+| `score_open` | Open from `path` or base64 `data` (+ `format`, `filename_hint`, `strict_ids`). |
+| `score_create` | Create from `template_id` or `template_path` (+ `title`, `subtitle`, `composer`, `lyricist`). |
+| `score_close` | Close a document and free its memory. |
+| `score_outline` | Title/metadata, parts, measures, signatures, page count, revision. |
+| `score_query` | `mode`: `elements`, `properties`, or `audio_tracks`. |
+| `score_describe` | `scope`: `types`, `type` (with `type`), or `styles`. |
+| `score_edit` | Atomic `ops` batch with optional `expected_revision`. |
+| `score_export` | `kind`: `score`, `render`, `audio`, or `positions`. |
+| `runtime_info` | `action`: `get`, `add_font`, or `set_soundfonts`. |
+
+Every successful result carries `ok: true`. Failures carry
+`ok: false` and `error: {code, message, ...}` and set the MCP `isError` flag.
+The full contract is in [docs/dev/tools.md](docs/dev/tools.md) and the generated
+schema in [native/tools.json](native/tools.json).
+
+A minimal create-and-export exchange:
+
+```json
+{"method":"tools/call","params":{"name":"score_create",
+  "arguments":{"template_id":"Treble_Clef","title":"Prelude"}}}
+{"ok":true,"document":"doc-1a2b-1","revision":"0","diagnostics":[]}
+```
+
+```json
+{"method":"tools/call","params":{"name":"score_export",
+  "arguments":{"document":"doc-1a2b-1","kind":"render",
+    "destination":{"kind":"file","path":"C:/Scores/prelude.pdf"},
+    "options":{"format":"pdf"}}}}
+{"ok":true,"source_revision":"0",
+ "artifacts":[{"path":"C:/Scores/prelude.pdf","mime":"application/pdf","size":"48213"}]}
+```
+
+## Client configuration
+
+After packaging (for example to `artifacts/windows-next`), register the server
+with absolute paths:
 
 ```json
 {
@@ -62,8 +117,57 @@ pixi run -e native python scripts/test_transport.py $env:ENGRAVE_MCP_BINARY
 }
 ```
 
-## 仓库与基线
+## Design in one screen
 
-引擎固定为 `vendor/musescore` 子模块，版本和 fork 台账见 [fork 文档](docs/dev/fork.md)。`build/`、`.upstream/`、`.runtime/`、`artifacts/` 和 `notes/` 不纳入版本控制；持久设计记录位于 `docs/dev/`，对照数据位于 `tests/golden/`。
+- **One engine, one owner thread.** All document work is serialized on a
+  dedicated owner thread. Up to 16 documents can be open; they share the engine.
+  Concurrent editing of one document is not supported, by design.
+- **Live export.** Exports run against the in-memory document. The earlier
+  worker/snapshot/job design was deleted: save-and-reopen changed layout, added
+  hundreds of milliseconds and created a large failure surface.
+- **Durable publication.** Output is written to a private staging directory,
+  flushed, then atomically renamed into place. Multi-file exports are per-file
+  atomic, not a transaction; an error reports exactly which files were already
+  published.
+- **Cooperative cancellation + watchdog.** Long operations poll a cancellation
+  flag. A cancelled export that stays blocked for 5 seconds triggers a
+  process-wide publication gate and exit 70 rather than killing threads.
+- **Explicit quotas.** 4 MiB request line, 64 in-flight calls, 16 MiB response,
+  1 GiB export budget, 8 MiB decoded input, 16 documents.
 
-导出直接在当前文档上同步执行；没有后台任务或导出模式开关。渲染、音频或写谱崩溃会终止整个会话，所有未保存文档修改都会丢失。
+The reasoning behind these choices is in [docs/dev/design.md](docs/dev/design.md).
+
+## Scope and non-goals
+
+Supported: ordinary single-user local filesystems on Windows and Linux, ordinary
+inherited permissions, the documented path syntax, and scores from MuseScore 4.6
+onward.
+
+Explicit non-goals: MuseScore 1.x–4.5 readers, full MuseScore compatibility,
+complex/protected DACLs and ACL merging, SMB authentication, device namespaces
+and extended-length paths, cross-volume or multi-file transactional
+publication, and interactive/streaming playback. See
+[docs/dev/scope.md](docs/dev/scope.md) for the triage rule.
+
+## Repository layout
+
+```
+native/            MCP transport, registry, JSON codecs, live export, publication
+vendor/musescore   pinned engrave engine (submodule, tag engrave-31)
+xmake.lua          host build; includes the engine build from vendor/musescore
+scripts/           bootstrap, build, packaging, lane runner, benchmarks
+tests/             fixtures, golden baselines, audio corpora
+docs/dev/          design, tool contract, build, validation, fork ledger, history
+```
+
+## Documentation
+
+- [Design and rationale](docs/dev/design.md)
+- [Tool contract](docs/dev/tools.md)
+- [Build and test](docs/dev/build.md)
+- [Validation lanes and accepted evidence](docs/dev/validation.md)
+- [Engine fork and pin ledger](docs/dev/fork.md)
+- [Supported scope and non-goals](docs/dev/scope.md)
+- [Open defects](docs/dev/defects.md)
+- [Project history](docs/dev/history.md)
+- [中文说明](README.zh-CN.md)
