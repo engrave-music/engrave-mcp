@@ -31,6 +31,13 @@ Two repositories matter: the host (`engrave-mcp`) and the engine checkout
 - Upstream fixes are cherry-picked onto `main` with provenance. The frozen
   `upstream/*` reference refs are history, not development branches.
 
+The engine submodule is intentionally shallow, so a fresh checkout can show
+only its pinned commit in `git log` even though the remote branch has earlier
+history. To inspect more history without moving the checkout or changing the
+pin, run `git -C vendor/engrave fetch --deepen=256 origin main`; repeat as
+needed. If the full work clone exists at `.upstream/engrave`, its `main` also
+provides the complete local history.
+
 ## Checkpoints
 
 | Tag | Meaning |
@@ -46,11 +53,15 @@ Two repositories matter: the host (`engrave-mcp`) and the engine checkout
 - Host: 44 local branches reduced to `main`; every deleted branch was an
   ancestor of `main` except `engrave/a5`, whose tip is the
   `archive/engrave-a5` tag.
-- Engine: `main` tracks `origin/main` at `engrave-31`; two merged local feature
-  branches and 56 stale `origin/*` remote-tracking refs removed. On GitHub, 50
-  merged remote branches were deleted, leaving `main` plus four frozen branches:
-  `mcp/v4.7.5`, `mcp/v4.7.6`, `upstream/musescore`, `upstream/muse-framework`.
-  The 37 engine tags are unchanged.
+- Engine submodule checkout: `main` tracks `origin/main` at `engrave-31`; two
+  merged local feature branches and 56 stale `origin/*` remote-tracking refs
+  removed. On GitHub, 50 merged remote branches were deleted, leaving `main`
+  plus four frozen branches: `mcp/v4.7.5`, `mcp/v4.7.6`, `upstream/musescore`,
+  `upstream/muse-framework`. The 37 engine tags are unchanged.
+- The separate `.upstream/engrave` work clone was not included in that local
+  cleanup. It still has topic refs and worktree records, including four branch
+  tips not merged into `main`: `a3/old-main`, `a5/api-gaps`, `scratch/base`,
+  and `t/main`. Review those tips before removing them.
 
 Remote cleanup rule: only delete a branch whose commits are fully contained in
 `main` (`compare` reports `ahead_by: 0`). Keep unmerged work, and keep the
