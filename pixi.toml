@@ -17,13 +17,7 @@ c-compiler = "*"
 cxx-compiler = "*"
 patchelf = "*"
 
-[feature.baseline.target.win-64.dependencies]
-qt6-main = "6.10.2.*"
-libogg = "*"
-libvorbis = "*"
-
 [environments]
-default = { features = ["baseline"] }
 native = { features = [] }
 
 [pypi-dependencies]
