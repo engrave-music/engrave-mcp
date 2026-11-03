@@ -52,10 +52,10 @@ pixi run -e native python scripts/test_transport.py $env:ENGRAVE_MCP_BINARY
 {
   "mcpServers": {
     "engrave-mcp": {
-      "command": "C:/path/to/musescore-mcp/artifacts/windows-next/engrave-mcp.exe",
+      "command": "C:/path/to/engrave-mcp/artifacts/windows-next/engrave-mcp.exe",
       "args": [
         "--soundfont",
-        "C:/path/to/musescore-mcp/artifacts/windows-next/soundfonts/FluidR3Mono_GM.sf3"
+        "C:/path/to/engrave-mcp/artifacts/windows-next/soundfonts/FluidR3Mono_GM.sf3"
       ]
     }
   }

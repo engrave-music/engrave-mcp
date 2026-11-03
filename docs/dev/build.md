@@ -11,7 +11,7 @@
 | `MUSIC_MCP_*` | `ENGRAVE_MCP_*` | 活跃客户端、测试及 lane 脚本环境变量；不提供旧名别名 |
 | `musescore-mcp-bootstrap/1` | `engrave-mcp-bootstrap/1` | bootstrap 下载请求的 User-Agent |
 
-环境变量由脚本读取；直接运行二进制使用 `--resources` 和 `--soundfont` 参数。仓库目录 `musescore-mcp`、引擎子模块 `vendor/musescore`、引擎源码选项 `--musescore_source` 与引擎身份不改名。历史 v1 客户端和基线测试脚本保留原有调用方式；`scripts/make_dense_score.py` 的旧作曲者字符串是历史确定性测试数据的一部分。历史文档、归档证据及 fixture/golden 字节保持原样。
+环境变量由脚本读取；直接运行二进制使用 `--resources` 和 `--soundfont` 参数。仓库目录为 `engrave-mcp`；引擎子模块 `vendor/musescore`、引擎源码选项 `--musescore_source` 与引擎身份不改名。历史 v1 客户端和基线测试脚本保留原有调用方式；`scripts/make_dense_score.py` 的旧作曲者字符串是历史确定性测试数据的一部分。历史文档、归档证据及 fixture/golden 字节中出现的旧路径保持原样。
 
 ---
 
@@ -114,7 +114,7 @@ S2 的独立验收（必须在原生 DLL 目录已加入 PATH 的环境中运行
 构建产物位于 `build/xmake-windows/engrave-mcp.exe`。未经打包直接从构建目录启动时，必须传入资源的绝对路径：
 
 ```powershell
-pixi run -e native build/xmake-windows/engrave-mcp.exe --resources "C:/path/to/musescore-mcp/.runtime/assets" --soundfont "C:/path/to/musescore-mcp/.runtime/soundfonts/FluidR3Mono_GM.sf3"
+pixi run -e native build/xmake-windows/engrave-mcp.exe --resources "C:/path/to/engrave-mcp/.runtime/assets" --soundfont "C:/path/to/engrave-mcp/.runtime/soundfonts/FluidR3Mono_GM.sf3"
 ```
 *(注：`--soundfont` 为可选参数。)*
 
