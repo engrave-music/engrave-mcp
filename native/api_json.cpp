@@ -226,8 +226,8 @@ Result<engrave::ScoreSel> decode_score(const Json& j) {
     try { detail::validate_def("score_outline","score",j); return detail::score(j); }
     catch (const detail::DecodeError& e) { return std::unexpected(e.error); }
 }
-Result<engrave::Ref> decode_ref(const Json& j, bool allow_op) {
-    try { detail::validate_def(allow_op ? "score_edit" : "score_query",allow_op ? "ref" : "read_ref",j); return detail::ref(j,allow_op,std::numeric_limits<std::size_t>::max()); }
+Result<engrave::Ref> decode_ref(const Json& j) {
+    try { detail::validate_def("score_query","read_ref",j); return detail::ref(j,false,std::numeric_limits<std::size_t>::max()); }
     catch (const detail::DecodeError& e) { return std::unexpected(e.error); }
 }
 Result<engrave::Query> decode_query(const Json& j) {

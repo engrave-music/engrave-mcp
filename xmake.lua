@@ -290,7 +290,7 @@ target("live_export_test")
     set_default(false)
     add_deps("muse_generated", "v2_store")
     add_files(path.join(native_dir, "live_export_test.cpp"), path.join(native_dir, "api_output.cpp"),
-        path.join(native_dir, "background_job.cpp"))
+        path.join(native_dir, "publication.cpp"))
     if is_plat("windows") then
         add_files(path.join(native_dir, "utf8.manifest"))
     end
@@ -301,7 +301,7 @@ if is_plat("linux") then
     target("publication_test")
         set_kind("binary")
         set_default(false)
-        add_files(path.join(native_dir, "publication_test.cpp"), path.join(native_dir, "background_job.cpp"))
+        add_files(path.join(native_dir, "publication_test.cpp"), path.join(native_dir, "publication.cpp"))
         add_ldflags("-Wl,--wrap=fsync", {force = true})
     target_end()
 end
@@ -310,7 +310,7 @@ end
 target("staging_test")
     set_kind("binary")
     set_default(false)
-    add_files(path.join(native_dir, "staging_test.cpp"), path.join(native_dir, "background_job.cpp"))
+    add_files(path.join(native_dir, "staging_test.cpp"), path.join(native_dir, "publication.cpp"))
     if is_plat("windows") then
         add_files(path.join(native_dir, "utf8.manifest"))
         add_syslinks("advapi32")

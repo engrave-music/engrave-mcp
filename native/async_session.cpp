@@ -7,7 +7,6 @@
 #include "registry.h"
 #include "export_timing.h"
 #ifdef MUSIC_ASYNC_TEST_HOOKS
-#include <engrave/testing/write470.h>
 #include <cstdio>
 #include <cstdlib>
 #endif

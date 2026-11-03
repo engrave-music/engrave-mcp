@@ -1,5 +1,5 @@
 // Linux durability ordering and error visibility; link with --wrap=fsync.
-#include "background_job.h"
+#include "publication.h"
 #include <cerrno>
 #include <filesystem>
 #include <fstream>

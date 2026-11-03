@@ -23,7 +23,7 @@ struct HostError {
 template<class T> using Result = std::expected<T,HostError>;
 Result<engrave::Batch> decode_batch(const Json& ops);
 Result<engrave::Query> decode_query(const Json& query);
-Result<engrave::Ref> decode_ref(const Json&, bool allow_op = false);
+Result<engrave::Ref> decode_ref(const Json&);
 Result<engrave::ScoreSel> decode_score(const Json&);
 Result<std::uint64_t> decode_revision(const Json&);
 Json encode(const engrave::Outline&);

@@ -30,7 +30,6 @@ const Json& definition(std::string_view name) {
 }
 std::string ToolSpec::description() const { return definition(name).at("description").get<std::string>(); }
 const Json& ToolSpec::input_schema() const { return definition(name).at("inputSchema"); }
-const Json& ToolSpec::output_schema() const { return definition(name).at("outputSchema"); }
 std::span<const ToolSpec> registry() { return specs; }
 const ToolSpec* find_tool(std::string_view name) { for(auto& s:specs) if(s.name==name) return &s; return nullptr; }
 Json tools_json() {

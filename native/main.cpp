@@ -1,6 +1,6 @@
 #include "mcp_transport.h"
 #include "async_session.h"
-#include "background_job.h"
+#include "publication.h"
 #include "registry.h"
 #include <iostream>
 #include <stdexcept>
@@ -36,6 +36,14 @@ int main(int argc, char** argv) {
 #endif
             return tools;
         },
+            [](std::string_view name) {
+                if (music::v2::find_tool(name)) return true;
+#ifdef MUSIC_ASYNC_TEST_HOOKS
+                return name == "test_owner_state" || name == "test_owner_sleep";
+#else
+                return false;
+#endif
+            },
             [&](std::string name, music::Json args, std::shared_ptr<music::RequestExecution> execution) {
                 return session.call(std::move(name), std::move(args), std::move(execution));
             },

@@ -12,7 +12,6 @@ struct ToolSpec {
     Scheduling scheduling;
     std::string description() const;
     const Json& input_schema() const;
-    const Json& output_schema() const;
 };
 std::span<const ToolSpec> registry();
 const ToolSpec* find_tool(std::string_view name);

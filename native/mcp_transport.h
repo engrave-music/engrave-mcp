@@ -5,6 +5,7 @@
 #include <atomic>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #ifndef ASIO_STANDALONE
 #define ASIO_STANDALONE
@@ -28,8 +29,10 @@ public:
 using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std::shared_ptr<RequestExecution>)>;
 
 // Asynchronous MCP stdio server. The local io_context is run on the caller's
-// SESSION thread; list_tools, call_tool and shutdown are invoked there, so a
-// separate Engine owner thread may post completions back to this context.
+// SESSION thread; list_tools, tool_exists, call_tool and shutdown are invoked
+// there, so a separate Engine owner thread may post completions back to this
+// context. tool_exists answers a tools/call name check without materialising
+// the full tool schema tree.
 //
 // A dedicated jthread reads stdin and admits complete lines into a bounded
 // queue, applying backpressure when the queue or output budget is exhausted.
@@ -47,6 +50,7 @@ using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std
 // handlers have returned; it never calls io_context::stop() from a transport
 // failure path.
 int serve_stdio_async(const std::function<Json()>& list_tools,
+                      const std::function<bool(std::string_view)>& tool_exists,
                       const AsyncToolCall& call_tool,
                       const std::function<void()>& shutdown);
 } // namespace music

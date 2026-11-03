@@ -1,5 +1,4 @@
-#include "background_job.h"
-#include "publication_gate.h"
+#include "publication.h"
 #include <cstdlib>
 #include <chrono>
 #include <thread>

@@ -1,6 +1,6 @@
 #include "api_output.h"
 #include "api_json_internal.h"
-#include "background_job.h"
+#include "publication.h"
 #include "export_timing.h"
 #include "audio_budget.h"
 #include "tool_result.h"

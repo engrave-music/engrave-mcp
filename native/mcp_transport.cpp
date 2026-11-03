@@ -188,10 +188,12 @@ class Session : public std::enable_shared_from_this<Session> {
 public:
     Session(asio::io_context& ioc,
             const std::function<Json()>& list_tools,
+            const std::function<bool(std::string_view)>& tool_exists,
             const AsyncToolCall& call_tool,
             const std::function<void()>& shutdown)
         : ioc_(ioc),
           list_tools_(list_tools),
+          tool_exists_(tool_exists),
           call_tool_(call_tool),
           shutdown_(shutdown),
           work_(asio::make_work_guard(ioc)) {
@@ -1392,46 +1394,7 @@ private:
                         "Server overload: 64 outstanding tool calls already in flight");
                 }
 
-                Json tools_raw;
-                bool list_tools_failed = false;
-                std::string list_tools_error;
-                try {
-                    tools_raw = list_tools_();
-                } catch (const std::exception& e) {
-                    list_tools_failed = true;
-                    list_tools_error =
-                        std::string("Tool list callback error: ") + e.what();
-                } catch (...) {
-                    list_tools_failed = true;
-                    list_tools_error = "Unknown tool list callback error";
-                }
-                if (list_tools_failed) {
-                    co_return co_await send_error(
-                        id, -32603, list_tools_error);
-                }
-
-                Json tools_list = Json::array();
-                if (tools_raw.is_array()) {
-                    tools_list = tools_raw;
-                } else if (tools_raw.is_object() &&
-                           tools_raw.contains("tools") &&
-                           tools_raw["tools"].is_array()) {
-                    tools_list = tools_raw["tools"];
-                }
-
-                bool tool_found = false;
-                for (const auto& item : tools_list) {
-                    if (item.is_object() &&
-                        item.contains("name") &&
-                        item["name"].is_string()) {
-                        if (item["name"].get<std::string>() == tool_name) {
-                            tool_found = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!tool_found) {
+                if (!tool_exists_(tool_name)) {
                     co_return co_await send_error(
                         id, -32602, "Unknown tool: " + tool_name);
                 }
@@ -1932,6 +1895,7 @@ private:
 
     asio::io_context& ioc_;
     std::function<Json()> list_tools_;
+    std::function<bool(std::string_view)> tool_exists_;
     AsyncToolCall call_tool_;
     std::function<void()> shutdown_;
     asio::executor_work_guard<asio::io_context::executor_type> work_;
@@ -1980,6 +1944,7 @@ private:
 } // namespace
 
 int serve_stdio_async(const std::function<Json()>& list_tools,
+                      const std::function<bool(std::string_view)>& tool_exists,
                       const AsyncToolCall& call_tool,
                       const std::function<void()>& shutdown) {
 #if !defined(_WIN32)
@@ -1991,7 +1956,7 @@ int serve_stdio_async(const std::function<Json()>& list_tools,
         std::shared_ptr<Session> session;
         try {
             session = std::make_shared<Session>(
-                ioc, list_tools, call_tool, shutdown);
+                ioc, list_tools, tool_exists, call_tool, shutdown);
             session->start_threads();
         } catch (...) {
             if (session) {

@@ -1,5 +1,5 @@
 // Direct regression for the private staging and publication ACL contract.
-#include "background_job.h"
+#include "publication.h"
 #include "utf8_text.h"
 
 #include <cstddef>
