@@ -98,6 +98,11 @@ synthesis cancellation p95 assertion at 30.1587 ms against a 30 ms limit; a
 subsequent complete run passed at 26.7596 ms. The result is an observed rerun,
 not evidence that the timing threshold is stable.
 
+At `engrave-33` (`bf44cdeb88`), the complete gate passed at the exact commit
+with the same counts on Windows and linux-host. The MusicXML velocity regression
+and 12 before/after playback cases also passed on both; the saved WAV and MIDI
+files for those cases were byte-identical.
+
 ## Accepted evidence (M4, 2026-11-03)
 
 Host code through `cd0f504`, engine `engrave-31` (`629027f1`), acceptance record
