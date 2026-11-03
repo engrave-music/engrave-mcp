@@ -9,32 +9,32 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "vendor/musescore"
+SOURCE = ROOT / "vendor/engrave"
 TOOLS = SOURCE / "tools"
 
 
 def verify_submodule():
     status = subprocess.check_output(
-        ["git", "-C", str(ROOT), "submodule", "status", "--", "vendor/musescore"], text=True,
+        ["git", "-C", str(ROOT), "submodule", "status", "--", "vendor/engrave"], text=True,
     ).rstrip("\r\n")
     if not status:
-        raise RuntimeError("vendor/musescore is not a submodule of this repository")
+        raise RuntimeError("vendor/engrave is not a submodule of this repository")
     marker = status[0]
     if marker == "-":
-        raise RuntimeError("vendor/musescore is not initialized; run scripts/bootstrap.py first")
+        raise RuntimeError("vendor/engrave is not initialized; run scripts/bootstrap.py first")
     if marker == "+":
-        raise RuntimeError("vendor/musescore is at a different commit than the superproject records")
+        raise RuntimeError("vendor/engrave is at a different commit than the superproject records")
     if marker == "U":
-        raise RuntimeError("vendor/musescore has a merge conflict; resolve it before building")
+        raise RuntimeError("vendor/engrave has a merge conflict; resolve it before building")
     if marker != " ":
-        raise RuntimeError(f"Unexpected vendor/musescore submodule status: {status}")
+        raise RuntimeError(f"Unexpected vendor/engrave submodule status: {status}")
     dirty = subprocess.check_output(
         ["git", "-C", str(SOURCE), "status", "--porcelain", "--untracked-files=normal"],
         text=True,
     )
     if dirty:
         raise RuntimeError(
-            "vendor/musescore has local changes; commit or remove them before building:\n" + dirty
+            "vendor/engrave has local changes; commit or remove them before building:\n" + dirty
         )
     return status[1:].split()[0]
 
@@ -102,7 +102,7 @@ def main():
     count = len(manifest["files"])
 
     action = "prepared" if staged else "verified"
-    print(f"Verified vendor/musescore at {revision}; {action} {count} native resources")
+    print(f"Verified vendor/engrave at {revision}; {action} {count} native resources")
 
 
 if __name__ == "__main__":

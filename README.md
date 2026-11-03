@@ -6,7 +6,7 @@ JSON-RPC.
 
 The engine is **engrave**, a pinned hard fork of the MuseScore 5.0 core
 ([github.com/Locietta/engrave](https://github.com/Locietta/engrave), consumed as
-`vendor/musescore`). It is compiled into the server. There is no Qt, Node.js,
+`vendor/engrave`). It is compiled into the server. There is no Qt, Node.js,
 WebAssembly or desktop MuseScore dependency at runtime.
 
 The goal is interop, not compatibility: an agent-made score must open and remain
@@ -155,8 +155,8 @@ publication, and interactive/streaming playback. See
 
 ```
 native/            MCP transport, registry, JSON codecs, live export, publication
-vendor/musescore   pinned engrave engine (submodule, tag engrave-31)
-xmake.lua          host build; includes the engine build from vendor/musescore
+vendor/engrave   pinned engrave engine (submodule, tag engrave-31)
+xmake.lua          host build; includes the engine build from vendor/engrave
 scripts/           bootstrap, build, packaging, lane runner, benchmarks
 tests/             fixtures, golden baselines, audio corpora
 docs/dev/          design, tool contract, build, validation, fork ledger, history

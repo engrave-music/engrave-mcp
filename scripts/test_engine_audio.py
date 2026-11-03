@@ -1605,7 +1605,7 @@ def main() -> int:
     parser.add_argument("--defer-dense-performance", action="store_true",
                         help="Leave the dense performance check pending and exit nonzero")
     parser.add_argument("--engine-source", type=Path,
-                        default=Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor" / "musescore")),
+                        default=Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor" / "engrave")),
                         help="Git checkout used to build the engine")
     parser.add_argument("--cross-platform-captures", type=Path,
                         default=ROOT / "artifacts" / "a2" / "audio-cross-platform",

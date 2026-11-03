@@ -11,7 +11,7 @@
    - Part 2: Piano (midiProgram 1, trackId 1, instrumentId `piano`)
    - Part 3: Cello (midiProgram 43, trackId 2, instrumentId `baryton`)
 2. **MSCZ Export**: Exported as an uncompressed/compressed MSCZ archive via native MCP `score_create` and `score_export` (`format: "mscz"`).
-3. **Audio Settings Injection**: Added `audiosettings.json` at the root of the ZIP archive following the MuseScore 4 schema used by `ProjectAudioSettings` (`vendor/musescore/src/project/internal/projectaudiosettings.cpp`) and `NotationSoloMuteState` (`vendor/musescore/src/notation/internal/notationsolomutestate.cpp`):
+3. **Audio Settings Injection**: Added `audiosettings.json` at the root of the ZIP archive following the MuseScore 4 schema used by `ProjectAudioSettings` (`vendor/engrave/src/project/internal/projectaudiosettings.cpp`) and `NotationSoloMuteState` (`vendor/engrave/src/notation/internal/notationsolomutestate.cpp`):
    - Root `master` object containing `volumeDb: 0.0` and `balance: 0.0`.
    - `tracks` array containing entries for each part/instrument (`partId`, `instrumentId`, `out: { volumeDb, balance }`, and `soloMuteState: { mute, solo }`).
    - Cello (`partId: "3"`, `instrumentId: "baryton"`) is set to `soloMuteState: { "mute": true, "solo": false }`.

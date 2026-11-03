@@ -1,11 +1,11 @@
 -- Qt-free xmake build for the engrave-mcp host (MuseScore 5.0 engine).
 --
 -- The engine's build belongs to the engine.  The fork (github.com/Locietta/
--- engrave, consumed as the pinned vendor/musescore submodule) carries its own
+-- engrave, consumed as the pinned vendor/engrave submodule) carries its own
 -- xmake build: project settings, the pinned package recipes, the engine module
 -- targets, the engrave adapter library and their tests, all in the engine
 -- checkout's xmake/ directory.  This file includes that build - from
--- vendor/musescore by default, or from the checkout named by
+-- vendor/engrave by default, or from the checkout named by
 -- --musescore_source - and keeps what is the host's:
 --
 --   v2_registry, registry_dump       standalone v2 schema authority
@@ -43,13 +43,13 @@ add_requires("asio 1.36.0", {system = false})
 option("musescore_source")
     set_default("")
     set_showmenu(true)
-    set_description("MuseScore source tree (default: the vendor/musescore submodule)")
+    set_description("engrave engine source tree (default: the vendor/engrave submodule)")
 option_end()
 
 local project_root = os.projectdir()
 local source_root = get_config("musescore_source")
 if not source_root or source_root == "" then
-    source_root = path.join(project_root, "vendor", "musescore")
+    source_root = path.join(project_root, "vendor", "engrave")
 end
 source_root = path.absolute(source_root, project_root)
 
@@ -73,7 +73,7 @@ local engine_build = path.join(source_root, "xmake", "engrave.lua")
 if not os.isfile(engine_build) then
     configure_failure("the engine checkout has no xmake build: " .. engine_build
         .. "\nPoint --musescore_source at an engrave checkout that carries xmake/engrave.lua"
-        .. "\n(the pinned vendor/musescore submodule gets it with the next pin bump).")
+        .. "\n(the pinned vendor/engrave submodule gets it with the next pin bump).")
     return
 end
 

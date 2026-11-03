@@ -2,7 +2,7 @@
 
 The host is built with **xmake**; **Pixi** provides the pinned toolchain and
 native libraries. The engine's build lives in the fork
-(`vendor/musescore/xmake/engrave.lua`) and is included by the host's
+(`vendor/engrave/xmake/engrave.lua`) and is included by the host's
 `xmake.lua`.
 
 ## Prerequisites
@@ -28,7 +28,7 @@ pixi run -e native python scripts/bootstrap.py --soundfont
 pixi run -e native python scripts/prepare.py
 ```
 
-`bootstrap.py` initializes the `vendor/musescore` submodule and downloads the
+`bootstrap.py` initializes the `vendor/engrave` submodule and downloads the
 base SoundFont. `prepare.py` verifies the submodule pin and installs the engine's
 hash-pinned asset manifest (345 files, 28,380,646 bytes) into `.runtime/assets`;
 it refuses to run before the submodule exists.

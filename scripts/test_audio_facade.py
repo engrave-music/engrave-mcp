@@ -191,7 +191,7 @@ async def run(args):
         await client.tool('score_close', {'document': parts_doc})
         evidence['checks'].extend(['saved_master_mix', 'saved_excerpt_mix'])
 
-        source = ROOT/'vendor/musescore/src/engraving/tests/instrumentchange_data/change-ref.mscx'
+        source = ROOT/'vendor/engrave/src/engraving/tests/instrumentchange_data/change-ref.mscx'
         changed_doc = (await client.tool('score_open', {'path': str(source)}))['document']
         changed_tracks = (await tracks(changed_doc))['tracks']
         assert len(changed_tracks) == 3 and len({t['track'] for t in changed_tracks}) == 3

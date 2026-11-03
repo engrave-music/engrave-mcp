@@ -5,7 +5,7 @@ stdio JSON-RPC 创建、查询、编辑、排版并导出乐谱。
 
 引擎是 **engrave**，即 MuseScore 5.0 核心的固定硬分叉
 （[github.com/Locietta/engrave](https://github.com/Locietta/engrave)，以子模块
-`vendor/musescore` 引入），直接编译进服务。运行时不需要 Qt、Node.js、WASM，
+`vendor/engrave` 引入），直接编译进服务。运行时不需要 Qt、Node.js、WASM，
 也不需要安装桌面版 MuseScore。
 
 目标是互操作，而不是兼容：Agent 做出的乐谱要能在 MuseScore 中打开并继续编辑，
@@ -139,8 +139,8 @@ DACL 与 ACL 合并、SMB 认证、设备命名空间与超长路径、跨卷或
 
 ```
 native/            MCP 传输、注册表、JSON 编解码、实时导出、发布
-vendor/musescore   固定的 engrave 引擎（子模块，tag engrave-31）
-xmake.lua          宿主构建；从 vendor/musescore 引入引擎构建
+vendor/engrave   固定的 engrave 引擎（子模块，tag engrave-31）
+xmake.lua          宿主构建；从 vendor/engrave 引入引擎构建
 scripts/           引导、构建、打包、测试道、基准
 tests/             fixture、golden 基线、音频语料
 docs/dev/          设计、工具契约、构建、验证、fork 台账、历史

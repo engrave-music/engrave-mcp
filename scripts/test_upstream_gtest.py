@@ -74,13 +74,13 @@ def default_engraving_data_dir() -> Path:
     if os.environ.get("ENGRAVING_TESTS_DATA_ROOT"):
         return Path(os.environ["ENGRAVING_TESTS_DATA_ROOT"]).resolve()
     candidates = (
-        ROOT / "vendor" / "musescore" / "src" / "engraving" / "tests",
-        ROOT / ".." / "vendor" / "musescore" / "src" / "engraving" / "tests",
+        ROOT / "vendor" / "engrave" / "src" / "engraving" / "tests",
+        ROOT / ".." / "vendor" / "engrave" / "src" / "engraving" / "tests",
     )
     for c in candidates:
         if (c / "playback" / "playbackeventsrenderer_data").is_dir():
             return c.resolve()
-    return (ROOT / "vendor" / "musescore" / "src" / "engraving" / "tests").resolve()
+    return (ROOT / "vendor" / "engrave" / "src" / "engraving" / "tests").resolve()
 
 
 def parse_gtest_output(text: str) -> dict:
@@ -271,7 +271,7 @@ def main():
         "--engraving-data",
         type=Path,
         default=default_engraving_data_dir(),
-        help="Path to upstream engraving test data (vendor/musescore/src/engraving/tests)",
+        help="Path to upstream engraving test data (vendor/engrave/src/engraving/tests)",
     )
     parser.add_argument(
         "--suite",

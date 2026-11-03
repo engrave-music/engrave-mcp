@@ -1,5 +1,5 @@
-[submodule "vendor/musescore"]
-	path = vendor/musescore
+[submodule "vendor/engrave"]
+	path = vendor/engrave
 	url = https://github.com/Locietta/engrave.git
 	shallow = true
 	branch = main

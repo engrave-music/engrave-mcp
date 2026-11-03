@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
         fixtures.emplace_back("fixtures/evening.musicxml");
         fixtures.emplace_back("tests/live_export/created.musicxml");
         for (const char* name : {"engine/two-notes.mnx", "project_examples/tupletSimple.mnx", "project_examples/percussionKit.mnx", "project_examples/graceArps.mnx"})
-            fixtures.emplace_back(fs::path("vendor/musescore/src/importexport/mnx/tests/data") / name);
+            fixtures.emplace_back(fs::path("vendor/engrave/src/importexport/mnx/tests/data") / name);
         for (const auto& fixture : fixtures) {
             auto ext = fixture.path().extension().string();
             if (ext != ".mscx" && ext != ".mscz" && ext != ".musicxml" && ext != ".mid" && ext != ".gp" && ext != ".mnx") continue;

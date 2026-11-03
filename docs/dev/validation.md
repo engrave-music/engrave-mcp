@@ -32,7 +32,7 @@ Engine test binaries used by some lanes (`score_edit_test`, `score_audio_test`,
 $env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
 .pixi\envs\native\python.exe scripts/run_lanes.py `
   --build-dir build/xmake-windows `
-  --engine-source vendor/musescore `
+  --engine-source vendor/engrave `
   --assets .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 `
   --output notes/lanes/latest

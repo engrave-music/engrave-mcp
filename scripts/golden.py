@@ -737,7 +737,7 @@ def fixture_files() -> list[Path]:
 
 def supplemental_mnx_files() -> list[Path]:
     """The engine-gate MNX fixtures have baseline files but no index entries."""
-    engine = Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor/musescore"))
+    engine = Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor/engrave"))
     data = engine / "src/importexport/mnx/tests/data"
     files = [data / name for name in SUPPLEMENTAL_MNX]
     missing = [str(path) for path in files if not path.is_file()]

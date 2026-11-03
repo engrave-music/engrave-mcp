@@ -44,7 +44,7 @@ STAGED_FONT_DIRS = (
 
 
 def resolve_engine_root(root: Path, override: Path | None = None) -> Path:
-    return (override or root / "vendor/musescore").resolve()
+    return (override or root / "vendor/engrave").resolve()
 
 
 def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Path, str]]:
@@ -321,7 +321,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/linux-package")
     parser.add_argument("--binary", type=Path, help="Override the built executable")
-    parser.add_argument("--source-root", type=Path, help="Override engine root (default: vendor/musescore)")
+    parser.add_argument("--source-root", type=Path, help="Override engine root (default: vendor/engrave)")
     parser.add_argument("--check-notices", action="store_true", help="Validate all required package notices without packaging")
     args = parser.parse_args()
 

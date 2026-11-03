@@ -128,7 +128,7 @@ def main():
                   telemetry_interval_seconds=a.interval)
     report['source_head'] = probe(['git', 'rev-parse', 'HEAD'])
     report['source_status'] = probe(['git', 'status', '--short'])
-    report['engine_head'] = probe(['git', '-C', 'vendor/musescore', 'rev-parse', 'HEAD'])
+    report['engine_head'] = probe(['git', '-C', 'vendor/engrave', 'rev-parse', 'HEAD'])
     report['hashes'] = {str(Path(x).resolve()):hashlib.sha256(Path(x).read_bytes()).hexdigest()
                         for x in command if Path(x).is_file()}
     stop = threading.Event()

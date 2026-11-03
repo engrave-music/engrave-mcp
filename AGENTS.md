@@ -12,13 +12,13 @@ and nothing is kept or validated just because MuseScore has it. Since 2026-10-31
 fork is a hard fork (one last upstream sync, then cherry-picks only).
 
 - The engine is the fork github.com/Locietta/engrave (renamed from Locietta/MuseScore on 2026-10-28), consumed as the shallow submodule
-  `vendor/musescore` (ledger and rules in `docs/dev/fork.md`; never force-push fork branches,
+  `vendor/engrave` (ledger and rules in `docs/dev/fork.md`; never force-push fork branches,
   tag every pinned SHA). webmscore and `patches/` are retired.
   Native compilation is the target; do not introduce Node.js or WASM as runtime dependencies.
 - No computer use, screenshots, simulated input, or dependence on a desktop MuseScore install.
 - The build is Qt-free xmake: the engine's build lives in the fork (`xmake/engrave.lua`
   with folder globs, pinned engine package recipes), the host's in this repository's
-  `xmake.lua`, which includes the engine build from `vendor/musescore`; validate Windows
+  `xmake.lua`, which includes the engine build from `vendor/engrave`; validate Windows
   and Linux.
   Work natively on Windows (PowerShell, `.pixi/envs/native/python.exe`). Linux means the
   physical host `ssh <linux-host>` (a separate checkout); never use WSL for this project.

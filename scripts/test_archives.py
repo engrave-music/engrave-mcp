@@ -215,7 +215,7 @@ async def valid_score_imports(binary, resources, out):
                 closed = await session.call_tool("score_close", {"document":document})
                 assert not closed.is_error, closed.content
                 result.append("mxl")
-                for path, label in [(out/"valid.mscz","mscz"),(ROOT/"vendor/musescore/src/importexport/guitarpro/tests/data/sforzato.gp","gp")]:
+                for path, label in [(out/"valid.mscz","mscz"),(ROOT/"vendor/engrave/src/importexport/guitarpro/tests/data/sforzato.gp","gp")]:
                     assert path.is_file(), path
                     opened=await session.call_tool("score_open", {"path":str(path)})
                     assert not opened.is_error, (label,opened.content)

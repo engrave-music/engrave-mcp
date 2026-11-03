@@ -40,7 +40,7 @@ def _find_native_root(project_root: Path) -> Path:
 
 
 def _engine_source_root(project_root: Path) -> Path:
-    return project_root / "vendor" / "musescore"
+    return project_root / "vendor" / "engrave"
 
 
 def validate(project_root: Path, source_root: Path) -> list[str]:
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--source-root",
         type=Path,
-        help="engine checkout to read (default: vendor/musescore)",
+        help="engine checkout to read (default: vendor/engrave)",
     )
     args = parser.parse_args(argv)
 

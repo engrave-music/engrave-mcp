@@ -208,8 +208,8 @@ def main() -> None:
     parser.add_argument("--binary", type=Path, required=True, help="Path to engrave-mcp server binary")
     parser.add_argument("--resources", type=Path, required=True, help="Path to .runtime/assets directory")
     parser.add_argument("--output", type=Path, required=True, help="Scratch output directory")
-    parser.add_argument("--upstream", type=Path, default=ROOT / "vendor/musescore",
-                        help="Path to vendor/musescore submodule")
+    parser.add_argument("--upstream", type=Path, default=ROOT / "vendor/engrave",
+                        help="Path to vendor/engrave submodule")
     args = parser.parse_args()
 
     exit_code = asyncio.run(

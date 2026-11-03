@@ -447,7 +447,7 @@ if __name__ == "__main__":
         FIXTURES.append({"name": name, "folder": "tests/phase_b", "format": "mscx", "has_excerpt": name == "excerpts.mscx", "excerpt_id": "v_v"})
     provenance = {"platform": platform.platform(), "host_sha256": args.host_sha256,
         "host_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-        "engine_revision": subprocess.check_output(["git", "-C", "vendor/musescore", "rev-parse", "HEAD"], text=True).strip(),
+        "engine_revision": subprocess.check_output(["git", "-C", "vendor/engrave", "rev-parse", "HEAD"], text=True).strip(),
         "sources": {str(Path(f.get("folder", "fixtures/golden"))/f["name"]): sha256_bytes((ROOT/f.get("folder", "fixtures/golden")/f["name"]).read_bytes()) for f in FIXTURES},
         "assets": {str(p.relative_to(RESOURCES)): sha256_bytes(p.read_bytes()) for p in sorted(RESOURCES.rglob("*")) if p.is_file()},
         "soundfont_sha256": sha256_bytes(SOUNDFONT.read_bytes())}

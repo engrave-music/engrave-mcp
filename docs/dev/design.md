@@ -26,7 +26,7 @@ Owner thread (one per process)
 
 The host only includes the engine's public headers under `engrave/...`;
 `native_include_check` enforces that before host targets build. The engine is a
-separate, independently buildable project (`vendor/musescore/xmake/engrave.lua`)
+separate, independently buildable project (`vendor/engrave/xmake/engrave.lua`)
 that the host includes.
 
 ## 2. One owner thread, several documents

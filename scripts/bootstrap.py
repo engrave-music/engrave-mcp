@@ -9,7 +9,7 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-SUBMODULE = "vendor/musescore"
+SUBMODULE = "vendor/engrave"
 SOUNDFONT = ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
 SOUNDFONT_URL = "https://cdn.jsdelivr.net/gh/musescore/MuseScore@2.1/share/sound/FluidR3Mono_GM.sf3"
 SOUNDFONT_SHA256 = "cfcd66d89e8386823400eca64934b14fbea7bf48ba1f00d21189af1262794ec2"

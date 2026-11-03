@@ -61,7 +61,7 @@ def audit(native: Path, public: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine-source", type=Path, default=ROOT / "vendor/musescore")
+    parser.add_argument("--engine-source", type=Path, default=ROOT / "vendor/engrave")
     args = parser.parse_args()
     native = ROOT / "native"
     public = args.engine_source / "engrave/include"

@@ -1,7 +1,7 @@
 """End-to-end Guitar Pro / Power Tab import lane checks.
 
 The script uses the official Python MCP SDK and the pinned upstream fixtures in
-vendor/musescore/src/importexport/guitarpro/tests/data through the v2 host.
+vendor/engrave/src/importexport/guitarpro/tests/data through the v2 host.
 
 Run with:
     python scripts/test_imports_guitarpro.py
@@ -20,7 +20,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURES = ROOT / "vendor/musescore/src/importexport/guitarpro/tests/data"
+FIXTURES = ROOT / "vendor/engrave/src/importexport/guitarpro/tests/data"
 OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", ROOT / "artifacts/imports-guitarpro"))
 
 # Quarter-note durations used by the .mscx reference scores.

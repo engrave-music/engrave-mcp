@@ -1,7 +1,7 @@
-# MuseScore fork
+# engrave engine fork
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
-submodule `vendor/musescore` (shallow, pinned by SHA with an `engrave-<n>` tag per pin).
+submodule `vendor/engrave` (shallow, pinned by SHA with an `engrave-<n>` tag per pin).
 The current pin is `engrave-31` (`629027f113`).
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
@@ -31,7 +31,7 @@ Since A4 the fork carries the engine's standalone Qt-free xmake build, and since
 Following the final upstream sync (`upstream-final` at `cbffaa078d`, upstream `32f0a26e5b`, framework `da3885cb`), `engrave` operates as a self-contained hard fork:
 
 - **Forward-only history**: `main` moves forward strictly via normal reviewed feature merges and commits. Force-pushes and rebases of published history are prohibited.
-- **Pins and provenance**: Every engine state pinned by `vendor/musescore` in the superproject carries an `engrave-<n>` tag on `main` and a ledger row recording its commit, delta summary, and validation evidence on both Windows and Linux (`linux-host`). The final synced upstream (`32f0a26e5b`) and framework (`da3885cb`) SHAs remain ancestral provenance.
+- **Pins and provenance**: Every engine state pinned by `vendor/engrave` in the superproject carries an `engrave-<n>` tag on `main` and a ledger row recording its commit, delta summary, and validation evidence on both Windows and Linux (`linux-host`). The final synced upstream (`32f0a26e5b`) and framework (`da3885cb`) SHAs remain ancestral provenance.
 - **Frozen upstream reference branches**: `upstream/musescore` and `upstream/muse-framework` are frozen reference branches. There are no scheduled upstream merges, forced updates, subtree-equality checks, or "tool-made merge commits only" restrictions. Specific upstream commits may be fetched and cherry-picked/adapted on demand with their upstream SHA, framework origin (if applicable), rationale, and focused test evidence.
 - **Historical sync & trim artifacts**: `tools/sync-upstream.py` and its synthetic recovery suite (`tools/test_sync_upstream.py`) are archived in Git history at `upstream-final`..`engrave-13` and removed from the active tree in C8. `TRIM` is retained as historical deletion provenance for A3 batches 1–8 and C1 `drop-3x`, not an active path-denial list for new code.
 - **Asset & license provenance**: Runtime assets and third-party font/engine licenses are pinned by SHA256 and byte size in `engrave/assets.json` and installed/verified via `tools/install_assets.py`. GPL-3.0 notices and third-party license files are preserved.

@@ -698,7 +698,7 @@ def main() -> None:
     testcwd = output / "cwd"
     (testcwd / "vendor").mkdir(parents=True, exist_ok=True)
     setup_link(repo_root / "fixtures", testcwd / "fixtures")
-    setup_link(engine_source, testcwd / "vendor/musescore")
+    setup_link(engine_source, testcwd / "vendor/engrave")
 
     base_env = os.environ.copy()
     base_env["TEMP"] = str(output / "tmp")

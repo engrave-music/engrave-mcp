@@ -90,7 +90,7 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     source = ROOT/'tests/phase_b/notes.mscx'
     preflight = dict(host_sha256=sha(args.binary), source_sha256=sha(source),
-        engine_revision=subprocess.check_output(['git', '-C', str(ROOT/'vendor/musescore'),
+        engine_revision=subprocess.check_output(['git', '-C', str(ROOT/'vendor/engrave'),
             'rev-parse', 'HEAD'], text=True).strip(),
         assets={str(f.relative_to(args.resources)):sha(f) for f in sorted(args.resources.rglob('*')) if f.is_file()})
     (out/'preflight.json').write_text(json.dumps(preflight, indent=2))

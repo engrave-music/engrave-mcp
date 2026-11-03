@@ -320,6 +320,6 @@ if __name__ == "__main__":
     parser.add_argument("--resources", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--upstream", "--engine-source", dest="upstream", type=Path,
-                        default=ROOT / "vendor/musescore",
+                        default=ROOT / "vendor/engrave",
                         help="Path to engine source root")
     asyncio.run(asyncio.wait_for(run(parser.parse_args()), timeout=600))

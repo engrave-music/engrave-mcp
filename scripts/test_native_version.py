@@ -46,14 +46,14 @@ async def run(args):
                         'options':options,'destination':{'kind':'file','path':str(path)}}, refused and action=='run')
                     assert path.exists() != refused, value
                     return value, path
-                source = ROOT/'vendor/musescore/engrave/tests/data/write470/minimal.mscx'
+                source = ROOT/'vendor/engrave/engrave/tests/data/write470/minimal.mscx'
                 doc = (await call('score_open', {'path':str(source)}))['document']
                 default, a = await export(doc,'default')
                 explicit, b = await export(doc,'explicit','5.00')
                 assert a.read_bytes() == b.read_bytes()
                 assert default['export_warnings'] == explicit['export_warnings'] == []
                 # Compare the frozen 5.00 capture using only the engine's documented revision normalization.
-                frozen = ROOT/'vendor/musescore/engrave/tests/data/write470/engrave19.mscx'
+                frozen = ROOT/'vendor/engrave/engrave/tests/data/write470/engrave19.mscx'
                 frozen_doc = (await call('score_open', {'path':str(frozen.with_suffix('.mscz'))}))['document']
                 _, frozen_out = await export(frozen_doc,'frozen')
                 import re

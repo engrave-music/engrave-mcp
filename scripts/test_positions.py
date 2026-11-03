@@ -214,7 +214,7 @@ async def run(args):
                                                     'events':[0,8000]},
                                 midi_unchanged=True, png_dimensions=[w,h], invalid_options=6)
                 # Sequences from pinned upstream engraving/tests/repeat_tests.cpp.
-                # Test data remains in vendor/musescore rather than being copied into this repo.
+                # Test data remains in vendor/engrave rather than being copied into this repo.
                 cases = {
                     'repeat06': [1,2,3,2,4,5,6],  # simple volta
                     'repeat07': [1,2,3,4,5,6,1,2,3],  # D.C. al fine
@@ -241,6 +241,6 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--binary',type=Path,required=True)
     p.add_argument('--resources',type=Path)
-    p.add_argument('--upstream',type=Path,default=Path(__file__).resolve().parents[1]/'vendor/musescore')
+    p.add_argument('--upstream',type=Path,default=Path(__file__).resolve().parents[1]/'vendor/engrave')
     p.add_argument('--output',type=Path,required=True)
     asyncio.run(run(p.parse_args()))
