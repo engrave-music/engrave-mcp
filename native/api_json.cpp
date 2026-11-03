@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <regex>
 #include <type_traits>
 
@@ -33,6 +34,15 @@ bool base64_shape(std::string_view s) {
 
 // Evaluates the keywords used by S1's generated input schemas. Keeping this
 // tied to the declarations avoids a second, drifting set of object shapes.
+// Input-schema patterns are fixed, so compile each one once per thread rather
+// than rebuilding a std::regex for every string field of every request.
+const std::regex& compiled_pattern(const std::string& pattern) {
+    static thread_local std::map<std::string, std::regex> cache;
+    auto [it, inserted] = cache.try_emplace(pattern);
+    if (inserted) it->second = std::regex(pattern, std::regex::ECMAScript);
+    return it->second;
+}
+
 bool conforms(const Json& schema, const Json& instance, const Json& root) {
     if (schema.contains("$ref")) {
         const auto ref = schema.at("$ref").get<std::string>();
@@ -63,10 +73,10 @@ bool conforms(const Json& schema, const Json& instance, const Json& root) {
         if (schema.contains("minLength") && count < schema.at("minLength").get<std::size_t>()) return false;
         if (schema.contains("maxLength") && count > schema.at("maxLength").get<std::size_t>()) return false;
         if (schema.contains("pattern")) {
-            const auto pattern = schema.at("pattern").get<std::string>();
+            const auto& pattern = schema.at("pattern").get_ref<const std::string&>();
             if (pattern.starts_with("^(?:[A-Za-z0-9+/]")) {
                 if (!base64_shape(s)) return false;
-            } else if (!std::regex_search(s, std::regex(pattern, std::regex::ECMAScript))) return false;
+            } else if (!std::regex_search(s, compiled_pattern(pattern))) return false;
         }
     }
     if (instance.is_array()) {
