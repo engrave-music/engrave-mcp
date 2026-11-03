@@ -23,7 +23,9 @@ fork is a hard fork (one last upstream sync, then cherry-picks only).
   Work natively on Windows (PowerShell, `.pixi/envs/native/python.exe`). Linux means the
   physical host `ssh <linux-host>` (a separate checkout); never use WSL for this project.
   Current design and rationale: `docs/dev/design.md`; open issues: `docs/dev/defects.md`;
-  project history: `docs/dev/history.md`.
+  project history: `docs/dev/history.md`; branch and tag policy: `docs/dev/branching.md`.
+  Keep only `main` as a long-lived branch: merge topic branches and delete them; tag
+  accepted checkpoints instead of keeping phase branches.
 - Avoid rewriting music algorithms; preserve an executable baseline for each later refactor.
   Compare every engine change against `tests/golden` (`scripts/golden.py`) with an explicit,
   hash-pinned allow-list.

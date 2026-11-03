@@ -156,4 +156,5 @@ docs/dev/          设计、工具契约、构建、验证、fork 台账、历�
 - [支持范围与非目标](docs/dev/scope.md)
 - [未解决缺陷](docs/dev/defects.md)
 - [项目历史](docs/dev/history.md)
+- [分支与标签策略](docs/dev/branching.md)
 - [English README](README.md)

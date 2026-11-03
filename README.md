@@ -172,4 +172,5 @@ docs/dev/          design, tool contract, build, validation, fork ledger, histor
 - [Supported scope and non-goals](docs/dev/scope.md)
 - [Open defects](docs/dev/defects.md)
 - [Project history](docs/dev/history.md)
+- [Branching and tags](docs/dev/branching.md)
 - [中文说明](README.zh-CN.md)
