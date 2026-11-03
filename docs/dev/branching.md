@@ -21,6 +21,9 @@ Two repositories matter: the host (`engrave-mcp`) and the engine checkout
 
 - `main` is the only long-lived branch. It moves forward only: no force-push and
   no rebase of published history.
+- The checkout has `origin` configured
+  (`https://github.com/Locietta/engrave.git`); `main` tracks `origin/main`.
+  Pull remote `main` instead of creating a local line.
 - Every state the host pins carries an `engrave-<n>` tag. The host pins only
   tagged SHAs; the tag ledger is in [fork.md](fork.md).
 - Feature branches (`feat/...`, `fix/...`) are merged to `main` and then
@@ -43,10 +46,12 @@ Two repositories matter: the host (`engrave-mcp`) and the engine checkout
 - Host: 44 local branches reduced to `main`; every deleted branch was an
   ancestor of `main` except `engrave/a5`, whose tip is the
   `archive/engrave-a5` tag.
-- Engine: `main` created at `engrave-31`; two merged feature branches and 56
-  stale `origin/*` remote-tracking refs removed (no remote is configured in
-  this checkout). The 37 engine tags are unchanged.
+- Engine: `main` tracks `origin/main` at `engrave-31`; two merged local feature
+  branches and 56 stale `origin/*` remote-tracking refs removed. On GitHub, 50
+  merged remote branches were deleted, leaving `main` plus four frozen branches:
+  `mcp/v4.7.5`, `mcp/v4.7.6`, `upstream/musescore`, `upstream/muse-framework`.
+  The 37 engine tags are unchanged.
 
-Remote branches on GitHub are a separate concern: deleting them requires a
-configured remote and push access. Do that from a clone that has the remote,
-after confirming the same merge state.
+Remote cleanup rule: only delete a branch whose commits are fully contained in
+`main` (`compare` reports `ahead_by: 0`). Keep unmerged work, and keep the
+frozen `mcp/*` and `upstream/*` reference branches regardless of merge state.
