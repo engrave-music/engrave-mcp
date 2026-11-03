@@ -81,7 +81,9 @@ Every successful result carries `ok: true`. Failures carry
 The full contract is in [docs/dev/tools.md](docs/dev/tools.md) and the generated
 schema in [native/tools.json](native/tools.json).
 
-A minimal create-and-export exchange:
+Schematic of the arguments and the `structuredContent` each call returns. This is
+not a wire transcript: a real session starts with `initialize` and wraps each
+call in a JSON-RPC 2.0 request/response with an id.
 
 ```json
 {"method":"tools/call","params":{"name":"score_create",

@@ -129,13 +129,18 @@ killed.
 | Edit batch | 1,024 operations | registry |
 | Export output | 1 GiB | `ExportLimits` |
 | Export deadline | 120 s, advisory | `ExportLimits` |
-| Error/report text | 16 KiB (UTF-8 safe) | export/transport |
+| Export/report preflight text | 16 KiB (UTF-8 safe) | export reports and transport-generated diagnostics |
+| Engine/tool message text | up to the 16 MiB response cap | not separately bounded |
 
 The export budget is enforced while encoding and before publication; it is not a
 process-memory bound. Audio encoding splits the budget in half between the
 encoder's intermediate file and the staged copy, so the default maximum encoded
 audio file is 512 MiB, plus up to 1 MiB of header-rewrite traffic. Query results
 are bounded by the engine's `max_query_results` (4,096).
+
+The 16 KiB cap applies to export reports and transport-generated diagnostics,
+not to arbitrary engine or tool messages; a `runtime_info` failure message can
+exceed it (bounded only by the 16 MiB response limit).
 
 ## 7. Performance
 
@@ -146,14 +151,15 @@ Accepted M4 evidence (Windows native and physical Linux `linux-host`, engine
 |---|---|---|
 | Render worst-row median / p95 | 8.348 / 9.534 ms (fixed replay 7.986 / 10.343) | 1.652 / 1.789 ms |
 | Dense-score cancellation p95 / max | 8.872 / 27.053 ms | 11.270 / 11.312 ms |
-| Warm WAV p95 | 270.094 ms in the accepted run | — |
+| Warm WAV p95 | 274.877 ms clean full run; 270.094 ms corrected high-priority repeat | — |
 | Golden (identical / allowed / different / missing / extra) | 307 / 83 / 0 / 0 / 0 | 265 / 125 / 0 / 0 / 0 |
 
 Audio latency is accepted as an **unresolved variance limit**, not a stable
 guarantee: full 1,000-call replays at the same binary produced one pass and
-failing runs dominated by `engine_call` under host contention. Functional
-parity, byte-identical audio and cancellation pass. Treat the warm p95 as an
-observation, not a contract.
+failing runs where `engine_call` dominated. Phase timing cannot separate engine
+work, I/O and scheduling, so the cause is not attributed to the host alone.
+Functional parity, byte-identical audio and cancellation pass. Treat the warm
+p95 as an observation, not a contract.
 
 ## 8. What this design does not do
 

@@ -22,7 +22,7 @@ investigation).
 | 018 | MIDI and workspace-estimate capture gaps | Partially resolved | SOURCE-REVIEWED, EXECUTED | Live score capture and position JSON are bounded; MIDI capture and the workspace estimate are not a hard memory bound. |
 | 024 | 4.70 cannot represent part EIDs | Accepted format limitation | EXECUTED, SOURCE-REVIEWED | Shared-part downgrades keep numeric part IDs but cannot write part EIDs; representable element EIDs are preserved. |
 | 025 | 4.70 refuses scores with generated accidentals | Open, bounded-contract gap | EXECUTED | Accidental conversion is not implemented. A score that needs generated accidentals is refused with `B470_UNSUPPORTED_FEATURE` rather than degraded. |
-| 026 | Standalone MSCX drops style blocks and reflows on reopen | Open | EXECUTED | MSCX round trips can shift elements by up to 25.26 pt (23,909 px); the same scores round-trip exactly as MSCZ. Page margins and default style blocks are not written. |
+| 026 | Standalone MSCX drops style blocks and reflows on reopen | Open | EXECUTED | MSCX round trips can shift a segment by up to 25.26 pt and change 23,909 pixels; the same scores round-trip exactly as MSCZ. Page margins and default style blocks are not written. |
 
 ## Accepted limitations (not defects to chase)
 

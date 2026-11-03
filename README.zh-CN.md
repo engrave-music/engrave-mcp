@@ -74,7 +74,8 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 `error: {code, message, ...}`，并设置 MCP 的 `isError` 标志。完整契约见
 [工具文档](docs/dev/tools.md)，生成的 schema 见 [native/tools.json](native/tools.json)。
 
-一个最小的创建与导出示例：
+下面是调用参数与返回 `structuredContent` 的示意，不是完整的线上报文：真实会话先
+发送 `initialize`，每次调用都包在带 id 的 JSON-RPC 2.0 请求/响应中。
 
 ```json
 {"method":"tools/call","params":{"name":"score_create",

@@ -17,7 +17,8 @@ Failures also set the MCP `isError` flag. `error` may carry `document`,
 `current_revision`, `op_index`, `published_artifacts` or `export_warnings`.
 
 Document revisions are decimal strings. A newly opened or created document
-starts at `"1"`; every successful edit increments it. `expected_revision`, when supplied, is checked
+starts at `"1"`. A committed batch that changes the score increments it; an
+empty or no-op successful batch leaves it unchanged. `expected_revision`, when supplied, is checked
 before the operation and a mismatch returns `RevisionConflict` with
 `current_revision`. Revisions are per document.
 
@@ -88,9 +89,15 @@ Three modes, selected by `mode`:
 `expected_revision`. Returns `{ok, revision, ops[], created[], removed[],
 replaced[], diagnostics[]}`.
 
-The batch is atomic: if any operation fails validation or the engine throws, the
-whole batch is rolled back and the error carries `op_index`. There are 23
-operations:
+The batch is atomic: if an operation fails validation or the handler rejects it,
+the host rolls the batch back and the error carries `op_index`. If the engine
+throws during the batch, the host reloads its saved copy or undoes the recorded
+command; that recovery can move layout, and if it also fails the document
+becomes `Poisoned` and must be closed. In that exception path the error can be
+`EngineFailure` without an `op_index`, so do not rely on `op_index` for engine
+throws.
+
+There are 23 operations:
 
 | `op` | Required fields |
 |---|---|
@@ -130,7 +137,7 @@ takes `document`, `kind`, `destination`, `options`, and optional
 | `kind` | Destination | `options.format` | Other options |
 |---|---|---|---|
 | `score` | `file` | `mscz`, `mscx`, `musicxml`, `mxl`, `midi` | `native_version` (`5.00` default, `4.70`), `score.excerpt`, and for MIDI only `midi_expand_repeats`, `midi_rpns` |
-| `render` | `file` (PDF) or `directory` (SVG/PNG) | `pdf`, `png`, `svg` | `first_page`, `last_page`, `dpi` (36–1200), `background`, `transparent`, `score.excerpt` |
+| `render` | `file` (PDF) or `directory` (SVG/PNG) | `pdf`, `png`, `svg` | `first_page`, `last_page`, `background`, `score.excerpt`; `dpi` (36–1200) and `transparent` are PNG-only |
 | `audio` | `file` | `wav`, `flac`, `opus`, `mp3`, `aac` | `sample_rate`, `bit_depth`, `bitrate_kbps`, `reverb`, `reverb_send`, `master_volume_db`, `master_balance`, `tracks[]`, `use_repeats`, `score.excerpt` |
 | `positions` | `file` | — | `position_kind`: `measure` or `segment`, `score.excerpt` |
 
@@ -206,6 +213,13 @@ string), `deadline_ms` (120,000), `cancellation` (`cooperative`) and
 `transport_request_bytes` (4 MiB).
 
 ## Error codes
+
+Cancellation has two layers. A request cancelled through
+`notifications/cancelled` is normally answered with JSON-RPC error `-32800` and
+no `structuredContent`; the transport owns that response. The structured
+`Cancelled` code below is used when a tool reports a cancellation inside its own
+result (for example an engine callback abort). Do not treat the two as
+interchangeable.
 
 | Code | Meaning |
 |---|---|
