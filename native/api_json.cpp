@@ -38,8 +38,12 @@ bool base64_shape(std::string_view s) {
 // than rebuilding a std::regex for every string field of every request.
 const std::regex& compiled_pattern(const std::string& pattern) {
     static thread_local std::map<std::string, std::regex> cache;
-    auto [it, inserted] = cache.try_emplace(pattern);
-    if (inserted) it->second = std::regex(pattern, std::regex::ECMAScript);
+    auto it = cache.find(pattern);
+    if (it == cache.end()) {
+        // Construct before inserting so a throwing pattern leaves the cache
+        // unchanged rather than storing an empty regex.
+        it = cache.emplace(pattern, std::regex(pattern, std::regex::ECMAScript)).first;
+    }
     return it->second;
 }
 
