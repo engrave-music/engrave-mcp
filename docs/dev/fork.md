@@ -2,7 +2,7 @@
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/engrave` (shallow, pinned by SHA with an `engrave-<n>` tag per pin).
-The current pin is `engrave-31` (`629027f113`).
+The current pin is `engrave-32` (`9d13ae4938`).
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
 terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
@@ -97,6 +97,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 | `engrave-29` | `84d1f14f30` | `32f0a26e5b` | `da3885cb` | Audio cancellation granularity (`feat/audio-cancel-reuse`, `c18c619de8`; this merge adds only `engrave/AUDIO-CANCELLATION.md` on top and has its tree): cancellation now covers preset sample loading during track setup, inner synthesis, encoder loops and chunked file writes. Windows delayed-cancellation **p50/p95/max 2.932/4.862/6.872 ms**, all 110 audio comparisons byte-identical, A/B/A SoundFont verification passes. Full synth-graph reuse remains unimplemented; the blockers (FluidSynth buffers and DSP state retained across seeks) and the measured 79.92 ms Windows warm setup are documented. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
 
 | `engrave-31` | `629027f113` | `32f0a26e5b` | `da3885cb` | Dense-audio cancellation margin (`feat/dense-audio-cancel`, `ec3aab13e3`; this merge has its tree): 64-frame synthesis polling, per-event sequence polling, immediate mixer cancellation on abort, publication polling every 1 MiB, and parallel frees of large event stores across joined threads on Windows (Linux keeps synchronous cleanup). Large-score (49,152-note) cancellation now p95 **13.7 / 7.9 / 27.4 / 25.7 ms** (before synthesis / playback model / synthesis / WAV encode) and max ≤31 ms on Windows; Linux 8–18 ms. 110/110 audio files byte-identical, audio suites 24 passed / 2 skipped. Remaining unpolled intervals: import/initial layout (reachable during a host reopen) and conditional relayout when audio selection has no pages. Gate green on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0). |
+
+| `engrave-32` | `9d13ae4938` | `32f0a26e5b` | `da3885cb` | Two focused upstream adaptations: the 5.00 instrument-label reader applies `showNumberShort` to the short flag (MuseScore `eb9a30246be93a3d3ddbb3738b44da3d664837f1`), and ChordLine clones retain their playback flag (from MuseScore `da68d0f6f3b1e1b65ce6501ef605a50fd3674b28`). Focused tests cover label flag combinations and tag order with native reopen, plus enabled/disabled playback in generated excerpts and articulation selection. Full engine gates passed on Windows (213 identical/38 allowed/0 different/0 missing) and physical linux-host (186/65/0/0), using the existing hash-pinned allow-list. The first Windows gate run missed the dense-audio synthesis cancellation p95 limit (30.1587 ms vs 30 ms); a complete rerun passed with 26.7596 ms p95. The clone regression checks the flag and articulation parser, not audible waveform equivalence. |
 
 The superproject's `.gitmodules` now tracks `branch = main`.
 
