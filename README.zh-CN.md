@@ -79,15 +79,15 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 ```json
 {"method":"tools/call","params":{"name":"score_create",
   "arguments":{"template_id":"Treble_Clef","title":"Prelude"}}}
-{"ok":true,"document":"doc-1a2b-1","revision":"0","diagnostics":[]}
+{"ok":true,"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1","revision":"1","diagnostics":[]}
 ```
 
 ```json
 {"method":"tools/call","params":{"name":"score_export",
-  "arguments":{"document":"doc-1a2b-1","kind":"render",
+  "arguments":{"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1","kind":"render",
     "destination":{"kind":"file","path":"C:/Scores/prelude.pdf"},
     "options":{"format":"pdf"}}}}
-{"ok":true,"source_revision":"0",
+{"ok":true,"source_revision":"1",
  "artifacts":[{"path":"C:/Scores/prelude.pdf","mime":"application/pdf","size":"48213"}]}
 ```
 

@@ -16,8 +16,8 @@ Every result is a JSON object in `structuredContent`:
 Failures also set the MCP `isError` flag. `error` may carry `document`,
 `current_revision`, `op_index`, `published_artifacts` or `export_warnings`.
 
-Document revisions are decimal strings. A new document starts at `"0"`; every
-successful edit increments it. `expected_revision`, when supplied, is checked
+Document revisions are decimal strings. A newly opened or created document
+starts at `"1"`; every successful edit increments it. `expected_revision`, when supplied, is checked
 before the operation and a mismatch returns `RevisionConflict` with
 `current_revision`. Revisions are per document.
 
