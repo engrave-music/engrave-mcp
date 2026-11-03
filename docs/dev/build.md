@@ -13,12 +13,13 @@
 
 环境变量由脚本读取；直接运行二进制使用 `--resources` 和 `--soundfont` 参数。仓库目录为 `engrave-mcp`；引擎子模块 `vendor/musescore`、引擎源码选项 `--musescore_source` 与引擎身份不改名。历史 v1 客户端和基线测试脚本保留原有调用方式；`scripts/make_dense_score.py` 的旧作曲者字符串是历史确定性测试数据的一部分。历史文档、归档证据及 fixture/golden 字节中出现的旧路径保持原样。
 
-2026-11-03 workspace migration: the local checkout moved from
-`C:\path\to\musescore-mcp` to `C:\path\to\engrave-mcp`, and the existing T3 Code
-project (same project id, title `engrave-mcp`) retains all 225 v2 threads and
-4,094 context messages. The old path remains only as a compatibility junction
-to the new path after T3 Code's required restart; historical evidence paths are
-not rewritten.
+2026-11-03 workspace migration: the local checkout is
+`C:\path\to\engrave-mcp`; the old `C:\path\to\musescore-mcp` path has been removed.
+The existing T3 Code project (same project id, title `engrave-mcp`) retains all
+225 v2 threads and 4,098 context messages. Stale registered worktrees and
+musescore-mcp-* runner directories were removed; branches were preserved.
+Historical evidence paths are not rewritten. The moved pixi environment and
+xmake package cache were recreated because both are non-relocatable.
 
 ---
 
