@@ -15,9 +15,9 @@ struct ExportTiming {
     std::filesystem::path destination;
     Clock::time_point last = Clock::now();
     ExportTiming(std::string m, std::filesystem::path p) : mode(std::move(m)), destination(std::move(p)) {}
-    void add(const char* name, Clock::time_point start) {
+    void add(const char *name, Clock::time_point start) {
         auto now = Clock::now();
-        phases[name] = phases.value(name, 0.0) + std::chrono::duration<double, std::milli>(now-start).count();
+        phases[name] = phases.value(name, 0.0) + std::chrono::duration<double, std::milli>(now - start).count();
         last = now;
     }
     void finish() {
@@ -28,4 +28,4 @@ struct ExportTiming {
         }
     }
 };
-}
+} // namespace music::v2

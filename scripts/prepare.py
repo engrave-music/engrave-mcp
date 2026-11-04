@@ -2,11 +2,12 @@
 
 No C++ or CMake source transformation is performed by this production path.
 """
-from pathlib import Path
+
 import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "vendor/engrave"
@@ -15,7 +16,8 @@ TOOLS = SOURCE / "tools"
 
 def verify_submodule():
     status = subprocess.check_output(
-        ["git", "-C", str(ROOT), "submodule", "status", "--", "vendor/engrave"], text=True,
+        ["git", "-C", str(ROOT), "submodule", "status", "--", "vendor/engrave"],
+        text=True,
     ).rstrip("\r\n")
     if not status:
         raise RuntimeError("vendor/engrave is not a submodule of this repository")
@@ -33,9 +35,7 @@ def verify_submodule():
         text=True,
     )
     if dirty:
-        raise RuntimeError(
-            "vendor/engrave has local changes; commit or remove them before building:\n" + dirty
-        )
+        raise RuntimeError("vendor/engrave has local changes; commit or remove them before building:\n" + dirty)
     return status[1:].split()[0]
 
 
@@ -96,8 +96,10 @@ def main():
         legacy_manifest.unlink()
 
     sys.path.insert(0, str(TOOLS))
-    import install_assets
     import json
+
+    import install_assets
+
     manifest = json.loads(install_assets.MANIFEST.read_bytes())
     count = len(manifest["files"])
 

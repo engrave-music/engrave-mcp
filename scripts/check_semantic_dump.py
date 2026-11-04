@@ -34,14 +34,15 @@ multiset.  Event order within one tick is likewise not a shared field.
 Usage:
   python scripts/check_semantic_dump.py [GOLDEN_ROOT] [--max-details N]
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
-from pathlib import Path
 import re
 import sys
+from collections import Counter
+from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,7 +61,11 @@ GRACE_AFTER = {"grace8after", "grace16after", "grace32after"}
 # MSCX StaffType@group and Staff::staffType()->group() use the same names for the
 # three groups the dumper emits; keep the mapping explicit so an unknown value is
 # visible in the report instead of comparing unequal spellings silently.
-STAFF_GROUPS = {"pitched": "pitched", "percussion": "percussion", "tablature": "tablature"}
+STAFF_GROUPS = {
+    "pitched": "pitched",
+    "percussion": "percussion",
+    "tablature": "tablature",
+}
 
 # parse_mscx rounds the stored <tempo> (beats per second) to four decimals, which
 # can move bps*60 by up to 0.003 BPM; 100 BPM stores as 1.6667 and reads back as
@@ -85,8 +90,10 @@ class FieldResult:
 
 # Differences caused by parse_mscx itself, not by the dumper: {(fixture, field): reason}.
 KNOWN_PARSE_LIMITS = {
-    ("layout_elements.mscx", "parts.longName"):
-        "parse_mscx findtext() misses the text after rich-text tags (<longName><font .../>Piano)",
+    (
+        "layout_elements.mscx",
+        "parts.longName",
+    ): "parse_mscx findtext() misses the text after rich-text tags (<longName><font .../>Piano)",
 }
 
 
@@ -127,8 +134,7 @@ def multiset_details(label: str, dump_items: Counter, parse_items: Counter, limi
     return details
 
 
-def mapping_details(label: str, dump_map: dict[Any, Any], parse_map: dict[Any, Any],
-                    limit: int) -> list[str]:
+def mapping_details(label: str, dump_map: dict[Any, Any], parse_map: dict[Any, Any], limit: int) -> list[str]:
     details = []
     for key in sorted(set(dump_map) | set(parse_map)):
         if dump_map.get(key) != parse_map.get(key):
@@ -152,8 +158,7 @@ def project_dump_event(event: dict[str, Any]) -> tuple[Any, ...]:
     """Project a dumped chord/rest onto the fields parse_mscx shares."""
     kind = event["kind"]
     grace = event.get("grace", "none") if kind == "chord" else "none"
-    notes = tuple(sorted((note["pitch"], note["tpc1"], "tieTo" in note)
-                         for note in event.get("notes", [])))
+    notes = tuple(sorted((note["pitch"], note["tpc1"], "tieTo" in note) for note in event.get("notes", [])))
     # A grace-after's tick is its parent chord's tick in the DOM and the previous
     # main event's tick in parse_mscx; it is not a shared field (see module docstring).
     tick = None if grace in GRACE_AFTER else event["tick"]
@@ -172,8 +177,12 @@ def is_grace(event: tuple[Any, ...]) -> bool:
 
 
 def check_metadata(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> list[FieldResult]:
-    return [FieldResult("metadata", mapping_details(
-        "tag", dump.get("metadata", {}), parsed.get("metadata", {}), limit))]
+    return [
+        FieldResult(
+            "metadata",
+            mapping_details("tag", dump.get("metadata", {}), parsed.get("metadata", {}), limit),
+        )
+    ]
 
 
 def check_parts(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> list[FieldResult]:
@@ -189,8 +198,9 @@ def check_parts(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> lis
         dump_name = plain_text(dump_part.get("longName", ""))
         parse_name = parse_part.get("longName", "")
         if dump_name != parse_name:
-            long_names.append(f"part {index}: dump {dump_part.get('longName', '')!r} "
-                              f"(plain {dump_name!r}) vs parse {parse_name!r}")
+            long_names.append(
+                f"part {index}: dump {dump_part.get('longName', '')!r} (plain {dump_name!r}) vs parse {parse_name!r}"
+            )
         dump_staves = len(dump_part.get("staves", []))
         if dump_staves != parse_part.get("staffCount"):
             staff_counts.append(f"part {index}: dump {dump_staves} vs parse {parse_part.get('staffCount')}")
@@ -226,17 +236,29 @@ def check_measures(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> 
             unmapped.append(f"TimeSig at tick {signature['tick']} is not a measure start")
         else:
             dump_signatures[index] = signature["value"]
-    parse_signatures = {index: measure["timesig"]
-                        for index, measure in enumerate(parse_measures) if measure.get("timesig")}
+    parse_signatures = {
+        index: measure["timesig"] for index, measure in enumerate(parse_measures) if measure.get("timesig")
+    }
     timesig = mapping_details("measure", dump_signatures, parse_signatures, limit)
-    timesig.extend(unmapped[:max(0, limit - len(timesig))])
+    timesig.extend(unmapped[: max(0, limit - len(timesig))])
     if len(dump_signatures) != len(parse_signatures):
-        timesig.insert(0, f"dump {len(dump_signatures)} vs parse {len(parse_signatures)} time signatures")
+        timesig.insert(
+            0,
+            f"dump {len(dump_signatures)} vs parse {len(parse_signatures)} time signatures",
+        )
 
-    start_repeat = index_details("measure", [m["startRepeat"] for m in dump_measures],
-                                 [m["startRepeat"] for m in parse_measures], limit)
-    end_repeat = index_details("measure", [m["endRepeat"] for m in dump_measures],
-                               [m["endRepeat"] for m in parse_measures], limit)
+    start_repeat = index_details(
+        "measure",
+        [m["startRepeat"] for m in dump_measures],
+        [m["startRepeat"] for m in parse_measures],
+        limit,
+    )
+    end_repeat = index_details(
+        "measure",
+        [m["endRepeat"] for m in dump_measures],
+        [m["endRepeat"] for m in parse_measures],
+        limit,
+    )
     return [
         FieldResult("measures.count", count),
         FieldResult("measures.timeSignature", timesig),
@@ -253,10 +275,8 @@ def check_events(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> li
         parse_voices = parsed["events"].get(ids[staff_index], {}) if staff_index < len(ids) else {}
         for voice_index, dump_voice in enumerate(dump_voices):
             # parse_mscx skips <MeasureRepeat> (a Rest subclass in the DOM).
-            dump_events = [project_dump_event(event) for event in dump_voice
-                           if event["kind"] != "measureRepeat"]
-            parse_events = [project_parse_event(event)
-                            for event in parse_voices.get(voice_index, [])]
+            dump_events = [project_dump_event(event) for event in dump_voice if event["kind"] != "measureRepeat"]
+            parse_events = [project_parse_event(event) for event in parse_voices.get(voice_index, [])]
             dump_main = sorted(event for event in dump_events if not is_grace(event))
             parse_main = sorted(event for event in parse_events if not is_grace(event))
             dump_graces = Counter(event for event in dump_events if is_grace(event))
@@ -265,14 +285,20 @@ def check_events(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> li
             if dump_main != parse_main:
                 details.append(f"{label} main events: dump {len(dump_main)} vs parse {len(parse_main)}")
                 if len(details) < limit:
-                    details.extend(multiset_details(label, Counter(dump_main), Counter(parse_main),
-                                                    limit - len(details)))
+                    details.extend(
+                        multiset_details(
+                            label,
+                            Counter(dump_main),
+                            Counter(parse_main),
+                            limit - len(details),
+                        )
+                    )
             if dump_graces != parse_graces:
-                details.append(f"{label} grace events: dump {sum(dump_graces.values())} "
-                               f"vs parse {sum(parse_graces.values())}")
+                details.append(
+                    f"{label} grace events: dump {sum(dump_graces.values())} vs parse {sum(parse_graces.values())}"
+                )
                 if len(details) < limit:
-                    details.extend(multiset_details(label, dump_graces, parse_graces,
-                                                    limit - len(details)))
+                    details.extend(multiset_details(label, dump_graces, parse_graces, limit - len(details)))
         results.append(FieldResult(f"events[staff {staff_index}]", details[:limit]))
     return results
 
@@ -281,14 +307,15 @@ def check_spanners(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> 
     ids = staff_ids(parsed)
     results = []
     for staff_index in range(len(dump.get("events", []))):
-        dump_spanners = Counter((spanner["type"], spanner["tick"], spanner["tick2"])
-                                for spanner in dump.get("spanners", [])
-                                if spanner["track"] // 4 == staff_index)
+        dump_spanners = Counter(
+            (spanner["type"], spanner["tick"], spanner["tick2"])
+            for spanner in dump.get("spanners", [])
+            if spanner["track"] // 4 == staff_index
+        )
         parse_items = parsed["spanners"].get(ids[staff_index], []) if staff_index < len(ids) else []
         # parse_mscx records ties as Spanner entries; the dumper records them per note
         # (note "tieTo"), which the events check already compares.
-        parse_spanners = Counter((item[0], item[2], item[3]) for item in parse_items
-                                 if item[0] != "Tie")
+        parse_spanners = Counter((item[0], item[2], item[3]) for item in parse_items if item[0] != "Tie")
         details: list[str] = []
         dump_unsupported = sorted({item[0] for item in dump_spanners if item[0] not in SUPPORTED_SPANNERS})
         parse_unsupported = sorted({item[0] for item in parse_spanners if item[0] not in SUPPORTED_SPANNERS})
@@ -298,13 +325,21 @@ def check_spanners(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> 
         for u in parse_unsupported:
             if len(details) < limit:
                 details.append(f"staff {staff_index}: unsupported parse spanner type {u!r}")
-        dump_supported = Counter({item: count for item, count in dump_spanners.items()
-                                  if item[0] in SUPPORTED_SPANNERS})
-        parse_supported = Counter({item: count for item, count in parse_spanners.items()
-                                   if item[0] in SUPPORTED_SPANNERS})
+        dump_supported = Counter(
+            {item: count for item, count in dump_spanners.items() if item[0] in SUPPORTED_SPANNERS}
+        )
+        parse_supported = Counter(
+            {item: count for item, count in parse_spanners.items() if item[0] in SUPPORTED_SPANNERS}
+        )
         if len(details) < limit:
-            details.extend(multiset_details(f"staff {staff_index}", dump_supported, parse_supported,
-                                            limit - len(details)))
+            details.extend(
+                multiset_details(
+                    f"staff {staff_index}",
+                    dump_supported,
+                    parse_supported,
+                    limit - len(details),
+                )
+            )
         results.append(FieldResult(f"spanners[staff {staff_index}]", details[:limit]))
     return results
 
@@ -313,11 +348,14 @@ def check_clefs(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> lis
     ids = staff_ids(parsed)
     results = []
     for staff_index in range(len(dump.get("events", []))):
-        dump_clefs = Counter((signature["tick"], signature["value"])
-                             for signature in dump.get("signatures", [])
-                             if signature["type"] == "Clef" and signature["staff"] == staff_index)
-        parse_clefs = Counter(tuple(clef) for clef in
-                              (parsed["clefs"].get(ids[staff_index], []) if staff_index < len(ids) else []))
+        dump_clefs = Counter(
+            (signature["tick"], signature["value"])
+            for signature in dump.get("signatures", [])
+            if signature["type"] == "Clef" and signature["staff"] == staff_index
+        )
+        parse_clefs = Counter(
+            tuple(clef) for clef in (parsed["clefs"].get(ids[staff_index], []) if staff_index < len(ids) else [])
+        )
         details = multiset_details(f"staff {staff_index}", dump_clefs, parse_clefs, limit)
         results.append(FieldResult(f"clefs[staff {staff_index}]", details))
     return results
@@ -327,8 +365,9 @@ def check_lyrics(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> li
     ids = staff_ids(parsed)
     results = []
     for staff_index, voices in enumerate(dump.get("events", [])):
-        dump_lyrics = Counter((verse, text) for voice in voices for event in voice
-                              for verse, text in event.get("lyrics", []))
+        dump_lyrics = Counter(
+            (verse, text) for voice in voices for event in voice for verse, text in event.get("lyrics", [])
+        )
         annotations = parsed["annotations"].get(ids[staff_index], {}) if staff_index < len(ids) else {}
         parse_lyrics = Counter(tuple(item) for item in annotations.get("lyrics", []))
         details = multiset_details(f"staff {staff_index}", dump_lyrics, parse_lyrics, limit)
@@ -340,9 +379,11 @@ def check_dynamics(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> 
     ids = staff_ids(parsed)
     results = []
     for staff_index in range(len(dump.get("events", []))):
-        dump_dynamics = Counter(annotation.get("dynamic") for annotation in dump.get("annotations", [])
-                                if annotation["type"] == "Dynamic"
-                                and annotation["track"] // 4 == staff_index)
+        dump_dynamics = Counter(
+            annotation.get("dynamic")
+            for annotation in dump.get("annotations", [])
+            if annotation["type"] == "Dynamic" and annotation["track"] // 4 == staff_index
+        )
         annotations = parsed["annotations"].get(ids[staff_index], {}) if staff_index < len(ids) else {}
         parse_dynamics = Counter(annotations.get("dynamics", {}))
         details = multiset_details(f"staff {staff_index}", dump_dynamics, parse_dynamics, limit)
@@ -354,9 +395,11 @@ def check_tempos(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> li
     ids = staff_ids(parsed)
     results = []
     for staff_index in range(len(dump.get("events", []))):
-        dump_bpm = sorted(annotation["bpm"] for annotation in dump.get("annotations", [])
-                          if annotation["type"] == "Tempo"
-                          and annotation["track"] // 4 == staff_index and "bpm" in annotation)
+        dump_bpm = sorted(
+            annotation["bpm"]
+            for annotation in dump.get("annotations", [])
+            if annotation["type"] == "Tempo" and annotation["track"] // 4 == staff_index and "bpm" in annotation
+        )
         annotations = parsed["annotations"].get(ids[staff_index], {}) if staff_index < len(ids) else {}
         # parse_mscx stores beats per second; the dumper stores quarter-note BPM.
         parse_bpm = sorted(round(tempo * 60, 6) for tempo in annotations.get("tempos", []))
@@ -401,8 +444,16 @@ def check_excerpts(dump: dict[str, Any], parsed: dict[str, Any], limit: int) -> 
 
 
 CHECKS = (
-    check_metadata, check_parts, check_measures, check_events, check_spanners,
-    check_clefs, check_lyrics, check_dynamics, check_tempos, check_excerpts,
+    check_metadata,
+    check_parts,
+    check_measures,
+    check_events,
+    check_spanners,
+    check_clefs,
+    check_lyrics,
+    check_dynamics,
+    check_tempos,
+    check_excerpts,
 )
 
 # Columns of the per-fixture summary table.  A column is "ok" only when every
@@ -447,10 +498,19 @@ def column_status(results: list[FieldResult], prefix: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("root", nargs="?", type=Path, default=ROOT / "tests/golden/windows",
-                        help="Golden root containing one directory per fixture")
-    parser.add_argument("--max-details", type=int, default=3,
-                        help="First differing items shown per field (default 3)")
+    parser.add_argument(
+        "root",
+        nargs="?",
+        type=Path,
+        default=ROOT / "tests/golden/windows",
+        help="Golden root containing one directory per fixture",
+    )
+    parser.add_argument(
+        "--max-details",
+        type=int,
+        default=3,
+        help="First differing items shown per field (default 3)",
+    )
     args = parser.parse_args()
 
     root = args.root
@@ -474,8 +534,7 @@ def main() -> int:
         results = check_fixture(fixture, args.max_details)
         failed = [result for result in results if not result.matched]
         mismatched += len(failed)
-        print(f"{fixture.name:<28}" + "".join(f"{column_status(results, prefix):>10}"
-                                               for prefix, _ in COLUMNS))
+        print(f"{fixture.name:<28}" + "".join(f"{column_status(results, prefix):>10}" for prefix, _ in COLUMNS))
         details.extend((fixture.name, result) for result in results if result.details)
 
     if details:

@@ -47,4 +47,3 @@ fork is a hard fork (one last upstream sync, then cherry-picks only).
 - Do not print credentials or read credential files. Use existing CLI authentication.
 - State which claims are source-reviewed, compiled, or actually executed; never conflate them.
 - Commit each verified milestone as it is reached. Keep review fixes in small follow-up commits; do not defer all commits to the end.
-

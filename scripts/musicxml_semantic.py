@@ -7,12 +7,12 @@ semantic representation, ignoring all layout and appearance details.
 from __future__ import annotations
 
 import argparse
-from fractions import Fraction
 import json
 import pathlib
 import sys
-from typing import Any
 import xml.etree.ElementTree as ET
+from fractions import Fraction
+from typing import Any
 
 STEP_OFFSETS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
@@ -157,11 +157,7 @@ def parse_notations(notations_elem: ET.Element) -> dict[str, Any]:
     for tech_el in notations_elem.findall("technical"):
         for c in tech_el:
             item = {"name": c.tag}
-            if c.tag == "fingering":
-                item["text"] = (c.text or "").strip()
-            elif c.tag == "string":
-                item["text"] = (c.text or "").strip()
-            elif c.tag == "fret":
+            if c.tag == "fingering" or c.tag == "string" or c.tag == "fret":
                 item["text"] = (c.text or "").strip()
             elif c.tag == "bend":
                 bend_alt = c.findtext("bend-alter")
@@ -565,10 +561,16 @@ def parse_direction(
         snd_obj: dict[str, Any] = {}
         target = snd if snd is not None else dir_elem
         for k, v in target.attrib.items():
-            if k in ("tempo", "dynamics", "dacapo", "fine", "segno", "coda", "divisions"):
-                if k == "tempo":
-                    snd_obj[k] = float(v) if "." in v else int(v)
-                elif k == "dynamics":
+            if k in (
+                "tempo",
+                "dynamics",
+                "dacapo",
+                "fine",
+                "segno",
+                "coda",
+                "divisions",
+            ):
+                if k == "tempo" or k == "dynamics":
                     snd_obj[k] = float(v) if "." in v else int(v)
                 elif k == "dacapo":
                     snd_obj[k] = v == "yes"
@@ -736,9 +738,7 @@ def parse_measure_sound(snd_elem: ET.Element, tick: Fraction) -> dict[str, Any]:
     }
     for k, v in snd_elem.attrib.items():
         if k in ("tempo", "dynamics", "dacapo", "fine", "segno", "coda", "divisions"):
-            if k == "tempo":
-                snd_obj[k] = float(v) if "." in v else int(v)
-            elif k == "dynamics":
+            if k == "tempo" or k == "dynamics":
                 snd_obj[k] = float(v) if "." in v else int(v)
             elif k == "dacapo":
                 snd_obj[k] = v == "yes"
@@ -986,8 +986,7 @@ def musicxml_semantic(text: str) -> dict[str, Any]:
                     dur_val = int(dur_el.text) if dur_el is not None and dur_el.text else 0
                     dur_ticks = Fraction(dur_val * 480, current_divisions) if current_divisions else Fraction(0)
                     cursor_tick += dur_ticks
-                    if cursor_tick > max_tick:
-                        max_tick = cursor_tick
+                    max_tick = max(max_tick, cursor_tick)
                 elif tag == "barline":
                     barlines_list.append(parse_barline(child))
                 elif tag == "direction":
@@ -1021,8 +1020,7 @@ def musicxml_semantic(text: str) -> dict[str, Any]:
 
                     if not is_chord and not is_grace:
                         cursor_tick += advance_duration
-                        if cursor_tick > max_tick:
-                            max_tick = cursor_tick
+                        max_tick = max(max_tick, cursor_tick)
                 else:
                     unhandled_tags.add(tag)
 
@@ -1097,7 +1095,10 @@ def main() -> None:
             try:
                 text = f.read_text(encoding="utf-8")
                 semantic_dict = musicxml_semantic(text)
-                out_path.write_text(json.dumps(semantic_dict, indent=2, sort_keys=True), encoding="utf-8")
+                out_path.write_text(
+                    json.dumps(semantic_dict, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
                 success += 1
             except Exception as e:
                 errors.append((str(rel_path), str(e)))

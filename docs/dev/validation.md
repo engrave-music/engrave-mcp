@@ -47,17 +47,17 @@ per-lane log plus a summary.
 There are 37 lanes; 36 run by default. `phase_b_oracle` is opt-in and needs the
 pinned 4.7.6 oracle archive, executable and assets.
 
-| Area | Lanes |
-|---|---|
-| Protocol and session | `host_api`, `transport`, `async_session`, `tool_schema` |
-| Live export and publication | `live_export`, `export_options`, `positions` |
-| Audio | `live_audio`, `audio_budget`, `score_audio`, `audio_facade`, `engine_audio` |
-| Notation and edits | `score_edit`, `native_edit`, `linked_tie`, `xml_text`, `repeats` |
-| Documents and formats | `score_positions`, `excerpts`, `open_data`, `imports_midi`, `imports_gp`, `archives`, `roundtrip` |
-| Golden and semantics | `golden`, `v2_golden_overlap`, `semantic_check`, `compat_corpus`, `rendered_page`, `oracle_harness` |
-| Assets and engine | `runtime_assets`, `assets`, `noqt_probe`, `upstream_gtest`, `version_info` |
-| Smoke | `mcp_smoke` |
-| Opt-in | `phase_b_oracle` (4.70 writer, pinned oracle) |
+| Area                        | Lanes                                                                                               |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| Protocol and session        | `host_api`, `transport`, `async_session`, `tool_schema`                                             |
+| Live export and publication | `live_export`, `export_options`, `positions`                                                        |
+| Audio                       | `live_audio`, `audio_budget`, `score_audio`, `audio_facade`, `engine_audio`                         |
+| Notation and edits          | `score_edit`, `native_edit`, `linked_tie`, `xml_text`, `repeats`                                    |
+| Documents and formats       | `score_positions`, `excerpts`, `open_data`, `imports_midi`, `imports_gp`, `archives`, `roundtrip`   |
+| Golden and semantics        | `golden`, `v2_golden_overlap`, `semantic_check`, `compat_corpus`, `rendered_page`, `oracle_harness` |
+| Assets and engine           | `runtime_assets`, `assets`, `noqt_probe`, `upstream_gtest`, `version_info`                          |
+| Smoke                       | `mcp_smoke`                                                                                         |
+| Opt-in                      | `phase_b_oracle` (4.70 writer, pinned oracle)                                                       |
 
 The `live_export` lane also runs the focused publication checks
 (`test_live_publication_cancel.py`, `test_live_publication_limits.py`,
@@ -140,13 +140,13 @@ timing test was skipped by its default test configuration.
 Host code through `cd0f504`, engine `engrave-31` (`629027f1`), acceptance record
 in `d07e624`.
 
-| Measurement | Windows | Linux |
-|---|---|---|
-| Render worst-row median / p95 | 8.348 / 9.534 ms (fixed replay 7.986 / 10.343) | 1.652 / 1.789 ms |
-| Dense cancellation p95 / max | 8.872 / 27.053 ms | 11.270 / 11.312 ms |
-| Golden (identical / allowed / different / missing / extra) | 307 / 83 / 0 / 0 / 0 | 265 / 125 / 0 / 0 / 0 |
-| WAV/FLAC corpus pairs | 44/44 byte-identical | 44/44 |
-| Warm WAV p95 | 274.877 ms clean full run; 270.094 ms corrected high-priority repeat | — |
+| Measurement                                                | Windows                                                              | Linux                 |
+| ---------------------------------------------------------- | -------------------------------------------------------------------- | --------------------- |
+| Render worst-row median / p95                              | 8.348 / 9.534 ms (fixed replay 7.986 / 10.343)                       | 1.652 / 1.789 ms      |
+| Dense cancellation p95 / max                               | 8.872 / 27.053 ms                                                    | 11.270 / 11.312 ms    |
+| Golden (identical / allowed / different / missing / extra) | 307 / 83 / 0 / 0 / 0                                                 | 265 / 125 / 0 / 0 / 0 |
+| WAV/FLAC corpus pairs                                      | 44/44 byte-identical                                                 | 44/44                 |
+| Warm WAV p95                                               | 274.877 ms clean full run; 270.094 ms corrected high-priority repeat | —                     |
 
 Read the audio row as an observation. Full 1,000-call replays produced both
 passing and failing runs at the same binary. `engine_call` dominated the failing

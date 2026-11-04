@@ -40,13 +40,13 @@ provides the complete local history.
 
 ## Checkpoints
 
-| Tag | Meaning |
-|---|---|
-| `engrave-35` | Engine pin used by the host. |
-| `m4-accepted` | Host M4 acceptance (2026-11-03). |
-| `checkpoint/2026-11-03` | Post-M4 cleanup: docs, Qt6 removal, submodule rename. |
-| `archive/engrave-a5` | Superseded 2026-10-31 v2 registry work, kept for provenance. |
-| `pre-fork-baseline` | Last executable pre-fork host state. |
+| Tag                     | Meaning                                                      |
+| ----------------------- | ------------------------------------------------------------ |
+| `engrave-35`            | Engine pin used by the host.                                 |
+| `m4-accepted`           | Host M4 acceptance (2026-11-03).                             |
+| `checkpoint/2026-11-03` | Post-M4 cleanup: docs, Qt6 removal, submodule rename.        |
+| `archive/engrave-a5`    | Superseded 2026-10-31 v2 registry work, kept for provenance. |
+| `pre-fork-baseline`     | Last executable pre-fork host state.                         |
 
 ## Cleanup performed (2026-11-03)
 

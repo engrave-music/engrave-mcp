@@ -12,17 +12,18 @@ a changed count, an unexpected skip or a disabled test also fail the lane. With
 an explicit ``--filter`` the subset size is unknown but zero tests, skips and
 disabled tests still fail.
 """
+
 from __future__ import annotations
-import tempfile
 
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import time
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -155,20 +156,15 @@ def check_expected_counts(suite_name: str, stats: dict, filtered: bool) -> list[
 
     if expected and not filtered:
         if total != expected["total"]:
-            problems.append(
-                f"{suite_name}: ran {total} tests, expected exactly {expected['total']}")
+            problems.append(f"{suite_name}: ran {total} tests, expected exactly {expected['total']}")
         if stats.get("suites", 0) != expected["test_suites"]:
             problems.append(
-                f"{suite_name}: ran {stats.get('suites', 0)} test suites, "
-                f"expected exactly {expected['test_suites']}")
+                f"{suite_name}: ran {stats.get('suites', 0)} test suites, expected exactly {expected['test_suites']}"
+            )
         if stats.get("passed", 0) != expected["total"]:
-            problems.append(
-                f"{suite_name}: passed {stats.get('passed', 0)} tests, "
-                f"expected {expected['total']}")
+            problems.append(f"{suite_name}: passed {stats.get('passed', 0)} tests, expected {expected['total']}")
         if stats.get("skipped", 0):
-            problems.append(
-                f"{suite_name}: {stats['skipped']} skipped test(s); "
-                "the pinned inventory expects none")
+            problems.append(f"{suite_name}: {stats['skipped']} skipped test(s); the pinned inventory expects none")
     return problems
 
 
@@ -314,9 +310,7 @@ def main():
 
     suites_to_run = []
     if args.suite in ("all", "engraving_playback"):
-        suites_to_run.append(
-            ("engraving_playback_tests", bin_dir / f"engraving_playback_tests{ext}")
-        )
+        suites_to_run.append(("engraving_playback_tests", bin_dir / f"engraving_playback_tests{ext}"))
     if args.suite in ("all", "mpe"):
         suites_to_run.append(("mpe_tests", bin_dir / f"mpe_tests{ext}"))
 

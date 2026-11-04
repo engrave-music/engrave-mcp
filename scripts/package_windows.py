@@ -1,12 +1,13 @@
 """Assemble the Windows dependency closure without requiring a MuseScore install."""
+
 import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CODEC_NOTICES = (
@@ -22,14 +23,30 @@ CODEC_NOTICES = (
 )
 
 ENGINE_THIRDPARTY_NOTICES = (
-    ("fluidsynth", "muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/LICENSE", "thirdparty-fluidsynth-LICENSE"),
+    (
+        "fluidsynth",
+        "muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/LICENSE",
+        "thirdparty-fluidsynth-LICENSE",
+    ),
     ("dtl", "src/engraving/thirdparty/dtl/COPYING", "thirdparty-dtl-COPYING"),
-    ("beatroot", "src/importexport/midi/thirdparty/beatroot/COPYING", "thirdparty-beatroot-COPYING"),
+    (
+        "beatroot",
+        "src/importexport/midi/thirdparty/beatroot/COPYING",
+        "thirdparty-beatroot-COPYING",
+    ),
 )
 
 STAGED_FONT_DIRS = (
-    "bravura", "campania", "edwin", "finalebroadway",
-    "finalemaestro", "gootville", "leland", "mscore", "musejazz", "petaluma",
+    "bravura",
+    "campania",
+    "edwin",
+    "finalebroadway",
+    "finalemaestro",
+    "gootville",
+    "leland",
+    "mscore",
+    "musejazz",
+    "petaluma",
 )
 
 
@@ -96,7 +113,11 @@ def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Pa
 
     for font_name in STAGED_FONT_DIRS:
         fdir = fonts_root / font_name
-        found = [p for p in sorted(fdir.glob("*")) if any(k in p.name.upper() for k in ["OFL", "LICENSE", "COPYING", "README"])]
+        found = [
+            p
+            for p in sorted(fdir.glob("*"))
+            if any(k in p.name.upper() for k in ["OFL", "LICENSE", "COPYING", "README"])
+        ]
         if not found:
             if font_name == "mscore" and fonts_readme.is_file():
                 pass
@@ -111,10 +132,22 @@ def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Pa
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/windows-package")
-    parser.add_argument("--no-qt", action="store_true", help="Package the Qt-free backend and external resources")
+    parser.add_argument(
+        "--no-qt",
+        action="store_true",
+        help="Package the Qt-free backend and external resources",
+    )
     parser.add_argument("--binary", type=Path, help="Override the built executable")
-    parser.add_argument("--source-root", type=Path, help="Override engine root (default: vendor/engrave)")
-    parser.add_argument("--check-notices", action="store_true", help="Validate all required package notices without packaging")
+    parser.add_argument(
+        "--source-root",
+        type=Path,
+        help="Override engine root (default: vendor/engrave)",
+    )
+    parser.add_argument(
+        "--check-notices",
+        action="store_true",
+        help="Validate all required package notices without packaging",
+    )
     args = parser.parse_args()
 
     engine_root = resolve_engine_root(ROOT, args.source_root)
@@ -143,14 +176,24 @@ def main():
         origins[str(destination.relative_to(output))] = str(source)
         queue.append(destination)
 
-    copy(args.binary or ROOT / "build/xmake-windows/engrave-mcp.exe", output / "engrave-mcp.exe")
+    copy(
+        args.binary or ROOT / "build/xmake-windows/engrave-mcp.exe",
+        output / "engrave-mcp.exe",
+    )
     if not args.no_qt:
-        copy(library / "lib/qt6/plugins/platforms/qoffscreen.dll", output / "plugins/platforms/qoffscreen.dll")
+        copy(
+            library / "lib/qt6/plugins/platforms/qoffscreen.dll",
+            output / "plugins/platforms/qoffscreen.dll",
+        )
     system = Path(os.environ["SystemRoot"]) / "System32"
     while queue:
         binary = queue.pop()
         result = subprocess.run(["dumpbin", "/dependents", str(binary)], capture_output=True, check=True)
-        for name in re.findall(r"^\s+([A-Za-z0-9_.-]+\.dll)\s*$", result.stdout.decode("utf-8", errors="replace"), re.M | re.I):
+        for name in re.findall(
+            r"^\s+([A-Za-z0-9_.-]+\.dll)\s*$",
+            result.stdout.decode("utf-8", errors="replace"),
+            re.MULTILINE | re.IGNORECASE,
+        ):
             key = name.lower()
             if args.no_qt and key.startswith(("qt5", "qt6")):
                 raise RuntimeError(f"Qt dependency found in Qt-free package: {name}")
@@ -180,11 +223,34 @@ def main():
         if directory.is_dir():
             for source in directory.glob("*.json"):
                 shutil.copy2(source, licenses / source.name)
-    manifest = {str(p.relative_to(output)): {"bytes": p.stat().st_size, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
-                for p in output.rglob("*") if p.is_file()}
-    (output / "manifest.json").write_text(json.dumps({"files": manifest, "total_bytes": sum(p["bytes"] for p in manifest.values()),
-         "note": "Local validation bundle. Full third-party source/license distribution audit remains required before publishing."}, indent=2), encoding="utf-8")
-    print(json.dumps({"output": str(output), "files": len(manifest), "bytes": sum(p["bytes"] for p in manifest.values())}))
+    manifest = {
+        str(p.relative_to(output)): {
+            "bytes": p.stat().st_size,
+            "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
+        }
+        for p in output.rglob("*")
+        if p.is_file()
+    }
+    (output / "manifest.json").write_text(
+        json.dumps(
+            {
+                "files": manifest,
+                "total_bytes": sum(p["bytes"] for p in manifest.values()),
+                "note": "Local validation bundle. Full third-party source/license distribution audit remains required before publishing.",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    print(
+        json.dumps(
+            {
+                "output": str(output),
+                "files": len(manifest),
+                "bytes": sum(p["bytes"] for p in manifest.values()),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

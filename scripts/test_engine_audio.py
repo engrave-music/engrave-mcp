@@ -58,43 +58,48 @@ import json
 import math
 import os
 import re
-import socket
-from collections import Counter
-from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import traceback
-from typing import Any, Callable
-from unittest.mock import patch
 import xml.etree.ElementTree as ET
+from collections import Counter
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import golden
 import numpy as np
 import soundfile as sf
-from make_sine_soundfont import generate_sine_soundfont
-import golden
 from golden import describe_midi
+from make_sine_soundfont import generate_sine_soundfont
 
 
 def find_probe_binary(bin_dir: Path | None) -> Path:
     candidates = []
     if bin_dir:
-        candidates.extend([
-            bin_dir / "engine_audio_probe.exe",
-            bin_dir / "engine_audio_probe",
-        ])
-    candidates.extend([
-        ROOT / "build" / "xmake-windows" / "engine_audio_probe.exe",
-        ROOT / "build" / "xmake-windows" / "engine_audio_probe",
-        ROOT / "build" / "xmake-linux" / "engine_audio_probe",
-        ROOT / "build" / "xmake-linux" / "engine_audio_probe.exe",
-        ROOT / "build" / "windows" / "engine_audio_probe.exe",
-        ROOT / "build" / "linux" / "engine_audio_probe",
-    ])
+        candidates.extend(
+            [
+                bin_dir / "engine_audio_probe.exe",
+                bin_dir / "engine_audio_probe",
+            ]
+        )
+    candidates.extend(
+        [
+            ROOT / "build" / "xmake-windows" / "engine_audio_probe.exe",
+            ROOT / "build" / "xmake-windows" / "engine_audio_probe",
+            ROOT / "build" / "xmake-linux" / "engine_audio_probe",
+            ROOT / "build" / "xmake-linux" / "engine_audio_probe.exe",
+            ROOT / "build" / "windows" / "engine_audio_probe.exe",
+            ROOT / "build" / "linux" / "engine_audio_probe",
+        ]
+    )
     for c in candidates:
         if c.is_file():
             return c.resolve()
@@ -132,7 +137,13 @@ def run_probe(
         cmd.extend(extra_args)
 
     proc = subprocess.run(
-        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=probe_env())
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=probe_env(),
+    )
     if proc.returncode != 0:
         raise RuntimeError(
             f"engine_audio_probe exited {proc.returncode}:\nStdout:\n{proc.stdout}\nStderr:\n{proc.stderr}"
@@ -237,8 +248,13 @@ DENSE_FORMATS = ("wav", "ogg")
 # codec delay and padding (+50..76 ms measured); Ogg is resampled to 48 kHz and
 # decodes sample-exact to the engine span.
 DECODED_RATE = {"wav": 44100, "flac": 44100, "ogg": 48000, "mp3": 44100, "aac": 44100}
-DECODED_DURATION_TOLERANCE = {"wav": 0.001, "flac": 0.001, "ogg": 0.05,
-                              "mp3": 0.15, "aac": 0.15}
+DECODED_DURATION_TOLERANCE = {
+    "wav": 0.001,
+    "flac": 0.001,
+    "ogg": 0.05,
+    "mp3": 0.15,
+    "aac": 0.15,
+}
 
 
 class AudioCheckPending(Exception):
@@ -250,8 +266,7 @@ def file_sha256(path: Path) -> str:
 
 
 def git_revision(repo: Path) -> str:
-    return subprocess.check_output(
-        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    return subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
 
 
 def audio_fixture_sources() -> dict[str, Path]:
@@ -262,12 +277,11 @@ def audio_fixture_sources() -> dict[str, Path]:
     assert all(path.is_file() for path in golden.EXTRA_FIXTURES), "extra golden fixture missing"
     edits = set(golden.EDIT_SCENARIOS)
     assert not edits.intersection(fixtures), "fixture and edit scenario names overlap"
-    indexed = set(json.loads((ROOT / "tests" / "golden" / "windows" / "index.json").read_text(
-        encoding="utf-8")))
+    indexed = set(json.loads((ROOT / "tests" / "golden" / "windows" / "index.json").read_text(encoding="utf-8")))
     expected = set(fixtures) | edits
     assert expected == indexed, (
-        f"golden source inventory differs: missing {sorted(indexed - expected)}, "
-        f"unindexed {sorted(expected - indexed)}")
+        f"golden source inventory differs: missing {sorted(indexed - expected)}, unindexed {sorted(expected - indexed)}"
+    )
     return fixtures
 
 
@@ -275,70 +289,121 @@ def validate_version_proof(path: Path, platform: str, engine_commit: str) -> Non
     root = ET.parse(path).getroot()
     version = root.findtext("programVersion") or ""
     revision = root.findtext("programRevision") or ""
-    written_platform = next((tag.text for tag in root.iter("metaTag")
-                             if tag.get("name") == "platform"), None)
+    written_platform = next(
+        (tag.text for tag in root.iter("metaTag") if tag.get("name") == "platform"),
+        None,
+    )
     assert re.fullmatch(r"5\.0\.\d+", version), f"capture is not 5.0: {version!r}"
     assert revision.lower() == engine_commit[:7].lower(), (
-        f"capture engine revision {revision!r} != {engine_commit[:7]!r}")
+        f"capture engine revision {revision!r} != {engine_commit[:7]!r}"
+    )
     expected_platform = {"windows": "Microsoft Windows", "linux": "Linux"}[platform]
     assert written_platform == expected_platform, (written_platform, expected_platform)
 
 
-async def capture_current_audio(binary: Path, resources: Path, soundfont: Path,
-                                target: Path, engine_commit: str) -> None:
+async def capture_current_audio(
+    binary: Path, resources: Path, soundfont: Path, target: Path, engine_commit: str
+) -> None:
     """Render the golden fixture inventory and preserve the server's version stamp."""
     import base64
+
     from v2_fixtures import composition_musicxml
+
     fixtures = audio_fixture_sources()
     with tempfile.TemporaryDirectory(prefix="musescore-audio-capture-") as temporary:
         raw = Path(temporary)
         params = golden.StdioServerParameters(
             command=str(binary.resolve()),
-            args=["--resources", str(resources.resolve()), "--soundfont", str(soundfont.resolve())],
-            cwd=str(raw), env=probe_env())
+            args=[
+                "--resources",
+                str(resources.resolve()),
+                "--soundfont",
+                str(soundfont.resolve()),
+            ],
+            cwd=str(raw),
+            env=probe_env(),
+        )
         with (target / "server-stderr.log").open("w", encoding="utf-8") as log:
             async with golden.stdio_client(params, errlog=log) as (read, write):
                 async with golden.ClientSession(read, write) as session:
                     await session.initialize()
-                    created, error = await golden.call_tool(session, "score_create", {
-                        "template_id": "Treble_Clef", "title": "Audio capture provenance"})
+                    created, error = await golden.call_tool(
+                        session,
+                        "score_create",
+                        {
+                            "template_id": "Treble_Clef",
+                            "title": "Audio capture provenance",
+                        },
+                    )
                     assert not error, f"create version proof: {error}"
-                    proof_document = created['document']
+                    proof_document = created["document"]
                     proof = target / "version.mscx"
-                    _, error = await golden.call_tool(session, 'score_export', {'document': proof_document,
-                        'kind': 'score', 'options': {'format': 'mscx'},
-                        'destination': {'kind': 'file', 'path': str(proof)}})
+                    _, error = await golden.call_tool(
+                        session,
+                        "score_export",
+                        {
+                            "document": proof_document,
+                            "kind": "score",
+                            "options": {"format": "mscx"},
+                            "destination": {"kind": "file", "path": str(proof)},
+                        },
+                    )
                     assert not error, f"export version proof: {error}"
-                    await golden.call_tool(session, "score_close", {'document': proof_document})
+                    await golden.call_tool(session, "score_close", {"document": proof_document})
                     validate_version_proof(proof, golden_platform(), engine_commit)
                     for name, source in fixtures.items():
                         if name == "created.json":
                             xml = composition_musicxml(json.loads(source.read_text(encoding="utf-8")))
-                            payload, error = await golden.call_tool(session, 'score_open', {
-                                'data': base64.b64encode(xml.encode()).decode(), 'format': 'musicxml'})
+                            payload, error = await golden.call_tool(
+                                session,
+                                "score_open",
+                                {
+                                    "data": base64.b64encode(xml.encode()).decode(),
+                                    "format": "musicxml",
+                                },
+                            )
                         else:
-                            payload, error = await golden.call_tool(session, "score_open", {
-                                "path": str(source.resolve())})
+                            payload, error = await golden.call_tool(
+                                session, "score_open", {"path": str(source.resolve())}
+                            )
                         assert not error, f"{name}: open failed: {error}"
-                        document = payload['document']
+                        document = payload["document"]
                         try:
                             wav = raw / "capture.wav"
-                            _, error = await golden.call_tool(session, 'score_export', {'document': document,
-                                'kind': 'audio', 'options': {'format': 'wav'},
-                                'destination': {'kind': 'file', 'path': str(wav)}})
+                            _, error = await golden.call_tool(
+                                session,
+                                "score_export",
+                                {
+                                    "document": document,
+                                    "kind": "audio",
+                                    "options": {"format": "wav"},
+                                    "destination": {"kind": "file", "path": str(wav)},
+                                },
+                            )
                             assert not error, f"{name}: audio export failed: {error}"
                             golden.write_json(target / name / "audio.json", golden.describe_audio(wav))
                             wav.unlink()
                         finally:
-                            await golden.call_tool(session, "score_close", {'document': document})
+                            await golden.call_tool(session, "score_close", {"document": document})
 
 
-def write_capture_manifest(target: Path, platform: str, source_commit: str, engine_commit: str,
-                           binary_sha: str, soundfont_sha: str, fixtures: dict[str, Path]) -> None:
+def write_capture_manifest(
+    target: Path,
+    platform: str,
+    source_commit: str,
+    engine_commit: str,
+    binary_sha: str,
+    soundfont_sha: str,
+    fixtures: dict[str, Path],
+) -> None:
     manifest = {
-        "schema": 1, "platform": platform, "host": socket.gethostname(),
-        "superproject_commit": source_commit, "engine_commit": engine_commit,
-        "binary_sha256": binary_sha, "soundfont_sha256": soundfont_sha,
+        "schema": 1,
+        "platform": platform,
+        "host": socket.gethostname(),
+        "superproject_commit": source_commit,
+        "engine_commit": engine_commit,
+        "binary_sha256": binary_sha,
+        "soundfont_sha256": soundfont_sha,
         "extractor_sha256": file_sha256(ROOT / "scripts" / "golden.py"),
         "capture_script_sha256": file_sha256(Path(__file__)),
         "fixture_helper_sha256": file_sha256(ROOT / "scripts" / "v2_fixtures.py"),
@@ -352,8 +417,7 @@ def write_capture_manifest(target: Path, platform: str, source_commit: str, engi
 def capture_destination(capture_root: Path, platform: str) -> Path:
     root = capture_root.resolve()
     golden_root = (ROOT / "tests" / "golden").resolve()
-    assert root != golden_root and golden_root not in root.parents, (
-        "capture directory must not be inside tests/golden")
+    assert root != golden_root and golden_root not in root.parents, "capture directory must not be inside tests/golden"
     destination = root / platform
     assert not destination.is_symlink(), f"capture destination is a symlink: {destination}"
     if destination.exists():
@@ -361,16 +425,28 @@ def capture_destination(capture_root: Path, platform: str) -> Path:
         assert manifest.is_file(), f"refusing to replace a directory without a capture manifest: {destination}"
         value = json.loads(manifest.read_text(encoding="utf-8"))
         assert value.get("schema") == 1 and value.get("platform") == platform, (
-            f"refusing to replace an unrelated capture: {destination}")
+            f"refusing to replace an unrelated capture: {destination}"
+        )
     return destination
 
 
-def make_current_audio_capture(binary: Path, resources: Path, soundfont: Path,
-                               engine_source: Path, capture_root: Path) -> tuple[str, str]:
+def make_current_audio_capture(
+    binary: Path,
+    resources: Path,
+    soundfont: Path,
+    engine_source: Path,
+    capture_root: Path,
+) -> tuple[str, str]:
     platform = golden_platform()
     destination = capture_destination(capture_root, platform)
-    status = subprocess.run(['git', 'status', '--porcelain'], cwd=ROOT, capture_output=True,
-                            text=True, encoding='utf-8', check=True).stdout
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
     assert not status.strip(), "capture requires a clean superproject checkout"
     source_commit = git_revision(ROOT)
     engine_commit = git_revision(engine_source)
@@ -383,30 +459,52 @@ def make_current_audio_capture(binary: Path, resources: Path, soundfont: Path,
     capture_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f"{platform}-capture-", dir=capture_root) as temporary:
         target = Path(temporary)
-        asyncio.run(asyncio.wait_for(capture_current_audio(
-            binary, resources, soundfont, target, engine_commit), timeout=1800))
+        asyncio.run(
+            asyncio.wait_for(
+                capture_current_audio(binary, resources, soundfont, target, engine_commit),
+                timeout=1800,
+            )
+        )
         assert git_revision(ROOT) == source_commit, "superproject commit changed during capture"
         assert git_revision(engine_source) == engine_commit, "engine commit changed during capture"
         assert file_sha256(binary) == binary_sha, "binary changed during capture"
         assert file_sha256(soundfont) == soundfont_sha, "soundfont changed during capture"
         assert {name: file_sha256(path) for name, path in audio_fixture_sources().items()} == fixture_hashes, (
-            "fixture inventory or inputs changed during capture")
+            "fixture inventory or inputs changed during capture"
+        )
         assert file_sha256(ROOT / "scripts" / "golden.py") == extractor_sha, "extractor changed during capture"
         assert file_sha256(Path(__file__)) == script_sha, "capture script changed during capture"
-        assert file_sha256(ROOT / "scripts" / "v2_fixtures.py") == fixture_helper_sha, "fixture helper changed during capture"
-        write_capture_manifest(target, platform, source_commit, engine_commit,
-                               binary_sha, soundfont_sha, fixtures)
+        assert file_sha256(ROOT / "scripts" / "v2_fixtures.py") == fixture_helper_sha, (
+            "fixture helper changed during capture"
+        )
+        write_capture_manifest(
+            target,
+            platform,
+            source_commit,
+            engine_commit,
+            binary_sha,
+            soundfont_sha,
+            fixtures,
+        )
         destination = capture_destination(capture_root, platform)
         if destination.exists():
             shutil.rmtree(destination)
         shutil.copytree(target, destination)
-    print(f"  Captured {len(fixtures)} fixtures to {destination} "
-          f"(host {socket.gethostname()}, commit {source_commit}, binary sha256 {binary_sha})")
+    print(
+        f"  Captured {len(fixtures)} fixtures to {destination} "
+        f"(host {socket.gethostname()}, commit {source_commit}, binary sha256 {binary_sha})"
+    )
     return source_commit, engine_commit
 
 
-def read_audio_capture(tree: Path, platform: str, source_commit: str, engine_commit: str,
-                       fixtures: dict[str, Path], soundfont_sha: str) -> dict[str, Path]:
+def read_audio_capture(
+    tree: Path,
+    platform: str,
+    source_commit: str,
+    engine_commit: str,
+    fixtures: dict[str, Path],
+    soundfont_sha: str,
+) -> dict[str, Path]:
     if not tree.is_dir():
         raise AudioCheckPending(f"{platform} 5.0 capture missing: {tree}")
     manifest_path = tree / "manifest.json"
@@ -419,22 +517,24 @@ def read_audio_capture(tree: Path, platform: str, source_commit: str, engine_com
     assert re.fullmatch(r"[0-9a-f]{64}", manifest.get("binary_sha256", "")), manifest_path
     assert manifest.get("soundfont_sha256") == soundfont_sha, f"{platform} soundfont differs"
     assert manifest.get("extractor_sha256") == file_sha256(ROOT / "scripts" / "golden.py"), (
-        f"{platform} feature extractor is stale")
-    assert manifest.get("capture_script_sha256") == file_sha256(Path(__file__)), (
-        f"{platform} capture script is stale")
+        f"{platform} feature extractor is stale"
+    )
+    assert manifest.get("capture_script_sha256") == file_sha256(Path(__file__)), f"{platform} capture script is stale"
     assert manifest.get("fixture_helper_sha256") == file_sha256(ROOT / "scripts" / "v2_fixtures.py"), (
-        f"{platform} fixture helper is stale")
+        f"{platform} fixture helper is stale"
+    )
     proof = tree / "version.mscx"
     assert proof.is_file() and manifest.get("version_proof_sha256") == file_sha256(proof), (
-        f"{platform} version proof missing or changed")
+        f"{platform} version proof missing or changed"
+    )
     validate_version_proof(proof, platform, engine_commit)
     expected_sources = {name: file_sha256(path) for name, path in fixtures.items()}
     assert manifest.get("fixture_sha256") == expected_sources, f"{platform} fixture inputs differ"
     paths = {path.parent.name: path for path in tree.glob("*/audio.json")}
     expected = set(fixtures)
     assert set(paths) == expected, (
-        f"{platform} audio inventory: missing {sorted(expected - set(paths))}, "
-        f"extra {sorted(set(paths) - expected)}")
+        f"{platform} audio inventory: missing {sorted(expected - set(paths))}, extra {sorted(set(paths) - expected)}"
+    )
     hashes = manifest.get("audio_sha256")
     assert isinstance(hashes, dict) and set(hashes) == expected, f"{platform} manifest inventory differs"
     for name, path in paths.items():
@@ -443,13 +543,25 @@ def read_audio_capture(tree: Path, platform: str, source_commit: str, engine_com
 
 
 def test_cross_platform_audio_features(
-    evidence: dict[str, Any], capture_root: Path, source_commit: str, engine_commit: str,
-    fixtures: dict[str, Path], soundfont_sha: str,
+    evidence: dict[str, Any],
+    capture_root: Path,
+    source_commit: str,
+    engine_commit: str,
+    fixtures: dict[str, Path],
+    soundfont_sha: str,
 ) -> None:
     print("[cross-platform] Comparing current Windows and Linux 5.0 audio captures...")
-    captures = {platform: read_audio_capture(capture_root / platform, platform, source_commit,
-                                             engine_commit, fixtures, soundfont_sha)
-                for platform in ("windows", "linux")}
+    captures = {
+        platform: read_audio_capture(
+            capture_root / platform,
+            platform,
+            source_commit,
+            engine_commit,
+            fixtures,
+            soundfont_sha,
+        )
+        for platform in ("windows", "linux")
+    }
     windows, linux = captures["windows"], captures["linux"]
 
     maxima = {key: 0.0 for key in CROSS_PLATFORM_TOLERANCES}
@@ -467,26 +579,23 @@ def test_cross_platform_audio_features(
             assert all(len(window) == 2 for window in data["rmsEnvelope"]), name
             assert all(len(window) == 2 for window in data["nonzeroSamples"]), name
         for key in CROSS_PLATFORM_EXACT:
-            assert left[key] == right[key], (
-                f"{name}: {key} differs ({left[key]} vs {right[key]})")
-        assert len(left["rmsEnvelope"]) == len(right["rmsEnvelope"]), (
-            f"{name}: rmsEnvelope lengths differ")
+            assert left[key] == right[key], f"{name}: {key} differs ({left[key]} vs {right[key]})"
+        assert len(left["rmsEnvelope"]) == len(right["rmsEnvelope"]), f"{name}: rmsEnvelope lengths differ"
         assert len(left["centroidEnvelope"]) == len(right["centroidEnvelope"]), (
-            f"{name}: centroidEnvelope lengths differ")
+            f"{name}: centroidEnvelope lengths differ"
+        )
         for key, tolerance in CROSS_PLATFORM_TOLERANCES.items():
             left_values = left[key]
             right_values = right[key]
             left_numbers = numeric_values(left_values) if isinstance(left_values, list) else [float(left_values)]
             right_numbers = numeric_values(right_values) if isinstance(right_values, list) else [float(right_values)]
             assert len(left_numbers) == len(right_numbers) and left_numbers, f"{name}: invalid {key}"
-            assert all(math.isfinite(value) for value in left_numbers + right_numbers), (
-                f"{name}: non-finite {key}")
+            assert all(math.isfinite(value) for value in left_numbers + right_numbers), f"{name}: non-finite {key}"
             delta = max(abs(a - b) for a, b in zip(left_numbers, right_numbers))
             if delta > maxima[key]:
                 maxima[key] = delta
                 worst[key] = name
-            assert delta <= tolerance, (
-                f"{name}: {key} differs by {delta:.6g} (tolerance {tolerance})")
+            assert delta <= tolerance, f"{name}: {key} differs by {delta:.6g} (tolerance {tolerance})"
     evidence["cross_platform_audio"] = {
         "status": "passed",
         "fixtures": len(windows),
@@ -502,7 +611,8 @@ def test_cross_platform_audio_features(
 
 
 def run_audio_checks(
-    checks: list[tuple[str, Callable[[], None]]], evidence: dict[str, Any],
+    checks: list[tuple[str, Callable[[], None]]],
+    evidence: dict[str, Any],
 ) -> int:
     results: dict[str, dict[str, str]] = {}
     for name, check in checks:
@@ -512,7 +622,10 @@ def run_audio_checks(
             results[name] = {"status": "pending", "reason": str(err)}
             print(f"  {name}: PENDING: {err}")
         except Exception as err:
-            results[name] = {"status": "failed", "reason": f"{type(err).__name__}: {err}"}
+            results[name] = {
+                "status": "failed",
+                "reason": f"{type(err).__name__}: {err}",
+            }
             print(f"  {name}: FAILED: {type(err).__name__}: {err}")
             traceback.print_exc(file=sys.stdout)
         else:
@@ -533,9 +646,15 @@ def run_audio_checks(
 def test_audio_check_reporting() -> None:
     """Exercise missing, incomplete, stale, mismatching and complete captures."""
     feature = {
-        "sampleRate": 44100, "channels": 2, "frames": 1,
-        "peak": [0.0, 0.0], "rms": [0.0, 0.0], "spectralCentroidHz": 0.0,
-        "rmsEnvelope": [[0.0, 0.0]], "centroidEnvelope": [0.0], "nonzeroSamples": [[0, 0]],
+        "sampleRate": 44100,
+        "channels": 2,
+        "frames": 1,
+        "peak": [0.0, 0.0],
+        "rms": [0.0, 0.0],
+        "spectralCentroidHz": 0.0,
+        "rmsEnvelope": [[0.0, 0.0]],
+        "centroidEnvelope": [0.0],
+        "nonzeroSamples": [[0, 0]],
     }
     fixtures = audio_fixture_sources()
     source_commit, engine_commit, soundfont_sha = "a" * 40, "b" * 40, "c" * 64
@@ -551,20 +670,27 @@ def test_audio_check_reporting() -> None:
             else:
                 raise AssertionError(f"Unsafe capture destination accepted: {forbidden}")
 
-        def prepare(platform: str, version: str = "5.0.0",
-                    inputs: dict[str, Path] = fixtures) -> None:
+        def prepare(platform: str, version: str = "5.0.0", inputs: dict[str, Path] = fixtures) -> None:
             tree = captures / platform
             tree.mkdir(exist_ok=True)
             host_platform = "Microsoft Windows" if platform == "windows" else "Linux"
             (tree / "version.mscx").write_text(
-                f'<museScore><programVersion>{version}</programVersion>'
-                f'<programRevision>{engine_commit[:7]}</programRevision>'
+                f"<museScore><programVersion>{version}</programVersion>"
+                f"<programRevision>{engine_commit[:7]}</programRevision>"
                 f'<Score><metaTag name="platform">{host_platform}</metaTag></Score></museScore>',
-                encoding="utf-8")
+                encoding="utf-8",
+            )
             for name in inputs:
                 golden.write_json(tree / name / "audio.json", feature)
-            write_capture_manifest(tree, platform, source_commit, engine_commit,
-                                   "d" * 64, soundfont_sha, inputs)
+            write_capture_manifest(
+                tree,
+                platform,
+                source_commit,
+                engine_commit,
+                "d" * 64,
+                soundfont_sha,
+                inputs,
+            )
 
         prepare("windows")
         calls: list[str] = []
@@ -572,9 +698,17 @@ def test_audio_check_reporting() -> None:
         def run() -> tuple[int, dict[str, Any]]:
             evidence: dict[str, Any] = {}
             checks = [
-                ("cross_platform", lambda: test_cross_platform_audio_features(
-                    evidence, captures, source_commit, engine_commit,
-                    audio_fixture_sources(), soundfont_sha)),
+                (
+                    "cross_platform",
+                    lambda: test_cross_platform_audio_features(
+                        evidence,
+                        captures,
+                        source_commit,
+                        engine_commit,
+                        audio_fixture_sources(),
+                        soundfont_sha,
+                    ),
+                ),
                 ("local", lambda: calls.append("local")),
             ]
             with contextlib.redirect_stdout(io.StringIO()):
@@ -606,7 +740,9 @@ def test_audio_check_reporting() -> None:
         sources = [path for path in golden.fixture_files() if path.name != omitted]
         with patch.object(golden, "fixture_files", return_value=sources):
             code, evidence = run()
-        assert code == 1 and "golden source inventory differs" in evidence["checks"]["cross_platform"]["reason"], evidence
+        assert code == 1 and "golden source inventory differs" in evidence["checks"]["cross_platform"]["reason"], (
+            evidence
+        )
         assert omitted in evidence["checks"]["cross_platform"]["reason"], evidence
 
         prepare("windows", version="4.7.6")
@@ -615,10 +751,19 @@ def test_audio_check_reporting() -> None:
         # hashed manifests and its version proof, is not a current capture.
         for platform in ("windows", "linux"):
             for name in fixtures:
-                shutil.copyfile(ROOT / "tests" / "golden" / "windows" / name / "audio.json",
-                                captures / platform / name / "audio.json")
-            write_capture_manifest(captures / platform, platform, source_commit, engine_commit,
-                                   "d" * 64, soundfont_sha, fixtures)
+                shutil.copyfile(
+                    ROOT / "tests" / "golden" / "windows" / name / "audio.json",
+                    captures / platform / name / "audio.json",
+                )
+            write_capture_manifest(
+                captures / platform,
+                platform,
+                source_commit,
+                engine_commit,
+                "d" * 64,
+                soundfont_sha,
+                fixtures,
+            )
         code, evidence = run()
         assert code == 1 and "not 5.0" in evidence["checks"]["cross_platform"]["reason"], evidence
 
@@ -629,8 +774,15 @@ def test_audio_check_reporting() -> None:
         code, evidence = run()
         assert code == 1 and "capture changed" in evidence["checks"]["cross_platform"]["reason"], evidence
 
-        write_capture_manifest(captures / "linux", "linux", source_commit, engine_commit,
-                               "d" * 64, soundfont_sha, fixtures)
+        write_capture_manifest(
+            captures / "linux",
+            "linux",
+            source_commit,
+            engine_commit,
+            "d" * 64,
+            soundfont_sha,
+            fixtures,
+        )
         code, evidence = run()
         assert code == 1 and "peak differs" in evidence["checks"]["cross_platform"]["reason"], evidence
 
@@ -639,8 +791,10 @@ def test_audio_check_reporting() -> None:
         assert code == 0 and evidence["checks"]["cross_platform"]["status"] == "passed", evidence
         assert evidence["cross_platform_audio"]["fixtures"] == len(fixtures), evidence
         assert len(calls) == 8, calls
-    print(f"  Audio capture regressions PASSED: missing, incomplete, missing source, 4.7.6, tampered, "
-          f"mismatching and {len(fixtures)}-fixture matching captures")
+    print(
+        f"  Audio capture regressions PASSED: missing, incomplete, missing source, 4.7.6, tampered, "
+        f"mismatching and {len(fixtures)}-fixture matching captures"
+    )
 
 
 def check_sine_onset(onset_idx: int, expected_t: float, sr: int, midi_pitch: int) -> float:
@@ -728,14 +882,16 @@ def test_pitch_onset_and_level(
         assert onset_idx is not None, f"Onset not detected for pitch {midi_pitch} around t={expected_t}s"
         detected_t = onset_idx / sr
         diff_ms = check_sine_onset(onset_idx, expected_t, sr, midi_pitch)
-        onset_results.append({
-            "pitch": midi_pitch,
-            "expected_sec": expected_t,
-            "detected_sec": detected_t,
-            "onset_frame": onset_idx,
-            "sample_rate": sr,
-            "diff_ms": diff_ms,
-        })
+        onset_results.append(
+            {
+                "pitch": midi_pitch,
+                "expected_sec": expected_t,
+                "detected_sec": detected_t,
+                "onset_frame": onset_idx,
+                "sample_rate": sr,
+                "diff_ms": diff_ms,
+            }
+        )
 
         # Frequency analysis in steady state [expected_t + 0.1, expected_t + 0.4]
         t0 = int((expected_t + 0.10) * sr)
@@ -757,12 +913,14 @@ def test_pitch_onset_and_level(
         expected_freq = 440.0 * (2.0 ** ((midi_pitch - 69) / 12.0))
         cents_diff = float(abs(1200.0 * np.log2(detected_freq / expected_freq)))
         check_sine_pitch(cents_diff, midi_pitch, detected_freq, expected_freq)
-        pitch_results.append({
-            "pitch": midi_pitch,
-            "expected_hz": expected_freq,
-            "detected_hz": float(detected_freq),
-            "cents_diff": cents_diff,
-        })
+        pitch_results.append(
+            {
+                "pitch": midi_pitch,
+                "expected_hz": expected_freq,
+                "detected_hz": float(detected_freq),
+                "cents_diff": cents_diff,
+            }
+        )
 
     # Output level: one explicit mf note at C4. The captured events must show
     # the documented dynamic mapping, then the steady-state RMS must match.
@@ -779,11 +937,12 @@ def test_pitch_onset_and_level(
     assert len(note_ons) == 1, f"Expected exactly one NoteOn in level_test, got {note_ons}"
     assert note_ons[0].get("note") == 60, note_ons[0]
     assert note_ons[0].get("velocity") == SINE_LEVEL_VELOCITY, (
-        f"mf should map to velocity {SINE_LEVEL_VELOCITY}, got {note_ons[0]}")
+        f"mf should map to velocity {SINE_LEVEL_VELOCITY}, got {note_ons[0]}"
+    )
 
     level_audio, level_sr = decode_audio(level_wav)
-    level_window = level_audio[int(0.10 * level_sr):int(0.40 * level_sr)]
-    level_rms = float(np.sqrt(np.mean(level_window ** 2)))
+    level_window = level_audio[int(0.10 * level_sr) : int(0.40 * level_sr)]
+    level_rms = float(np.sqrt(np.mean(level_window**2)))
     level_relative = abs(level_rms - SINE_LEVEL_RMS) / SINE_LEVEL_RMS
     assert level_relative <= SINE_LEVEL_RMS_RELATIVE_TOLERANCE, (
         f"Sine mf RMS {level_rms:.5f} differs from measured {SINE_LEVEL_RMS:.5f} by "
@@ -805,18 +964,25 @@ def test_pitch_onset_and_level(
         "expected_rms": SINE_LEVEL_RMS,
         "relative_tolerance": SINE_LEVEL_RMS_RELATIVE_TOLERANCE,
     }
-    print(f"  Pitch and onset tests PASSED: max onset diff = "
-          f"{max(r['diff_ms'] for r in onset_results):.9f} ms "
-          f"(<= {SINE_ONSET_MAX_FRAMES}/{SINE_ONSET_REFERENCE_RATE} s), max pitch diff = "
-          f"{max(r['cents_diff'] for r in pitch_results):.9f} cents (<= {SINE_PITCH_MAX_CENTS:.2f} cent)")
-    print(f"  Sine level PASSED: mf RMS {level_rms:.5f} vs {SINE_LEVEL_RMS:.5f} "
-          f"({level_relative * 100:.2f}% <= {SINE_LEVEL_RMS_RELATIVE_TOLERANCE * 100:.1f}%)")
+    print(
+        f"  Pitch and onset tests PASSED: max onset diff = "
+        f"{max(r['diff_ms'] for r in onset_results):.9f} ms "
+        f"(<= {SINE_ONSET_MAX_FRAMES}/{SINE_ONSET_REFERENCE_RATE} s), max pitch diff = "
+        f"{max(r['cents_diff'] for r in pitch_results):.9f} cents (<= {SINE_PITCH_MAX_CENTS:.2f} cent)"
+    )
+    print(
+        f"  Sine level PASSED: mf RMS {level_rms:.5f} vs {SINE_LEVEL_RMS:.5f} "
+        f"({level_relative * 100:.2f}% <= {SINE_LEVEL_RMS_RELATIVE_TOLERANCE * 100:.1f}%)"
+    )
 
 
 def midi_fixtures() -> list[tuple[str, Path]]:
     return [
         ("evening", ROOT / "fixtures" / "evening.musicxml"),
-        ("hairpins_and_repeats", ROOT / "fixtures" / "golden" / "hairpins_and_repeats.mscx"),
+        (
+            "hairpins_and_repeats",
+            ROOT / "fixtures" / "golden" / "hairpins_and_repeats.mscx",
+        ),
         ("pedal", ROOT / "fixtures" / "golden" / "pedal.mscx"),
         ("bend.gp", ROOT / "fixtures" / "golden" / "bend.gp"),
         ("repeat70", ROOT / "fixtures" / "golden" / "repeat70.mscx"),
@@ -850,7 +1016,11 @@ def write_midi_goldens(
             tmp_wav.unlink()
         events = result.get("midiEvents", [])
         total = result.get("midiEventTotal")
-        assert isinstance(total, int) and total == len(events), (name, total, len(events))
+        assert isinstance(total, int) and total == len(events), (
+            name,
+            total,
+            len(events),
+        )
         assert result.get("midiEventsTruncated") is False, f"Probe truncated {name} events"
         payload = {
             "fixture": name,
@@ -865,7 +1035,6 @@ def write_midi_goldens(
         except ValueError:
             display = path
         print(f"  wrote {display}: {total} events")
-
 
 
 # --- MIDI event oracle: the 4.7.6 reference plus the accepted 5.0 differences ----
@@ -911,7 +1080,7 @@ def write_midi_goldens(
 # bend, CC64/CC123, event order, per-class totals and the total - is exact.
 CC_EXPRESSION = 11
 NATURAL_EXPRESSION_LEVEL = 64  # FluidSequencer::expressionLevel(DynamicType::Natural)
-SND_FALLBACK_VELOCITY = 64     # round(0.5 * 65535) >> 9 when expressionCurve is empty
+SND_FALLBACK_VELOCITY = 64  # round(0.5 * 65535) >> 9 when expressionCurve is empty
 
 MIDI_ACCEPTED_RULES: dict[str, dict[str, Any]] = {
     "evening": {
@@ -921,7 +1090,12 @@ MIDI_ACCEPTED_RULES: dict[str, dict[str, Any]] = {
         "reference_event_total": 313,
         "expected_event_total": 295,
         "expected_class_totals": {
-            "NoteOn": 140, "NoteOff": 140, "PitchBend": 3, "CC11": 6, "CC64": 3, "CC123": 3,
+            "NoteOn": 140,
+            "NoteOff": 140,
+            "PitchBend": 3,
+            "CC11": 6,
+            "CC64": 3,
+            "CC123": 3,
         },
         "snd_channels": (0, 2),
         "no_dynamics_curve_channels": (),
@@ -935,7 +1109,11 @@ MIDI_ACCEPTED_RULES: dict[str, dict[str, Any]] = {
         "reference_event_total": 35,
         "expected_event_total": 35,
         "expected_class_totals": {
-            "NoteOn": 16, "NoteOff": 16, "PitchBend": 1, "CC64": 1, "CC123": 1,
+            "NoteOn": 16,
+            "NoteOff": 16,
+            "PitchBend": 1,
+            "CC64": 1,
+            "CC123": 1,
         },
         "snd_channels": (),
         "no_dynamics_curve_channels": (),
@@ -952,7 +1130,11 @@ MIDI_ACCEPTED_RULES: dict[str, dict[str, Any]] = {
         "reference_event_total": 55,
         "expected_event_total": 47,
         "expected_class_totals": {
-            "NoteOn": 18, "NoteOff": 18, "PitchBend": 1, "CC64": 9, "CC123": 1,
+            "NoteOn": 18,
+            "NoteOff": 18,
+            "PitchBend": 1,
+            "CC64": 9,
+            "CC123": 1,
         },
         "snd_channels": (),
         "no_dynamics_curve_channels": (1,),
@@ -966,7 +1148,11 @@ MIDI_ACCEPTED_RULES: dict[str, dict[str, Any]] = {
         "reference_event_total": 373,
         "expected_event_total": 373,
         "expected_class_totals": {
-            "NoteOn": 6, "NoteOff": 6, "PitchBend": 359, "CC64": 1, "CC123": 1,
+            "NoteOn": 6,
+            "NoteOff": 6,
+            "PitchBend": 359,
+            "CC64": 1,
+            "CC123": 1,
         },
         "snd_channels": (),
         "no_dynamics_curve_channels": (),
@@ -980,7 +1166,11 @@ MIDI_ACCEPTED_RULES: dict[str, dict[str, Any]] = {
         "reference_event_total": 15,
         "expected_event_total": 15,
         "expected_class_totals": {
-            "NoteOn": 6, "NoteOff": 6, "PitchBend": 1, "CC64": 1, "CC123": 1,
+            "NoteOn": 6,
+            "NoteOff": 6,
+            "PitchBend": 1,
+            "CC64": 1,
+            "CC123": 1,
         },
         "snd_channels": (),
         "no_dynamics_curve_channels": (),
@@ -1022,14 +1212,15 @@ def predict_50_midi_events(
                 assert event["frame"] == 0 and event["data"] == NATURAL_EXPRESSION_LEVEL, (
                     f"{name}: pinned no-dynamics channel {event['channel']} has a non-natural "
                     f"CC11 event {reference_event}; the accepted rule only covers the initial "
-                    "natural level, so this fixture needs a new reviewed rule")
+                    "natural level, so this fixture needs a new reviewed rule"
+                )
                 natural_level += 1
                 continue
             key = (event["frame"], event["channel"], event["data"])
             if key in seen_cc11:
                 assert event == seen_cc11[key], (
-                    f"{name}: CC11 events at {key} differ in other fields; only exact "
-                    "duplicates may be collapsed")
+                    f"{name}: CC11 events at {key} differ in other fields; only exact duplicates may be collapsed"
+                )
                 duplicates += 1
                 continue
             seen_cc11[key] = event
@@ -1048,9 +1239,7 @@ def predict_50_midi_events(
     return predicted, stats
 
 
-def describe_event_difference(
-    actual: list[dict[str, Any]], expected: list[dict[str, Any]]
-) -> str:
+def describe_event_difference(actual: list[dict[str, Any]], expected: list[dict[str, Any]]) -> str:
     for index, (actual_event, expected_event) in enumerate(zip(actual, expected)):
         if actual_event != expected_event:
             return f"event {index} is {actual_event}, expected {expected_event}"
@@ -1072,48 +1261,57 @@ def check_midi_stream_against_reference(
     rule = MIDI_ACCEPTED_RULES.get(name)
     assert rule is not None, (
         f"No documented 5.0 accepted-difference rule for MIDI fixture {name}; add a reviewed "
-        "entry to MIDI_ACCEPTED_RULES instead of re-baselining the 4.7.6 reference")
+        "entry to MIDI_ACCEPTED_RULES instead of re-baselining the 4.7.6 reference"
+    )
     reference_events = golden["events"]
     assert golden["eventTotal"] == len(reference_events) == rule["reference_event_total"], (
         f"MIDI golden for {name} has eventTotal {golden['eventTotal']} and "
         f"{len(reference_events)} stored events, but A0/A2 pins the 4.7.6 reference at "
         f"{rule['reference_event_total']}. Do not re-baseline this file on 5.0 output; "
-        "document accepted 5.0 changes in MIDI_ACCEPTED_RULES with an upstream cause")
+        "document accepted 5.0 changes in MIDI_ACCEPTED_RULES with an upstream cause"
+    )
 
     predicted_events, stats = predict_50_midi_events(name, reference_events)
-    for key in ("cc11_duplicate_collapse", "cc11_natural_no_curve", "noteon_velocity_changes"):
+    for key in (
+        "cc11_duplicate_collapse",
+        "cc11_natural_no_curve",
+        "noteon_velocity_changes",
+    ):
         assert stats[key] == rule[key], (
             f"{name}: accepted-difference count {key} is {stats[key]}, pinned {rule[key]}; "
             "an unexpected playback difference must be reviewed against its upstream cause "
-            "before the pin is changed")
+            "before the pin is changed"
+        )
     assert stats["noteon_velocity_remap"] == rule["noteon_velocity_remap"], (
-        f"{name}: SND velocity remap is {stats['noteon_velocity_remap']}, pinned "
-        f"{rule['noteon_velocity_remap']}")
+        f"{name}: SND velocity remap is {stats['noteon_velocity_remap']}, pinned {rule['noteon_velocity_remap']}"
+    )
 
     expected_total = len(predicted_events)
     assert expected_total == rule["expected_event_total"], (
-        f"{name}: accepted rules predict {expected_total} events, pinned "
-        f"{rule['expected_event_total']}")
+        f"{name}: accepted rules predict {expected_total} events, pinned {rule['expected_event_total']}"
+    )
     class_totals = midi_class_totals(predicted_events)
     assert class_totals == rule["expected_class_totals"], (
-        f"{name}: expected per-class totals {class_totals}, pinned "
-        f"{rule['expected_class_totals']}")
+        f"{name}: expected per-class totals {class_totals}, pinned {rule['expected_class_totals']}"
+    )
 
     assert isinstance(actual_total, int), f"Probe did not report midiEventTotal for {name}"
     assert actual_total > 0, f"MIDI golden for {name} has no events"
     assert actual_total == expected_total, (
         f"MIDI event total mismatch for {name}: got {actual_total}, expected {expected_total} "
-        f"(4.7.6 reference {len(reference_events)} minus the pinned accepted differences)")
+        f"(4.7.6 reference {len(reference_events)} minus the pinned accepted differences)"
+    )
     assert truncated is False, f"Probe truncated {name} events"
     assert actual_total == len(actual_events), (
-        f"MIDI event count mismatch for {name}: total {actual_total}, "
-        f"printed {len(actual_events)}")
+        f"MIDI event count mismatch for {name}: total {actual_total}, printed {len(actual_events)}"
+    )
     if actual_events != predicted_events:
         raise AssertionError(
             f"MIDI events (including render-frame offsets) mismatch for {name}: "
             f"{describe_event_difference(actual_events, predicted_events)}. Only the documented "
             "5.0 CC11 and SND-velocity differences are accepted; every other field must match "
-            "the 4.7.6 reference exactly")
+            "the 4.7.6 reference exactly"
+        )
 
     return {
         "event_total": actual_total,
@@ -1124,17 +1322,14 @@ def check_midi_stream_against_reference(
             "cc11_natural_no_curve": stats["cc11_natural_no_curve"],
             "noteon_velocity_changes": stats["noteon_velocity_changes"],
             "noteon_velocity_remap": {
-                f"{old}->{new}": count
-                for (old, new), count in sorted(stats["noteon_velocity_remap"].items())
+                f"{old}->{new}": count for (old, new), count in sorted(stats["noteon_velocity_remap"].items())
             },
         },
         "matches_reference_with_accepted_differences": True,
     }
 
 
-def midi_oracle_negative_controls(
-    name: str, golden: dict[str, Any], actual_events: list[dict[str, Any]]
-) -> list[str]:
+def midi_oracle_negative_controls(name: str, golden: dict[str, Any], actual_events: list[dict[str, Any]]) -> list[str]:
     """Exercise the same comparison used by the lane with deliberately bad streams."""
     rejected = []
 
@@ -1170,10 +1365,12 @@ def midi_oracle_negative_controls(
     if MIDI_ACCEPTED_RULES[name]["cc11_duplicate_collapse"]:
         reference_cc11 = Counter(
             (event["frame"], event["channel"], event["data"])
-            for event in golden["events"] if midi_event_class(event) == "CC11"
+            for event in golden["events"]
+            if midi_event_class(event) == "CC11"
         )
         index = next(
-            i for i, event in enumerate(actual_events)
+            i
+            for i, event in enumerate(actual_events)
             if midi_event_class(event) == "CC11"
             and reference_cc11[(event["frame"], event["channel"], event["data"])] > 1
         )
@@ -1211,24 +1408,32 @@ def test_midi_event_goldens(
         golden = json.loads(golden_file.read_text(encoding="utf-8"))
         assert res.get("ok") is True, f"Probe failed for {name}: {res}"
         assert isinstance(golden, dict) and "events" in golden and "eventTotal" in golden, (
-            f"{golden_file} is not a 4.7.6 reference MIDI golden with an exact total")
+            f"{golden_file} is not a 4.7.6 reference MIDI golden with an exact total"
+        )
         assert golden.get("fixture") == name, (
-            f"MIDI golden {golden_file} is for fixture {golden.get('fixture')!r}, not {name!r}")
+            f"MIDI golden {golden_file} is for fixture {golden.get('fixture')!r}, not {name!r}"
+        )
         reference = json.dumps(
             {"eventTotal": golden["eventTotal"], "events": golden["events"]},
-            sort_keys=True, separators=(",", ":"),
+            sort_keys=True,
+            separators=(",", ":"),
         ).encode("utf-8")
         reference_sha256 = hashlib.sha256(reference).hexdigest()
         assert reference_sha256 == MIDI_ACCEPTED_RULES[name]["reference_sha256"], (
             f"MIDI reference {golden_file} has event SHA-256 {reference_sha256}; expected "
-            f"the pinned 4.7.6 events {MIDI_ACCEPTED_RULES[name]['reference_sha256']}")
+            f"the pinned 4.7.6 events {MIDI_ACCEPTED_RULES[name]['reference_sha256']}"
+        )
         events = res.get("midiEvents", [])
         result = check_midi_stream_against_reference(
-            name, golden, events, res.get("midiEventTotal"), res.get("midiEventsTruncated"))
+            name,
+            golden,
+            events,
+            res.get("midiEventTotal"),
+            res.get("midiEventsTruncated"),
+        )
         result["golden"] = str(golden_file.relative_to(ROOT))
         result["reference_sha256"] = reference_sha256
-        result["negative_controls_rejected"] = midi_oracle_negative_controls(
-            name, golden, events)
+        result["negative_controls_rejected"] = midi_oracle_negative_controls(name, golden, events)
         golden_results[name] = result
 
     evidence["midi_goldens"] = {
@@ -1245,17 +1450,22 @@ def test_midi_event_goldens(
     total = sum(item["event_total"] for item in golden_results.values())
     accepted = {
         key: sum(item["accepted_differences"][key] for item in golden_results.values())
-        for key in ("cc11_duplicate_collapse", "cc11_natural_no_curve", "noteon_velocity_changes")
+        for key in (
+            "cc11_duplicate_collapse",
+            "cc11_natural_no_curve",
+            "noteon_velocity_changes",
+        )
     }
     controls = sum(len(item["negative_controls_rejected"]) for item in golden_results.values())
-    print(f"  MIDI reference PASSED across {len(fixtures)} fixtures: 4.7.6 {reference_total} "
-          f"events -> 5.0 {total} events, accepted differences exactly "
-          f"{accepted['cc11_duplicate_collapse']} duplicate CC11 + "
-          f"{accepted['cc11_natural_no_curve']} natural-level CC11 + "
-          f"{accepted['noteon_velocity_changes']} SND velocities; all other fields exact; "
-          f"{controls} deliberately mutated events rejected")
-    print("  evening negative controls rejected: " + ", ".join(
-        golden_results["evening"]["negative_controls_rejected"]))
+    print(
+        f"  MIDI reference PASSED across {len(fixtures)} fixtures: 4.7.6 {reference_total} "
+        f"events -> 5.0 {total} events, accepted differences exactly "
+        f"{accepted['cc11_duplicate_collapse']} duplicate CC11 + "
+        f"{accepted['cc11_natural_no_curve']} natural-level CC11 + "
+        f"{accepted['noteon_velocity_changes']} SND velocities; all other fields exact; "
+        f"{controls} deliberately mutated events rejected"
+    )
+    print("  evening negative controls rejected: " + ", ".join(golden_results["evening"]["negative_controls_rejected"]))
 
 
 def test_determinism_and_decoding(
@@ -1265,8 +1475,7 @@ def test_determinism_and_decoding(
     out_dir: Path,
     evidence: dict[str, Any],
 ) -> None:
-    print("[4/6] Testing determinism, decoded durations and non-ASCII paths "
-          "across wav, flac, ogg, mp3, aac...")
+    print("[4/6] Testing determinism, decoded durations and non-ASCII paths across wav, flac, ogg, mp3, aac...")
     score_path = ROOT / "fixtures" / "golden" / "hairpins_and_repeats.mscx"
     formats = ["wav", "flac", "ogg", "mp3", "aac"]
     det_results = {}
@@ -1321,7 +1530,8 @@ def test_determinism_and_decoding(
         )
         if fmt in ("wav", "flac"):
             assert len(audio) == res1.get("frames"), (
-                f"Decoded {fmt} frames {len(audio)} != probe frames {res1.get('frames')}")
+                f"Decoded {fmt} frames {len(audio)} != probe frames {res1.get('frames')}"
+            )
         dec_info["decoded_frames"] = len(audio)
         dec_info["decoded_duration"] = round(decoded_dur, 6)
         dec_info["duration_tolerance"] = tolerance
@@ -1345,25 +1555,30 @@ def test_determinism_and_decoding(
         res = run_probe(probe_bin, assets, nonascii_sf, pitch_score, out_path)
         assert res.get("ok") is True, f"Non-ASCII {fmt} export failed: {res}"
         assert res.get("soundfont", {}).get("uriRoundTrip") is True, (
-            f"Non-ASCII SoundFont URI did not round-trip for {fmt}: {res.get('soundfont')}")
+            f"Non-ASCII SoundFont URI did not round-trip for {fmt}: {res.get('soundfont')}"
+        )
         assert out_path.is_file() and out_path.stat().st_size > 0, f"Missing non-ASCII {fmt} output"
         expected_dur = res.get("playTime", 0.0) + 3.0
         if fmt == "aac":
-            dec_wav = out_dir / f"nonascii_aac_decoded.wav"
+            dec_wav = out_dir / "nonascii_aac_decoded.wav"
             decoded = decode_with_ffmpeg(out_path, dec_wav)
             if dec_wav.exists():
                 dec_wav.unlink()
             if decoded is None:
                 data = out_path.read_bytes()
                 assert len(data) > 7 and data[0] == 0xFF and (data[1] & 0xF0) == 0xF0
-                nonascii_results[fmt] = {"bytes": len(data), "decoder": "adts_header_validated"}
+                nonascii_results[fmt] = {
+                    "bytes": len(data),
+                    "decoder": "adts_header_validated",
+                }
                 continue
             audio, sr = decoded
         else:
             audio, sr = decode_audio(out_path)
         decoded_dur = len(audio) / sr
         assert abs(decoded_dur - expected_dur) <= DECODED_DURATION_TOLERANCE[fmt], (
-            f"Non-ASCII {fmt} decoded duration {decoded_dur:.6f} != {expected_dur:.6f}")
+            f"Non-ASCII {fmt} decoded duration {decoded_dur:.6f} != {expected_dur:.6f}"
+        )
         nonascii_results[fmt] = {
             "bytes": out_path.stat().st_size,
             "decoded_sr": sr,
@@ -1411,24 +1626,26 @@ def test_performance_and_memory(
             res = run_probe(probe_bin, assets, soundfont, score_path, out_path)
             assert res.get("ok") is True, f"Dense {fmt} render failed: {res}"
             assert res.get("trackCount") == DENSE_TRACKS, (
-                f"Dense score should expose {DENSE_TRACKS} tracks, got {res.get('trackCount')}")
+                f"Dense score should expose {DENSE_TRACKS} tracks, got {res.get('trackCount')}"
+            )
             play_time = float(res.get("playTime", 0.0))
             assert abs(play_time - DENSE_PLAY_TIME_SECS) <= 0.01, (
-                f"Dense score play time {play_time} != {DENSE_PLAY_TIME_SECS}")
+                f"Dense score play time {play_time} != {DENSE_PLAY_TIME_SECS}"
+            )
             export_secs = float(res.get("exportSeconds", 0.0))
             sec_per_audio_min = export_secs / (play_time / 60.0)
             peak_bytes = probe_peak_bytes(res)
             peak_mib = peak_bytes / (1024.0 * 1024.0)
             output_bytes = out_path.stat().st_size
             assert output_bytes > 0, f"Dense {fmt} output is empty"
-            assert output_bytes < 1024 * 1024 * 1024, (
-                f"Dense {fmt} output {output_bytes} exceeds the 1 GiB audio cap")
+            assert output_bytes < 1024 * 1024 * 1024, f"Dense {fmt} output {output_bytes} exceeds the 1 GiB audio cap"
             assert sec_per_audio_min < BUDGET_SECONDS_PER_AUDIO_MINUTE, (
                 f"Dense {fmt} export {sec_per_audio_min:.2f} s/audio-min exceeds budget "
-                f"{BUDGET_SECONDS_PER_AUDIO_MINUTE}")
+                f"{BUDGET_SECONDS_PER_AUDIO_MINUTE}"
+            )
             assert peak_bytes < budget_bytes, (
-                f"Dense {fmt} peak memory {peak_mib:.1f} MiB exceeds budget "
-                f"{BUDGET_PEAK_MEMORY_MIB} MiB")
+                f"Dense {fmt} peak memory {peak_mib:.1f} MiB exceeds budget {BUDGET_PEAK_MEMORY_MIB} MiB"
+            )
             measurements[fmt] = {
                 "duration_seconds": round(float(res.get("duration", 0.0)), 3),
                 "play_time_seconds": round(play_time, 3),
@@ -1459,11 +1676,12 @@ def test_performance_and_memory(
 
     slowest = max(item["seconds_per_audio_minute"] for item in measurements.values())
     highest = max(item["peak_memory_mib"] for item in measurements.values())
-    detail = ", ".join(f"{fmt} {item['seconds_per_audio_minute']:.2f} s/min"
-                       for fmt, item in measurements.items())
-    print(f"  Performance budget PASSED: {detail} (budget "
-          f"{BUDGET_SECONDS_PER_AUDIO_MINUTE} s/min), {highest:.1f} MiB "
-          f"(budget {BUDGET_PEAK_MEMORY_MIB} MiB); slowest {slowest:.2f} s/min")
+    detail = ", ".join(f"{fmt} {item['seconds_per_audio_minute']:.2f} s/min" for fmt, item in measurements.items())
+    print(
+        f"  Performance budget PASSED: {detail} (budget "
+        f"{BUDGET_SECONDS_PER_AUDIO_MINUTE} s/min), {highest:.1f} MiB "
+        f"(budget {BUDGET_PEAK_MEMORY_MIB} MiB); slowest {slowest:.2f} s/min"
+    )
 
 
 def test_excerpt_rendering_parity(
@@ -1487,8 +1705,14 @@ def test_excerpt_rendering_parity(
     # (masternotation.cpp:748-770), so this assertion proves the muting path is applied
     # consistently; it is not an independent excerpt renderer.
     run_probe(probe_bin, assets, soundfont, score_path, out_exc, ["--excerpt", "0"])
-    run_probe(probe_bin, assets, soundfont, score_path, out_muted,
-              ["--mute-part", "1", "--mute-part", "2"])
+    run_probe(
+        probe_bin,
+        assets,
+        soundfont,
+        score_path,
+        out_muted,
+        ["--mute-part", "1", "--mute-part", "2"],
+    )
 
     audio_exc, sr_exc = decode_audio(out_exc)
     audio_muted, sr_muted = decode_audio(out_muted)
@@ -1508,110 +1732,196 @@ def test_excerpt_rendering_parity(
         "max_sample_difference": max_diff,
         "identity_by_construction": True,
     }
-    print(f"  Excerpt render sample identity PASSED: max diff = {max_diff} "
-          "(identity by construction: excerpt = master with other parts muted)")
+    print(
+        f"  Excerpt render sample identity PASSED: max diff = {max_diff} "
+        "(identity by construction: excerpt = master with other parts muted)"
+    )
 
 
 async def test_mcp_level_integration(
-    binary: Path, resources: Path, soundfont: Path, out_dir: Path, evidence: dict[str, Any],
+    binary: Path,
+    resources: Path,
+    soundfont: Path,
+    out_dir: Path,
+    evidence: dict[str, Any],
 ) -> None:
     """Exercise v2 mix, excerpt, codec and MIDI output against existing evidence."""
     from types import SimpleNamespace
+
     from v2_client import Client
 
-    print('[MCP] Running v2 MCP-level audio integration tests...')
+    print("[MCP] Running v2 MCP-level audio integration tests...")
     args = SimpleNamespace(binary=binary, resources=resources, soundfont=soundfont)
     async with Client(args, out_dir) as client:
+
         async def export(doc, fmt, path, options=None, score=None):
-            kind = 'score' if fmt == 'midi' else 'audio'
-            values = {'format': fmt, **(options or {})}
-            if score is not None: values['score'] = {'excerpt': score}
-            result = await client.tool('score_export', {'document': doc, 'kind': kind,
-                'options': values, 'destination': {'kind': 'file', 'path': str(path.resolve())}})
+            kind = "score" if fmt == "midi" else "audio"
+            values = {"format": fmt, **(options or {})}
+            if score is not None:
+                values["score"] = {"excerpt": score}
+            await client.tool(
+                "score_export",
+                {
+                    "document": doc,
+                    "kind": kind,
+                    "options": values,
+                    "destination": {"kind": "file", "path": str(path.resolve())},
+                },
+            )
             assert path.is_file() and path.stat().st_size > 0
             return path
 
-        doc = (await client.tool('score_open', {'path': str((ROOT/'fixtures/evening.musicxml').resolve())}))['document']
-        info = await client.tool('score_query', {'document': doc, 'mode': 'audio_tracks'})
-        tracks = info['audio_tracks']['tracks']
-        assert len(tracks) >= 3 and len({t['track'] for t in tracks}) == len(tracks)
-        ref_wav = await export(doc, 'wav', out_dir/'mcp_ref.wav')
+        doc = (
+            await client.tool(
+                "score_open",
+                {"path": str((ROOT / "fixtures/evening.musicxml").resolve())},
+            )
+        )["document"]
+        info = await client.tool("score_query", {"document": doc, "mode": "audio_tracks"})
+        tracks = info["audio_tracks"]["tracks"]
+        assert len(tracks) >= 3 and len({t["track"] for t in tracks}) == len(tracks)
+        ref_wav = await export(doc, "wav", out_dir / "mcp_ref.wav")
         audio_ref, _ = decode_audio(ref_wav)
-        rms_ref = float(np.sqrt(np.mean(audio_ref ** 2)))
-        assert rms_ref > .01
-        muted = await export(doc, 'wav', out_dir/'mcp_all_muted.wav',
-                             {'tracks': [{'track': t['track'], 'mute': True} for t in tracks]})
+        rms_ref = float(np.sqrt(np.mean(audio_ref**2)))
+        assert rms_ref > 0.01
+        muted = await export(
+            doc,
+            "wav",
+            out_dir / "mcp_all_muted.wav",
+            {"tracks": [{"track": t["track"], "mute": True} for t in tracks]},
+        )
         audio_muted, _ = decode_audio(muted)
-        rms_muted = float(np.sqrt(np.mean(audio_muted ** 2)))
+        rms_muted = float(np.sqrt(np.mean(audio_muted**2)))
         energy_ratio_db = 20 * math.log10(max(rms_muted, 1e-12) / rms_ref)
         assert energy_ratio_db < -80.0
-        low = await export(doc, 'wav', out_dir/'mcp_vol_neg6.wav', {'master_volume_db': -6.0})
+        low = await export(doc, "wav", out_dir / "mcp_vol_neg6.wav", {"master_volume_db": -6.0})
         audio_low, _ = decode_audio(low)
-        measured_gain = 20 * math.log10(float(np.sqrt(np.mean(audio_low ** 2))) / rms_ref)
-        assert abs(measured_gain + 6.0) <= .2
-        left = await export(doc, 'wav', out_dir/'mcp_pan_left.wav', {'master_balance': -1.0})
-        right = await export(doc, 'wav', out_dir/'mcp_pan_right.wav', {'master_balance': 1.0})
+        measured_gain = 20 * math.log10(float(np.sqrt(np.mean(audio_low**2))) / rms_ref)
+        assert abs(measured_gain + 6.0) <= 0.2
+        left = await export(doc, "wav", out_dir / "mcp_pan_left.wav", {"master_balance": -1.0})
+        right = await export(doc, "wav", out_dir / "mcp_pan_right.wav", {"master_balance": 1.0})
         audio_left, _ = decode_audio(left)
         audio_right, _ = decode_audio(right)
-        ll,lr = (float(np.sqrt(np.mean(audio_left[:,i] ** 2))) for i in (0,1))
-        rl,rr = (float(np.sqrt(np.mean(audio_right[:,i] ** 2))) for i in (0,1))
-        assert lr <= .02*ll and rl <= .02*rr
+        ll, lr = (float(np.sqrt(np.mean(audio_left[:, i] ** 2))) for i in (0, 1))
+        rl, rr = (float(np.sqrt(np.mean(audio_right[:, i] ** 2))) for i in (0, 1))
+        assert lr <= 0.02 * ll and rl <= 0.02 * rr
 
-        outline = (await client.tool('score_outline', {'document':doc}))['outline']
-        await client.tool('score_edit', {'document':doc, 'ops':[{'op':'generate_excerpts',
-            'parts':[{'kind':'id','id':part['id']} for part in outline['parts']]}]})
-        excerpts = (await client.tool('score_outline', {'document':doc}))['outline']['excerpts']
+        outline = (await client.tool("score_outline", {"document": doc}))["outline"]
+        await client.tool(
+            "score_edit",
+            {
+                "document": doc,
+                "ops": [
+                    {
+                        "op": "generate_excerpts",
+                        "parts": [{"kind": "id", "id": part["id"]} for part in outline["parts"]],
+                    }
+                ],
+            },
+        )
+        excerpts = (await client.tool("score_outline", {"document": doc}))["outline"]["excerpts"]
         assert excerpts
-        excerpt_wav = await export(doc,'wav',out_dir/'mcp_excerpt0.wav',score=excerpts[0]['id'])
-        muted_parts = await export(doc,'wav',out_dir/'mcp_muted_parts12.wav',
-            {'tracks':[{'track':t['track'],'mute':True} for t in tracks if t['part_id'] != tracks[0]['part_id']]})
+        excerpt_wav = await export(doc, "wav", out_dir / "mcp_excerpt0.wav", score=excerpts[0]["id"])
+        muted_parts = await export(
+            doc,
+            "wav",
+            out_dir / "mcp_muted_parts12.wav",
+            {"tracks": [{"track": t["track"], "mute": True} for t in tracks if t["part_id"] != tracks[0]["part_id"]]},
+        )
         audio_excerpt, _ = decode_audio(excerpt_wav)
         audio_master, _ = decode_audio(muted_parts)
-        assert audio_excerpt.shape == audio_master.shape and np.max(np.abs(audio_excerpt-audio_master)) == 0.0
+        assert audio_excerpt.shape == audio_master.shape and np.max(np.abs(audio_excerpt - audio_master)) == 0.0
 
-        nonascii_dir = out_dir/'输出 音频'
-        nonascii_dir.mkdir(parents=True,exist_ok=True)
+        nonascii_dir = out_dir / "输出 音频"
+        nonascii_dir.mkdir(parents=True, exist_ok=True)
         nonascii_async = {}
-        for fmt in ('wav','flac','opus','mp3','aac'):
-            sync = await export(doc,fmt,out_dir/f'mcp_sync.{fmt}')
-            async_path = await export(doc,fmt,nonascii_dir/f'异步 音频.{fmt}')
+        for fmt in ("wav", "flac", "opus", "mp3", "aac"):
+            sync = await export(doc, fmt, out_dir / f"mcp_sync.{fmt}")
+            async_path = await export(doc, fmt, nonascii_dir / f"异步 音频.{fmt}")
             assert sync.read_bytes() == async_path.read_bytes(), fmt
             nonascii_async[fmt] = str(async_path.relative_to(out_dir))
 
-        midi = await export(doc,'midi',out_dir/'mcp_evening.mid')
-        expected = json.loads((ROOT/'tests/golden'/golden_platform()/'evening.musicxml/midi.json').read_text(encoding='utf-8'))
+        midi = await export(doc, "midi", out_dir / "mcp_evening.mid")
+        expected = json.loads(
+            (ROOT / "tests/golden" / golden_platform() / "evening.musicxml/midi.json").read_text(encoding="utf-8")
+        )
         assert describe_midi(midi.read_bytes()) == expected
-        await client.tool('score_close', {'document':doc})
-    evidence['mcp_integration'] = {'status':'passed','energy_ratio_db':round(energy_ratio_db,2),
-        'measured_volume_gain_db':round(measured_gain,3),'non_ascii_async_exports':nonascii_async,
-        'midi_matches_golden':True}
-    print('  MCP-level v2 integration tests PASSED')
+        await client.tool("score_close", {"document": doc})
+    evidence["mcp_integration"] = {
+        "status": "passed",
+        "energy_ratio_db": round(energy_ratio_db, 2),
+        "measured_volume_gain_db": round(measured_gain, 3),
+        "non_ascii_async_exports": nonascii_async,
+        "midi_matches_golden": True,
+    }
+    print("  MCP-level v2 integration tests PASSED")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Acceptance test suite for MuseScore 4 audio engine")
-    parser.add_argument("--engine-only", action="store_true", help="Run fork audio assertions without the frozen MCP host or dense benchmark")
-    parser.add_argument("--bin-dir", type=Path, default=None, help="Directory containing build executables")
+    parser.add_argument(
+        "--engine-only",
+        action="store_true",
+        help="Run fork audio assertions without the frozen MCP host or dense benchmark",
+    )
+    parser.add_argument(
+        "--bin-dir",
+        type=Path,
+        default=None,
+        help="Directory containing build executables",
+    )
     parser.add_argument("--binary", type=Path, default=None, help="Path to engrave-mcp executable")
-    parser.add_argument("--resources", type=Path, default=ROOT / ".runtime" / "assets", help="Path to assets")
-    parser.add_argument("--soundfont", type=Path, default=ROOT / ".runtime" / "soundfonts" / "FluidR3Mono_GM.sf3", help="Path to soundfont")
+    parser.add_argument(
+        "--resources",
+        type=Path,
+        default=ROOT / ".runtime" / "assets",
+        help="Path to assets",
+    )
+    parser.add_argument(
+        "--soundfont",
+        type=Path,
+        default=ROOT / ".runtime" / "soundfonts" / "FluidR3Mono_GM.sf3",
+        help="Path to soundfont",
+    )
     parser.add_argument("--output", type=Path, required=True, help="Output directory for test artifacts")
-    parser.add_argument("--write-midi-goldens", action="store_true",
-                        help="Regenerate tests/engine_audio/midi goldens from the current probe")
-    parser.add_argument("--midi-golden-dir", type=Path, default=ROOT / "tests" / "engine_audio" / "midi",
-                        help="Directory for --write-midi-goldens")
-    parser.add_argument("--platform-subdir", action="store_true",
-                        help="Write MIDI goldens under <dir>/<platform>/ when hosts differ")
-    parser.add_argument("--defer-dense-performance", action="store_true",
-                        help="Leave the dense performance check pending and exit nonzero")
-    parser.add_argument("--engine-source", type=Path,
-                        default=Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor" / "engrave")),
-                        help="Git checkout used to build the engine")
-    parser.add_argument("--cross-platform-captures", type=Path,
-                        default=ROOT / "artifacts" / "a2" / "audio-cross-platform",
-                        help="Directory containing windows/ and linux/ current captures")
-    parser.add_argument("--capture-cross-platform-only", action="store_true",
-                        help="Capture this host without running or comparing the other checks")
+    parser.add_argument(
+        "--write-midi-goldens",
+        action="store_true",
+        help="Regenerate tests/engine_audio/midi goldens from the current probe",
+    )
+    parser.add_argument(
+        "--midi-golden-dir",
+        type=Path,
+        default=ROOT / "tests" / "engine_audio" / "midi",
+        help="Directory for --write-midi-goldens",
+    )
+    parser.add_argument(
+        "--platform-subdir",
+        action="store_true",
+        help="Write MIDI goldens under <dir>/<platform>/ when hosts differ",
+    )
+    parser.add_argument(
+        "--defer-dense-performance",
+        action="store_true",
+        help="Leave the dense performance check pending and exit nonzero",
+    )
+    parser.add_argument(
+        "--engine-source",
+        type=Path,
+        default=Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor" / "engrave")),
+        help="Git checkout used to build the engine",
+    )
+    parser.add_argument(
+        "--cross-platform-captures",
+        type=Path,
+        default=ROOT / "artifacts" / "a2" / "audio-cross-platform",
+        help="Directory containing windows/ and linux/ current captures",
+    )
+    parser.add_argument(
+        "--capture-cross-platform-only",
+        action="store_true",
+        help="Capture this host without running or comparing the other checks",
+    )
     args = parser.parse_args()
 
     out_dir = args.output.resolve()
@@ -1619,16 +1929,27 @@ def main() -> int:
     if args.capture_cross_platform_only:
         if not args.binary or not args.binary.is_file():
             parser.error("--capture-cross-platform-only requires an existing --binary")
-        make_current_audio_capture(args.binary, args.resources, args.soundfont,
-                                   args.engine_source, args.cross_platform_captures.resolve())
+        make_current_audio_capture(
+            args.binary,
+            args.resources,
+            args.soundfont,
+            args.engine_source,
+            args.cross_platform_captures.resolve(),
+        )
         return 0
 
     probe_bin = find_probe_binary(args.bin_dir)
     print(f"Using probe binary: {probe_bin}")
 
     if args.write_midi_goldens:
-        write_midi_goldens(probe_bin, args.resources, args.soundfont, out_dir,
-                           args.midi_golden_dir, args.platform_subdir)
+        write_midi_goldens(
+            probe_bin,
+            args.resources,
+            args.soundfont,
+            out_dir,
+            args.midi_golden_dir,
+            args.platform_subdir,
+        )
         return 0
 
     evidence: dict[str, Any] = {}
@@ -1648,23 +1969,46 @@ def main() -> int:
             raise AudioCheckPending("MCP binary not supplied or missing for current capture")
         captures = args.cross_platform_captures.resolve()
         source_commit, engine_commit = make_current_audio_capture(
-            args.binary, args.resources, args.soundfont, args.engine_source, captures)
-        test_cross_platform_audio_features(evidence, captures, source_commit, engine_commit,
-                                           audio_fixture_sources(), file_sha256(args.soundfont))
+            args.binary, args.resources, args.soundfont, args.engine_source, captures
+        )
+        test_cross_platform_audio_features(
+            evidence,
+            captures,
+            source_commit,
+            engine_commit,
+            audio_fixture_sources(),
+            file_sha256(args.soundfont),
+        )
 
     checks = [
         ("reporting_regressions", test_audio_check_reporting),
         ("sine_threshold_mutations", test_sine_threshold_mutations),
-        ("pitch_onset_level", lambda: test_pitch_onset_and_level(probe_bin, args.resources, out_dir, evidence)),
-        ("midi_goldens", lambda: test_midi_event_goldens(probe_bin, args.resources, args.soundfont, out_dir, evidence)),
-        ("determinism_codecs", lambda: test_determinism_and_decoding(probe_bin, args.resources, args.soundfont, out_dir, evidence)),
+        (
+            "pitch_onset_level",
+            lambda: test_pitch_onset_and_level(probe_bin, args.resources, out_dir, evidence),
+        ),
+        (
+            "midi_goldens",
+            lambda: test_midi_event_goldens(probe_bin, args.resources, args.soundfont, out_dir, evidence),
+        ),
+        (
+            "determinism_codecs",
+            lambda: test_determinism_and_decoding(probe_bin, args.resources, args.soundfont, out_dir, evidence),
+        ),
         ("dense_performance", dense_performance),
-        ("excerpt_parity", lambda: test_excerpt_rendering_parity(probe_bin, args.resources, args.soundfont, out_dir, evidence)),
+        (
+            "excerpt_parity",
+            lambda: test_excerpt_rendering_parity(probe_bin, args.resources, args.soundfont, out_dir, evidence),
+        ),
         ("mcp_integration", mcp_integration),
         ("cross_platform", cross_platform),
     ]
     if args.engine_only:
-        checks = [(name, check) for name, check in checks if name not in {"dense_performance", "mcp_integration", "cross_platform"}]
+        checks = [
+            (name, check)
+            for name, check in checks
+            if name not in {"dense_performance", "mcp_integration", "cross_platform"}
+        ]
     code = run_audio_checks(checks, evidence)
 
     evidence_path = out_dir / "evidence.json"

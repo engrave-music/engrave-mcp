@@ -16,9 +16,8 @@ from __future__ import annotations
 
 import argparse
 import math
-from pathlib import Path
 import struct
-import sys
+from pathlib import Path
 
 
 def make_chunk(tag: str, data: bytes) -> bytes:
@@ -40,17 +39,14 @@ def generate_sine_soundfont(output_path: Path | str) -> bytes:
         "INFO",
         make_chunk("ifil", struct.pack("<HH", 2, 4))
         + make_chunk("isng", b"EMU8000\x00")
-        + make_chunk("INAM", b"SineSoundFont\x00")
+        + make_chunk("INAM", b"SineSoundFont\x00"),
     )
 
     # 2. sdta list: 2205 samples of 440 Hz sine @ 44100 Hz (exact 22 cycles) + 46 zero-padding samples
     sr = 44100
     n_samples = 2205
     amplitude = int(32767 * 0.9)  # 0.9 full-scale peak
-    pcm_samples = [
-        int(amplitude * math.sin(2.0 * math.pi * 22.0 * i / n_samples))
-        for i in range(n_samples)
-    ]
+    pcm_samples = [int(amplitude * math.sin(2.0 * math.pi * 22.0 * i / n_samples)) for i in range(n_samples)]
     pcm_samples.extend([0] * 46)  # SF2 spec requires >= 46 trailing zero samples
     smpl_data = struct.pack(f"<{len(pcm_samples)}h", *pcm_samples)
     sdta = make_list("sdta", make_chunk("smpl", smpl_data))
@@ -59,17 +55,17 @@ def generate_sine_soundfont(output_path: Path | str) -> bytes:
     # Instrument 0 generators
     # Notice: gen 53 (sampleID) must be the last generator in the instrument zone.
     igens = [
-        (43, struct.pack("<BB", 0, 127)),   # keyRange [0, 127]
-        (8, struct.pack("<h", 13500)),       # initialFilterFc open (~20 kHz)
-        (34, struct.pack("<h", -12000)),     # attackVolEnv (~1 ms)
-        (35, struct.pack("<h", -12000)),     # holdVolEnv (~1 ms)
-        (36, struct.pack("<h", -12000)),     # decayVolEnv (~1 ms)
-        (37, struct.pack("<h", 0)),          # sustainVolEnv (0 cB = 0 dB attenuation)
-        (38, struct.pack("<h", -12000)),     # releaseVolEnv (~1 ms)
-        (15, struct.pack("<h", 0)),          # chorusEffectsSend = 0
-        (16, struct.pack("<h", 0)),          # reverbEffectsSend = 0
-        (54, struct.pack("<h", 1)),          # sampleModes = 1 (continuous loop)
-        (53, struct.pack("<H", 0)),          # sampleID = 0 (MUST BE LAST)
+        (43, struct.pack("<BB", 0, 127)),  # keyRange [0, 127]
+        (8, struct.pack("<h", 13500)),  # initialFilterFc open (~20 kHz)
+        (34, struct.pack("<h", -12000)),  # attackVolEnv (~1 ms)
+        (35, struct.pack("<h", -12000)),  # holdVolEnv (~1 ms)
+        (36, struct.pack("<h", -12000)),  # decayVolEnv (~1 ms)
+        (37, struct.pack("<h", 0)),  # sustainVolEnv (0 cB = 0 dB attenuation)
+        (38, struct.pack("<h", -12000)),  # releaseVolEnv (~1 ms)
+        (15, struct.pack("<h", 0)),  # chorusEffectsSend = 0
+        (16, struct.pack("<h", 0)),  # reverbEffectsSend = 0
+        (54, struct.pack("<h", 1)),  # sampleModes = 1 (continuous loop)
+        (53, struct.pack("<H", 0)),  # sampleID = 0 (MUST BE LAST)
     ]
     ibags = [(0, 0)]  # (wGenNdx=0, wModNdx=0)
     insts = [(b"SineInstrument", 0)]  # (name, wInstBagNdx=0)
@@ -143,15 +139,15 @@ def generate_sine_soundfont(output_path: Path | str) -> bytes:
     shdr_data.extend(
         struct.pack(
             "<IIIIIBbhH",
-            0,          # dwStart
+            0,  # dwStart
             n_samples,  # dwEnd
-            0,          # dwStartloop
+            0,  # dwStartloop
             n_samples,  # dwEndloop
-            sr,         # dwSampleRate = 44100
-            69,         # byOriginalPitch = A4 (MIDI 69 = 440 Hz)
-            0,          # chPitchCorrection = 0
-            0,          # wSampleLink = 0
-            1,          # sfSampleType = 1 (monoSample)
+            sr,  # dwSampleRate = 44100
+            69,  # byOriginalPitch = A4 (MIDI 69 = 440 Hz)
+            0,  # chPitchCorrection = 0
+            0,  # wSampleLink = 0
+            1,  # sfSampleType = 1 (monoSample)
         )
     )
     shdr_data.extend(b"\x00" * 46)

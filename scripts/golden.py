@@ -78,13 +78,12 @@ import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from fnmatch import fnmatch
-from functools import partial
 from fractions import Fraction
+from functools import partial
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
 from musicxml_semantic import musicxml_semantic
 from v2_fixtures import composition_musicxml
 
@@ -94,10 +93,19 @@ EXTRA_FIXTURES = (ROOT / "fixtures" / "evening.musicxml",)
 # Fixtures without stored excerpts whose part excerpts are generated (after the master
 # outputs are captured) to cover excerpt creation, e.g. ChordLine path copying.
 GENERATE_EXCERPTS = {"chordline_path.mscx"}
-SUPPLEMENTAL_MNX = ("engine/two-notes.mnx", "project_examples/tupletSimple.mnx",
-                    "project_examples/percussionKit.mnx", "project_examples/graceArps.mnx")
-AUDIO_TOLERANCES = {"peak": 1e-4, "rms": 1e-4, "rmsEnvelope": 1e-4,
-                    "spectralCentroidHz": 1.0, "centroidEnvelope": 2.0}
+SUPPLEMENTAL_MNX = (
+    "engine/two-notes.mnx",
+    "project_examples/tupletSimple.mnx",
+    "project_examples/percussionKit.mnx",
+    "project_examples/graceArps.mnx",
+)
+AUDIO_TOLERANCES = {
+    "peak": 1e-4,
+    "rms": 1e-4,
+    "rmsEnvelope": 1e-4,
+    "spectralCentroidHz": 1.0,
+    "centroidEnvelope": 2.0,
+}
 AUDIO_EXACT = {"sampleRate", "channels", "frames"}
 # Per-window exact silence evidence (count of nonzero PCM samples per channel). It is
 # written by describe_audio, gates the centroid comparison and is not a tolerance.
@@ -125,14 +133,24 @@ def write_text(path: Path, text: str) -> None:
 
 
 def write_json(path: Path, value, indent: int = 1) -> None:
-    write_text(path, json.dumps(value, indent=indent, sort_keys=True, ensure_ascii=False,
-                                allow_nan=False) + "\n")
+    write_text(
+        path,
+        json.dumps(value, indent=indent, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n",
+    )
 
 
 EID_TAGS = (
-    "eid", "linkedTo", "startElement", "endElement", "NoteEID",
-    "mmRestLast", "startMeasure", "endMeasure", "sharedPart",
+    "eid",
+    "linkedTo",
+    "startElement",
+    "endElement",
+    "NoteEID",
+    "mmRestLast",
+    "startMeasure",
+    "endMeasure",
+    "sharedPart",
 )
+
 
 def uses_blanked_eids(golden_root: Path | None) -> bool:
     """Detect whether a golden tree uses 4.7.6-style blanked EID tags (<eid/>)."""
@@ -163,7 +181,8 @@ def require_eid_mode(golden_root: Path | None, legacy_blank_eids: bool) -> None:
             f"golden tree {golden_root} stores blanked EIDs (<eid/>), which cannot detect a "
             "changed reference target. Token mode is the only automatic EID representation: "
             "recapture the baseline, or pass --legacy-blank-eids to read the legacy tree "
-            "explicitly.")
+            "explicitly."
+        )
 
 
 def normalize_mscx(text: str, legacy_blank_eids: bool = False) -> str:
@@ -186,7 +205,7 @@ def normalize_mscx(text: str, legacy_blank_eids: bool = False) -> str:
         text = re.sub(tag_pattern, replace_eid, text)
 
     for tag in ("programVersion", "programRevision"):
-        text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", rf"\1\2", text)
+        text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", r"\1\2", text)
     for name in ("creationDate", "platform"):
         text = re.sub(rf'(<metaTag name="{name}">)[^<]*(</metaTag>)', r"\1\2", text)
     return text
@@ -194,10 +213,13 @@ def normalize_mscx(text: str, legacy_blank_eids: bool = False) -> str:
 
 def normalize_musicxml(text: str) -> str:
     for tag in ("encoding-date", "software"):
-        text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", rf"\1\2", text)
+        text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", r"\1\2", text)
     for name in ("creationDate", "platform"):
         text = re.sub(
-            rf'(<miscellaneous-field name="{name}">)[^<]*(</miscellaneous-field>)', r"\1\2", text)
+            rf'(<miscellaneous-field name="{name}">)[^<]*(</miscellaneous-field>)',
+            r"\1\2",
+            text,
+        )
     return text
 
 
@@ -218,7 +240,9 @@ def round_json(value):
 
 def image_size(data: bytes) -> dict:
     import io
+
     from PIL import Image
+
     with Image.open(io.BytesIO(data)) as image:
         return {"width": image.width, "height": image.height}
 
@@ -229,20 +253,38 @@ def load_rounded(path: Path):
 
 def describe_png(path: Path) -> dict:
     from PIL import Image
+
     with Image.open(path) as image:
         rgba = image.convert("RGBA")
-        return {"width": image.width, "height": image.height, "mode": image.mode,
-                "sha256": sha256(rgba.tobytes())}
+        return {
+            "width": image.width,
+            "height": image.height,
+            "mode": image.mode,
+            "sha256": sha256(rgba.tobytes()),
+        }
 
 
 def describe_pdf(path: Path) -> dict:
     import pymupdf  # pinned in pixi.toml; cairo hides the volatile metadata in object streams
+
     document = pymupdf.open(stream=path.read_bytes(), filetype="pdf")
     try:
         pages = document.page_count
-        document.set_metadata({key: "" for key in
-                               ("title", "author", "subject", "keywords", "creator",
-                                "producer", "creationDate", "modDate")})
+        document.set_metadata(
+            {
+                key: ""
+                for key in (
+                    "title",
+                    "author",
+                    "subject",
+                    "keywords",
+                    "creator",
+                    "producer",
+                    "creationDate",
+                    "modDate",
+                )
+            }
+        )
         canonical = document.tobytes(garbage=3, deflate=True, no_new_id=True)
     finally:
         document.close()
@@ -264,32 +306,36 @@ def describe_audio(path: Path) -> dict:
     mono = audio.mean(axis=1)
     envelope, centroids, nonzero = [], [], []
     for start in range(0, frames, window):
-        chunk = audio[start:start + window]
-        envelope.append([round(float(np.sqrt(np.mean(chunk[:, channel] ** 2))), 5)
-                         for channel in range(channels)])
+        chunk = audio[start : start + window]
+        envelope.append([round(float(np.sqrt(np.mean(chunk[:, channel] ** 2))), 5) for channel in range(channels)])
         # Exact silence evidence: the stored RMS is rounded, so only a zero sample count
         # proves a window is all-zero PCM (and hence that its centroid means nothing).
-        nonzero.append([int(np.count_nonzero(chunk[:, channel]))
-                        for channel in range(channels)])
-        segment = mono[start:start + window]
+        nonzero.append([int(np.count_nonzero(chunk[:, channel])) for channel in range(channels)])
+        segment = mono[start : start + window]
         spectrum = np.abs(np.fft.rfft(segment))
         frequencies = np.fft.rfftfreq(len(segment), 1.0 / rate)
         weight = float(spectrum.sum())
-        centroids.append(round(float(np.dot(frequencies, spectrum)) / weight, 1)
-                         if weight else 0.0)
+        centroids.append(round(float(np.dot(frequencies, spectrum)) / weight, 1) if weight else 0.0)
     block = 1 << 20
     weighted = 0.0
     weight = 0.0
     for start in range(0, len(mono), block):
-        chunk = mono[start:start + block]
+        chunk = mono[start : start + block]
         spectrum = np.abs(np.fft.rfft(chunk))
         frequencies = np.fft.rfftfreq(len(chunk), 1.0 / rate)
         weighted += float(np.dot(frequencies, spectrum))
         weight += float(spectrum.sum())
-    return {"sampleRate": int(rate), "channels": int(channels), "frames": int(frames),
-            "peak": peak, "rms": rms, "rmsEnvelope": envelope,
-            "centroidEnvelope": centroids, "nonzeroSamples": nonzero,
-            "spectralCentroidHz": round(weighted / weight, 1) if weight else 0.0}
+    return {
+        "sampleRate": int(rate),
+        "channels": int(channels),
+        "frames": int(frames),
+        "peak": peak,
+        "rms": rms,
+        "rmsEnvelope": envelope,
+        "centroidEnvelope": centroids,
+        "nonzeroSamples": nonzero,
+        "spectralCentroidHz": round(weighted / weight, 1) if weight else 0.0,
+    }
 
 
 def describe_mscz(path: Path, legacy_blank_eids: bool = False) -> dict:
@@ -300,8 +346,7 @@ def describe_mscz(path: Path, legacy_blank_eids: bool = False) -> dict:
             data = archive.read(name)
             base = name.rsplit("/", 1)[-1].lower()
             if base.endswith(".mscx"):
-                normalized = normalize_mscx(data.decode("utf-8"),
-                                            legacy_blank_eids=legacy_blank_eids)
+                normalized = normalize_mscx(data.decode("utf-8"), legacy_blank_eids=legacy_blank_eids)
                 entries.append({"name": name, "sha256": sha256(normalized.encode("utf-8"))})
             elif base in ("audiosettings.json", "viewsettings.json"):
                 entries.append({"name": name, "size": len(data)})
@@ -316,13 +361,21 @@ def describe_mscz(path: Path, legacy_blank_eids: bool = False) -> dict:
 def describe_mxl(path: Path) -> dict:
     with zipfile.ZipFile(path) as archive:
         names = sorted(archive.namelist())
-        inner = next((name for name in names
-                      if name.lower().endswith((".xml", ".musicxml"))
-                      and not name.upper().startswith("META-INF/")), None)
+        inner = next(
+            (
+                name
+                for name in names
+                if name.lower().endswith((".xml", ".musicxml")) and not name.upper().startswith("META-INF/")
+            ),
+            None,
+        )
         document = {"entries": names}
         if inner:
             normalized = normalize_musicxml(archive.read(inner).decode("utf-8"))
-            document["musicxml"] = {"name": inner, "sha256": sha256(normalized.encode("utf-8"))}
+            document["musicxml"] = {
+                "name": inner,
+                "sha256": sha256(normalized.encode("utf-8")),
+            }
     return document
 
 
@@ -336,10 +389,10 @@ def describe_midi(data: bytes) -> dict:
     position = 8 + header_len
     tracks = []
     for _ in range(track_count):
-        if data[position:position + 4] != b"MTrk":
+        if data[position : position + 4] != b"MTrk":
             raise ValueError(f"expected MTrk at byte {position}")
-        length = int.from_bytes(data[position + 4:position + 8], "big")
-        track = data[position + 8:position + 8 + length]
+        length = int.from_bytes(data[position + 4 : position + 8], "big")
+        track = data[position + 8 : position + 8 + length]
         position += 8 + length
         events, cursor, tick, running = [], 0, 0, None
         while cursor < len(track):
@@ -364,10 +417,14 @@ def describe_midi(data: bytes) -> dict:
                     size = (size << 7) | (byte & 0x7F)
                     if not byte & 0x80:
                         break
-                payload = track[cursor:cursor + size]
+                payload = track[cursor : cursor + size]
                 cursor += size
-                events.append([tick, {"type": "meta", "metaType": meta_type,
-                                      "data": payload.hex()}])
+                events.append(
+                    [
+                        tick,
+                        {"type": "meta", "metaType": meta_type, "data": payload.hex()},
+                    ]
+                )
                 running = None
                 if meta_type == 0x2F:
                     break
@@ -381,7 +438,12 @@ def describe_midi(data: bytes) -> dict:
                     size = (size << 7) | (byte & 0x7F)
                     if not byte & 0x80:
                         break
-                events.append([tick, {"type": "sysex", "data": track[cursor:cursor + size].hex()}])
+                events.append(
+                    [
+                        tick,
+                        {"type": "sysex", "data": track[cursor : cursor + size].hex()},
+                    ]
+                )
                 cursor += size
                 running = None
                 continue
@@ -394,28 +456,66 @@ def describe_midi(data: bytes) -> dict:
                 first, second = track[cursor], track[cursor + 1]
                 cursor += 2
                 if command in (0x80, 0x90) and not (command == 0x90 and second > 0):
-                    events.append([tick, {"type": "note_off", "ch": channel,
-                                          "pitch": first, "vel": second}])
+                    events.append(
+                        [
+                            tick,
+                            {
+                                "type": "note_off",
+                                "ch": channel,
+                                "pitch": first,
+                                "vel": second,
+                            },
+                        ]
+                    )
                 elif command == 0x90:
-                    events.append([tick, {"type": "note_on", "ch": channel,
-                                          "pitch": first, "vel": second}])
+                    events.append(
+                        [
+                            tick,
+                            {
+                                "type": "note_on",
+                                "ch": channel,
+                                "pitch": first,
+                                "vel": second,
+                            },
+                        ]
+                    )
                 elif command == 0xA0:
-                    events.append([tick, {"type": "poly_aftertouch", "ch": channel,
-                                          "pitch": first, "pressure": second}])
+                    events.append(
+                        [
+                            tick,
+                            {
+                                "type": "poly_aftertouch",
+                                "ch": channel,
+                                "pitch": first,
+                                "pressure": second,
+                            },
+                        ]
+                    )
                 elif command == 0xB0:
-                    events.append([tick, {"type": "cc", "ch": channel,
-                                          "num": first, "val": second}])
+                    events.append(
+                        [
+                            tick,
+                            {"type": "cc", "ch": channel, "num": first, "val": second},
+                        ]
+                    )
                 else:
-                    events.append([tick, {"type": "pitchbend", "ch": channel,
-                                          "value": first | (second << 7)}])
+                    events.append(
+                        [
+                            tick,
+                            {
+                                "type": "pitchbend",
+                                "ch": channel,
+                                "value": first | (second << 7),
+                            },
+                        ]
+                    )
             elif command in (0xC0, 0xD0):
                 first = track[cursor]
                 cursor += 1
                 if command == 0xC0:
                     events.append([tick, {"type": "program", "ch": channel, "program": first}])
                 else:
-                    events.append([tick, {"type": "aftertouch", "ch": channel,
-                                          "pressure": first}])
+                    events.append([tick, {"type": "aftertouch", "ch": channel, "pressure": first}])
             else:
                 raise ValueError(f"unsupported MIDI status {status}")
         tracks.append(events)
@@ -444,7 +544,10 @@ async def export(session, identity, fmt, dest, **options):
         raise ValueError(f"unsupported capture options: {options}")
     score = {"excerpt": selected} if selected is not None else None
     if fmt in ("measurePositions", "segmentPositions"):
-        kind, export_options = "positions", {"position_kind": "measure" if fmt.startswith("measure") else "segment"}
+        kind, export_options = (
+            "positions",
+            {"position_kind": "measure" if fmt.startswith("measure") else "segment"},
+        )
     elif fmt in ("svg", "png", "pdf"):
         kind, export_options = "render", {"format": fmt}
         if fmt != "pdf":
@@ -458,9 +561,19 @@ async def export(session, identity, fmt, dest, **options):
     directory = fmt in ("svg", "png")
     with tempfile.TemporaryDirectory(prefix="render-", dir=dest.parent) as tmp:
         location = Path(tmp) if directory else dest
-        payload, error = await call_tool(session, "score_export", {
-            **identity, "kind": kind, "options": export_options,
-            "destination": {"kind": "directory" if directory else "file", "path": str(location)}})
+        payload, error = await call_tool(
+            session,
+            "score_export",
+            {
+                **identity,
+                "kind": kind,
+                "options": export_options,
+                "destination": {
+                    "kind": "directory" if directory else "file",
+                    "path": str(location),
+                },
+            },
+        )
         if error:
             return error
         artifacts = payload.get("artifacts", [])
@@ -484,15 +597,25 @@ async def required(session, name, arguments):
 async def open_fixture(session, source):
     if source.name == "created.json":
         xml = composition_musicxml(json.loads(read_text(source)))
-        return await required(session, "score_open", {
-            "data": base64.b64encode(xml.encode("utf-8")).decode("ascii"), "format": "musicxml"})
+        return await required(
+            session,
+            "score_open",
+            {
+                "data": base64.b64encode(xml.encode("utf-8")).decode("ascii"),
+                "format": "musicxml",
+            },
+        )
     return await required(session, "score_open", {"path": str(source.resolve())})
 
 
 async def generate_excerpts(session, identity):
     outline = await required(session, "score_outline", identity)
     parts = [{"kind": "id", "id": part["id"]} for part in outline["outline"]["parts"]]
-    await required(session, "score_edit", {**identity, "ops": [{"op": "generate_excerpts", "parts": parts}]})
+    await required(
+        session,
+        "score_edit",
+        {**identity, "ops": [{"op": "generate_excerpts", "parts": parts}]},
+    )
 
 
 def positions(path):
@@ -525,8 +648,10 @@ async def text_export(session, identity, fmt, raw, out_dir, name, normalize, roo
             write_json(out_dir / "musicxml-semantic.json", musicxml_semantic(text))
         return write_text(out_dir / name, text)
     except Exception as exc:  # noqa: BLE001 - record instead of aborting the fixture
-        write_text(out_dir / f"{name}.error.txt",
-                   f"transform failed: {type(exc).__name__}: {sanitize(str(exc), roots)}\n")
+        write_text(
+            out_dir / f"{name}.error.txt",
+            f"transform failed: {type(exc).__name__}: {sanitize(str(exc), roots)}\n",
+        )
         return None
 
 
@@ -538,8 +663,10 @@ async def value_export(session, identity, fmt, raw, out_dir, name, transform, ro
     try:
         value = transform(raw)
     except Exception as exc:  # noqa: BLE001
-        write_text(out_dir / f"{name}.error.txt",
-                   f"transform failed: {type(exc).__name__}: {sanitize(str(exc), roots)}\n")
+        write_text(
+            out_dir / f"{name}.error.txt",
+            f"transform failed: {type(exc).__name__}: {sanitize(str(exc), roots)}\n",
+        )
         return None
     write_json(out_dir / name, value)
     return value
@@ -547,32 +674,121 @@ async def value_export(session, identity, fmt, raw, out_dir, name, transform, ro
 
 async def capture_master(session, identity, raw, out_dir, roots, legacy_blank_eids: bool = False):
     normalized_mscx = partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids)
-    await text_export(session, identity, "mscx", raw / "score.mscx", out_dir,
-                      "score.mscx", normalized_mscx, roots)
-    await text_export(session, identity, "musicxml", raw / "score.musicxml", out_dir,
-                      "score.musicxml", normalize_musicxml, roots)
-    await value_export(session, identity, "mscz", raw / "score.mscz", out_dir,
-                       "mscz.json", partial(describe_mscz, legacy_blank_eids=legacy_blank_eids),
-                       roots)
-    await value_export(session, identity, "mxl", raw / "score.mxl", out_dir,
-                       "mxl.json", describe_mxl, roots)
-    await value_export(session, identity, "midi", raw / "score.mid", out_dir,
-                       "midi.json", lambda path: describe_midi(path.read_bytes()), roots)
-    await value_export(session, identity, "measurePositions", raw / "measurePositions.json",
-                       out_dir, "measurePositions.json", positions, roots)
-    await value_export(session, identity, "segmentPositions", raw / "segmentPositions.json",
-                       out_dir, "segmentPositions.json", positions, roots)
+    await text_export(
+        session,
+        identity,
+        "mscx",
+        raw / "score.mscx",
+        out_dir,
+        "score.mscx",
+        normalized_mscx,
+        roots,
+    )
+    await text_export(
+        session,
+        identity,
+        "musicxml",
+        raw / "score.musicxml",
+        out_dir,
+        "score.musicxml",
+        normalize_musicxml,
+        roots,
+    )
+    await value_export(
+        session,
+        identity,
+        "mscz",
+        raw / "score.mscz",
+        out_dir,
+        "mscz.json",
+        partial(describe_mscz, legacy_blank_eids=legacy_blank_eids),
+        roots,
+    )
+    await value_export(
+        session,
+        identity,
+        "mxl",
+        raw / "score.mxl",
+        out_dir,
+        "mxl.json",
+        describe_mxl,
+        roots,
+    )
+    await value_export(
+        session,
+        identity,
+        "midi",
+        raw / "score.mid",
+        out_dir,
+        "midi.json",
+        lambda path: describe_midi(path.read_bytes()),
+        roots,
+    )
+    await value_export(
+        session,
+        identity,
+        "measurePositions",
+        raw / "measurePositions.json",
+        out_dir,
+        "measurePositions.json",
+        positions,
+        roots,
+    )
+    await value_export(
+        session,
+        identity,
+        "segmentPositions",
+        raw / "segmentPositions.json",
+        out_dir,
+        "segmentPositions.json",
+        positions,
+        roots,
+    )
     info = await required(session, "score_outline", identity)
     pages = info["outline"]["pages"]
     for page in range(int(pages)):
-        await text_export(session, identity, "svg", raw / f"page-{page}.svg", out_dir,
-                          f"page-{page}.svg", normalize_svg, roots, page=page)
-    await value_export(session, identity, "png", raw / "page-0.png", out_dir,
-                       "page-0.png.json", describe_png, roots, page=0)
-    await value_export(session, identity, "pdf", raw / "score.pdf", out_dir,
-                       "score.pdf.json", describe_pdf, roots)
-    await value_export(session, identity, "wav", raw / "score.wav", out_dir,
-                       "audio.json", describe_audio, roots)
+        await text_export(
+            session,
+            identity,
+            "svg",
+            raw / f"page-{page}.svg",
+            out_dir,
+            f"page-{page}.svg",
+            normalize_svg,
+            roots,
+            page=page,
+        )
+    await value_export(
+        session,
+        identity,
+        "png",
+        raw / "page-0.png",
+        out_dir,
+        "page-0.png.json",
+        describe_png,
+        roots,
+        page=0,
+    )
+    await value_export(
+        session,
+        identity,
+        "pdf",
+        raw / "score.pdf",
+        out_dir,
+        "score.pdf.json",
+        describe_pdf,
+        roots,
+    )
+    await value_export(
+        session,
+        identity,
+        "wav",
+        raw / "score.wav",
+        out_dir,
+        "audio.json",
+        describe_audio,
+        roots,
+    )
     # Format-independent content of the saved file (roadmap-engrave A0).
     semantic_dump(raw / "score.mscz", out_dir / "semantic.json", roots)
 
@@ -586,11 +802,20 @@ def semantic_dump(source: Path, dest: Path, roots, *extra: str) -> None:
         write_text(dest.with_suffix(".error.txt"), "source export missing\n")
         return
     result = subprocess.run(
-        [str(SEMANTIC_DUMP["binary"]), str(SEMANTIC_DUMP["resources"]), str(source), *extra],
-        capture_output=True, check=False)
+        [
+            str(SEMANTIC_DUMP["binary"]),
+            str(SEMANTIC_DUMP["resources"]),
+            str(source),
+            *extra,
+        ],
+        capture_output=True,
+        check=False,
+    )
     if result.returncode != 0:
-        write_text(dest.with_suffix(".error.txt"),
-                   sanitize(result.stderr.decode("utf-8", "replace"), roots) + "\n")
+        write_text(
+            dest.with_suffix(".error.txt"),
+            sanitize(result.stderr.decode("utf-8", "replace"), roots) + "\n",
+        )
         return
     write_json(dest, json.loads(result.stdout.decode("utf-8")))
 
@@ -601,19 +826,62 @@ async def capture_excerpts(session, identity, raw, out_dir, roots, legacy_blank_
     for index, excerpt in enumerate(payload["outline"]["excerpts"]):
         excerpt_id = excerpt["id"]
         folder = out_dir / f"excerpt-{index}"
-        await text_export(session, identity, "mscx", raw / f"excerpt-{index}.mscx", folder,
-                          "score.mscx", normalized_mscx, roots, excerpt=excerpt_id)
-        await text_export(session, identity, "musicxml", raw / f"excerpt-{index}.musicxml",
-                          folder, "score.musicxml", normalize_musicxml, roots, excerpt=excerpt_id)
-        await value_export(session, identity, "midi", raw / f"excerpt-{index}.mid", folder,
-                           "midi.json", lambda path: describe_midi(path.read_bytes()), roots,
-                           excerpt=excerpt_id)
-        await text_export(session, identity, "svg", raw / f"excerpt-{index}-page-0.svg",
-                          folder, "page-0.svg", normalize_svg, roots, excerpt=excerpt_id, page=0)
+        await text_export(
+            session,
+            identity,
+            "mscx",
+            raw / f"excerpt-{index}.mscx",
+            folder,
+            "score.mscx",
+            normalized_mscx,
+            roots,
+            excerpt=excerpt_id,
+        )
+        await text_export(
+            session,
+            identity,
+            "musicxml",
+            raw / f"excerpt-{index}.musicxml",
+            folder,
+            "score.musicxml",
+            normalize_musicxml,
+            roots,
+            excerpt=excerpt_id,
+        )
+        await value_export(
+            session,
+            identity,
+            "midi",
+            raw / f"excerpt-{index}.mid",
+            folder,
+            "midi.json",
+            lambda path: describe_midi(path.read_bytes()),
+            roots,
+            excerpt=excerpt_id,
+        )
+        await text_export(
+            session,
+            identity,
+            "svg",
+            raw / f"excerpt-{index}-page-0.svg",
+            folder,
+            "page-0.svg",
+            normalize_svg,
+            roots,
+            excerpt=excerpt_id,
+            page=0,
+        )
 
 
-async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots,
-                          legacy_blank_eids: bool = False):
+async def capture_fixture(
+    session,
+    fixture_id,
+    source,
+    raw_root,
+    out_dir,
+    roots,
+    legacy_blank_eids: bool = False,
+):
     raw = raw_root / fixture_id
     raw.mkdir(parents=True, exist_ok=True)
     payload = await open_fixture(session, source)
@@ -621,8 +889,12 @@ async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots,
     if source.name != "created.json" and source.suffix.lower() != ".mnx":
         # The fixture as the engine reads it, before any save.
         # semantic_dump does not accept MNX; its exported MSCZ is still checked.
-        semantic_dump(source, out_dir / "semantic-source.json", roots,
-                      *(["--generate-excerpts"] if fixture_id in GENERATE_EXCERPTS else []))
+        semantic_dump(
+            source,
+            out_dir / "semantic-source.json",
+            roots,
+            *(["--generate-excerpts"] if fixture_id in GENERATE_EXCERPTS else []),
+        )
     try:
         await capture_master(session, identity, raw, out_dir, roots, legacy_blank_eids)
         if fixture_id in GENERATE_EXCERPTS:
@@ -636,23 +908,39 @@ async def capture_fixture(session, fixture_id, source, raw_root, out_dir, roots,
 # preserve on 5.0. Each opens a source, applies one edit and captures the saved content.
 EDIT_SCENARIOS = {
     "edit-replace-measures": {
-        "source": "created.json", "kind": "replace-measures", "start_measure": 1,
+        "source": "created.json",
+        "kind": "replace-measures",
+        "start_measure": 1,
         "notes": [
-            {"pitches": [60, 64, 67], "ticks": 960}, {"pitches": [62], "ticks": 480},
-            {"pitches": [], "ticks": 240}, {"pitches": [65], "ticks": 240}],
+            {"pitches": [60, 64, 67], "ticks": 960},
+            {"pitches": [62], "ticks": 480},
+            {"pitches": [], "ticks": 240},
+            {"pitches": [65], "ticks": 240},
+        ],
     },
-    "edit-set-pitches-coverage": {"source": "coverage.musicxml", "kind": "set-pitches",
-                                  "part": 0, "measures": 2, "notes": 4, "delta": 2},
+    "edit-set-pitches-coverage": {
+        "source": "coverage.musicxml",
+        "kind": "set-pitches",
+        "part": 0,
+        "measures": 2,
+        "notes": 4,
+        "delta": 2,
+    },
     # Generated part excerpts are linked to the master, so the edit must reach them too
     # (linked_parts.mscx is unusable here: every note in it is tied).
-    "edit-set-pitches-linked": {"source": "chordline_path.mscx", "kind": "set-pitches",
-                                "generate": True, "part": 0, "measures": 2, "notes": 3,
-                                "delta": 1},
+    "edit-set-pitches-linked": {
+        "source": "chordline_path.mscx",
+        "kind": "set-pitches",
+        "generate": True,
+        "part": 0,
+        "measures": 2,
+        "notes": 3,
+        "delta": 1,
+    },
 }
 
 
-async def capture_edit(session, name, scenario, raw_root, out_dir, roots,
-                       legacy_blank_eids: bool = False):
+async def capture_edit(session, name, scenario, raw_root, out_dir, roots, legacy_blank_eids: bool = False):
     raw = raw_root / name
     raw.mkdir(parents=True, exist_ok=True)
     source = FIXTURE_DIR / scenario["source"]
@@ -660,13 +948,36 @@ async def capture_edit(session, name, scenario, raw_root, out_dir, roots,
     identity = {"document": payload["document"]}
     try:
         await apply_edit_scenario(session, identity, name, scenario, raw)
-        await text_export(session, identity, "mscx", raw / "score.mscx", out_dir,
-                          "score.mscx", partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids),
-                          roots)
-        await text_export(session, identity, "musicxml", raw / "score.musicxml", out_dir,
-                          "score.musicxml", normalize_musicxml, roots)
-        await value_export(session, identity, "midi", raw / "score.mid", out_dir,
-                           "midi.json", lambda path: describe_midi(path.read_bytes()), roots)
+        await text_export(
+            session,
+            identity,
+            "mscx",
+            raw / "score.mscx",
+            out_dir,
+            "score.mscx",
+            partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids),
+            roots,
+        )
+        await text_export(
+            session,
+            identity,
+            "musicxml",
+            raw / "score.musicxml",
+            out_dir,
+            "score.musicxml",
+            normalize_musicxml,
+            roots,
+        )
+        await value_export(
+            session,
+            identity,
+            "midi",
+            raw / "score.mid",
+            out_dir,
+            "midi.json",
+            lambda path: describe_midi(path.read_bytes()),
+            roots,
+        )
         error = await export(session, identity, "mscz", raw / "score.mscz")
         if error:
             write_text(out_dir / "mscz.error.txt", sanitize(error, roots) + "\n")
@@ -687,51 +998,126 @@ async def apply_edit_scenario(session, identity, name, scenario, raw):
         ops = []
         for item in scenario["notes"]:
             duration = Fraction(item["ticks"], 1920)
-            ops.append({"op": "enter_notes", "at": {"kind": "segment", "measure": measure["id"],
-                        "staff": 0, "voice": 0, "tick": {"num": str(tick.numerator), "den": str(tick.denominator)},
-                        "segment_kind": "ChordRest"},
-                        "duration": {"num": str(duration.numerator), "den": str(duration.denominator)},
-                        "pitches": [{"pitch": pitch} for pitch in item["pitches"]]})
+            ops.append(
+                {
+                    "op": "enter_notes",
+                    "at": {
+                        "kind": "segment",
+                        "measure": measure["id"],
+                        "staff": 0,
+                        "voice": 0,
+                        "tick": {
+                            "num": str(tick.numerator),
+                            "den": str(tick.denominator),
+                        },
+                        "segment_kind": "ChordRest",
+                    },
+                    "duration": {
+                        "num": str(duration.numerator),
+                        "den": str(duration.denominator),
+                    },
+                    "pitches": [{"pitch": pitch} for pitch in item["pitches"]],
+                }
+            )
             tick += duration
         # Each entry can create the segment needed by the next one. V2
         # resolves addresses at batch start, so publish them in sequence.
         revision = outline["revision"]
         for op in ops:
-            result = await required(session, "score_edit", {**identity, "expected_revision": revision, "ops": [op]})
+            result = await required(
+                session,
+                "score_edit",
+                {**identity, "expected_revision": revision, "ops": [op]},
+            )
             revision = result["revision"]
         return
     else:
         staves = [staff["index"] for staff in outline["outline"]["parts"][scenario["part"]]["staves"]]
-        view = await required(session, "score_query", {**identity, "mode": "elements", "query": {
-            "types": ["Note"], "staves": staves, "first_measure": 0,
-            "measure_count": scenario["measures"], "props": ["pitch"], "limit": 100}})
+        view = await required(
+            session,
+            "score_query",
+            {
+                **identity,
+                "mode": "elements",
+                "query": {
+                    "types": ["Note"],
+                    "staves": staves,
+                    "first_measure": 0,
+                    "measure_count": scenario["measures"],
+                    "props": ["pitch"],
+                    "limit": 100,
+                },
+            },
+        )
         # The old region omitted grace notes. Read the exported fixed fixture to
         # identify their chord IDs, then use the old segment/staff/voice order.
         before = raw / "before.mscx"
         error = await export(session, identity, "mscx", before)
         if error:
             raise RuntimeError(f"pre-edit export: {error}")
-        grace = {chord.findtext("eid") for chord in ET.parse(before).iter("Chord")
-                 if any(chord.find(tag) is not None for tag in ("acciaccatura", "appoggiatura", "grace4", "grace16", "grace32"))}
+        grace = {
+            chord.findtext("eid")
+            for chord in ET.parse(before).iter("Chord")
+            if any(
+                chord.find(tag) is not None
+                for tag in (
+                    "acciaccatura",
+                    "appoggiatura",
+                    "grace4",
+                    "grace16",
+                    "grace32",
+                )
+            )
+        }
         candidates = [n for n in view["elements"] if n["parent"] not in grace]
-        candidates.sort(key=lambda n: (Fraction(int(n["tick"]["num"]), int(n["tick"]["den"])), n["staff"], n["voice"]))
-        targets = candidates[:scenario["notes"]]
-        signatures = [(int(n["props"][0]["value"]["value"]),
-                       Fraction(int(n["tick"]["num"]), int(n["tick"]["den"])), n["staff"]) for n in targets]
-        expected = {"edit-set-pitches-coverage": [(72, Fraction(0), 0), (74, Fraction(1, 4), 0),
-                    (53, Fraction(1, 4), 1), (76, Fraction(1, 3), 0)],
-                    "edit-set-pitches-linked": [(72, Fraction(0), 0), (74, Fraction(1, 4), 0),
-                                                  (76, Fraction(1, 2), 0)]}[name]
+        candidates.sort(
+            key=lambda n: (
+                Fraction(int(n["tick"]["num"]), int(n["tick"]["den"])),
+                n["staff"],
+                n["voice"],
+            )
+        )
+        targets = candidates[: scenario["notes"]]
+        signatures = [
+            (
+                int(n["props"][0]["value"]["value"]),
+                Fraction(int(n["tick"]["num"]), int(n["tick"]["den"])),
+                n["staff"],
+            )
+            for n in targets
+        ]
+        expected = {
+            "edit-set-pitches-coverage": [
+                (72, Fraction(0), 0),
+                (74, Fraction(1, 4), 0),
+                (53, Fraction(1, 4), 1),
+                (76, Fraction(1, 3), 0),
+            ],
+            "edit-set-pitches-linked": [
+                (72, Fraction(0), 0),
+                (74, Fraction(1, 4), 0),
+                (76, Fraction(1, 2), 0),
+            ],
+        }[name]
         if signatures != expected:
             raise ValueError(f"{name}: fixed untied region changed: {signatures!r}")
-        ops = [{"op": "set_pitch", "note": {"kind": "id", "id": n["id"]},
-                "pitch": int(n["props"][0]["value"]["value"]) + scenario["delta"]} for n in targets]
-    await required(session, "score_edit", {**identity, "expected_revision": outline["revision"], "ops": ops})
+        ops = [
+            {
+                "op": "set_pitch",
+                "note": {"kind": "id", "id": n["id"]},
+                "pitch": int(n["props"][0]["value"]["value"]) + scenario["delta"],
+            }
+            for n in targets
+        ]
+    await required(
+        session,
+        "score_edit",
+        {**identity, "expected_revision": outline["revision"], "ops": ops},
+    )
 
 
 def fixture_files() -> list[Path]:
-    files = sorted(path for path in FIXTURE_DIR.iterdir()
-                   if path.is_file() and path.name != "README.md")
+    files = sorted(path for path in FIXTURE_DIR.iterdir() if path.is_file() and path.name != "README.md")
     return files + [path for path in EXTRA_FIXTURES if path.is_file()]
 
 
@@ -768,8 +1154,16 @@ def build_index(root: Path) -> dict:
     return index
 
 
-async def capture_tree(binary, resources, soundfont, target, log_path, golden_root: Path | None = None,
-                       legacy_blank_eids: bool = False, raw_png_hashes: dict | None = None):
+async def capture_tree(
+    binary,
+    resources,
+    soundfont,
+    target,
+    log_path,
+    golden_root: Path | None = None,
+    legacy_blank_eids: bool = False,
+    raw_png_hashes: dict | None = None,
+):
     require_eid_mode(golden_root, legacy_blank_eids)
     dump = binary.parent / ("semantic_dump.exe" if sys.platform.startswith("win") else "semantic_dump")
     if not dump.is_file():
@@ -781,32 +1175,48 @@ async def capture_tree(binary, resources, soundfont, target, log_path, golden_ro
         params = StdioServerParameters(
             command=str(binary),
             args=["--resources", str(resources), "--soundfont", str(soundfont)],
-            cwd=str(raw_root), env=dict(os.environ))
+            cwd=str(raw_root),
+            env=dict(os.environ),
+        )
         with log_path.open("w", encoding="utf-8") as log:
             async with stdio_client(params, errlog=log) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     for source in fixture_files() + supplemental_mnx_files():
                         try:
-                            await capture_fixture(session, source.name, source, raw_root,
-                                                  target / source.name, [raw_root, target],
-                                                  legacy_blank_eids)
+                            await capture_fixture(
+                                session,
+                                source.name,
+                                source,
+                                raw_root,
+                                target / source.name,
+                                [raw_root, target],
+                                legacy_blank_eids,
+                            )
                             raw_png = raw_root / source.name / "page-0.png"
                             if raw_png_hashes is not None and raw_png.is_file():
                                 raw_png_hashes[source.name] = sha256(raw_png.read_bytes())
                         except Exception as exc:  # noqa: BLE001 - keep other fixtures going
-                            write_text(target / source.name / "capture.error.txt",
-                                       f"{type(exc).__name__}: "
-                                       f"{sanitize(str(exc), [raw_root, target])}\n")
+                            write_text(
+                                target / source.name / "capture.error.txt",
+                                f"{type(exc).__name__}: {sanitize(str(exc), [raw_root, target])}\n",
+                            )
                     for name, scenario in EDIT_SCENARIOS.items():
                         try:
-                            await capture_edit(session, name, scenario, raw_root,
-                                               target / name, [raw_root, target],
-                                               legacy_blank_eids)
+                            await capture_edit(
+                                session,
+                                name,
+                                scenario,
+                                raw_root,
+                                target / name,
+                                [raw_root, target],
+                                legacy_blank_eids,
+                            )
                         except Exception as exc:  # noqa: BLE001
-                            write_text(target / name / "capture.error.txt",
-                                       f"{type(exc).__name__}: "
-                                       f"{sanitize(str(exc), [raw_root, target])}\n")
+                            write_text(
+                                target / name / "capture.error.txt",
+                                f"{type(exc).__name__}: {sanitize(str(exc), [raw_root, target])}\n",
+                            )
     return build_index(target)
 
 
@@ -825,8 +1235,11 @@ def load_allow(path: Path) -> list[dict]:
 
 def allow_accept(entries, fixture, output, kind, actual_sha, platform):
     """Return (position, entry, problem) for the first matching allow entry."""
-    matches = [(position, entry) for position, entry in enumerate(entries)
-               if fnmatch(fixture, entry["fixture"]) and fnmatch(output, entry["output"])]
+    matches = [
+        (position, entry)
+        for position, entry in enumerate(entries)
+        if fnmatch(fixture, entry["fixture"]) and fnmatch(output, entry["output"])
+    ]
     problems = []
     for position, entry in matches:
         if entry["kind"] != kind:
@@ -850,15 +1263,13 @@ def verify_golden_index(root: Path, index: dict) -> list[str]:
     issues = [f"unindexed fixture {name}" for name in sorted(on_disk - set(index))]
     issues += [f"missing fixture folder {name}" for name in sorted(set(index) - on_disk)]
     for name in sorted(on_disk & set(index)):
-        present = {path.relative_to(root / name).as_posix()
-                   for path in (root / name).rglob("*") if path.is_file()}
+        present = {path.relative_to(root / name).as_posix() for path in (root / name).rglob("*") if path.is_file()}
         issues += [f"missing indexed file {name}/{entry}" for entry in sorted(set(index[name]) - present)]
         issues += [f"unindexed file {name}/{entry}" for entry in sorted(present - set(index[name]))]
         for entry in sorted(present & set(index[name])):
             actual = sha256((root / name / entry).read_bytes())
             if actual != index[name][entry]:
-                issues.append(f"indexed file hash mismatch {name}/{entry}: "
-                              f"expected {index[name][entry]}, got {actual}")
+                issues.append(f"indexed file hash mismatch {name}/{entry}: expected {index[name][entry]}, got {actual}")
     return issues
 
 
@@ -869,11 +1280,16 @@ def read_v2_index(golden_root: Path) -> tuple[Path | None, dict, dict]:
     if not path.is_file():
         return None, {}, {}
     data = json.loads(read_text(path))
-    if (data.get("schema") != 1 or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
-            or not isinstance(data.get("legacy"), dict) or not isinstance(data.get("additions"), dict)):
+    if (
+        data.get("schema") != 1
+        or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
+        or not isinstance(data.get("legacy"), dict)
+        or not isinstance(data.get("additions"), dict)
+    ):
         raise ValueError("invalid v2 index header")
-    if data["additions"] and any(not re.fullmatch(r"[0-9a-f]{40}", str(data.get(field, "")))
-                                 for field in ("engine_gate_commit", "engine_tree")):
+    if data["additions"] and any(
+        not re.fullmatch(r"[0-9a-f]{40}", str(data.get(field, ""))) for field in ("engine_gate_commit", "engine_tree")
+    ):
         raise ValueError("v2 additions lack the gate commit or source-tree provenance")
     legacy = data["legacy"]
     expected = {Path(name).name for name in SUPPLEMENTAL_MNX}
@@ -892,9 +1308,13 @@ def read_v2_index(golden_root: Path) -> tuple[Path | None, dict, dict]:
             raise ValueError(f"empty v2 additions index for {fixture}")
         additions[fixture] = {}
         for name, entry in entries.items():
-            if (not isinstance(entry, dict) or not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("sha256", "")))
-                    or entry.get("fixture_sha256") != sha256(sources[fixture].read_bytes())
-                    or not isinstance(entry.get("oracle"), str) or not entry["oracle"].strip()):
+            if (
+                not isinstance(entry, dict)
+                or not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("sha256", "")))
+                or entry.get("fixture_sha256") != sha256(sources[fixture].read_bytes())
+                or not isinstance(entry.get("oracle"), str)
+                or not entry["oracle"].strip()
+            ):
                 raise ValueError(f"invalid v2 addition or fixture provenance for {fixture}/{name}")
             if name in legacy[fixture]:
                 raise ValueError(f"v2 addition shadows legacy file {fixture}/{name}")
@@ -905,10 +1325,14 @@ def read_v2_index(golden_root: Path) -> tuple[Path | None, dict, dict]:
 def read_precision_census(data: dict, platform: str) -> dict[tuple[str, str], dict]:
     """Load only individually accepted, measured writer-precision artifacts."""
     census = json.loads(read_text(PRECISION_CENSUS))
-    if (not isinstance(census, dict) or census.get("schema") != 1 or census.get("platform") != platform
-            or any(census.get(field) != data.get(field)
-                   for field in ("engine_commit", "engine_gate_commit", "engine_tree"))
-            or not isinstance(census.get("entries"), list) or not isinstance(census.get("counts"), dict)):
+    if (
+        not isinstance(census, dict)
+        or census.get("schema") != 1
+        or census.get("platform") != platform
+        or any(census.get(field) != data.get(field) for field in ("engine_commit", "engine_gate_commit", "engine_tree"))
+        or not isinstance(census.get("entries"), list)
+        or not isinstance(census.get("counts"), dict)
+    ):
         raise ValueError("invalid writer-precision census header")
     entries = {}
     for item in census["entries"]:
@@ -921,29 +1345,57 @@ def read_precision_census(data: dict, platform: str) -> dict[tuple[str, str], di
         fixture, output = item.get("fixture"), item.get("output")
         key = (fixture, output)
         measurement = item.get("measurement")
-        if (item.get("acceptance") != "writer_precision" or not isinstance(fixture, str)
-                or not isinstance(output, str) or key in entries
-                or any(char in fixture + output for char in "*?[]")
-                or any(not re.fullmatch(r"[0-9a-f]{64}", str(item.get(field, "")))
-                       for field in ("baseline_sha256", "direct_engine_sha256",
-                                     "host_sha256", "reopened_engine_sha256"))
-                or item["host_sha256"] != item["reopened_engine_sha256"]
-                or not isinstance(item.get("evidence"), str) or not item["evidence"].strip()
-                or not isinstance(measurement, dict) or measurement.get("within") is not False):
+        if (
+            item.get("acceptance") != "writer_precision"
+            or not isinstance(fixture, str)
+            or not isinstance(output, str)
+            or key in entries
+            or any(char in fixture + output for char in "*?[]")
+            or any(
+                not re.fullmatch(r"[0-9a-f]{64}", str(item.get(field, "")))
+                for field in (
+                    "baseline_sha256",
+                    "direct_engine_sha256",
+                    "host_sha256",
+                    "reopened_engine_sha256",
+                )
+            )
+            or item["host_sha256"] != item["reopened_engine_sha256"]
+            or not isinstance(item.get("evidence"), str)
+            or not item["evidence"].strip()
+            or not isinstance(measurement, dict)
+            or measurement.get("within") is not False
+        ):
             raise ValueError(f"invalid writer-precision evidence for {fixture}/{output}")
         if output.endswith(".png.json"):
             delta = measurement.get("size_delta")
-            pixels, limit = measurement.get("pixel_diff"), measurement.get("pixel_limit")
-            if (not isinstance(delta, list) or len(delta) != 2
-                    or any(type(n) is not int for n in delta)
-                    or type(pixels) is not int or type(limit) is not int
-                    or pixels < 0 or limit <= 0
-                    or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("raw_host_png_sha256", "")))):
+            pixels, limit = (
+                measurement.get("pixel_diff"),
+                measurement.get("pixel_limit"),
+            )
+            if (
+                not isinstance(delta, list)
+                or len(delta) != 2
+                or any(type(n) is not int for n in delta)
+                or type(pixels) is not int
+                or type(limit) is not int
+                or pixels < 0
+                or limit <= 0
+                or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("raw_host_png_sha256", "")))
+            ):
                 raise ValueError(f"invalid writer-precision PNG measurement: {fixture}/{output}")
         elif output.endswith(".svg") or output == "score.pdf.json":
-            delta, structural = measurement.get("max_delta"), measurement.get("structural")
-            if (type(delta) not in (int, float) or not math.isfinite(delta) or delta < 0
-                    or not isinstance(structural, list) or any(not isinstance(s, str) for s in structural)):
+            delta, structural = (
+                measurement.get("max_delta"),
+                measurement.get("structural"),
+            )
+            if (
+                type(delta) not in (int, float)
+                or not math.isfinite(delta)
+                or delta < 0
+                or not isinstance(structural, list)
+                or any(not isinstance(s, str) for s in structural)
+            ):
                 raise ValueError(f"invalid writer-precision vector measurement: {fixture}/{output}")
         else:
             raise ValueError(f"invalid writer-precision output: {fixture}/{output}")
@@ -959,10 +1411,15 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
     if not path.is_file():
         return {}
     data = json.loads(read_text(path))
-    if (data.get("schema") != 1 or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
-            or not isinstance(data.get("entries"), list)
-            or any(not re.fullmatch(r"[0-9a-f]{40}", str(data.get(field, "")))
-                   for field in ("engine_gate_commit", "engine_tree"))):
+    if (
+        data.get("schema") != 1
+        or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
+        or not isinstance(data.get("entries"), list)
+        or any(
+            not re.fullmatch(r"[0-9a-f]{40}", str(data.get(field, "")))
+            for field in ("engine_gate_commit", "engine_tree")
+        )
+    ):
         raise ValueError("invalid v2 migration header")
     sources = {source.name: source for source in fixture_files() + supplemental_mnx_files()}
     sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})
@@ -977,24 +1434,40 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
             raise ValueError("invalid v2 migration entry")
         fixture, output = entry.get("fixture"), entry.get("output")
         key = (fixture, output)
-        if (not isinstance(fixture, str) or not isinstance(output, str) or fixture not in sources
-                or key in result or any(char in fixture + output for char in "*?[]")
-                or any(not re.fullmatch(r"[0-9a-f]{64}", str(entry.get(field, "")))
-                       for field in ("baseline_sha256", "actual_sha256", "oracle_sha256", "fixture_sha256"))
-                or entry["fixture_sha256"] != sha256(sources[fixture].read_bytes())
-                or entry["actual_sha256"] != entry["oracle_sha256"]
-                or any(not isinstance(entry.get(field), str) or not entry[field].strip()
-                       for field in ("oracle", "reason"))):
+        if (
+            not isinstance(fixture, str)
+            or not isinstance(output, str)
+            or fixture not in sources
+            or key in result
+            or any(char in fixture + output for char in "*?[]")
+            or any(
+                not re.fullmatch(r"[0-9a-f]{64}", str(entry.get(field, "")))
+                for field in (
+                    "baseline_sha256",
+                    "actual_sha256",
+                    "oracle_sha256",
+                    "fixture_sha256",
+                )
+            )
+            or entry["fixture_sha256"] != sha256(sources[fixture].read_bytes())
+            or entry["actual_sha256"] != entry["oracle_sha256"]
+            or any(not isinstance(entry.get(field), str) or not entry[field].strip() for field in ("oracle", "reason"))
+        ):
             raise ValueError(f"invalid v2 migration provenance for {fixture}/{output}")
         if fixture in EDIT_SCENARIOS:
-            scenario = json.dumps(EDIT_SCENARIOS[fixture], sort_keys=True, ensure_ascii=False,
-                                  separators=(",", ":")).encode("utf-8")
+            scenario = json.dumps(
+                EDIT_SCENARIOS[fixture],
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
             if entry.get("scenario_sha256") != sha256(scenario):
                 raise ValueError(f"edit scenario changed: {fixture}")
         if sources[fixture].name == "created.json":
             xml = composition_musicxml(json.loads(read_text(sources[fixture]))).encode("utf-8")
-            if (entry.get("input_sha256") != sha256(xml)
-                    or entry.get("converter_sha256") != sha256((ROOT / "scripts/v2_fixtures.py").read_bytes())):
+            if entry.get("input_sha256") != sha256(xml) or entry.get("converter_sha256") != sha256(
+                (ROOT / "scripts/v2_fixtures.py").read_bytes()
+            ):
                 raise ValueError(f"created input or converter changed: {fixture}")
         kind = entry.get("kind", "standalone")
         if kind in ("snapshot", "snapshot-precision"):
@@ -1008,32 +1481,48 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
                     raise ValueError(f"direct snapshot oracle has no existing baseline allowance: {fixture}/{output}")
             if kind == "snapshot-precision":
                 evidence = precision.get(key)
-                if (evidence is None or entry["baseline_sha256"] != evidence["baseline_sha256"]
-                        or direct != evidence["direct_engine_sha256"]
-                        or entry["actual_sha256"] != evidence["host_sha256"]
-                        or entry["oracle_sha256"] != evidence["reopened_engine_sha256"]
-                        or measurement != evidence["measurement"]
-                        or (output.endswith(".png.json")
-                            and entry.get("raw_png_sha256") != evidence["raw_host_png_sha256"])):
+                if (
+                    evidence is None
+                    or entry["baseline_sha256"] != evidence["baseline_sha256"]
+                    or direct != evidence["direct_engine_sha256"]
+                    or entry["actual_sha256"] != evidence["host_sha256"]
+                    or entry["oracle_sha256"] != evidence["reopened_engine_sha256"]
+                    or measurement != evidence["measurement"]
+                    or (output.endswith(".png.json") and entry.get("raw_png_sha256") != evidence["raw_host_png_sha256"])
+                ):
                     raise ValueError(f"writer-precision census mismatch: {fixture}/{output}")
                 precision_keys.add(key)
             elif output.endswith(".svg") or output == "score.pdf.json":
                 delta = measurement.get("max_delta")
-                if (type(delta) not in (int, float) or not math.isfinite(delta) or not 0 <= delta <= 0.02
-                        or measurement.get("structural") != [] or measurement.get("within") is not True):
+                if (
+                    type(delta) not in (int, float)
+                    or not math.isfinite(delta)
+                    or not 0 <= delta <= 0.02
+                    or measurement.get("structural") != []
+                    or measurement.get("within") is not True
+                ):
                     raise ValueError(f"snapshot vector exceeds 0.02 pt: {fixture}/{output}")
             elif output.endswith(".png.json"):
                 dimensions = measurement.get("compared_dimensions")
                 delta = measurement.get("size_delta")
-                pixels, limit = measurement.get("pixel_diff"), measurement.get("pixel_limit")
-                if (not isinstance(dimensions, list) or len(dimensions) != 2
-                        or any(type(n) is not int or n <= 0 for n in dimensions)
-                        or not isinstance(delta, list) or len(delta) != 2
-                        or any(type(n) is not int or abs(n) > 1 for n in delta)
-                        or type(pixels) is not int or type(limit) is not int
-                        or limit != max(100, dimensions[0] * dimensions[1] // 20000)
-                        or not 0 <= pixels <= limit or measurement.get("blank_extra_border") is not True
-                        or measurement.get("within") is not True):
+                pixels, limit = (
+                    measurement.get("pixel_diff"),
+                    measurement.get("pixel_limit"),
+                )
+                if (
+                    not isinstance(dimensions, list)
+                    or len(dimensions) != 2
+                    or any(type(n) is not int or n <= 0 for n in dimensions)
+                    or not isinstance(delta, list)
+                    or len(delta) != 2
+                    or any(type(n) is not int or abs(n) > 1 for n in delta)
+                    or type(pixels) is not int
+                    or type(limit) is not int
+                    or limit != max(100, dimensions[0] * dimensions[1] // 20000)
+                    or not 0 <= pixels <= limit
+                    or measurement.get("blank_extra_border") is not True
+                    or measurement.get("within") is not True
+                ):
                     raise ValueError(f"snapshot PNG exceeds pixel or size tolerance: {fixture}/{output}")
             else:
                 raise ValueError(f"invalid snapshot output: {fixture}/{output}")
@@ -1045,21 +1534,29 @@ def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
     return result
 
 
-def v2_migration_accept(entries: dict, fixture: str, output: str,
-                        baseline_sha: str | None, actual_sha: str | None) -> dict | None:
+def v2_migration_accept(
+    entries: dict,
+    fixture: str,
+    output: str,
+    baseline_sha: str | None,
+    actual_sha: str | None,
+) -> dict | None:
     entry = entries.get((fixture, output))
-    if (entry and baseline_sha == entry["baseline_sha256"]
-            and actual_sha == entry["actual_sha256"]):
+    if entry and baseline_sha == entry["baseline_sha256"] and actual_sha == entry["actual_sha256"]:
         return entry
     return None
 
 
-def snapshot_pin_mismatch(entry: dict | None, baseline_sha: str | None,
-                          actual_sha: str | None) -> bool:
+def snapshot_pin_mismatch(entry: dict | None, baseline_sha: str | None, actual_sha: str | None) -> bool:
     """Require an exact recorded snapshot or restored direct-render oracle."""
-    return bool(entry and entry.get("kind") in ("snapshot", "snapshot-precision")
-                and (baseline_sha != entry["baseline_sha256"]
-                     or actual_sha not in (entry["actual_sha256"], entry["direct_sha256"])))
+    return bool(
+        entry
+        and entry.get("kind") in ("snapshot", "snapshot-precision")
+        and (
+            baseline_sha != entry["baseline_sha256"]
+            or actual_sha not in (entry["actual_sha256"], entry["direct_sha256"])
+        )
+    )
 
 
 def precision_png_accept(entry: dict, actual_raw_sha: str | None) -> bool:
@@ -1077,17 +1574,16 @@ def silence_windows(audio: dict) -> list[bool]:
         raise GoldenFormatError(
             f"audio.json has no {SILENCE_EVIDENCE!r} silence evidence, so exact silence (and "
             "therefore whether a centroid window may be skipped) cannot be established; "
-            "recapture the baseline with the current scripts/golden.py")
+            "recapture the baseline with the current scripts/golden.py"
+        )
     windows = []
     for window in counts:
         if not isinstance(window, (list, tuple)):
-            raise GoldenFormatError(
-                f"audio.json {SILENCE_EVIDENCE!r} values must be per-channel lists")
+            raise GoldenFormatError(f"audio.json {SILENCE_EVIDENCE!r} values must be per-channel lists")
         try:
             windows.append(all(int(count) == 0 for count in window))
         except (TypeError, ValueError):
-            raise GoldenFormatError(
-                f"audio.json {SILENCE_EVIDENCE!r} values must be sample counts") from None
+            raise GoldenFormatError(f"audio.json {SILENCE_EVIDENCE!r} values must be sample counts") from None
     return windows
 
 
@@ -1110,8 +1606,7 @@ def audio_equal(golden, actual, key=None) -> bool:
             if name == "centroidEnvelope" and has_centroids and has_rms:
                 g_cents = golden["centroidEnvelope"]
                 a_cents = actual["centroidEnvelope"]
-                if len(g_cents) != len(a_cents) or len(g_cents) != len(g_silent) \
-                        or len(a_cents) != len(a_silent):
+                if len(g_cents) != len(a_cents) or len(g_cents) != len(g_silent) or len(a_cents) != len(a_silent):
                     return False
                 tol = AUDIO_TOLERANCES.get("centroidEnvelope", 2.0)
                 for i, (g_c, a_c) in enumerate(zip(g_cents, a_cents)):
@@ -1127,8 +1622,7 @@ def audio_equal(golden, actual, key=None) -> bool:
                     return False
         return True
     if isinstance(golden, list) and isinstance(actual, list):
-        return len(golden) == len(actual) and all(
-            audio_equal(left, right, key) for left, right in zip(golden, actual))
+        return len(golden) == len(actual) and all(audio_equal(left, right, key) for left, right in zip(golden, actual))
     if isinstance(golden, bool) or isinstance(actual, bool):
         return golden == actual
     if isinstance(golden, (int, float)) and isinstance(actual, (int, float)):
@@ -1148,24 +1642,55 @@ def files_equal(golden: Path, actual: Path, output: str) -> bool:
 
 
 def write_diff(root: Path, fixture: str, output: str, golden: Path, actual: Path) -> None:
-    lines = list(difflib.unified_diff(
-        read_text(golden).splitlines(keepends=True),
-        read_text(actual).splitlines(keepends=True),
-        fromfile=f"golden/{fixture}/{output}", tofile=f"actual/{fixture}/{output}"))
+    lines = list(
+        difflib.unified_diff(
+            read_text(golden).splitlines(keepends=True),
+            read_text(actual).splitlines(keepends=True),
+            fromfile=f"golden/{fixture}/{output}",
+            tofile=f"actual/{fixture}/{output}",
+        )
+    )
     if len(lines) > 2000:
         lines = lines[:2000] + ["... truncated after 2000 diff lines ...\n"]
-    write_text(root / fixture / f"{output}.diff",
-               "".join(line if line.endswith("\n") else line + "\n" for line in lines))
+    write_text(
+        root / fixture / f"{output}.diff",
+        "".join(line if line.endswith("\n") else line + "\n" for line in lines),
+    )
 
 
-def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], output: Path,
-                  platform: str, raw_png_hashes: dict | None = None) -> int:
+def compare_trees(
+    golden_root: Path,
+    actual_root: Path,
+    allow: list[dict],
+    output: Path,
+    platform: str,
+    raw_png_hashes: dict | None = None,
+) -> int:
     golden_index = json.loads(read_text(golden_root / "index.json"))
-    counts = {key: 0 for key in ("identical", "allowed", "different", "missing", "extra",
-                                 "goldenError", "extraFixture", "index", "legacyOnly")}
-    report = {"golden": str(golden_root), "actual": str(actual_root), "fixtures": {},
-              "stale": [], "extraFixtures": [], "indexIssues": [], "counts": counts,
-              "status": "pass"}
+    counts = {
+        key: 0
+        for key in (
+            "identical",
+            "allowed",
+            "different",
+            "missing",
+            "extra",
+            "goldenError",
+            "extraFixture",
+            "index",
+            "legacyOnly",
+        )
+    }
+    report = {
+        "golden": str(golden_root),
+        "actual": str(actual_root),
+        "fixtures": {},
+        "stale": [],
+        "extraFixtures": [],
+        "indexIssues": [],
+        "counts": counts,
+        "status": "pass",
+    }
     matched_allow: set[int] = set()
     diff_root = output / "diff"
     if diff_root.exists():
@@ -1192,7 +1717,8 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
     if overlay is not None:
         report["indexIssues"].extend(f"v2: {issue}" for issue in verify_golden_index(overlay, additions))
     counts["index"] = len(report["indexIssues"])
-    for issue in report["indexIssues"]: print(f"index    {issue}")
+    for issue in report["indexIssues"]:
+        print(f"index    {issue}")
     actual_fixtures = {path.name for path in actual_root.iterdir() if path.is_dir()}
     for fixture in sorted(actual_fixtures - set(golden_index)):
         report["extraFixtures"].append(fixture)
@@ -1202,13 +1728,14 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
     for fixture in sorted(golden_index):
         expected = {**golden_index[fixture], **additions.get(fixture, {})}
         golden_dir, actual_dir = golden_root / fixture, actual_root / fixture
-        actual_files = ({path.relative_to(actual_dir).as_posix()
-                         for path in actual_dir.rglob("*") if path.is_file()}
-                        if actual_dir.is_dir() else set())
+        actual_files = (
+            {path.relative_to(actual_dir).as_posix() for path in actual_dir.rglob("*") if path.is_file()}
+            if actual_dir.is_dir()
+            else set()
+        )
         results = report["fixtures"].setdefault(fixture, {})
         for name in sorted(set(expected) | actual_files):
-            golden_file = ((overlay / fixture / name) if name in additions.get(fixture, {})
-                           else (golden_dir / name))
+            golden_file = (overlay / fixture / name) if name in additions.get(fixture, {}) else (golden_dir / name)
             actual_file = actual_dir / name
             golden_sha = sha256(golden_file.read_bytes()) if golden_file.is_file() else None
             actual_sha = sha256(actual_file.read_bytes()) if actual_file.is_file() else None
@@ -1217,8 +1744,11 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
                 # assertions belong to the v2 facade and excerpt tests; retain
                 # and index-verify the historical byte baseline separately.
                 counts["legacyOnly"] += 1
-                results[name] = {"status": "v1-only", "goldenSha256": golden_sha,
-                                 "replacement": "score_outline and score_query audio_tracks"}
+                results[name] = {
+                    "status": "v1-only",
+                    "goldenSha256": golden_sha,
+                    "replacement": "score_outline and score_query audio_tracks",
+                }
                 print(f"v1-only  {fixture}/{name} (replacement: outline/audio_tracks)")
                 continue
             golden_error = golden_sha is not None and name.endswith(".error.txt")
@@ -1241,9 +1771,13 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
             if snapshot_pin_mismatch(pin, golden_sha, actual_sha):
                 failure_kind = "missing" if actual_sha is None else "different"
                 counts[failure_kind] += 1
-                results[name] = {"status": failure_kind, "kind": failure_kind,
-                                 "goldenSha256": golden_sha, "actualSha256": actual_sha,
-                                 "error": "snapshot baseline or host hash changed"}
+                results[name] = {
+                    "status": failure_kind,
+                    "kind": failure_kind,
+                    "goldenSha256": golden_sha,
+                    "actualSha256": actual_sha,
+                    "error": "snapshot baseline or host hash changed",
+                }
                 print(f"{failure_kind} {fixture}/{name}: snapshot baseline or host hash changed")
                 continue
             if kind is None:
@@ -1252,28 +1786,46 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
                 continue
             if golden_format:
                 counts["goldenError"] += 1
-                results[name] = {"status": "golden-format", "kind": kind,
-                                 "goldenSha256": golden_sha, "actualSha256": actual_sha,
-                                 "error": golden_format}
+                results[name] = {
+                    "status": "golden-format",
+                    "kind": kind,
+                    "goldenSha256": golden_sha,
+                    "actualSha256": actual_sha,
+                    "error": golden_format,
+                }
                 print(f"golden-format {fixture}/{name}: {golden_format}")
                 continue
 
-            migration = (v2_migration_accept(migrations, fixture, name, golden_sha, actual_sha)
-                         if kind == "different" and not golden_error else None)
+            migration = (
+                v2_migration_accept(migrations, fixture, name, golden_sha, actual_sha)
+                if kind == "different" and not golden_error
+                else None
+            )
             if migration and not precision_png_accept(migration, (raw_png_hashes or {}).get(fixture)):
                 counts["different"] += 1
-                results[name] = {"status": "different", "kind": kind,
-                                 "goldenSha256": golden_sha, "actualSha256": actual_sha,
-                                 "error": "snapshot-precision raw PNG hash missing or changed"}
+                results[name] = {
+                    "status": "different",
+                    "kind": kind,
+                    "goldenSha256": golden_sha,
+                    "actualSha256": actual_sha,
+                    "error": "snapshot-precision raw PNG hash missing or changed",
+                }
                 print(f"different {fixture}/{name}: snapshot-precision raw PNG hash missing or changed")
                 continue
             if migration:
                 counts["allowed"] += 1
-                status = {"snapshot": "v2-snapshot", "snapshot-precision": "v2-snapshot-precision"}.get(
-                    migration.get("kind"), "v2-migrated")
-                results[name] = {"status": status, "kind": kind,
-                                 "reason": migration["reason"], "oracle": migration["oracle"],
-                                 "actualSha256": actual_sha, "goldenSha256": golden_sha}
+                status = {
+                    "snapshot": "v2-snapshot",
+                    "snapshot-precision": "v2-snapshot-precision",
+                }.get(migration.get("kind"), "v2-migrated")
+                results[name] = {
+                    "status": status,
+                    "kind": kind,
+                    "reason": migration["reason"],
+                    "oracle": migration["oracle"],
+                    "actualSha256": actual_sha,
+                    "goldenSha256": golden_sha,
+                }
                 print(f"{status} {fixture}/{name} (public-API oracle; exact hashes)")
                 continue
 
@@ -1281,15 +1833,24 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
             if entry:
                 matched_allow.add(position)
                 counts["allowed"] += 1
-                results[name] = {"status": "allowed", "kind": kind, "step": entry["step"],
-                                 "reason": entry["reason"], "actualSha256": actual_sha,
-                                 "goldenSha256": golden_sha}
+                results[name] = {
+                    "status": "allowed",
+                    "kind": kind,
+                    "step": entry["step"],
+                    "reason": entry["reason"],
+                    "actualSha256": actual_sha,
+                    "goldenSha256": golden_sha,
+                }
                 print(f"allowed  {fixture}/{name} ({kind}; {entry['step']}: {entry['reason']})")
             else:
                 status = "golden-error" if golden_error else kind
                 counts["goldenError" if golden_error else kind] += 1
-                results[name] = {"status": status, "kind": kind, "goldenSha256": golden_sha,
-                                 "actualSha256": actual_sha}
+                results[name] = {
+                    "status": status,
+                    "kind": kind,
+                    "goldenSha256": golden_sha,
+                    "actualSha256": actual_sha,
+                }
                 suffix = f" (allow mismatch: {problem})" if problem else ""
                 label = "missing" if kind == "missing" else status
                 print(f"{label:<12} {fixture}/{name} actual sha256={actual_sha or 'none'}{suffix}")
@@ -1299,17 +1860,38 @@ def compare_trees(golden_root: Path, actual_root: Path, allow: list[dict], outpu
     for position, entry in enumerate(allow):
         if position not in matched_allow:
             report["stale"].append(entry)
-            print(f"stale    allow entry fixture={entry['fixture']} output={entry['output']} "
-                  f"({entry['step']}: {entry['reason']})")
+            print(
+                f"stale    allow entry fixture={entry['fixture']} output={entry['output']} "
+                f"({entry['step']}: {entry['reason']})"
+            )
 
-    failing = sum(counts[key] for key in ("different", "missing", "extra", "goldenError",
-                                          "extraFixture", "index"))
+    failing = sum(
+        counts[key]
+        for key in (
+            "different",
+            "missing",
+            "extra",
+            "goldenError",
+            "extraFixture",
+            "index",
+        )
+    )
     report["status"] = "pass" if failing == 0 else "fail"
     write_json(output / "report.json", report, indent=2)
-    total = sum(counts[key] for key in ("identical", "allowed", "different", "missing",
-                                        "extra", "goldenError"))
+    total = sum(
+        counts[key]
+        for key in (
+            "identical",
+            "allowed",
+            "different",
+            "missing",
+            "extra",
+            "goldenError",
+        )
+    )
     print(f"golden compare: {len(golden_index)} fixtures, {total} outputs")
-    for key in counts: print(f"{key}: {counts[key]}")
+    for key in counts:
+        print(f"{key}: {counts[key]}")
     print(f"result: {'PASS' if failing == 0 else 'FAIL'}")
     return 0 if failing == 0 else 1
 
@@ -1318,10 +1900,20 @@ def command_capture(args) -> int:
     args.golden.mkdir(parents=True, exist_ok=True)
     require_eid_mode(args.golden, args.legacy_blank_eids)
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
-        index = asyncio.run(asyncio.wait_for(capture_tree(
-            args.binary, args.resources, args.soundfont, args.golden,
-            Path(temporary) / "server-stderr.log", golden_root=args.golden,
-            legacy_blank_eids=args.legacy_blank_eids), timeout=1800))
+        index = asyncio.run(
+            asyncio.wait_for(
+                capture_tree(
+                    args.binary,
+                    args.resources,
+                    args.soundfont,
+                    args.golden,
+                    Path(temporary) / "server-stderr.log",
+                    golden_root=args.golden,
+                    legacy_blank_eids=args.legacy_blank_eids,
+                ),
+                timeout=1800,
+            )
+        )
     count = sum(len(files) for files in index.values())
     size = sum(path.stat().st_size for path in args.golden.rglob("*") if path.is_file())
     print(f"captured {len(index)} fixtures, {count} outputs, {size} bytes into {args.golden}")
@@ -1341,10 +1933,21 @@ def command_compare(args) -> int:
     actual = args.output / "actual"
     raw_png_hashes = {}
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
-        asyncio.run(asyncio.wait_for(capture_tree(
-            args.binary, args.resources, args.soundfont, actual,
-            Path(temporary) / "server-stderr.log", golden_root=args.golden,
-            legacy_blank_eids=args.legacy_blank_eids, raw_png_hashes=raw_png_hashes), timeout=1800))
+        asyncio.run(
+            asyncio.wait_for(
+                capture_tree(
+                    args.binary,
+                    args.resources,
+                    args.soundfont,
+                    actual,
+                    Path(temporary) / "server-stderr.log",
+                    golden_root=args.golden,
+                    legacy_blank_eids=args.legacy_blank_eids,
+                    raw_png_hashes=raw_png_hashes,
+                ),
+                timeout=1800,
+            )
+        )
         # Keep a copy of the server log for debugging (outside the compared tree).
         shutil.copyfile(Path(temporary) / "server-stderr.log", args.output / "server-stderr.log")
     write_json(args.output / "raw-png-sha256.json", raw_png_hashes, indent=2)
@@ -1359,19 +1962,31 @@ def command_pin(args) -> int:
     entries = []
     for fixture, results in sorted(report.get("fixtures", {}).items()):
         for name, result in sorted(results.items()):
-            if result.get("status") not in ("different", "missing", "extra", "golden-error"):
+            if result.get("status") not in (
+                "different",
+                "missing",
+                "extra",
+                "golden-error",
+            ):
                 continue
             kind = result.get("kind") or result["status"]
             sha = {} if kind == "missing" else {"sha256": {args.platform: result["actualSha256"]}}
-            entries.append({"fixture": fixture, "output": name, "step": "TODO",
-                            "reason": "TODO", "kind": kind, **sha})
+            entries.append(
+                {
+                    "fixture": fixture,
+                    "output": name,
+                    "step": "TODO",
+                    "reason": "TODO",
+                    "kind": kind,
+                    **sha,
+                }
+            )
     print(json.dumps(entries, indent=1, sort_keys=True))
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name in ("capture", "compare"):
         sub = subparsers.add_parser(name)
@@ -1385,10 +2000,13 @@ def main() -> int:
             sub.add_argument("--allow", type=Path, required=True)
             sub.add_argument("--output", type=Path, required=True)
             sub.add_argument("--platform", choices=("windows", "linux"), default=DEFAULT_PLATFORM)
-        sub.add_argument("--legacy-blank-eids", action="store_true",
-                         help="read/write the 4.7.6 blanked-EID representation instead of "
-                              "token EIDs (explicit migration only; it cannot detect a "
-                              "changed reference target)")
+        sub.add_argument(
+            "--legacy-blank-eids",
+            action="store_true",
+            help="read/write the 4.7.6 blanked-EID representation instead of "
+            "token EIDs (explicit migration only; it cannot detect a "
+            "changed reference target)",
+        )
     pin = subparsers.add_parser("pin")
     pin.add_argument("--golden", type=Path, required=True)
     pin.add_argument("--output", type=Path, required=True)
@@ -1396,8 +2014,11 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "pin":
         return command_pin(args)
-    for label, path in (("binary", args.binary), ("resources", args.resources),
-                        ("soundfont", args.soundfont)):
+    for label, path in (
+        ("binary", args.binary),
+        ("resources", args.resources),
+        ("soundfont", args.soundfont),
+    ):
         if not path.exists():
             parser.error(f"{label} does not exist: {path}")
     if args.command == "compare" and not args.golden.exists():
@@ -1415,4 +2036,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

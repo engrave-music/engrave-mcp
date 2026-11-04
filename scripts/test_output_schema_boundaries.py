@@ -1,4 +1,5 @@
 """Exercise imported and edited score outputs against the emitted v2 schemas."""
+
 from __future__ import annotations
 
 import argparse
@@ -6,8 +7,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from v2_client import Client, TOOLS, VALIDATORS
-
+from v2_client import TOOLS, VALIDATORS, Client
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,8 +18,11 @@ async def run(args):
     title, part_name, lyric = "T" * 5000, "P" * 5000, "L" * 66000
     source = source.replace("Version header fixture", title)
     source = source.replace("<longName>Piano</longName>", f"<longName>{part_name}</longName>")
-    source = source.replace("<durationType>whole</durationType>",
-                            f"<durationType>whole</durationType><Lyrics><eid>H_H</eid><text>{lyric}</text></Lyrics>", 1)
+    source = source.replace(
+        "<durationType>whole</durationType>",
+        f"<durationType>whole</durationType><Lyrics><eid>H_H</eid><text>{lyric}</text></Lyrics>",
+        1,
+    )
     path = args.output / "large-text.mscx"
     path.write_text(source, encoding="utf-8")
     async with Client(args, args.output) as client:
@@ -31,15 +34,27 @@ async def run(args):
         outline = await client.tool("score_outline", {"document": doc})
         assert outline["outline"]["title"] == title
         assert outline["outline"]["parts"][0]["name"] == part_name
-        elements = await client.tool("score_query", {"document": doc, "mode": "elements",
-                                                     "query": {"types": ["Lyrics"]}})
+        elements = await client.tool(
+            "score_query",
+            {"document": doc, "mode": "elements", "query": {"types": ["Lyrics"]}},
+        )
         assert len(elements["elements"]) == 1, elements
-        properties = await client.tool("score_query", {"document": doc, "mode": "properties",
-            "target": {"kind": "id", "id": elements["elements"][0]["id"]}})
-        strings = [p["value"]["value"] for p in properties["properties"]
-                   if isinstance(p["value"], dict) and p["value"].get("kind") == "string"]
-        assert any(lyric in value for value in strings), [(p["name"], p["value"].get("kind"))
-               for p in properties["properties"] if isinstance(p["value"], dict)]
+        properties = await client.tool(
+            "score_query",
+            {
+                "document": doc,
+                "mode": "properties",
+                "target": {"kind": "id", "id": elements["elements"][0]["id"]},
+            },
+        )
+        strings = [
+            p["value"]["value"]
+            for p in properties["properties"]
+            if isinstance(p["value"], dict) and p["value"].get("kind") == "string"
+        ]
+        assert any(lyric in value for value in strings), [
+            (p["name"], p["value"].get("kind")) for p in properties["properties"] if isinstance(p["value"], dict)
+        ]
         await client.tool("score_close", {"document": doc})
 
         doc = (await client.tool("score_create", {"template_id": "Treble_Clef"}))["document"]
@@ -64,10 +79,18 @@ async def run(args):
     synthetic_properties = json.loads(json.dumps(properties))
     synthetic_properties["properties"] = synthetic_properties["properties"][:1] * 4097
     VALIDATORS["score_query"].validate(synthetic_properties)
-    print(json.dumps({"title_characters": len(title), "part_name_characters": len(part_name),
-                      "lyric_characters": len(lyric), "audio_tracks": 261,
-                      "synthetic_schema_measures": len(synthetic["outline"]["measures"]),
-                      "synthetic_created_ids": len(synthetic_edit["created"])}))
+    print(
+        json.dumps(
+            {
+                "title_characters": len(title),
+                "part_name_characters": len(part_name),
+                "lyric_characters": len(lyric),
+                "audio_tracks": 261,
+                "synthetic_schema_measures": len(synthetic["outline"]["measures"]),
+                "synthetic_created_ids": len(synthetic_edit["created"]),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

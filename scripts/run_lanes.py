@@ -11,11 +11,11 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 LANE_NAMES = [
     "host_api",
@@ -72,12 +72,19 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         "live_export": ["live_export_test", "engrave-mcp-test"],
         "live_audio": ["engrave-mcp", "engrave-mcp-test"],
         "audio_budget": ["engrave-mcp-test"],
-        "runtime_assets": ["engrave-mcp-test"], "score_edit": ["score_edit_test"],
-        "score_audio": ["score_audio_test"], "score_positions": ["score_positions_test"],
-        "noqt_probe": ["noqt_probe"], "excerpts": ["excerpts_test"],
-        "assets": ["assets_test"], "archives": ["archive_test", "engrave-mcp"],
-        "async_session": ["engrave-mcp-test"], "golden": ["engrave-mcp", "semantic_dump"],
-        "semantic_check": [], "oracle_harness": [], "compat_corpus": ["semantic_dump"],
+        "runtime_assets": ["engrave-mcp-test"],
+        "score_edit": ["score_edit_test"],
+        "score_audio": ["score_audio_test"],
+        "score_positions": ["score_positions_test"],
+        "noqt_probe": ["noqt_probe"],
+        "excerpts": ["excerpts_test"],
+        "assets": ["assets_test"],
+        "archives": ["archive_test", "engrave-mcp"],
+        "async_session": ["engrave-mcp-test"],
+        "golden": ["engrave-mcp", "semantic_dump"],
+        "semantic_check": [],
+        "oracle_harness": [],
+        "compat_corpus": ["semantic_dump"],
         "phase_b_oracle": [],
         "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
         "engine_audio": ["engine_audio_probe", "engrave-mcp"],
@@ -155,6 +162,7 @@ def setup_link(target: Path, link: Path) -> None:
     link.parent.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
         import _winapi
+
         if link.is_symlink() or (hasattr(link, "is_junction") and link.is_junction()) or link.exists():
             try:
                 if link.resolve() == target:
@@ -215,35 +223,82 @@ def run_lane(
     )
 
     if lane == "host_api":
-        cmd = [py, str(repo_root / "scripts/test_host_api.py"),
-               "--binary", str(build_dir / f"host_api_test{exe_suffix}"), "--resources", str(assets),
-               "--soundfont", str(soundfont), "--replacement-soundfont", str(repo_root / "tests/engine_audio/sine.sf2"),
-               "--output", str(output / "host-api")]
+        cmd = [
+            py,
+            str(repo_root / "scripts/test_host_api.py"),
+            "--binary",
+            str(build_dir / f"host_api_test{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--soundfont",
+            str(soundfont),
+            "--replacement-soundfont",
+            str(repo_root / "tests/engine_audio/sine.sf2"),
+            "--output",
+            str(output / "host-api"),
+        ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
-
     if lane in ("live_export", "live_audio"):
-        cmd = [py, str(repo_root / ("scripts/test_" + lane + ".py")),
-               "--binary", str(build_dir / f"{'engrave-mcp-test' if lane == 'live_export' else 'engrave-mcp'}{exe_suffix}"),
-               "--resources", str(assets), "--output", str(output / lane)]
+        cmd = [
+            py,
+            str(repo_root / ("scripts/test_" + lane + ".py")),
+            "--binary",
+            str(build_dir / f"{'engrave-mcp-test' if lane == 'live_export' else 'engrave-mcp'}{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--output",
+            str(output / lane),
+        ]
         if lane == "live_export":
             cmd += ["--direct-binary", str(build_dir / f"live_export_test{exe_suffix}")]
         else:
-            cmd += ["--test-binary", str(build_dir / f"engrave-mcp-test{exe_suffix}"), "--soundfont", str(soundfont)]
+            cmd += [
+                "--test-binary",
+                str(build_dir / f"engrave-mcp-test{exe_suffix}"),
+                "--soundfont",
+                str(soundfont),
+            ]
         return subprocess.run(cmd, cwd=repo_root, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "audio_budget":
         for script in ("test_audio_output_budget.py", "test_audio_repeat_budget.py"):
-            cmd = [py, str(repo_root / "scripts" / script), "--binary", str(build_dir / f"engrave-mcp-test{exe_suffix}"),
-                   "--resources", str(assets), "--soundfont", str(soundfont), "--output", str(output / script.removesuffix(".py"))]
-            result = subprocess.run(cmd, cwd=repo_root, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-            if result: return result
+            cmd = [
+                py,
+                str(repo_root / "scripts" / script),
+                "--binary",
+                str(build_dir / f"engrave-mcp-test{exe_suffix}"),
+                "--resources",
+                str(assets),
+                "--soundfont",
+                str(soundfont),
+                "--output",
+                str(output / script.removesuffix(".py")),
+            ]
+            result = subprocess.run(
+                cmd,
+                cwd=repo_root,
+                env=base_env,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+            ).returncode
+            if result:
+                return result
         return 0
 
     if lane == "runtime_assets":
-        cmd = [py, str(repo_root / "scripts/test_runtime_assets_mcp.py"),
-               "--binary", str(build_dir / f"engrave-mcp-test{exe_suffix}"), "--resources", str(assets),
-               "--soundfont", str(soundfont), "--output", str(output / "runtime-assets")]
+        cmd = [
+            py,
+            str(repo_root / "scripts/test_runtime_assets_mcp.py"),
+            "--binary",
+            str(build_dir / f"engrave-mcp-test{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--soundfont",
+            str(soundfont),
+            "--output",
+            str(output / "runtime-assets"),
+        ]
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "score_edit":
@@ -251,7 +306,11 @@ def run_lane(
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "score_audio":
-        cmd = [str(build_dir / f"score_audio_test{exe_suffix}"), str(assets), str(engine_source)]
+        cmd = [
+            str(build_dir / f"score_audio_test{exe_suffix}"),
+            str(assets),
+            str(engine_source),
+        ]
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "score_positions":
@@ -259,43 +318,70 @@ def run_lane(
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "noqt_probe":
-        cmd = [py, str(repo_root / "scripts/test_noqt_probe.py"),
-               "--binary", str(build_dir / f"noqt_probe{exe_suffix}"), "--assets", str(assets),
-               "--input", str(repo_root / "fixtures/evening.musicxml"), "--output", str(output / "noqt-probe")]
+        cmd = [
+            py,
+            str(repo_root / "scripts/test_noqt_probe.py"),
+            "--binary",
+            str(build_dir / f"noqt_probe{exe_suffix}"),
+            "--assets",
+            str(assets),
+            "--input",
+            str(repo_root / "fixtures/evening.musicxml"),
+            "--output",
+            str(output / "noqt-probe"),
+        ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "excerpts":
         cmd = [
             py,
             str(repo_root / "scripts/test_excerpts.py"),
-            "--binary", str(build_dir / f"excerpts_test{exe_suffix}"),
-            "--assets", str(assets),
-            "--output", str(output / "excerpts"),
+            "--binary",
+            str(build_dir / f"excerpts_test{exe_suffix}"),
+            "--assets",
+            str(assets),
+            "--output",
+            str(output / "excerpts"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "assets":
-        font = Path("C:/Windows/Fonts/arial.ttf") if sys.platform == "win32" else (repo_root / ".pixi/envs/native/fonts/DejaVuSans.ttf")
+        font = (
+            Path("C:/Windows/Fonts/arial.ttf")
+            if sys.platform == "win32"
+            else (repo_root / ".pixi/envs/native/fonts/DejaVuSans.ttf")
+        )
         cmd = [
             py,
             str(repo_root / "scripts/test_assets.py"),
-            "--binary", str(build_dir / f"assets_test{exe_suffix}"),
-            "--assets", str(assets),
-            "--font", str(font),
-            "--soundfont", str(soundfont),
-            "--output", str(output / "assets"),
+            "--binary",
+            str(build_dir / f"assets_test{exe_suffix}"),
+            "--assets",
+            str(assets),
+            "--font",
+            str(font),
+            "--soundfont",
+            str(soundfont),
+            "--output",
+            str(output / "assets"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "archives":
         cmd = [
-            py, "-c", retarget_code,
+            py,
+            "-c",
+            retarget_code,
             str(testcwd),
             str(repo_root / "scripts/test_archives.py"),
-            "--binary", str(build_dir / f"archive_test{exe_suffix}"),
-            "--server", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--output", str(output / "archives"),
+            "--binary",
+            str(build_dir / f"archive_test{exe_suffix}"),
+            "--server",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--output",
+            str(output / "archives"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -303,33 +389,56 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_native_edit.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--output", str(output / "native-edit"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--output",
+            str(output / "native-edit"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "linked_tie":
-        cmd = [py, str(repo_root / "scripts/test_linked_tie.py"),
-               "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"), "--resources", str(assets),
-               "--output", str(output / "linked-tie")]
+        cmd = [
+            py,
+            str(repo_root / "scripts/test_linked_tie.py"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--output",
+            str(output / "linked-tie"),
+        ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "xml_text":
-        cmd = [py, str(repo_root / "scripts/test_xml_text.py"),
-               "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"), "--resources", str(assets),
-               "--output", str(output / "xml-text")]
+        cmd = [
+            py,
+            str(repo_root / "scripts/test_xml_text.py"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--output",
+            str(output / "xml-text"),
+        ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "audio_facade":
         cmd = [
-            py, "-c", retarget_code,
+            py,
+            "-c",
+            retarget_code,
             str(testcwd),
             str(repo_root / "scripts/test_audio_facade.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--soundfont", str(soundfont),
-            "--output", str(output / "audio-facade"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--soundfont",
+            str(soundfont),
+            "--output",
+            str(output / "audio-facade"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -337,11 +446,15 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_async_session.py"),
-            "--binary", str(build_dir / f"engrave-mcp-test{exe_suffix}"),
-            "--resources", str(assets),
+            "--binary",
+            str(build_dir / f"engrave-mcp-test{exe_suffix}"),
+            "--resources",
+            str(assets),
             "--test-hooks",
-            "--soundfont", str(soundfont),
-            "--output", str(output / "async"),
+            "--soundfont",
+            str(soundfont),
+            "--output",
+            str(output / "async"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -349,10 +462,14 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_imports_midi.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--upstream", str(engine_source),
-            "--output", str(output / "imports-midi"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--upstream",
+            str(engine_source),
+            "--output",
+            str(output / "imports-midi"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -360,10 +477,14 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_open_data.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--upstream", str(engine_source),
-            "--output", str(output / "open-data"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--upstream",
+            str(engine_source),
+            "--output",
+            str(output / "open-data"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -381,15 +502,23 @@ def run_lane(
             "res = asyncio.run(asyncio.wait_for(main(), timeout=600)); "
             "sys.exit(res if isinstance(res, int) else 0)"
         )
-        cmd = [py, "-c", gp_code, str(engine_source), str(repo_root / "scripts/test_imports_guitarpro.py")]
+        cmd = [
+            py,
+            "-c",
+            gp_code,
+            str(engine_source),
+            str(repo_root / "scripts/test_imports_guitarpro.py"),
+        ]
         return subprocess.run(cmd, env=gp_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "tool_schema":
         cmd = [
             py,
             str(repo_root / "scripts/test_tool_schema.py"),
-            "--dump", str(build_dir / f"registry_dump{exe_suffix}"),
-            "--registry-test", str(build_dir / f"registry_test{exe_suffix}"),
+            "--dump",
+            str(build_dir / f"registry_dump{exe_suffix}"),
+            "--registry-test",
+            str(build_dir / f"registry_test{exe_suffix}"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -397,10 +526,14 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_positions.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--upstream", str(engine_source),
-            "--output", str(output / "positions"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--upstream",
+            str(engine_source),
+            "--output",
+            str(output / "positions"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -408,10 +541,14 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_export_options.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--soundfont", str(soundfont),
-            "--output", str(output / "export-options"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--soundfont",
+            str(soundfont),
+            "--output",
+            str(output / "export-options"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -430,19 +567,34 @@ def run_lane(
             py,
             str(repo_root / "scripts/golden.py"),
             "compare",
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--soundfont", str(soundfont),
-            "--golden", str(golden_dir),
-            "--allow", str(repo_root / "tests/golden/allow.json"),
-            "--output", str(output / "golden"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--soundfont",
+            str(soundfont),
+            "--golden",
+            str(golden_dir),
+            "--allow",
+            str(repo_root / "tests/golden/allow.json"),
+            "--output",
+            str(output / "golden"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "v2_golden_overlap":
-        cmd = [py, str(repo_root / "scripts/test_v2_golden_overlap.py"),
-               "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"), "--resources", str(assets),
-               "--soundfont", str(soundfont), "--output", str(output / "v2-golden-overlap")]
+        cmd = [
+            py,
+            str(repo_root / "scripts/test_v2_golden_overlap.py"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--soundfont",
+            str(soundfont),
+            "--output",
+            str(output / "v2-golden-overlap"),
+        ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "semantic_check":
@@ -479,24 +631,35 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_compat_corpus.py"),
-            "--binary", str(build_dir / f"semantic_dump{exe_suffix}"),
-            "--resources", str(assets),
-            "--output", str(output / "compat-corpus"),
+            "--binary",
+            str(build_dir / f"semantic_dump{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--output",
+            str(output / "compat-corpus"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "phase_b_oracle":
-        cmd = [py, str(repo_root / "scripts/test_phase_b_oracle.py"),
-               "--output", str(output / "phase-b-oracle"), *phase_b_args]
+        cmd = [
+            py,
+            str(repo_root / "scripts/test_phase_b_oracle.py"),
+            "--output",
+            str(output / "phase-b-oracle"),
+            *phase_b_args,
+        ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "roundtrip":
         cmd = [
             py,
             str(repo_root / "scripts/test_roundtrip.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--output", str(output / "roundtrip"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--output",
+            str(output / "roundtrip"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -512,10 +675,14 @@ def run_lane(
         cmd2 = [
             py,
             str(repo_root / "scripts/check_rendered_page.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--soundfont", str(soundfont),
-            "--output", str(output / "rendered-page"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--soundfont",
+            str(soundfont),
+            "--output",
+            str(output / "rendered-page"),
         ]
         return subprocess.run(cmd2, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -526,13 +693,20 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_engine_audio.py"),
-            "--bin-dir", str(build_dir),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--soundfont", str(soundfont),
-            "--engine-source", str(engine_source),
-            "--output", str(output / "engine-audio"),
-            "--cross-platform-captures", str(output / "audio-cross-platform"),
+            "--bin-dir",
+            str(build_dir),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--soundfont",
+            str(soundfont),
+            "--engine-source",
+            str(engine_source),
+            "--output",
+            str(output / "engine-audio"),
+            "--cross-platform-captures",
+            str(output / "audio-cross-platform"),
             *audio_args,
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
@@ -543,10 +717,14 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_upstream_gtest.py"),
-            "--bin-dir", str(build_dir),
-            "--assets", str(assets),
-            "--engraving-data", str(engine_source / "src/engraving/tests"),
-            "--output", str(output / "gtest"),
+            "--bin-dir",
+            str(build_dir),
+            "--assets",
+            str(assets),
+            "--engraving-data",
+            str(engine_source / "src/engraving/tests"),
+            "--output",
+            str(output / "gtest"),
         ]
         return subprocess.run(cmd, cwd=gtest_cwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -554,10 +732,14 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_repeats.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--upstream", str(engine_source),
-            "--output", str(output / "repeats"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--upstream",
+            str(engine_source),
+            "--output",
+            str(output / "repeats"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -565,10 +747,14 @@ def run_lane(
         cmd = [
             py,
             str(repo_root / "scripts/test_version_info.py"),
-            "--binary", str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources", str(assets),
-            "--upstream", str(engine_source),
-            "--output", str(output / "version-info"),
+            "--binary",
+            str(build_dir / f"engrave-mcp{exe_suffix}"),
+            "--resources",
+            str(assets),
+            "--upstream",
+            str(engine_source),
+            "--output",
+            str(output / "version-info"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -587,23 +773,67 @@ def main() -> None:
         description="Run engrave-mcp acceptance test lanes.",
         allow_abbrev=False,
     )
-    parser.add_argument("--build-dir", type=Path, required=True, help="Directory containing compiled binaries")
-    parser.add_argument("--engine-source", type=Path, required=True, help="Path to engine source repository")
-    parser.add_argument("--assets", type=Path, required=True, help="Path to assets-50 resources directory")
-    parser.add_argument("--soundfont", type=Path, required=True, help="Path to FluidR3Mono_GM.sf3 soundfont")
-    parser.add_argument("--output", type=Path, required=True, help="Output directory for logs and test artifacts")
+    parser.add_argument(
+        "--build-dir",
+        type=Path,
+        required=True,
+        help="Directory containing compiled binaries",
+    )
+    parser.add_argument(
+        "--engine-source",
+        type=Path,
+        required=True,
+        help="Path to engine source repository",
+    )
+    parser.add_argument(
+        "--assets",
+        type=Path,
+        required=True,
+        help="Path to assets-50 resources directory",
+    )
+    parser.add_argument(
+        "--soundfont",
+        type=Path,
+        required=True,
+        help="Path to FluidR3Mono_GM.sf3 soundfont",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output directory for logs and test artifacts",
+    )
     parser.add_argument("--only", type=str, default=None, help="Comma-separated list of lanes to run")
     parser.add_argument("--tag", type=str, default=None, help="Optional run tag")
     parser.add_argument("--phase-b-oracle-archive", type=Path, help="Pinned 4.7.6 oracle tar.gz")
-    parser.add_argument("--phase-b-oracle-executable", type=Path, help="Extracted Linux 4.7.6 semantic_dump")
+    parser.add_argument(
+        "--phase-b-oracle-executable",
+        type=Path,
+        help="Extracted Linux 4.7.6 semantic_dump",
+    )
     parser.add_argument("--phase-b-oracle-assets", type=Path, help="Extracted 4.7.6 oracle assets")
     parser.add_argument("--phase-b-writer-results", type=Path, help="Actual write470 result directories")
-    parser.add_argument("--phase-b-live-edits", action="store_true", help="Include live tie-edit companion in producer lane")
-    parser.add_argument("--phase-b-producer", action="store_true", help="Real MCP source-to-oracle producer")
+    parser.add_argument(
+        "--phase-b-live-edits",
+        action="store_true",
+        help="Include live tie-edit companion in producer lane",
+    )
+    parser.add_argument(
+        "--phase-b-producer",
+        action="store_true",
+        help="Real MCP source-to-oracle producer",
+    )
     parser.add_argument("--host-binary", type=Path, help="Producer MCP executable")
     parser.add_argument("--host-sha256", help="Required expected producer binary SHA-256")
-    parser.add_argument("--phase-b-oracle-ssh", help="Physical Linux oracle host (linux-host); oracle paths are remote")
-    parser.add_argument("--phase-b-baseline", action="store_true", help="Replay projections only; not writer acceptance")
+    parser.add_argument(
+        "--phase-b-oracle-ssh",
+        help="Physical Linux oracle host (linux-host); oracle paths are remote",
+    )
+    parser.add_argument(
+        "--phase-b-baseline",
+        action="store_true",
+        help="Replay projections only; not writer acceptance",
+    )
 
     args = parser.parse_args()
 
@@ -630,8 +860,15 @@ def main() -> None:
                 raise SystemExit(f"Archive hash mismatch: {name}")
     else:
         check_preflight_eol(repo_root)
-        include_check = subprocess.run([sys.executable, str(repo_root / "scripts/check_native_includes.py"),
-                                        "--engine-source", str(engine_source)], cwd=repo_root)
+        include_check = subprocess.run(
+            [
+                sys.executable,
+                str(repo_root / "scripts/check_native_includes.py"),
+                "--engine-source",
+                str(engine_source),
+            ],
+            cwd=repo_root,
+        )
         if include_check.returncode:
             raise SystemExit("Error: native include boundary check failed")
     check_preflight_eol(engine_source)
@@ -650,19 +887,52 @@ def main() -> None:
         selected_lanes = [lane for lane in LANE_NAMES if lane in requested]
 
     phase_b_args: list[str] = []
-    phase_b_requested = (args.phase_b_oracle_archive, args.phase_b_oracle_executable,
-                         args.phase_b_oracle_assets, args.phase_b_baseline,
-                         args.phase_b_writer_results, args.phase_b_producer, args.phase_b_live_edits, args.phase_b_oracle_ssh, args.host_binary, args.host_sha256)
+    phase_b_requested = (
+        args.phase_b_oracle_archive,
+        args.phase_b_oracle_executable,
+        args.phase_b_oracle_assets,
+        args.phase_b_baseline,
+        args.phase_b_writer_results,
+        args.phase_b_producer,
+        args.phase_b_live_edits,
+        args.phase_b_oracle_ssh,
+        args.host_binary,
+        args.host_sha256,
+    )
     if "phase_b_oracle" not in selected_lanes and any(phase_b_requested):
         parser.error("phase B options require selecting --only phase_b_oracle")
     if "phase_b_oracle" in selected_lanes:
-        if not all((args.phase_b_oracle_archive, args.phase_b_oracle_executable, args.phase_b_oracle_assets)):
-            parser.error("phase_b_oracle requires --phase-b-oracle-archive, --phase-b-oracle-executable and --phase-b-oracle-assets")
-        if sum((args.phase_b_baseline, args.phase_b_writer_results is not None, args.phase_b_producer)) != 1:
-            parser.error("phase_b_oracle requires exactly one of --phase-b-baseline, --phase-b-writer-results, --phase-b-producer")
-        phase_b_args = ["--oracle-archive", args.phase_b_oracle_archive.as_posix(),
-                        "--oracle-executable", args.phase_b_oracle_executable.as_posix(),
-                        "--oracle-assets", args.phase_b_oracle_assets.as_posix()]
+        if not all(
+            (
+                args.phase_b_oracle_archive,
+                args.phase_b_oracle_executable,
+                args.phase_b_oracle_assets,
+            )
+        ):
+            parser.error(
+                "phase_b_oracle requires --phase-b-oracle-archive, --phase-b-oracle-executable and --phase-b-oracle-assets"
+            )
+        if (
+            sum(
+                (
+                    args.phase_b_baseline,
+                    args.phase_b_writer_results is not None,
+                    args.phase_b_producer,
+                )
+            )
+            != 1
+        ):
+            parser.error(
+                "phase_b_oracle requires exactly one of --phase-b-baseline, --phase-b-writer-results, --phase-b-producer"
+            )
+        phase_b_args = [
+            "--oracle-archive",
+            args.phase_b_oracle_archive.as_posix(),
+            "--oracle-executable",
+            args.phase_b_oracle_executable.as_posix(),
+            "--oracle-assets",
+            args.phase_b_oracle_assets.as_posix(),
+        ]
         if args.phase_b_oracle_ssh:
             phase_b_args += ["--oracle-ssh", args.phase_b_oracle_ssh]
         if args.phase_b_live_edits and not args.phase_b_producer:
@@ -672,24 +942,44 @@ def main() -> None:
         if args.phase_b_producer:
             if not args.host_binary or not args.host_sha256:
                 parser.error("producer requires --host-binary and --host-sha256")
-            phase_b_args += ["--producer", "--host-binary", str(args.host_binary.resolve()),
-                             "--host-sha256", args.host_sha256, "--host-resources", str(assets)]
+            phase_b_args += [
+                "--producer",
+                "--host-binary",
+                str(args.host_binary.resolve()),
+                "--host-sha256",
+                args.host_sha256,
+                "--host-resources",
+                str(assets),
+            ]
         elif args.phase_b_baseline:
             phase_b_args += ["--baseline"]
         else:
-            phase_b_args += ["--writer-results", str(args.phase_b_writer_results.resolve())]
+            phase_b_args += [
+                "--writer-results",
+                str(args.phase_b_writer_results.resolve()),
+            ]
         if not args.phase_b_producer:
             current_dump = build_dir / f"semantic_dump{exe_suffix}"
             if not current_dump.is_file():
                 parser.error(f"baseline/writer-results current-reader control is missing: {current_dump}")
-            phase_b_args += ["--current-binary", str(current_dump), "--current-assets", str(assets)]
+            phase_b_args += [
+                "--current-binary",
+                str(current_dump),
+                "--current-assets",
+                str(assets),
+            ]
 
     check_preflight_binaries(build_dir, exe_suffix, selected_lanes)
 
-    if ("semantic_check" in selected_lanes and "golden" not in selected_lanes
-            and not (output / "golden/actual/index.json").is_file()):
-        sys.stderr.write("Error: semantic_check needs a prior golden capture in "
-                         f"{output / 'golden/actual'}; select golden too or reuse its output directory\n")
+    if (
+        "semantic_check" in selected_lanes
+        and "golden" not in selected_lanes
+        and not (output / "golden/actual/index.json").is_file()
+    ):
+        sys.stderr.write(
+            "Error: semantic_check needs a prior golden capture in "
+            f"{output / 'golden/actual'}; select golden too or reuse its output directory\n"
+        )
         sys.exit(2)
 
     output.mkdir(parents=True, exist_ok=True)
@@ -725,8 +1015,10 @@ def main() -> None:
     summary_lines = []
 
     if args.only is None:
-        notice = ("phase_b_oracle NOT SELECTED: run it explicitly on physical Linux "
-                  "with the preserved oracle; phase B is not verified by this run")
+        notice = (
+            "phase_b_oracle NOT SELECTED: run it explicitly on physical Linux "
+            "with the preserved oracle; phase B is not verified by this run"
+        )
         print(notice, flush=True)
         summary_lines.append(notice)
 
@@ -751,7 +1043,7 @@ def main() -> None:
                     phase_b_args=phase_b_args,
                 )
             except Exception as e:
-                log_file.write(f"Lane execution failed with exception: {e}\n".encode("utf-8"))
+                log_file.write(f"Lane execution failed with exception: {e}\n".encode())
                 code = 1
 
         elapsed = time.perf_counter() - t0

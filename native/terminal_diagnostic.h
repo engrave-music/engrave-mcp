@@ -19,8 +19,7 @@ inline bool terminal_diagnostic(std::string_view message) noexcept {
     DWORD mode = PIPE_NOWAIT;
     if (!::SetNamedPipeHandleState(handle, &mode, nullptr, nullptr)) return false;
     DWORD written = 0;
-    return ::WriteFile(handle, message.data(), static_cast<DWORD>(message.size()), &written, nullptr)
-        && written == message.size();
+    return ::WriteFile(handle, message.data(), static_cast<DWORD>(message.size()), &written, nullptr) && written == message.size();
 #else
     // O_NONBLOCK does not bound regular-file/device writes. Only pipes have
     // the required semantics here; unsupported stderr destinations are skipped.
@@ -31,4 +30,4 @@ inline bool terminal_diagnostic(std::string_view message) noexcept {
     return ::write(STDERR_FILENO, message.data(), message.size()) == static_cast<ssize_t>(message.size());
 #endif
 }
-}
+} // namespace music

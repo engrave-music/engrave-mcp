@@ -8,11 +8,13 @@ native libraries. The engine's build lives in the fork
 ## Prerequisites
 
 Windows:
+
 - Git and [Pixi](https://pixi.sh/).
 - Visual Studio 2022 with the x64 C++ toolchain (MSVC 14.51+).
 - xmake 3.1.1+ (the build scripts use the one available on `PATH`).
 
 Linux (validated on Linux x86_64, GCC 15.3, C++23):
+
 - Git and Pixi.
 - Cairo in the Pixi environment (passed with `--cairo_prefix`).
 - WSL is not used for this project.

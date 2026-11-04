@@ -11,6 +11,17 @@ ninja = "*"
 zlib = "*"
 cairo = "*"
 nlohmann_json = "3.12.*"
+clang-tools = "==23.1.4"
+ruff = "==0.17.3"
+prettier = "==3.9.10"
+taplo = "==0.10.0"
+
+[tasks]
+setup-hooks = "python scripts/setup_hooks.py"
+format = "python scripts/format.py"
+format-check = "python scripts/format.py --check ."
+lint = "python scripts/lint.py"
+lint-fix = "python scripts/lint.py --fix"
 
 [target.linux-64.dependencies]
 c-compiler = "*"

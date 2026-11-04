@@ -4,6 +4,7 @@ Exercises document creation, editing, file imports and excerpts through native
 MCP tools, verifying semantic MSCX invariance under MSCZ round trips and
 MusicXML subset parity against known interop losses.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -12,13 +13,13 @@ import difflib
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import sys
 import time
-from typing import Any
 import xml.etree.ElementTree as ET
 from fractions import Fraction
+from pathlib import Path
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -30,10 +31,16 @@ ROOT = Path(__file__).resolve().parents[1]
 # A different difference list fails with its new digest; an entry whose phase no longer differs is reported stale.
 KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
     "bend.gp": {
-        "musicxml": ("f386eae23b9c8cb7", "The same GP grace-after notes become grace-before on the following chord; the corrected 5.00 parser changes the digest representation."),
+        "musicxml": (
+            "f386eae23b9c8cb7",
+            "The same GP grace-after notes become grace-before on the following chord; the corrected 5.00 parser changes the digest representation.",
+        ),
     },
     "drums_import.musicxml": {
-        "mscz_text": ("77d7cc79933f0666", "The same title size 24 is synthesized on reopen as in v1 (text digest 3a759cb7769875f9); this digest pins its v2 XML location and value."),
+        "mscz_text": (
+            "77d7cc79933f0666",
+            "The same title size 24 is synthesized on reopen as in v1 (text digest 3a759cb7769875f9); this digest pins its v2 XML location and value.",
+        ),
     },
     "custom_part_name.mscx": {
         "musicxml": ("05dd75d215fedcc1", "invisible fff dynamic is not exported"),
@@ -42,39 +49,84 @@ KNOWN_LOSSES: dict[str, dict[str, tuple[str, str]]] = {
         "musicxml": ("05dd75d215fedcc1", "invisible fff dynamic is not exported"),
     },
     "layout_elements.mscx": {
-        "musicxml": ("4a1004c05107bbb7", "HairPin beginText exported as dynamic mf; harmony moved to staff 1"),
-        "idempotence": ("aeab1d528f30d872", "unrendered MusicXML harmony dropped on second export"),
+        "musicxml": (
+            "4a1004c05107bbb7",
+            "HairPin beginText exported as dynamic mf; harmony moved to staff 1",
+        ),
+        "idempotence": (
+            "aeab1d528f30d872",
+            "unrendered MusicXML harmony dropped on second export",
+        ),
     },
     "linked_parts.mscx": {
-        "musicxml": ("fb3d4f6354501cb7", "The same grace conversion and backward cross-staff tie occur in historical 4.7.6 A/C files; the corrected 5.00 parser describes them differently."),
-        "idempotence": ("efa1ff9698e4b076", "the tie re-attached to moved grace note is dropped on second import"),
+        "musicxml": (
+            "fb3d4f6354501cb7",
+            "The same grace conversion and backward cross-staff tie occur in historical 4.7.6 A/C files; the corrected 5.00 parser describes them differently.",
+        ),
+        "idempotence": (
+            "efa1ff9698e4b076",
+            "the tie re-attached to moved grace note is dropped on second import",
+        ),
     },
     "linked_parts.mscx:excerpt:0": {
-        "mscz_text": ("ed93cce937e37df7", "Standalone excerpt reopen loses only the root name Flute; the historical v1 text digest 77d073cac18ac443 also covered lost style and links, which v2 preserves."),
-        "musicxml": ("fb3d4f6354501cb7", "Same grace conversion and backward cross-staff tie as the linked master; parser representation changed."),
-        "idempotence": ("efa1ff9698e4b076", "the tie re-attached to moved grace note is dropped on second import"),
+        "mscz_text": (
+            "ed93cce937e37df7",
+            "Standalone excerpt reopen loses only the root name Flute; the historical v1 text digest 77d073cac18ac443 also covered lost style and links, which v2 preserves.",
+        ),
+        "musicxml": (
+            "fb3d4f6354501cb7",
+            "Same grace conversion and backward cross-staff tie as the linked master; parser representation changed.",
+        ),
+        "idempotence": (
+            "efa1ff9698e4b076",
+            "the tie re-attached to moved grace note is dropped on second import",
+        ),
     },
     "slurs.mscz": {
-        "musicxml": ("02ce304f5126a1fd", "grace16after slurs: grace-after notes converted to grace-before in MusicXML"),
+        "musicxml": (
+            "02ce304f5126a1fd",
+            "grace16after slurs: grace-after notes converted to grace-before in MusicXML",
+        ),
     },
     "ghost_note.mscx": {
-        "musicxml": ("7872bae4c4cf03e9", "linked tab staff gains an explicit 4/4 time signature after MusicXML import"),
+        "musicxml": (
+            "7872bae4c4cf03e9",
+            "linked tab staff gains an explicit 4/4 time signature after MusicXML import",
+        ),
     },
     "tab_grace_prebend.mscx": {
-        "musicxml": ("7872bae4c4cf03e9", "linked tab staff gains an explicit 4/4 time signature after MusicXML import"),
+        "musicxml": (
+            "7872bae4c4cf03e9",
+            "linked tab staff gains an explicit 4/4 time signature after MusicXML import",
+        ),
     },
 }
 
 DUR_TYPES: dict[str, Fraction | int] = {
-    "longa": 16, "breve": 8, "whole": 4, "half": 2, "quarter": 1,
-    "eighth": Fraction(1, 2), "16th": Fraction(1, 4), "32nd": Fraction(1, 8),
-    "64th": Fraction(1, 16), "128th": Fraction(1, 32), "256th": Fraction(1, 64),
-    "512th": Fraction(1, 128), "1024th": Fraction(1, 256),
+    "longa": 16,
+    "breve": 8,
+    "whole": 4,
+    "half": 2,
+    "quarter": 1,
+    "eighth": Fraction(1, 2),
+    "16th": Fraction(1, 4),
+    "32nd": Fraction(1, 8),
+    "64th": Fraction(1, 16),
+    "128th": Fraction(1, 32),
+    "256th": Fraction(1, 64),
+    "512th": Fraction(1, 128),
+    "1024th": Fraction(1, 256),
 }
 ALLOWED_SPANNERS = {"Slur", "HairPin", "Volta", "Pedal", "Ottava", "Tie"}
 GRACE_TAGS = (
-    "acciaccatura", "appoggiatura", "grace4", "grace16", "grace32",
-    "grace8after", "grace16after", "grace32after"
+    "acciaccatura",
+    "appoggiatura",
+    "grace4",
+    "grace16",
+    "grace32",
+    "grace8after",
+    "grace16after",
+    "grace32after",
 )
 
 
@@ -86,8 +138,12 @@ def frac_to_ticks(frac_str: str | None, div: int) -> int:
 
 
 def spanner_target_tick(
-    nxt: ET.Element, m_idx: int, m_start: int, v_tick: int, div: int,
-    meas_ticks: list[tuple[int, int, tuple[int, int]]]
+    nxt: ET.Element,
+    m_idx: int,
+    m_start: int,
+    v_tick: int,
+    div: int,
+    meas_ticks: list[tuple[int, int, tuple[int, int]]],
 ) -> int:
     """Calculate spanner target end tick from next/location measures and fractions."""
     m_off = int(nxt.findtext("measures", "0"))
@@ -125,7 +181,11 @@ def normalize_mscx_text(text: str) -> str:
     text = re.sub(r"<eid>[^<]*</eid>", "<eid>0</eid>", text)
     # The writing program's version lines are not score content; dropping them keeps
     # pinned digests (which include hunk line numbers) stable across engine versions.
-    text = re.sub(r"[ \t]*<program(?:Version|Revision)>[^<]*</program(?:Version|Revision)>\r?\n", "", text)
+    text = re.sub(
+        r"[ \t]*<program(?:Version|Revision)>[^<]*</program(?:Version|Revision)>\r?\n",
+        "",
+        text,
+    )
     text = re.sub(r"<([a-zA-Z0-9_]+)([^>]*)></\1>", r"<\1\2/>", text)
     return text
 
@@ -134,10 +194,14 @@ def normalize_mscx_text(text: str) -> str:
 # reopened.  Only this complete, ordered insertion, at a Score's own Style,
 # is normalized; an existing or different page setting remains observable.
 PAGE_STYLE_DEFAULTS = (
-    ("pageWidth", "8.26772"), ("pageHeight", "11.6929"),
-    ("pagePrintableWidth", "7.08661"), ("pageEvenLeftMargin", "0.590551"),
-    ("pageOddLeftMargin", "0.590551"), ("pageEvenTopMargin", "0.590551"),
-    ("pageEvenBottomMargin", "0.590551"), ("pageOddTopMargin", "0.590551"),
+    ("pageWidth", "8.26772"),
+    ("pageHeight", "11.6929"),
+    ("pagePrintableWidth", "7.08661"),
+    ("pageEvenLeftMargin", "0.590551"),
+    ("pageOddLeftMargin", "0.590551"),
+    ("pageEvenTopMargin", "0.590551"),
+    ("pageEvenBottomMargin", "0.590551"),
+    ("pageOddTopMargin", "0.590551"),
     ("pageOddBottomMargin", "0.590551"),
 )
 
@@ -154,8 +218,13 @@ def _xml_text(value: str | None, preserve: bool = False) -> str:
 def _xml_value(element: ET.Element, preserve_tail: bool = False) -> tuple:
     """Represent the complete XML subtree, ignoring indentation only."""
     mixed = element.tag == "text"
-    return (element.tag, tuple(sorted(element.attrib.items())), _xml_text(element.text, mixed or not len(element)),
-            _xml_text(element.tail, preserve_tail), tuple(_xml_value(child, mixed) for child in element))
+    return (
+        element.tag,
+        tuple(sorted(element.attrib.items())),
+        _xml_text(element.text, mixed or not len(element)),
+        _xml_text(element.tail, preserve_tail),
+        tuple(_xml_value(child, mixed) for child in element),
+    )
 
 
 def compare_mscz_xml(before: str, after: str) -> list[tuple]:
@@ -174,11 +243,13 @@ def compare_mscz_xml(before: str, after: str) -> list[tuple]:
             style_a, style_b = a.find("Style"), b.find("Style")
             if style_a is None or style_b is None:
                 continue
-            prefix = list(style_b)[:len(PAGE_STYLE_DEFAULTS)]
-            if (not any(child.tag in tags for child in style_a)
-                    and [(child.tag, child.text) for child in prefix] == list(PAGE_STYLE_DEFAULTS)
-                    and not any(child.attrib or len(child) or _xml_text(child.tail) for child in prefix)
-                    and not any(child.tag in tags for child in list(style_b)[len(prefix):])):
+            prefix = list(style_b)[: len(PAGE_STYLE_DEFAULTS)]
+            if (
+                not any(child.tag in tags for child in style_a)
+                and [(child.tag, child.text) for child in prefix] == list(PAGE_STYLE_DEFAULTS)
+                and not any(child.attrib or len(child) or _xml_text(child.tail) for child in prefix)
+                and not any(child.tag in tags for child in list(style_b)[len(prefix) :])
+            ):
                 for child in prefix:
                     style_b.remove(child)
 
@@ -188,9 +259,21 @@ def compare_mscz_xml(before: str, after: str) -> list[tuple]:
         mixed = a.tag == "text" or b.tag == "text"
         for field, av, bv in (
             ("tag", a.tag, b.tag),
-            ("attributes", tuple(sorted(a.attrib.items())), tuple(sorted(b.attrib.items()))),
-            ("text", _xml_text(a.text, mixed or not len(a)), _xml_text(b.text, mixed or not len(b))),
-            ("tail", _xml_text(a.tail, preserve_tail), _xml_text(b.tail, preserve_tail)),
+            (
+                "attributes",
+                tuple(sorted(a.attrib.items())),
+                tuple(sorted(b.attrib.items())),
+            ),
+            (
+                "text",
+                _xml_text(a.text, mixed or not len(a)),
+                _xml_text(b.text, mixed or not len(b)),
+            ),
+            (
+                "tail",
+                _xml_text(a.tail, preserve_tail),
+                _xml_text(b.tail, preserve_tail),
+            ),
         ):
             if av != bv:
                 differences.append((f"{path}/{field}", av, bv))
@@ -200,11 +283,20 @@ def compare_mscz_xml(before: str, after: str) -> list[tuple]:
             if operation == "equal":
                 for index in range(aj - ai):
                     child = ac[ai + index]
-                    compare(child, bc[bi + index], f"{path}/{child.tag}[{ai + index}]", mixed)
+                    compare(
+                        child,
+                        bc[bi + index],
+                        f"{path}/{child.tag}[{ai + index}]",
+                        mixed,
+                    )
             else:
-                differences.append((f"{path}/children[{ai}:{aj}]",
-                                    tuple(_xml_value(child, mixed) for child in ac[ai:aj]),
-                                    tuple(_xml_value(child, mixed) for child in bc[bi:bj])))
+                differences.append(
+                    (
+                        f"{path}/children[{ai}:{aj}]",
+                        tuple(_xml_value(child, mixed) for child in ac[ai:aj]),
+                        tuple(_xml_value(child, mixed) for child in bc[bi:bj]),
+                    )
+                )
 
     compare(left, right, f"/{left.tag}")
     return differences
@@ -229,13 +321,17 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
         inst = p.find("Instrument")
         staves_p = p.findall("Staff")
         groups = [s.find("StaffType").get("group", "") for s in staves_p if s.find("StaffType") is not None]
-        inst_vis = {c.tag: (c.text or "").strip() for c in (inst if inst is not None else []) if "vis" in c.tag.lower() or "show" in c.tag.lower()}
-        
+        inst_vis = {
+            c.tag: (c.text or "").strip()
+            for c in (inst if inst is not None else [])
+            if "vis" in c.tag.lower() or "show" in c.tag.lower()
+        }
+
         long_name = ""
         if inst is not None:
             long_name = inst.findtext("InstrumentLabel/longName") or inst.findtext("longName") or ""
         long_name = long_name.strip()
-        
+
         track_name = p.findtext("trackName", "")
         if not track_name and inst is not None:
             track_name = inst.findtext("trackName", "")
@@ -243,16 +339,18 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
 
         inst_id = inst.findtext("instrumentId", "").strip() if inst is not None else ""
 
-        parts.append({
-            "trackName": track_name,
-            "instrumentId": inst_id,
-            "longName": long_name,
-            "staffCount": len(staves_p),
-            "staffTypeGroups": groups,
-            "show": p.findtext("show"),
-            "staffInvisible": [s.findtext("invisible") for s in staves_p],
-            "instrumentVisibility": inst_vis,
-        })
+        parts.append(
+            {
+                "trackName": track_name,
+                "instrumentId": inst_id,
+                "longName": long_name,
+                "staffCount": len(staves_p),
+                "staffTypeGroups": groups,
+                "show": p.findtext("show"),
+                "staffInvisible": [s.findtext("invisible") for s in staves_p],
+                "instrumentVisibility": inst_vis,
+            }
+        )
 
     # Measures per staff
     staves = score.findall("Staff")
@@ -262,19 +360,37 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
         for m in staves[0].findall("Measure"):
             ts = m.find(".//TimeSig")
             if ts is not None:
-                curr_sig = (int(ts.findtext("sigN", "4")), int(ts.findtext("sigD", "4")))
-            mlen = frac_to_ticks(m.get("len"), div) if m.get("len") else int(Fraction(curr_sig[0], curr_sig[1]) * 4 * div)
+                curr_sig = (
+                    int(ts.findtext("sigN", "4")),
+                    int(ts.findtext("sigD", "4")),
+                )
+            mlen = (
+                frac_to_ticks(m.get("len"), div) if m.get("len") else int(Fraction(curr_sig[0], curr_sig[1]) * 4 * div)
+            )
             meas_ticks.append((curr_tick, mlen, curr_sig))
             curr_tick += mlen
 
-    staff_measures, staff_events, staff_spanners, staff_clefs, staff_annotations = {}, {}, {}, {}, {}
+    staff_measures, staff_events, staff_spanners, staff_clefs, staff_annotations = (
+        {},
+        {},
+        {},
+        {},
+        {},
+    )
     eid_to_info: dict[str, Any] = {}
     ties_to_resolve: list[dict[str, Any]] = []
 
     for s_idx, staff in enumerate(staves):
         staff_id = staff.get("id", str(s_idx + 1))
         measures_info, events_by_voice, spanners_list, clef_list = [], {}, [], []
-        dyn_counts, tempo_list, lyrics_list, artic_counts, fingering_list, staff_text_list = {}, [], [], {}, [], []
+        (
+            dyn_counts,
+            tempo_list,
+            lyrics_list,
+            artic_counts,
+            fingering_list,
+            staff_text_list,
+        ) = {}, [], [], {}, [], []
         jumps_list, markers_list = [], []
         harmony_count, fermata_count = 0, 0
 
@@ -289,13 +405,15 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
             ts_str = f"{ts.findtext('sigN')}/{ts.findtext('sigD')}" if ts is not None else None
             ks = m.find(".//KeySig")
             key_val = (ks.findtext("concertKey") or ks.findtext("accidental")) if ks is not None else None
-            measures_info.append({
-                "timesig": ts_str,
-                "len": m.get("len"),
-                "startRepeat": bool(m.find("startRepeat") is not None),
-                "endRepeat": int(m.findtext("endRepeat")) if m.find("endRepeat") is not None else 0,
-                "keySig": key_val,
-            })
+            measures_info.append(
+                {
+                    "timesig": ts_str,
+                    "len": m.get("len"),
+                    "startRepeat": bool(m.find("startRepeat") is not None),
+                    "endRepeat": int(m.findtext("endRepeat")) if m.find("endRepeat") is not None else 0,
+                    "keySig": key_val,
+                }
+            )
 
             for mc in m.findall("Clef"):
                 c_type = (mc.findtext("concertClefType") or mc.findtext("transposingClefType") or "").strip()
@@ -304,13 +422,18 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                 j_sub = (j.findtext("jumpType") or j.findtext("subtype") or j.findtext("text") or "").strip()
                 jumps_list.append((m_idx, j_sub))
             for mk in m.findall("Marker"):
-                mk_sub = (mk.findtext("markerType") or mk.findtext("subtype") or mk.findtext("label") or mk.findtext("text") or "").strip()
+                mk_sub = (
+                    mk.findtext("markerType")
+                    or mk.findtext("subtype")
+                    or mk.findtext("label")
+                    or mk.findtext("text")
+                    or ""
+                ).strip()
                 markers_list.append((m_idx, mk_sub))
 
             for v_idx, voice in enumerate(m.findall("voice")):
                 events_by_voice.setdefault(v_idx, [])
                 v_tick = m_start
-                last_main_tick = m_start
                 raw_events = []
                 seq = 0
                 tuplet_stack = []
@@ -329,7 +452,9 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                         if sig_n and sig_d:
                             curr_sig = (int(sig_n), int(sig_d))
                     elif child.tag == "Clef":
-                        c_type = (child.findtext("concertClefType") or child.findtext("transposingClefType") or "").strip()
+                        c_type = (
+                            child.findtext("concertClefType") or child.findtext("transposingClefType") or ""
+                        ).strip()
                         clef_list.append((v_tick, c_type))
                     elif child.tag == "Chord":
                         c_eid = child.findtext("eid")
@@ -338,7 +463,7 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                             if child.find(gtag) is not None:
                                 grace_kind = gtag
                                 break
-                        is_grace = (grace_kind != "none")
+                        is_grace = grace_kind != "none"
                         is_grace_after = grace_kind.endswith("after")
 
                         if is_grace:
@@ -348,60 +473,82 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                         elif child.findtext("duration"):
                             dur = frac_to_ticks(child.findtext("duration"), div)
                             event_tick = v_tick
-                            last_main_tick = v_tick
                             order_rank = 1
                         else:
                             dtype = child.findtext("durationType", "quarter")
                             dots = int(child.findtext("dots", "0"))
-                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2 ** dots)
+                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2**dots)
                             ratio = Fraction(1, 1)
                             for norm, act in tuplet_stack:
                                 ratio *= Fraction(norm, act)
                             dur = int(base_dur * ratio)
                             event_tick = v_tick
-                            last_main_tick = v_tick
                             order_rank = 1
 
                         if c_eid:
-                            eid_to_info[c_eid.strip()] = ("chord", staff_id, event_tick, dur, child)
+                            eid_to_info[c_eid.strip()] = (
+                                "chord",
+                                staff_id,
+                                event_tick,
+                                dur,
+                                child,
+                            )
 
                         stem_dir = (child.findtext("StemDirection") or child.findtext("stemDirection") or "").strip()
                         notes_list = []
                         for n in child.findall("Note"):
                             n_eid = n.findtext("eid")
-                            pitch, tpc = int(n.findtext("pitch", "0")), int(n.findtext("tpc", "0"))
+                            pitch, tpc = (
+                                int(n.findtext("pitch", "0")),
+                                int(n.findtext("tpc", "0")),
+                            )
                             head = (n.findtext("head") or "").strip()
                             head_type = (n.findtext("headType") or "").strip()
-                            
+
                             # Note object representation in list: [pitch, tpc, tie_start, head, head_type]
                             note_obj = [pitch, tpc, False, head, head_type]
                             notes_list.append(note_obj)
 
                             if n_eid:
-                                eid_to_info[n_eid.strip()] = ("note", staff_id, event_tick, dur, note_obj)
+                                eid_to_info[n_eid.strip()] = (
+                                    "note",
+                                    staff_id,
+                                    event_tick,
+                                    dur,
+                                    note_obj,
+                                )
 
                             for f in n.findall("Fingering"):
                                 fingering_list.append(f.findtext("text", "").strip())
-                            
+
                             tie = n.find("Tie")
                             if tie is not None:
                                 s_el = tie.findtext("startElement")
                                 e_el = tie.findtext("endElement")
-                                ties_to_resolve.append({
-                                    "end_note": note_obj,
-                                    "end_tick": event_tick,
-                                    "staff_id": staff_id,
-                                    "voice_idx": v_idx,
-                                    "pitch": pitch,
-                                    "is_grace_after": is_grace_after,
-                                    "start_eid": s_el.strip() if s_el else None,
-                                    "end_eid": e_el.strip() if e_el else None,
-                                    "raw_index": len(raw_events),
-                                    "raw_events": raw_events,
-                                    "m_idx": m_idx,
-                                })
+                                ties_to_resolve.append(
+                                    {
+                                        "end_note": note_obj,
+                                        "end_tick": event_tick,
+                                        "staff_id": staff_id,
+                                        "voice_idx": v_idx,
+                                        "pitch": pitch,
+                                        "is_grace_after": is_grace_after,
+                                        "start_eid": s_el.strip() if s_el else None,
+                                        "end_eid": e_el.strip() if e_el else None,
+                                        "raw_index": len(raw_events),
+                                        "raw_events": raw_events,
+                                        "m_idx": m_idx,
+                                    }
+                                )
 
-                        evt_container = ["chord", event_tick, dur, notes_list, grace_kind, stem_dir]
+                        evt_container = [
+                            "chord",
+                            event_tick,
+                            dur,
+                            notes_list,
+                            grace_kind,
+                            stem_dir,
+                        ]
                         raw_events.append((event_tick, order_rank, seq, evt_container))
                         seq += 1
 
@@ -409,7 +556,12 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                             sub = art.findtext("subtype") or art.get("name") or ""
                             artic_counts[sub] = artic_counts.get(sub, 0) + 1
                         for lyr in child.findall("Lyrics"):
-                            lyrics_list.append((int(lyr.findtext("no", "0")), lyr.findtext("text", "").strip()))
+                            lyrics_list.append(
+                                (
+                                    int(lyr.findtext("no", "0")),
+                                    lyr.findtext("text", "").strip(),
+                                )
+                            )
                         fermata_count += len(child.findall("Fermata"))
                         v_tick += dur
                     elif child.tag == "Rest":
@@ -420,19 +572,24 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                         else:
                             dtype = child.findtext("durationType", "quarter")
                             dots = int(child.findtext("dots", "0"))
-                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2 ** dots)
+                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2**dots)
                             ratio = Fraction(1, 1)
                             for norm, act in tuplet_stack:
                                 ratio *= Fraction(norm, act)
                             dur = int(base_dur * ratio)
 
                         event_tick = v_tick
-                        last_main_tick = v_tick
                         order_rank = 1
                         r_eid = child.findtext("eid")
                         evt_container = ["rest", event_tick, dur, (), "none", ""]
                         if r_eid:
-                            eid_to_info[r_eid.strip()] = ("rest", staff_id, event_tick, dur, child)
+                            eid_to_info[r_eid.strip()] = (
+                                "rest",
+                                staff_id,
+                                event_tick,
+                                dur,
+                                child,
+                            )
                         raw_events.append((event_tick, order_rank, seq, evt_container))
                         seq += 1
 
@@ -448,12 +605,19 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
                     elif child.tag == "StaffText":
                         staff_text_list.append(child.findtext("text", "").strip())
                     elif child.tag == "Jump":
-                        j_sub = (child.findtext("jumpType") or child.findtext("subtype") or child.findtext("text") or "").strip()
+                        j_sub = (
+                            child.findtext("jumpType") or child.findtext("subtype") or child.findtext("text") or ""
+                        ).strip()
                         jumps_list.append((m_idx, j_sub))
                     elif child.tag == "Marker":
-                        mk_sub = (mk.findtext("markerType") or mk.findtext("subtype") or mk.findtext("label") or mk.findtext("text") or "").strip()
+                        mk_sub = (
+                            mk.findtext("markerType")
+                            or mk.findtext("subtype")
+                            or mk.findtext("label")
+                            or mk.findtext("text")
+                            or ""
+                        ).strip()
                         markers_list.append((m_idx, mk_sub))
-
 
                 raw_events.sort(key=lambda item: (item[0], item[1], item[2]))
                 events_by_voice[v_idx].extend(item[3] for item in raw_events)
@@ -463,10 +627,16 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
         staff_spanners[staff_id] = spanners_list
         staff_clefs[staff_id] = sorted(clef_list)
         staff_annotations[staff_id] = {
-            "dynamics": dyn_counts, "tempos": tempo_list, "harmony": harmony_count,
-            "lyrics": lyrics_list, "articulations": artic_counts, "fingerings": fingering_list,
-            "staffTexts": staff_text_list, "fermatas": fermata_count,
-            "jumps": jumps_list, "markers": markers_list,
+            "dynamics": dyn_counts,
+            "tempos": tempo_list,
+            "harmony": harmony_count,
+            "lyrics": lyrics_list,
+            "articulations": artic_counts,
+            "fingerings": fingering_list,
+            "staffTexts": staff_text_list,
+            "fermatas": fermata_count,
+            "jumps": jumps_list,
+            "markers": markers_list,
         }
 
     # Resolve Ties
@@ -493,7 +663,7 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
             raw_evts = tie_info["raw_events"]
             raw_idx = tie_info["raw_index"]
             if is_grace_after:
-                for item in raw_evts[raw_idx + 1:]:
+                for item in raw_evts[raw_idx + 1 :]:
                     evt = item[3]
                     if evt[0] == "chord":
                         for n in evt[3]:
@@ -584,11 +754,22 @@ def parse_mscx_500(root: ET.Element) -> dict[str, Any]:
     for staff_id in staff_spanners:
         staff_spanners[staff_id].sort()
 
-    excerpts = [{"title": s.findtext("name") or "", "parts": [p.get("id") for p in s.findall("Part")]} for s in score.findall("Score")]
+    excerpts = [
+        {
+            "title": s.findtext("name") or "",
+            "parts": [p.get("id") for p in s.findall("Part")],
+        }
+        for s in score.findall("Score")
+    ]
     return {
-        "metadata": metadata, "parts": parts, "measures": staff_measures,
-        "events": staff_events, "spanners": staff_spanners,
-        "clefs": staff_clefs, "annotations": staff_annotations, "excerpts": excerpts,
+        "metadata": metadata,
+        "parts": parts,
+        "measures": staff_measures,
+        "events": staff_events,
+        "spanners": staff_spanners,
+        "clefs": staff_clefs,
+        "annotations": staff_annotations,
+        "excerpts": excerpts,
     }
 
 
@@ -617,17 +798,23 @@ def parse_mscx(text: str) -> dict[str, Any]:
         inst = p.find("Instrument")
         staves_p = p.findall("Staff")
         groups = [s.find("StaffType").get("group", "") for s in staves_p if s.find("StaffType") is not None]
-        inst_vis = {c.tag: (c.text or "").strip() for c in (inst if inst is not None else []) if "vis" in c.tag.lower() or "show" in c.tag.lower()}
-        parts.append({
-            "trackName": p.findtext("trackName", "").strip(),
-            "instrumentId": inst.findtext("instrumentId", "").strip() if inst is not None else "",
-            "longName": inst.findtext("longName", "").strip() if inst is not None else "",
-            "staffCount": len(staves_p),
-            "staffTypeGroups": groups,
-            "show": p.findtext("show"),
-            "staffInvisible": [s.findtext("invisible") for s in staves_p],
-            "instrumentVisibility": inst_vis,
-        })
+        inst_vis = {
+            c.tag: (c.text or "").strip()
+            for c in (inst if inst is not None else [])
+            if "vis" in c.tag.lower() or "show" in c.tag.lower()
+        }
+        parts.append(
+            {
+                "trackName": p.findtext("trackName", "").strip(),
+                "instrumentId": inst.findtext("instrumentId", "").strip() if inst is not None else "",
+                "longName": inst.findtext("longName", "").strip() if inst is not None else "",
+                "staffCount": len(staves_p),
+                "staffTypeGroups": groups,
+                "show": p.findtext("show"),
+                "staffInvisible": [s.findtext("invisible") for s in staves_p],
+                "instrumentVisibility": inst_vis,
+            }
+        )
 
     # Measures per staff: count, timesig/len, start/end repeat, key sig changes.
     staves = score.findall("Staff")
@@ -637,16 +824,34 @@ def parse_mscx(text: str) -> dict[str, Any]:
         for m in staves[0].findall("Measure"):
             ts = m.find(".//TimeSig")
             if ts is not None:
-                curr_sig = (int(ts.findtext("sigN", "4")), int(ts.findtext("sigD", "4")))
-            mlen = frac_to_ticks(m.get("len"), div) if m.get("len") else int(Fraction(curr_sig[0], curr_sig[1]) * 4 * div)
+                curr_sig = (
+                    int(ts.findtext("sigN", "4")),
+                    int(ts.findtext("sigD", "4")),
+                )
+            mlen = (
+                frac_to_ticks(m.get("len"), div) if m.get("len") else int(Fraction(curr_sig[0], curr_sig[1]) * 4 * div)
+            )
             meas_ticks.append((curr_tick, mlen, curr_sig))
             curr_tick += mlen
 
-    staff_measures, staff_events, staff_spanners, staff_annotations, staff_clefs = {}, {}, {}, {}, {}
+    staff_measures, staff_events, staff_spanners, staff_annotations, staff_clefs = (
+        {},
+        {},
+        {},
+        {},
+        {},
+    )
     for s_idx, staff in enumerate(staves):
         staff_id = staff.get("id", str(s_idx + 1))
         measures_info, events_by_voice, spanners_list, clef_list = [], {}, [], []
-        dyn_counts, tempo_list, lyrics_list, artic_counts, fingering_list, staff_text_list = {}, [], [], {}, [], []
+        (
+            dyn_counts,
+            tempo_list,
+            lyrics_list,
+            artic_counts,
+            fingering_list,
+            staff_text_list,
+        ) = {}, [], [], {}, [], []
         jumps_list, markers_list = [], []
         harmony_count, fermata_count = 0, 0
 
@@ -657,13 +862,15 @@ def parse_mscx(text: str) -> dict[str, Any]:
             ts_str = f"{ts.findtext('sigN')}/{ts.findtext('sigD')}" if ts is not None else None
             ks = m.find(".//KeySig")
             key_val = (ks.findtext("concertKey") or ks.findtext("accidental")) if ks is not None else None
-            measures_info.append({
-                "timesig": ts_str,
-                "len": m.get("len"),
-                "startRepeat": bool(m.find("startRepeat") is not None),
-                "endRepeat": int(m.findtext("endRepeat")) if m.find("endRepeat") is not None else 0,
-                "keySig": key_val,
-            })
+            measures_info.append(
+                {
+                    "timesig": ts_str,
+                    "len": m.get("len"),
+                    "startRepeat": bool(m.find("startRepeat") is not None),
+                    "endRepeat": int(m.findtext("endRepeat")) if m.find("endRepeat") is not None else 0,
+                    "keySig": key_val,
+                }
+            )
 
             # Check measure-level Clef, Jump, and Marker elements
             for c in m.findall("Clef"):
@@ -673,7 +880,13 @@ def parse_mscx(text: str) -> dict[str, Any]:
                 j_sub = (j.findtext("jumpType") or j.findtext("subtype") or j.findtext("text") or "").strip()
                 jumps_list.append((m_idx, j_sub))
             for mk in m.findall("Marker"):
-                mk_sub = (mk.findtext("markerType") or mk.findtext("subtype") or mk.findtext("label") or mk.findtext("text") or "").strip()
+                mk_sub = (
+                    mk.findtext("markerType")
+                    or mk.findtext("subtype")
+                    or mk.findtext("label")
+                    or mk.findtext("text")
+                    or ""
+                ).strip()
                 markers_list.append((m_idx, mk_sub))
 
             # Events per voice: chords and rests with absolute tick & duration ticks
@@ -688,14 +901,21 @@ def parse_mscx(text: str) -> dict[str, Any]:
 
                 for child in v:
                     if child.tag == "Tuplet":
-                        tuplet_stack.append((int(child.findtext("normalNotes", "2")), int(child.findtext("actualNotes", "3"))))
+                        tuplet_stack.append(
+                            (
+                                int(child.findtext("normalNotes", "2")),
+                                int(child.findtext("actualNotes", "3")),
+                            )
+                        )
                     elif child.tag == "endTuplet" and tuplet_stack:
                         tuplet_stack.pop()
                     elif child.tag == "location":
                         if child.findtext("fractions"):
                             v_tick += frac_to_ticks(child.findtext("fractions"), div)
                     elif child.tag == "Clef":
-                        c_type = (child.findtext("concertClefType") or child.findtext("transposingClefType") or "").strip()
+                        c_type = (
+                            child.findtext("concertClefType") or child.findtext("transposingClefType") or ""
+                        ).strip()
                         clef_list.append((v_tick, c_type))
                     elif child.tag == "Chord":
                         grace_kind = "none"
@@ -703,7 +923,7 @@ def parse_mscx(text: str) -> dict[str, Any]:
                             if child.find(gtag) is not None:
                                 grace_kind = gtag
                                 break
-                        is_grace = (grace_kind != "none")
+                        is_grace = grace_kind != "none"
                         is_grace_after = grace_kind.endswith("after")
 
                         if is_grace:
@@ -718,7 +938,7 @@ def parse_mscx(text: str) -> dict[str, Any]:
                         else:
                             dtype = child.findtext("durationType", "quarter")
                             dots = int(child.findtext("dots", "0"))
-                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2 ** dots)
+                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2**dots)
                             ratio = Fraction(1, 1)
                             for norm, act in tuplet_stack:
                                 ratio *= Fraction(norm, act)
@@ -730,8 +950,13 @@ def parse_mscx(text: str) -> dict[str, Any]:
                         stem_dir = (child.findtext("StemDirection") or child.findtext("stemDirection") or "").strip()
                         notes = []
                         for n in child.findall("Note"):
-                            pitch, tpc = int(n.findtext("pitch", "0")), int(n.findtext("tpc", "0"))
-                            tie_start = any(sp.get("type") == "Tie" and sp.find("next") is not None for sp in n.findall("Spanner")) or (n.find("Tie") is not None and n.find("Tie/prev") is None)
+                            pitch, tpc = (
+                                int(n.findtext("pitch", "0")),
+                                int(n.findtext("tpc", "0")),
+                            )
+                            tie_start = any(
+                                sp.get("type") == "Tie" and sp.find("next") is not None for sp in n.findall("Spanner")
+                            ) or (n.find("Tie") is not None and n.find("Tie/prev") is None)
                             head = (n.findtext("head") or "").strip()
                             head_type = (n.findtext("headType") or "").strip()
                             notes.append((pitch, tpc, tie_start, head, head_type))
@@ -744,7 +969,14 @@ def parse_mscx(text: str) -> dict[str, Any]:
                                         end_tick = spanner_target_tick(nxt, m_idx, m_start, v_tick, div, meas_ticks)
                                         spanners_list.append(("Tie", staff_id, v_tick, end_tick, ()))
 
-                        evt = ("chord", event_tick, dur, tuple(sorted(notes)), grace_kind, stem_dir)
+                        evt = (
+                            "chord",
+                            event_tick,
+                            dur,
+                            tuple(sorted(notes)),
+                            grace_kind,
+                            stem_dir,
+                        )
                         raw_events.append((event_tick, order_rank, seq, evt))
                         seq += 1
 
@@ -752,14 +984,27 @@ def parse_mscx(text: str) -> dict[str, Any]:
                             sub = art.findtext("subtype") or art.get("name") or ""
                             artic_counts[sub] = artic_counts.get(sub, 0) + 1
                         for lyr in child.findall("Lyrics"):
-                            lyrics_list.append((int(lyr.findtext("no", "0")), lyr.findtext("text", "").strip()))
+                            lyrics_list.append(
+                                (
+                                    int(lyr.findtext("no", "0")),
+                                    lyr.findtext("text", "").strip(),
+                                )
+                            )
                         fermata_count += len(child.findall("Fermata"))
                         for sp in child.findall("Spanner"):
                             nxt = sp.find("next/location")
                             if nxt is not None:
                                 end_tick = spanner_target_tick(nxt, m_idx, m_start, v_tick, div, meas_ticks)
                                 props = get_spanner_props(sp)
-                                spanners_list.append((sp.get("type", ""), staff_id, v_tick, end_tick, props))
+                                spanners_list.append(
+                                    (
+                                        sp.get("type", ""),
+                                        staff_id,
+                                        v_tick,
+                                        end_tick,
+                                        props,
+                                    )
+                                )
                         v_tick += dur
                     elif child.tag == "Rest":
                         if child.findtext("duration"):
@@ -769,7 +1014,7 @@ def parse_mscx(text: str) -> dict[str, Any]:
                         else:
                             dtype = child.findtext("durationType", "quarter")
                             dots = int(child.findtext("dots", "0"))
-                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2 ** dots)
+                            base_dur = Fraction(DUR_TYPES.get(dtype, 1)) * div * Fraction(2 ** (dots + 1) - 1, 2**dots)
                             ratio = Fraction(1, 1)
                             for norm, act in tuplet_stack:
                                 ratio *= Fraction(norm, act)
@@ -794,17 +1039,33 @@ def parse_mscx(text: str) -> dict[str, Any]:
                     elif child.tag == "StaffText":
                         staff_text_list.append(child.findtext("text", "").strip())
                     elif child.tag == "Jump":
-                        j_sub = (child.findtext("jumpType") or child.findtext("subtype") or child.findtext("text") or "").strip()
+                        j_sub = (
+                            child.findtext("jumpType") or child.findtext("subtype") or child.findtext("text") or ""
+                        ).strip()
                         jumps_list.append((m_idx, j_sub))
                     elif child.tag == "Marker":
-                        mk_sub = (child.findtext("markerType") or mk.findtext("subtype") or mk.findtext("label") or mk.findtext("text") or "").strip()
+                        mk_sub = (
+                            child.findtext("markerType")
+                            or mk.findtext("subtype")
+                            or mk.findtext("label")
+                            or mk.findtext("text")
+                            or ""
+                        ).strip()
                         markers_list.append((m_idx, mk_sub))
                     elif child.tag == "Spanner":
                         nxt = child.find("next/location")
                         if nxt is not None:
                             end_tick = spanner_target_tick(nxt, m_idx, m_start, v_tick, div, meas_ticks)
                             props = get_spanner_props(child)
-                            spanners_list.append((child.get("type", ""), staff_id, v_tick, end_tick, props))
+                            spanners_list.append(
+                                (
+                                    child.get("type", ""),
+                                    staff_id,
+                                    v_tick,
+                                    end_tick,
+                                    props,
+                                )
+                            )
 
                 raw_events.sort(key=lambda item: (item[0], item[1], item[2]))
                 events_by_voice[v_idx].extend(item[3] for item in raw_events)
@@ -814,17 +1075,34 @@ def parse_mscx(text: str) -> dict[str, Any]:
         staff_spanners[staff_id] = sorted(spanners_list)
         staff_clefs[staff_id] = sorted(clef_list)
         staff_annotations[staff_id] = {
-            "dynamics": dyn_counts, "tempos": tempo_list, "harmony": harmony_count,
-            "lyrics": lyrics_list, "articulations": artic_counts, "fingerings": fingering_list,
-            "staffTexts": staff_text_list, "fermatas": fermata_count,
-            "jumps": jumps_list, "markers": markers_list,
+            "dynamics": dyn_counts,
+            "tempos": tempo_list,
+            "harmony": harmony_count,
+            "lyrics": lyrics_list,
+            "articulations": artic_counts,
+            "fingerings": fingering_list,
+            "staffTexts": staff_text_list,
+            "fermatas": fermata_count,
+            "jumps": jumps_list,
+            "markers": markers_list,
         }
 
-    excerpts = [{"title": s.findtext("name") or "", "parts": [p.get("id") for p in s.findall("Part")]} for s in score.findall("Score")]
+    excerpts = [
+        {
+            "title": s.findtext("name") or "",
+            "parts": [p.get("id") for p in s.findall("Part")],
+        }
+        for s in score.findall("Score")
+    ]
     return {
-        "metadata": metadata, "parts": parts, "measures": staff_measures,
-        "events": staff_events, "spanners": staff_spanners,
-        "clefs": staff_clefs, "annotations": staff_annotations, "excerpts": excerpts,
+        "metadata": metadata,
+        "parts": parts,
+        "measures": staff_measures,
+        "events": staff_events,
+        "spanners": staff_spanners,
+        "clefs": staff_clefs,
+        "annotations": staff_annotations,
+        "excerpts": excerpts,
     }
 
 
@@ -836,13 +1114,29 @@ def to_musicxml_subset(sem: dict[str, Any]) -> dict[str, Any]:
     }
     parts = [{"name": p["longName"] or p["trackName"], "staffCount": p["staffCount"]} for p in sem["parts"]]
     measures = {
-        sid: {"count": len(mlist), "measures": [{"timesig": m["timesig"], "startRepeat": m["startRepeat"], "endRepeat": m["endRepeat"]} for m in mlist]}
+        sid: {
+            "count": len(mlist),
+            "measures": [
+                {
+                    "timesig": m["timesig"],
+                    "startRepeat": m["startRepeat"],
+                    "endRepeat": m["endRepeat"],
+                }
+                for m in mlist
+            ],
+        }
         for sid, mlist in sem["measures"].items()
     }
     events = {
         sid: {
             vid: [
-                (kind, tick, dur, tuple((p, tie) for p, tpc, tie, *rest in notes), grace_kind)
+                (
+                    kind,
+                    tick,
+                    dur,
+                    tuple((p, tie) for p, tpc, tie, *rest in notes),
+                    grace_kind,
+                )
                 for kind, tick, dur, notes, grace_kind, *rest in elist
             ]
             for vid, elist in vmap.items()
@@ -854,12 +1148,21 @@ def to_musicxml_subset(sem: dict[str, Any]) -> dict[str, Any]:
         for sid, splist in sem["spanners"].items()
     }
     annotations = {
-        sid: {"dynamics": ann["dynamics"], "tempos": ann["tempos"], "lyrics": ann["lyrics"], "harmony": ann["harmony"]}
+        sid: {
+            "dynamics": ann["dynamics"],
+            "tempos": ann["tempos"],
+            "lyrics": ann["lyrics"],
+            "harmony": ann["harmony"],
+        }
         for sid, ann in sem["annotations"].items()
     }
     return {
-        "metadata": meta, "parts": parts, "measures": measures,
-        "events": events, "spanners": spanners, "annotations": annotations,
+        "metadata": meta,
+        "parts": parts,
+        "measures": measures,
+        "events": events,
+        "spanners": spanners,
+        "annotations": annotations,
     }
 
 
@@ -889,7 +1192,13 @@ def diff_data(a: Any, b: Any, path: str = "") -> list[tuple[str, Any, Any]]:
 
 
 class RoundTripRunner:
-    def __init__(self, session: ClientSession, output_dir: Path, self_test: bool = False, no_losses: bool = False):
+    def __init__(
+        self,
+        session: ClientSession,
+        output_dir: Path,
+        self_test: bool = False,
+        no_losses: bool = False,
+    ):
         self.session = session
         self.no_losses = no_losses
         self.output_dir = output_dir
@@ -926,24 +1235,40 @@ class RoundTripRunner:
             return
         key = "musicxml_roundtrip" if phase == "musicxml" else phase
         result[key], result["status"] = "failed", "failed"
-        result["failures"].append((phase, f"{len(diffs)} differences, digest {digest}"
-                                   + (f" (recorded {known[0]})" if known else "")))
+        result["failures"].append(
+            (
+                phase,
+                f"{len(diffs)} differences, digest {digest}" + (f" (recorded {known[0]})" if known else ""),
+            )
+        )
         result["failures"].extend((f"{phase}:{p}", f"{va!r} vs {vb!r}") for p, va, vb in diffs[:40])
 
-    async def execute_case(self, case_id: str, fixture_ref: str, doc_id: str, excerpt_id: str | None = None) -> dict[str, Any]:
+    async def execute_case(
+        self, case_id: str, fixture_ref: str, doc_id: str, excerpt_id: str | None = None
+    ) -> dict[str, Any]:
         out = self.output_dir
         prefix = case_id
         result: dict[str, Any] = {
-            "case": case_id, "fixture": fixture_ref, "excerptId": excerpt_id,
-            "status": "passed", "mscz_roundtrip": "passed", "mscz_text": "passed",
-            "musicxml_roundtrip": "passed", "idempotence": "passed",
-            "losses": [], "failures": [],
+            "case": case_id,
+            "fixture": fixture_ref,
+            "excerptId": excerpt_id,
+            "status": "passed",
+            "mscz_roundtrip": "passed",
+            "mscz_text": "passed",
+            "musicxml_roundtrip": "passed",
+            "idempotence": "passed",
+            "losses": [],
+            "failures": [],
         }
 
         # 1. Export MSCX of D (A)
         path_A = out / f"{prefix}_A.mscx"
-        exp_args: dict[str, Any] = {"document": doc_id, "kind": "score",
-            "options": {"format": "mscx"}, "destination": {"kind": "file", "path": str(path_A)}}
+        exp_args: dict[str, Any] = {
+            "document": doc_id,
+            "kind": "score",
+            "options": {"format": "mscx"},
+            "destination": {"kind": "file", "path": str(path_A)},
+        }
         if excerpt_id is not None:
             exp_args["options"]["score"] = {"excerpt": excerpt_id}
         err, _ = await self.call("score_export", exp_args)
@@ -955,7 +1280,10 @@ class RoundTripRunner:
 
         # 2. MSCZ round trip -> B
         path_mscz = out / f"{prefix}.mscz"
-        exp_args["options"]["format"], exp_args["destination"]["path"] = "mscz", str(path_mscz)
+        exp_args["options"]["format"], exp_args["destination"]["path"] = (
+            "mscz",
+            str(path_mscz),
+        )
         await self.must("score_export", exp_args)
 
         err, opened_B = await self.call("score_open", {"path": str(path_mscz)})
@@ -966,8 +1294,15 @@ class RoundTripRunner:
         doc_B = opened_B["document"]
         path_B = out / f"{prefix}_B.mscx"
         try:
-            await self.must("score_export", {"document": doc_B, "kind": "score",
-                "options": {"format": "mscx"}, "destination": {"kind": "file", "path": str(path_B)}})
+            await self.must(
+                "score_export",
+                {
+                    "document": doc_B,
+                    "kind": "score",
+                    "options": {"format": "mscx"},
+                    "destination": {"kind": "file", "path": str(path_B)},
+                },
+            )
 
             # Check excerpts preservation on reopened MSCZ of master scores
             if excerpt_id is None:
@@ -975,7 +1310,11 @@ class RoundTripRunner:
                 if err_orig or not isinstance(exc_orig, dict):
                     result["mscz_roundtrip"], result["status"] = "failed", "failed"
                     result["failures"].append(("mscz_excerpts", f"score_outline on source failed: {exc_orig}"))
-                orig_excs = exc_orig.get("outline", {}).get("excerpts", []) if not err_orig and isinstance(exc_orig, dict) else []
+                orig_excs = (
+                    exc_orig.get("outline", {}).get("excerpts", [])
+                    if not err_orig and isinstance(exc_orig, dict)
+                    else []
+                )
                 if orig_excs:
                     err_b_exc, exc_b = await self.call("score_outline", {"document": doc_B})
                     if err_b_exc or not isinstance(exc_b, dict):
@@ -984,25 +1323,67 @@ class RoundTripRunner:
                     else:
                         b_excs = exc_b.get("outline", {}).get("excerpts", [])
                         if len(orig_excs) != len(b_excs):
-                            result["mscz_roundtrip"], result["status"] = "failed", "failed"
-                            result["failures"].append(("mscz_excerpts:count", f"{len(orig_excs)} vs {len(b_excs)}"))
+                            result["mscz_roundtrip"], result["status"] = (
+                                "failed",
+                                "failed",
+                            )
+                            result["failures"].append(
+                                (
+                                    "mscz_excerpts:count",
+                                    f"{len(orig_excs)} vs {len(b_excs)}",
+                                )
+                            )
                         elif [e.get("name") for e in orig_excs] != [e.get("name") for e in b_excs]:
-                            result["mscz_roundtrip"], result["status"] = "failed", "failed"
-                            result["failures"].append(("mscz_excerpts:titles", f"{[e.get('name') for e in orig_excs]} vs {[e.get('name') for e in b_excs]}"))
+                            result["mscz_roundtrip"], result["status"] = (
+                                "failed",
+                                "failed",
+                            )
+                            result["failures"].append(
+                                (
+                                    "mscz_excerpts:titles",
+                                    f"{[e.get('name') for e in orig_excs]} vs {[e.get('name') for e in b_excs]}",
+                                )
+                            )
                         else:
                             for idx, (e_a, e_b) in enumerate(zip(orig_excs, b_excs)):
                                 p_exc_a = out / f"{prefix}_exc_{idx}_A.mscx"
                                 p_exc_b = out / f"{prefix}_exc_{idx}_B.mscx"
-                                for document, excerpt, path in ((doc_id, e_a['id'], p_exc_a), (doc_B, e_b['id'], p_exc_b)):
-                                    await self.must('score_export', {'document': document, 'kind': 'score',
-                                        'options': {'format': 'mscx', 'score': {'excerpt': excerpt}},
-                                        'destination': {'kind': 'file', 'path': str(path)}})
+                                for document, excerpt, path in (
+                                    (doc_id, e_a["id"], p_exc_a),
+                                    (doc_B, e_b["id"], p_exc_b),
+                                ):
+                                    await self.must(
+                                        "score_export",
+                                        {
+                                            "document": document,
+                                            "kind": "score",
+                                            "options": {
+                                                "format": "mscx",
+                                                "score": {"excerpt": excerpt},
+                                            },
+                                            "destination": {
+                                                "kind": "file",
+                                                "path": str(path),
+                                            },
+                                        },
+                                    )
                                 sem_exc_a = parse_mscx(p_exc_a.read_text("utf-8"))
                                 sem_exc_b = parse_mscx(p_exc_b.read_text("utf-8"))
                                 exc_diffs = diff_data(sem_exc_a, sem_exc_b)
                                 if exc_diffs:
-                                    result["mscz_roundtrip"], result["status"] = "failed", "failed"
-                                    result["failures"].extend([("mscz_excerpts:" + p, f"A={va!r} vs B={vb!r}") for p, va, vb in exc_diffs[:40]])
+                                    result["mscz_roundtrip"], result["status"] = (
+                                        "failed",
+                                        "failed",
+                                    )
+                                    result["failures"].extend(
+                                        [
+                                            (
+                                                "mscz_excerpts:" + p,
+                                                f"A={va!r} vs B={vb!r}",
+                                            )
+                                            for p, va, vb in exc_diffs[:40]
+                                        ]
+                                    )
         finally:
             await self.call("score_close", {"document": doc_B})
 
@@ -1022,7 +1403,10 @@ class RoundTripRunner:
 
         # 3. MusicXML round trip -> C
         path_xml1 = out / f"{prefix}_1.musicxml"
-        exp_args["options"]["format"], exp_args["destination"]["path"] = "musicxml", str(path_xml1)
+        exp_args["options"]["format"], exp_args["destination"]["path"] = (
+            "musicxml",
+            str(path_xml1),
+        )
         await self.must("score_export", exp_args)
 
         err, opened_C = await self.call("score_open", {"path": str(path_xml1)})
@@ -1034,15 +1418,26 @@ class RoundTripRunner:
         path_C = out / f"{prefix}_C.mscx"
         path_xml2 = out / f"{prefix}_2.musicxml"
         try:
-            for fmt, path in (('mscx', path_C), ('musicxml', path_xml2)):
-                await self.must('score_export', {'document': doc_C, 'kind': 'score',
-                    'options': {'format': fmt}, 'destination': {'kind': 'file', 'path': str(path)}})
+            for fmt, path in (("mscx", path_C), ("musicxml", path_xml2)):
+                await self.must(
+                    "score_export",
+                    {
+                        "document": doc_C,
+                        "kind": "score",
+                        "options": {"format": fmt},
+                        "destination": {"kind": "file", "path": str(path)},
+                    },
+                )
         finally:
             await self.call("score_close", {"document": doc_C})
 
         sem_C = parse_mscx(path_C.read_text("utf-8"))
-        self.check_phase(result, fixture_ref, "musicxml",
-                         diff_data(to_musicxml_subset(sem_A), to_musicxml_subset(sem_C)))
+        self.check_phase(
+            result,
+            fixture_ref,
+            "musicxml",
+            diff_data(to_musicxml_subset(sem_A), to_musicxml_subset(sem_C)),
+        )
 
         # 4. Idempotence: a second MusicXML generation must be a semantic fixpoint.
         # Text comparison is useless here (layout coordinates are re-derived).
@@ -1053,17 +1448,34 @@ class RoundTripRunner:
             return result
         path_D = out / f"{prefix}_D.mscx"
         try:
-            await self.must('score_export', {'document': opened_D['document'], 'kind': 'score',
-                'options': {'format': 'mscx'}, 'destination': {'kind': 'file', 'path': str(path_D)}})
+            await self.must(
+                "score_export",
+                {
+                    "document": opened_D["document"],
+                    "kind": "score",
+                    "options": {"format": "mscx"},
+                    "destination": {"kind": "file", "path": str(path_D)},
+                },
+            )
         finally:
             await self.call("score_close", {"document": opened_D["document"]})
-        self.check_phase(result, fixture_ref, "idempotence",
-                         diff_data(sem_C, parse_mscx(path_D.read_text("utf-8"))))
+        self.check_phase(
+            result,
+            fixture_ref,
+            "idempotence",
+            diff_data(sem_C, parse_mscx(path_D.read_text("utf-8"))),
+        )
 
         return result
 
 
-async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: bool = False, no_losses: bool = False) -> int:
+async def run_suite(
+    binary: Path,
+    resources: Path,
+    output_dir: Path,
+    self_test: bool = False,
+    no_losses: bool = False,
+) -> int:
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
@@ -1078,8 +1490,12 @@ async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: 
         cwd=str(output_dir.resolve()),
     )
     runner_report: dict[str, Any] = {
-        "binary": str(binary.resolve()), "resources": str(resources.resolve()),
-        "selfTest": self_test, "cases": [], "stale_known_losses": [], "passed": False,
+        "binary": str(binary.resolve()),
+        "resources": str(resources.resolve()),
+        "selfTest": self_test,
+        "cases": [],
+        "stale_known_losses": [],
+        "passed": False,
     }
 
     t0 = time.perf_counter()
@@ -1090,32 +1506,92 @@ async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: 
                 runner = RoundTripRunner(session, output_dir, self_test, no_losses)
 
                 # Case 1: create+edit
-                err, res = await runner.call("score_create", {"template_id": "Treble_Clef", "title": "Round trip"})
+                err, res = await runner.call(
+                    "score_create",
+                    {"template_id": "Treble_Clef", "title": "Round trip"},
+                )
                 if err:
-                    runner_report["cases"].append({
-                        "case": "create_edit", "fixture": "template:Treble_Clef", "status": "failed",
-                        "losses": [], "failures": [("score_create", str(res))],
-                    })
+                    runner_report["cases"].append(
+                        {
+                            "case": "create_edit",
+                            "fixture": "template:Treble_Clef",
+                            "status": "failed",
+                            "losses": [],
+                            "failures": [("score_create", str(res))],
+                        }
+                    )
                 else:
                     doc_create = res["document"]
                     try:
-                        await runner.must('score_edit', {'document': doc_create,
-                            'ops': [{'op': 'insert_measures', 'count': 1}]})
-                        outline = await runner.must('score_outline', {'document': doc_create})
-                        measures = outline['outline']['measures']
+                        await runner.must(
+                            "score_edit",
+                            {
+                                "document": doc_create,
+                                "ops": [{"op": "insert_measures", "count": 1}],
+                            },
+                        )
+                        outline = await runner.must("score_outline", {"document": doc_create})
+                        measures = outline["outline"]["measures"]
                         assert len(measures) >= 2
                         for measure, pitches in zip(measures[:2], ((60, 62, 64, 65), (76, 74, 72, 71))):
                             for beat, value in enumerate(pitches):
-                                tick = Fraction(int(measure['tick']['num']), int(measure['tick']['den'])) + Fraction(beat, 4)
-                                await runner.must('score_edit', {'document': doc_create, 'ops': [{
-                                    'op': 'enter_notes', 'at': {'kind': 'segment', 'measure': measure['id'],
-                                        'staff': 0, 'voice': 0, 'tick': {'num': str(tick.numerator), 'den': str(tick.denominator)},
-                                        'segment_kind': 'ChordRest'},
-                                    'duration': {'num': '1', 'den': '4'}, 'pitches': [{'pitch': value}]}]})
-                        q = await runner.must('score_query', {'document': doc_create, 'mode': 'elements',
-                            'query': {'types': ['Note'], 'first_measure': 0, 'measure_count': 1}})
-                        await runner.must('score_edit', {'document': doc_create, 'expected_revision': q['revision'],
-                            'ops': [{'op': 'set_pitch', 'note': {'kind': 'id', 'id': q['elements'][0]['id']}, 'pitch': 68}]})
+                                tick = Fraction(
+                                    int(measure["tick"]["num"]),
+                                    int(measure["tick"]["den"]),
+                                ) + Fraction(beat, 4)
+                                await runner.must(
+                                    "score_edit",
+                                    {
+                                        "document": doc_create,
+                                        "ops": [
+                                            {
+                                                "op": "enter_notes",
+                                                "at": {
+                                                    "kind": "segment",
+                                                    "measure": measure["id"],
+                                                    "staff": 0,
+                                                    "voice": 0,
+                                                    "tick": {
+                                                        "num": str(tick.numerator),
+                                                        "den": str(tick.denominator),
+                                                    },
+                                                    "segment_kind": "ChordRest",
+                                                },
+                                                "duration": {"num": "1", "den": "4"},
+                                                "pitches": [{"pitch": value}],
+                                            }
+                                        ],
+                                    },
+                                )
+                        q = await runner.must(
+                            "score_query",
+                            {
+                                "document": doc_create,
+                                "mode": "elements",
+                                "query": {
+                                    "types": ["Note"],
+                                    "first_measure": 0,
+                                    "measure_count": 1,
+                                },
+                            },
+                        )
+                        await runner.must(
+                            "score_edit",
+                            {
+                                "document": doc_create,
+                                "expected_revision": q["revision"],
+                                "ops": [
+                                    {
+                                        "op": "set_pitch",
+                                        "note": {
+                                            "kind": "id",
+                                            "id": q["elements"][0]["id"],
+                                        },
+                                        "pitch": 68,
+                                    }
+                                ],
+                            },
+                        )
                         rep1 = await runner.execute_case("create_edit", "template:Treble_Clef", doc_create)
                         runner_report["cases"].append(rep1)
                     finally:
@@ -1131,8 +1607,15 @@ async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: 
                     cid = f"import_{path.stem}"
                     err, opened = await runner.call("score_open", {"path": str(path.resolve())})
                     if err:
-                        runner_report["cases"].append({"case": cid, "fixture": path.name, "status": "failed",
-                                                       "losses": [], "failures": [("score_open", str(opened))]})
+                        runner_report["cases"].append(
+                            {
+                                "case": cid,
+                                "fixture": path.name,
+                                "status": "failed",
+                                "losses": [],
+                                "failures": [("score_open", str(opened))],
+                            }
+                        )
                         continue
 
                     doc = opened["document"]
@@ -1143,15 +1626,23 @@ async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: 
                             # Case 3: excerpts for linked_parts.mscx
                             err_exc, exc_data = await runner.call("score_outline", {"document": doc})
                             if err_exc or not isinstance(exc_data, dict):
-                                runner_report["cases"].append({
-                                    "case": f"excerpts_{path.stem}", "fixture": path.name, "status": "failed",
-                                    "losses": [], "failures": [("score_outline", str(exc_data))],
-                                })
+                                runner_report["cases"].append(
+                                    {
+                                        "case": f"excerpts_{path.stem}",
+                                        "fixture": path.name,
+                                        "status": "failed",
+                                        "losses": [],
+                                        "failures": [("score_outline", str(exc_data))],
+                                    }
+                                )
                             else:
-                                for index, exc in enumerate(exc_data['outline']['excerpts']):
+                                for index, exc in enumerate(exc_data["outline"]["excerpts"]):
                                     eid = exc["id"]
                                     rep_exc = await runner.execute_case(
-                                        f"excerpt_{path.stem}_{index}", f"{path.name}:excerpt:{index}", doc, excerpt_id=eid,
+                                        f"excerpt_{path.stem}_{index}",
+                                        f"{path.name}:excerpt:{index}",
+                                        doc,
+                                        excerpt_id=eid,
                                     )
                                     runner_report["cases"].append(rep_exc)
                     finally:
@@ -1161,10 +1652,19 @@ async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: 
     runner_report["elapsed_seconds"] = elapsed
 
     # An entry is stale when its phase produced no accepted difference (or never ran).
-    stale = [] if no_losses else sorted(
-        (f, phase) for f, phases in KNOWN_LOSSES.items() for phase in phases
-        if not any(c.get("fixture") == f and any(loss[0] == phase for loss in c.get("losses", []))
-                   for c in runner_report["cases"]))
+    stale = (
+        []
+        if no_losses
+        else sorted(
+            (f, phase)
+            for f, phases in KNOWN_LOSSES.items()
+            for phase in phases
+            if not any(
+                c.get("fixture") == f and any(loss[0] == phase for loss in c.get("losses", []))
+                for c in runner_report["cases"]
+            )
+        )
+    )
     runner_report["stale_known_losses"] = [{"fixture": f, "phase": phase} for f, phase in stale]
     for f, phase in stale:
         print(f"WARNING: stale KNOWN_LOSSES entry [{f}] {phase}")
@@ -1188,13 +1688,34 @@ async def run_suite(binary: Path, resources: Path, output_dir: Path, self_test: 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True, help="Path to engrave-mcp server binary")
-    parser.add_argument("--resources", type=Path, required=True, help="Path to .runtime/assets directory")
+    parser.add_argument(
+        "--resources",
+        type=Path,
+        required=True,
+        help="Path to .runtime/assets directory",
+    )
     parser.add_argument("--output", type=Path, required=True, help="Scratch output directory")
-    parser.add_argument("--self-test", action="store_true", help="Deliberately mutate B to verify parser catches failures")
-    parser.add_argument("--no-losses", action="store_true", help="Ignore KNOWN_LOSSES and report every difference")
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Deliberately mutate B to verify parser catches failures",
+    )
+    parser.add_argument(
+        "--no-losses",
+        action="store_true",
+        help="Ignore KNOWN_LOSSES and report every difference",
+    )
     args = parser.parse_args()
 
-    exit_code = asyncio.run(run_suite(args.binary, args.resources, args.output, self_test=args.self_test, no_losses=args.no_losses))
+    exit_code = asyncio.run(
+        run_suite(
+            args.binary,
+            args.resources,
+            args.output,
+            self_test=args.self_test,
+            no_losses=args.no_losses,
+        )
+    )
     sys.exit(exit_code)
 
 

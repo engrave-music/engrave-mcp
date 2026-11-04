@@ -26,10 +26,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-DIVISIONS = 480                 # MIDI ticks per quarter note
-MEASURES = 150                  # 150 * 4 beats at 120 BPM = 300 s
+DIVISIONS = 480  # MIDI ticks per quarter note
+MEASURES = 150  # 150 * 4 beats at 120 BPM = 300 s
 TEMPO_BPM = 120
-EIGHTH = DIVISIONS // 2         # 240 ticks
+EIGHTH = DIVISIONS // 2  # 240 ticks
 
 # (part name, abbreviation, MusicXML midi-program (1-based), base MIDI note, clef sign)
 PARTS: tuple[tuple[str, str, int, int, str], ...] = (
@@ -81,15 +81,19 @@ _CHROMATIC = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
 def _pitch_xml(note: int) -> str:
     octave = note // 12 - 1
-    return (f"<pitch><step>{_CHROMATIC[note % 12][0]}</step>"
-            + ("<alter>1</alter>" if _CHROMATIC[note % 12].endswith("#") else "")
-            + f"<octave>{octave}</octave></pitch>")
+    return (
+        f"<pitch><step>{_CHROMATIC[note % 12][0]}</step>"
+        + ("<alter>1</alter>" if _CHROMATIC[note % 12].endswith("#") else "")
+        + f"<octave>{octave}</octave></pitch>"
+    )
 
 
 def _note_xml(note: int, duration: int, chord: bool, note_type: str) -> str:
-    return (f"<note>{'<chord/>' if chord else ''}{_pitch_xml(note)}"
-            f"<duration>{duration}</duration><voice>1</voice>"
-            f"<type>{note_type}</type></note>")
+    return (
+        f"<note>{'<chord/>' if chord else ''}{_pitch_xml(note)}"
+        f"<duration>{duration}</duration><voice>1</voice>"
+        f"<type>{note_type}</type></note>"
+    )
 
 
 def _direction_xml(measure: int, dynamics: list[tuple[int, str, int]]) -> str:
@@ -98,8 +102,10 @@ def _direction_xml(measure: int, dynamics: list[tuple[int, str, int]]) -> str:
             break
     else:
         return ""
-    return (f'<direction placement="below"><direction-type><dynamics><{name}/>'
-            f"</dynamics></direction-type><sound dynamics=\"{value}\"/></direction>")
+    return (
+        f'<direction placement="below"><direction-type><dynamics><{name}/>'
+        f'</dynamics></direction-type><sound dynamics="{value}"/></direction>'
+    )
 
 
 def generate_dense_score(output_path: Path | str) -> dict:
@@ -114,7 +120,7 @@ def generate_dense_score(output_path: Path | str) -> dict:
         '<score-partwise version="4.0">',
         "  <work><work-title>Dense Orchestral Benchmark</work-title></work>",
         "  <movement-title>Dense Orchestral Benchmark</movement-title>",
-        "  <identification><creator type=\"composer\">musescore-mcp</creator></identification>",
+        '  <identification><creator type="composer">musescore-mcp</creator></identification>',
         "  <part-list>",
     ]
     for index, (name, abbreviation, program, _base, _clef) in enumerate(PARTS, start=1):
@@ -156,8 +162,15 @@ def generate_dense_score(output_path: Path | str) -> dict:
                 sounding = min(108, max(21, base + step))
                 if index - 1 in CHORD_PARTS and eighth in (0, 4):
                     for interval in (0, 4, 7):
-                        lines.append("      " + _note_xml(
-                            min(108, sounding + interval), EIGHTH, interval != 0, "eighth"))
+                        lines.append(
+                            "      "
+                            + _note_xml(
+                                min(108, sounding + interval),
+                                EIGHTH,
+                                interval != 0,
+                                "eighth",
+                            )
+                        )
                         note_count += 1
                 else:
                     lines.append("      " + _note_xml(sounding, EIGHTH, False, "eighth"))
@@ -184,9 +197,11 @@ def main() -> None:
     parser.add_argument("output", type=Path, help="Destination .musicxml path")
     args = parser.parse_args()
     info = generate_dense_score(args.output)
-    print(f"Wrote {info['path']}: {info['bytes']} bytes, {info['parts']} parts, "
-          f"{info['measures']} measures, {info['notes']} notes, "
-          f"{info['play_time_secs']:.0f}s of music")
+    print(
+        f"Wrote {info['path']}: {info['bytes']} bytes, {info['parts']} parts, "
+        f"{info['measures']} measures, {info['notes']} notes, "
+        f"{info['play_time_secs']:.0f}s of music"
+    )
 
 
 if __name__ == "__main__":

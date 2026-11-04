@@ -14,7 +14,7 @@ int main() {
         music::v2::validate_registry();
         std::cout << music::v2::tools_json().dump(2) << '\n';
         if (!std::cout) return 1;
-    } catch (const std::exception& error) {
+    } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         return 1;
     }

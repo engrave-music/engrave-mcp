@@ -8,15 +8,21 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import re
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
 
-from golden import (EDIT_SCENARIOS, FIXTURE_DIR, apply_edit_scenario, export, fixture_files,
-                    open_fixture, required)
+from golden import (
+    EDIT_SCENARIOS,
+    FIXTURE_DIR,
+    apply_edit_scenario,
+    export,
+    fixture_files,
+    open_fixture,
+    required,
+)
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from test_compat_corpus import digest, semantic_dump, write_json
@@ -33,10 +39,12 @@ def features(source: Path, edit: bool, score: Path, semantic: dict) -> list[str]
     if source.suffix == ".mid":
         found.add("MIDI import")
     with zipfile.ZipFile(score) as archive:
-        xml = b"\n".join(archive.read(name) for name in archive.namelist()
-                         if name.lower().endswith(".mscx"))
-    if re.search(rb"<(?:eid|linkedTo|startElement|endElement|NoteEID|mmRestLast|"
-                 rb"startMeasure|endMeasure|sharedPart)\b", xml):
+        xml = b"\n".join(archive.read(name) for name in archive.namelist() if name.lower().endswith(".mscx"))
+    if re.search(
+        rb"<(?:eid|linkedTo|startElement|endElement|NoteEID|mmRestLast|"
+        rb"startMeasure|endMeasure|sharedPart)\b",
+        xml,
+    ):
         found.add("EID references in writer bytes")
     if b"<mmRestLast>" in xml:
         found.add("multi-measure-rest references in writer bytes")
@@ -71,8 +79,16 @@ def features(source: Path, edit: bool, score: Path, semantic: dict) -> list[str]
     return sorted(found)
 
 
-async def capture_one(session, source: Path, name: str, scenario: dict | None,
-                      target: Path, binary: Path, resources: Path, provenance: dict) -> dict:
+async def capture_one(
+    session,
+    source: Path,
+    name: str,
+    scenario: dict | None,
+    target: Path,
+    binary: Path,
+    resources: Path,
+    provenance: dict,
+) -> dict:
     opened = await open_fixture(session, source)
     identity = {"document": opened["document"]}
     try:
@@ -86,11 +102,16 @@ async def capture_one(session, source: Path, name: str, scenario: dict | None,
         dump = semantic_dump(binary, resources, score)
         expected = f"{name}.semantic.json"
         write_json(target / expected, dump)
-        entry = {"file": score.name, "semantic": expected, "sha256": digest(score),
-                 "semantic_sha256": digest(target / expected), "source_sha256": digest(source),
-                 "features": features(source, bool(scenario), score, dump),
-                 "source": source.relative_to(Path(__file__).resolve().parents[1]).as_posix(),
-                 **provenance}
+        entry = {
+            "file": score.name,
+            "semantic": expected,
+            "sha256": digest(score),
+            "semantic_sha256": digest(target / expected),
+            "source_sha256": digest(source),
+            "features": features(source, bool(scenario), score, dump),
+            "source": source.relative_to(Path(__file__).resolve().parents[1]).as_posix(),
+            **provenance,
+        }
         print(f"captured {score.name}", flush=True)
         return entry
     finally:
@@ -106,34 +127,70 @@ async def capture(args) -> None:
     dump_binary = binary.parent / ("semantic_dump.exe" if sys.platform.startswith("win") else "semantic_dump")
     if not dump_binary.is_file():
         raise RuntimeError(f"semantic_dump not found next to {binary}")
-    provenance = {key: getattr(args, key) for key in
-                  ("writer_sha", "upstream_sha", "framework_sha", "superproject_commit")}
+    provenance = {
+        key: getattr(args, key)
+        for key in (
+            "writer_sha",
+            "upstream_sha",
+            "framework_sha",
+            "superproject_commit",
+        )
+    }
     entries = []
-    params = StdioServerParameters(command=str(binary),
-                                   args=["--resources", str(resources), "--soundfont", str(soundfont)])
+    params = StdioServerParameters(
+        command=str(binary),
+        args=["--resources", str(resources), "--soundfont", str(soundfont)],
+    )
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as log:
         try:
             async with stdio_client(params, errlog=log) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     for source in fixture_files():
-                        entries.append(await capture_one(session, source, source.name, None, target,
-                                                         dump_binary, resources, provenance))
+                        entries.append(
+                            await capture_one(
+                                session,
+                                source,
+                                source.name,
+                                None,
+                                target,
+                                dump_binary,
+                                resources,
+                                provenance,
+                            )
+                        )
                     for name, scenario in EDIT_SCENARIOS.items():
-                        entries.append(await capture_one(session, FIXTURE_DIR / scenario["source"], name,
-                                                         scenario, target, dump_binary, resources, provenance))
+                        entries.append(
+                            await capture_one(
+                                session,
+                                FIXTURE_DIR / scenario["source"],
+                                name,
+                                scenario,
+                                target,
+                                dump_binary,
+                                resources,
+                                provenance,
+                            )
+                        )
         except Exception:
             log.seek(0)
             print(log.read(), file=sys.stderr)
             raise
-    write_json(target / "manifest.json", {
-        "schema": 1, "entries": entries,
-        "capture": {"writer_pin": args.writer_pin, "build": args.build_description,
-                    "writer_binary_sha256": digest(binary),
-                    "semantic_dump_binary_sha256": digest(dump_binary),
-                    "soundfont_sha256": digest(soundfont),
-                    "assets_manifest_sha256": digest(resources / "assets.json")},
-    })
+    write_json(
+        target / "manifest.json",
+        {
+            "schema": 1,
+            "entries": entries,
+            "capture": {
+                "writer_pin": args.writer_pin,
+                "build": args.build_description,
+                "writer_binary_sha256": digest(binary),
+                "semantic_dump_binary_sha256": digest(dump_binary),
+                "soundfont_sha256": digest(soundfont),
+                "assets_manifest_sha256": digest(resources / "assets.json"),
+            },
+        },
+    )
     print(f"captured {len(entries)} corpus entries into {target}")
 
 

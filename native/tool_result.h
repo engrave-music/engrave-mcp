@@ -15,8 +15,7 @@ inline nlohmann::json make_tool_result(nlohmann::json payload, bool publication 
     if (publication && std::getenv("ENGRAVE_MCP_TEST_THROW_WRAPPER"))
         throw std::runtime_error("Injected failure inside completed export wrapper");
 #endif
-    std::string text = payload.dump(-1, ' ', false,
-                                    nlohmann::json::error_handler_t::replace);
+    std::string text = payload.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
     if (text.size() > (4u * 1024u * 1024u)) {
         text = "Tool result is available in structuredContent; its "
                "serialized form exceeds the legacy text budget.";
@@ -33,12 +32,11 @@ inline nlohmann::json make_tool_result(nlohmann::json payload, bool publication 
 }
 
 // Reserve the entire request-line budget for a string RPC id, plus envelope.
-inline std::size_t export_report_bound(const nlohmann::json& payload) {
+inline std::size_t export_report_bound(const nlohmann::json &payload) {
     // Always budget legacy duplication, even above its cutoff. This keeps the
     // bound monotonic when a smaller visible subset falls below that cutoff.
     auto result = make_tool_result(payload);
     result["content"][0]["text"] = payload.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
-    return result.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace).size()
-        + v2::transport_request_limit + 1024;
+    return result.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace).size() + v2::transport_request_limit + 1024;
 }
-}
+} // namespace music

@@ -27,8 +27,13 @@ def digest(path: Path) -> str:
 
 
 def canonical(value) -> str:
-    return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False,
-                      separators=(",", ":"))
+    return json.dumps(
+        value,
+        sort_keys=True,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    )
 
 
 def reject_constant(value: str):
@@ -41,18 +46,29 @@ def load_json(path: Path):
 
 def write_json(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False,
-                               allow_nan=False) + "\n", encoding="utf-8", newline="\n")
+    path.write_text(
+        json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def safe_name(value, suffix: str) -> bool:
-    return (isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._-]+", value) is not None
-            and value not in (".", "..") and value.endswith(suffix))
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9._-]+", value) is not None
+        and value not in (".", "..")
+        and value.endswith(suffix)
+    )
 
 
 def semantic_dump(binary: Path, resources: Path, source: Path):
-    result = subprocess.run([str(binary), str(resources), str(source)],
-                            capture_output=True, timeout=120, check=False)
+    result = subprocess.run(
+        [str(binary), str(resources), str(source)],
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
     if result.returncode:
         detail = result.stderr.decode("utf-8", "replace").strip()
         raise ValueError(f"unreadable score (exit {result.returncode}): {detail[-800:]}")
@@ -68,10 +84,14 @@ def check_index(root: Path) -> list[str]:
             raise ValueError("invalid corpus index")
         errors = []
         for name, record in corpora.items():
-            if (not re.fullmatch(r"engrave-[0-9]+", name) or not isinstance(record, dict)
-                    or not isinstance(record.get("manifest_sha256"), str)
-                    or not SHA256.fullmatch(record["manifest_sha256"])
-                    or type(record.get("entries")) is not int or record["entries"] < 1):
+            if (
+                not re.fullmatch(r"engrave-[0-9]+", name)
+                or not isinstance(record, dict)
+                or not isinstance(record.get("manifest_sha256"), str)
+                or not SHA256.fullmatch(record["manifest_sha256"])
+                or type(record.get("entries")) is not int
+                or record["entries"] < 1
+            ):
                 raise ValueError(f"invalid index record: {name}")
             directory = root / name
             if not directory.is_dir() or directory.is_symlink():
@@ -94,8 +114,13 @@ def check_index(root: Path) -> list[str]:
         return [f"invalid or missing corpus index: {exc}"]
 
 
-def check_corpus(root: Path, binary: Path, resources: Path, output: Path | None = None,
-                 verbose: bool = True) -> tuple[list[str], int]:
+def check_corpus(
+    root: Path,
+    binary: Path,
+    resources: Path,
+    output: Path | None = None,
+    verbose: bool = True,
+) -> tuple[list[str], int]:
     errors = []
     checked = 0
     if not root.is_dir():
@@ -116,11 +141,19 @@ def check_corpus(root: Path, binary: Path, resources: Path, output: Path | None 
                 raise ValueError("manifest has no entries")
             capture = manifest.get("capture")
             if capture is not None and (
-                not isinstance(capture, dict) or capture.get("writer_pin") != pin.name
-                or not isinstance(capture.get("build"), str) or not capture["build"]
-                or any(not isinstance(capture.get(key), str) or not SHA256.fullmatch(capture[key])
-                       for key in ("writer_binary_sha256", "semantic_dump_binary_sha256",
-                                   "soundfont_sha256", "assets_manifest_sha256"))
+                not isinstance(capture, dict)
+                or capture.get("writer_pin") != pin.name
+                or not isinstance(capture.get("build"), str)
+                or not capture["build"]
+                or any(
+                    not isinstance(capture.get(key), str) or not SHA256.fullmatch(capture[key])
+                    for key in (
+                        "writer_binary_sha256",
+                        "semantic_dump_binary_sha256",
+                        "soundfont_sha256",
+                        "assets_manifest_sha256",
+                    )
+                )
             ):
                 raise ValueError("invalid capture provenance")
         except (OSError, ValueError, TypeError) as exc:
@@ -143,17 +176,27 @@ def check_corpus(root: Path, binary: Path, resources: Path, output: Path | None 
                 errors.append(f"{label}: duplicate manifest file")
                 continue
             names.update((file, semantic))
-            if (not isinstance(entry.get("sha256"), str)
-                    or not SHA256.fullmatch(entry["sha256"])
-                    or any(not isinstance(entry.get(key), str) or not SHA.fullmatch(entry[key])
-                           for key in ("writer_sha", "upstream_sha", "framework_sha",
-                                       "superproject_commit"))
-                    or any(not isinstance(entry.get(key), str) or not SHA256.fullmatch(entry[key])
-                           for key in ("semantic_sha256", "source_sha256")
-                           if capture is not None or key in entry)
-                    or not isinstance(entry.get("features"), list)
-                    or not entry["features"]
-                    or any(not isinstance(feature, str) or not feature for feature in entry["features"])):
+            if (
+                not isinstance(entry.get("sha256"), str)
+                or not SHA256.fullmatch(entry["sha256"])
+                or any(
+                    not isinstance(entry.get(key), str) or not SHA.fullmatch(entry[key])
+                    for key in (
+                        "writer_sha",
+                        "upstream_sha",
+                        "framework_sha",
+                        "superproject_commit",
+                    )
+                )
+                or any(
+                    not isinstance(entry.get(key), str) or not SHA256.fullmatch(entry[key])
+                    for key in ("semantic_sha256", "source_sha256")
+                    if capture is not None or key in entry
+                )
+                or not isinstance(entry.get("features"), list)
+                or not entry["features"]
+                or any(not isinstance(feature, str) or not feature for feature in entry["features"])
+            ):
                 errors.append(f"{label}: invalid provenance, hash or features")
                 continue
             valid.append(entry)
@@ -210,8 +253,11 @@ def negative_controls(root: Path, binary: Path, resources: Path) -> list[str]:
             for name in (entry["file"], entry["semantic"]):
                 shutil.copyfile(first_pin / name, base / name)
         if len(entries) == 1:
-            extra = {**entries[0], "file": "control-copy.mscz",
-                     "semantic": "control-copy.json"}
+            extra = {
+                **entries[0],
+                "file": "control-copy.mscz",
+                "semantic": "control-copy.json",
+            }
             shutil.copyfile(base / entries[0]["file"], base / extra["file"])
             shutil.copyfile(base / entries[0]["semantic"], base / extra["semantic"])
             entries.append(extra)
@@ -220,12 +266,14 @@ def negative_controls(root: Path, binary: Path, resources: Path) -> list[str]:
         if errors or count != len(entries):
             return [f"negative-control baseline failed: {errors}"]
 
-        controls = (("tampered byte", "sha256 mismatch"),
-                    ("missing entry", "extra file"),
-                    ("missing file", "missing file"),
-                    ("extra file", "extra file"),
-                    ("unreadable score", "unreadable score"),
-                    ("changed expected field", "semantic dump mismatch"))
+        controls = (
+            ("tampered byte", "sha256 mismatch"),
+            ("missing entry", "extra file"),
+            ("missing file", "missing file"),
+            ("extra file", "extra file"),
+            ("unreadable score", "unreadable score"),
+            ("changed expected field", "semantic dump mismatch"),
+        )
         for index, (name, reason) in enumerate(controls):
             copy = temporary / f"control-{index}"
             shutil.copytree(base.parent, copy)
@@ -258,15 +306,24 @@ def negative_controls(root: Path, binary: Path, resources: Path) -> list[str]:
             else:
                 print(f"negative control passed: {name}")
 
-        index = {"schema": 1, "corpora": {first_pin.name: {
-            "entries": len(entries), "manifest_sha256": digest(base / "manifest.json")}}}
+        index = {
+            "schema": 1,
+            "corpora": {
+                first_pin.name: {
+                    "entries": len(entries),
+                    "manifest_sha256": digest(base / "manifest.json"),
+                }
+            },
+        }
         write_json(base.parent / "index.json", index)
         baseline_errors = check_index(base.parent)
         if baseline_errors:
             failures.append(f"index-control baseline failed: {baseline_errors}")
         else:
-            for name, reason in (("missing corpus", "missing corpus directory"),
-                                 ("changed manifest", "manifest sha256 mismatch")):
+            for name, reason in (
+                ("missing corpus", "missing corpus directory"),
+                ("changed manifest", "manifest sha256 mismatch"),
+            ):
                 copy = temporary / f"index-{name.replace(' ', '-')}"
                 shutil.copytree(base.parent, copy)
                 if name == "missing corpus":

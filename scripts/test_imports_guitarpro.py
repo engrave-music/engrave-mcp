@@ -6,15 +6,16 @@ vendor/engrave/src/importexport/guitarpro/tests/data through the v2 host.
 Run with:
     python scripts/test_imports_guitarpro.py
 """
+
 import asyncio
 import json
 import os
+import struct
+import xml.etree.ElementTree as ET
+import zipfile
 from collections import Counter
 from fractions import Fraction
 from pathlib import Path
-import struct
-import zipfile
-import xml.etree.ElementTree as ET
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -46,7 +47,11 @@ MSCX_QUARTERS = {
 CASES = [
     {"lane": "gp3", "file": "tempo.gp3", "reference": "tempo.gp3-ref.mscx"},
     {"lane": "gp4", "file": "sforzato.gp4", "reference": "sforzato.gp4-ref.mscx"},
-    {"lane": "gp5", "file": "heavy-accent.gp5", "reference": "heavy-accent.gp5-ref.mscx"},
+    {
+        "lane": "gp5",
+        "file": "heavy-accent.gp5",
+        "reference": "heavy-accent.gp5-ref.mscx",
+    },
     {"lane": "gpx", "file": "sforzato.gpx", "reference": "sforzato.gpx-ref.mscx"},
     {"lane": "gp", "file": "sforzato.gp", "reference": "sforzato.gp-ref.mscx"},
     {
@@ -76,7 +81,7 @@ def _mscx_duration_quarters(element):
     if base is None:
         return None
     dots = int(element.findtext("dots", "0") or 0)
-    return base * (Fraction(2) - Fraction(1, 2 ** dots))
+    return base * (Fraction(2) - Fraction(1, 2**dots))
 
 
 def _walk_mscx(element, factor, events):
@@ -126,9 +131,7 @@ def musicxml_note_events(path):
                     transpose_element = element.find("transpose")
                     if transpose_element is not None:
                         chromatic = int(float(transpose_element.findtext("chromatic", "0") or "0"))
-                        octave_change = int(
-                            transpose_element.findtext("octave-change", "0") or "0"
-                        )
+                        octave_change = int(transpose_element.findtext("octave-change", "0") or "0")
                         transpose = chromatic + 12 * octave_change
                 elif element.tag == "note":
                     if element.find("grace") is not None:
@@ -174,10 +177,10 @@ def midi_note_events(path):
     position = 8 + header_length
     events = []
     for _ in range(track_count):
-        if data[position:position + 4] != b"MTrk":
+        if data[position : position + 4] != b"MTrk":
             raise ValueError("invalid MIDI track")
-        track_length = struct.unpack(">I", data[position + 4:position + 8])[0]
-        track = data[position + 8:position + 8 + track_length]
+        track_length = struct.unpack(">I", data[position + 4 : position + 8])[0]
+        track = data[position + 8 : position + 8 + track_length]
         position += 8 + track_length
 
         tick = 0
@@ -243,7 +246,7 @@ def midi_note_events(path):
 
 def _write_truncated(source, target, keep):
     data = source.read_bytes()
-    target.write_bytes(data[:max(1, min(keep, len(data) - 1))])
+    target.write_bytes(data[: max(1, min(keep, len(data) - 1))])
 
 
 def _write_zip(path, entries):
@@ -330,10 +333,17 @@ async def _close(session, document_id):
 
 
 async def _export(session, document, fmt, path):
-    result = await session.call_tool("score_export", {"document": document, "kind": "score",
-        "options": {"format": fmt}, "destination": {"kind": "file", "path": str(path)}})
+    result = await session.call_tool(
+        "score_export",
+        {
+            "document": document,
+            "kind": "score",
+            "options": {"format": fmt},
+            "destination": {"kind": "file", "path": str(path)},
+        },
+    )
     assert not result.is_error, result
-    assert path.stat().st_size == int(result.structured_content['artifacts'][0]['size']) > 0
+    assert path.stat().st_size == int(result.structured_content["artifacts"][0]["size"]) > 0
 
 
 async def main():
@@ -358,12 +368,10 @@ async def main():
                     assert path.is_file(), path
                     document_id = await _open(session, path)
                     try:
-                        described = await session.call_tool(
-                            "score_outline", {"document": document_id}
-                        )
+                        described = await session.call_tool("score_outline", {"document": document_id})
                         if described.is_error:
                             raise AssertionError(described.content)
-                        metadata = described.structured_content['outline']
+                        metadata = described.structured_content["outline"]
                         assert isinstance(metadata, dict), metadata
                         assert metadata["measure_count"] > 0, metadata
                         assert metadata["duration"] > 0, metadata
@@ -371,7 +379,10 @@ async def main():
 
                         musicxml_path = OUT / f"{case['lane']}.musicxml"
                         midi_path = OUT / f"{case['lane']}.mid"
-                        for output_format, target in (("musicxml", musicxml_path), ("midi", midi_path)):
+                        for output_format, target in (
+                            ("musicxml", musicxml_path),
+                            ("midi", midi_path),
+                        ):
                             await _export(session, document_id, output_format, target)
 
                         xml_events = musicxml_note_events(musicxml_path)
@@ -380,9 +391,7 @@ async def main():
                             reference_events = mscx_note_events(FIXTURES / case["reference"])
                             expected = Counter(reference_events)
                         else:
-                            expected = Counter(
-                                (pitch, duration) for pitch, duration in case["expected"]
-                            )
+                            expected = Counter((pitch, duration) for pitch, duration in case["expected"])
                         xml_counter = Counter(xml_events)
                         midi_counter = Counter(midi_events)
                         expected_midi = None
@@ -401,19 +410,22 @@ async def main():
                             expected,
                         )
                         if expected_midi is not None:
-                            assert midi_counter == expected_midi, (case["lane"], "MIDI", midi_counter, expected_midi)
+                            assert midi_counter == expected_midi, (
+                                case["lane"],
+                                "MIDI",
+                                midi_counter,
+                                expected_midi,
+                            )
                         else:
-                            assert Counter(p for p,d in midi_events) == Counter(p for p,d in xml_events)
-                            assert all(d > 0 for p,d in midi_events)
+                            assert Counter(p for p, d in midi_events) == Counter(p for p, d in xml_events)
+                            assert all(d > 0 for p, d in midi_events)
 
                         report["cases"].append(
                             {
                                 "lane": case["lane"],
                                 "fixture": case["file"],
                                 "notes": len(xml_events),
-                                "events": sorted(
-                                    (pitch, str(duration)) for pitch, duration in xml_events
-                                ),
+                                "events": sorted((pitch, str(duration)) for pitch, duration in xml_events),
                                 "metadata": {
                                     "title": metadata["title"],
                                     "measures": metadata["measure_count"],
@@ -438,9 +450,7 @@ async def main():
                 # every rejection above.
                 recovered_id = await _open(session, FIXTURES / "sforzato.gp4")
                 try:
-                    recovered = await session.call_tool(
-                        "score_outline", {"document": recovered_id}
-                    )
+                    recovered = await session.call_tool("score_outline", {"document": recovered_id})
                     if recovered.is_error:
                         raise AssertionError(recovered.content)
                     assert recovered.structured_content["outline"]["measure_count"] > 0

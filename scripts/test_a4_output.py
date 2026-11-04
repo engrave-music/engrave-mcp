@@ -26,14 +26,24 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
 
-from golden import (DEFAULT_PLATFORM, allow_accept, describe_audio, describe_pdf, describe_png,
-                    files_equal, load_allow, normalize_svg, read_text, sha256, write_json,
-                    write_text)
+from golden import (
+    DEFAULT_PLATFORM,
+    allow_accept,
+    describe_audio,
+    describe_pdf,
+    describe_png,
+    files_equal,
+    load_allow,
+    normalize_svg,
+    read_text,
+    sha256,
+    write_json,
+    write_text,
+)
 
 DEFAULT_RENDER_FIXTURES = ("ghost_note.mscx", "repeat70.mscx", "slurs.mscz")
 # Two whose audio.json is identical to the golden and one that the golden lane
@@ -46,8 +56,14 @@ def fail(message: str) -> int:
     return 1
 
 
-def probe_command(probe: Path, assets: Path, soundfonts: list[Path], mode: str,
-                  source: Path, out: Path) -> list[str]:
+def probe_command(
+    probe: Path,
+    assets: Path,
+    soundfonts: list[Path],
+    mode: str,
+    source: Path,
+    out: Path,
+) -> list[str]:
     command = [str(probe), f"--assets={assets}"]
     command += [f"--soundfont={soundfont}" for soundfont in soundfonts]
     command.append(f"--{mode}={source}")
@@ -86,8 +102,15 @@ def describe_audio_file(raw: Path, out: Path) -> list[str]:
     return ["audio.json"]
 
 
-def compare(golden_root: Path, fixture: str, out: Path, names: list[str], allow: list[dict],
-            platform: str, counts: dict) -> None:
+def compare(
+    golden_root: Path,
+    fixture: str,
+    out: Path,
+    names: list[str],
+    allow: list[dict],
+    platform: str,
+    counts: dict,
+) -> None:
     for name in names:
         golden_file, actual_file = golden_root / fixture / name, out / name
         actual_sha = sha256(actual_file.read_bytes())
@@ -129,7 +152,11 @@ def main() -> int:
         return fail(f"no probe at {args.probe}")
     allow = load_allow(args.allow)
     counts = {"identical": 0, "allowed": 0, "different": 0, "missing-golden": 0}
-    report: dict = {"golden": str(args.golden), "probe": str(args.probe), "fixtures": {}}
+    report: dict = {
+        "golden": str(args.golden),
+        "probe": str(args.probe),
+        "fixtures": {},
+    }
 
     fixtures = [] if args.skip_render else [name for name in args.render_fixtures.split(",") if name]
     for fixture in fixtures:
@@ -154,8 +181,16 @@ def main() -> int:
         raw, out = args.output / "raw" / fixture, args.output / "actual" / fixture
         raw.mkdir(parents=True, exist_ok=True)
         out.mkdir(parents=True, exist_ok=True)
-        error = run_probe(probe_command(args.probe, args.assets, args.soundfont, "audio", source,
-                                        raw / "score.wav"))
+        error = run_probe(
+            probe_command(
+                args.probe,
+                args.assets,
+                args.soundfont,
+                "audio",
+                source,
+                raw / "score.wav",
+            )
+        )
         if error:
             return fail(f"{fixture}: audio failed: {error}")
         names = describe_audio_file(raw / "score.wav", out)
@@ -165,8 +200,9 @@ def main() -> int:
     report["counts"] = counts
     report["status"] = "pass" if counts["different"] == 0 and counts["missing-golden"] == 0 else "fail"
     write_json(args.output / "report.json", report, indent=2)
-    print(f"A4 output vs A2 goldens ({args.platform}): "
-          + ", ".join(f"{count} {name}" for name, count in counts.items()))
+    print(
+        f"A4 output vs A2 goldens ({args.platform}): " + ", ".join(f"{count} {name}" for name, count in counts.items())
+    )
     print(f"status: {report['status'].upper()}")
     return 0 if report["status"] == "pass" else 1
 

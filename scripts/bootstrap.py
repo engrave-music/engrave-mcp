@@ -1,12 +1,13 @@
 """Bootstrap the pinned engine submodule and optional SoundFont asset."""
+
 import argparse
 import hashlib
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import urllib.request
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SUBMODULE = "vendor/engrave"
@@ -39,7 +40,18 @@ def ensure_source():
     if status[0] == "-":
         if path.exists() and (not path.is_dir() or any(path.iterdir())):
             raise RuntimeError(f"{SUBMODULE} is present but not an initialized submodule; refusing to overwrite")
-        run("git", "-C", str(ROOT), "submodule", "update", "--init", "--depth", "1", "--", SUBMODULE)
+        run(
+            "git",
+            "-C",
+            str(ROOT),
+            "submodule",
+            "update",
+            "--init",
+            "--depth",
+            "1",
+            "--",
+            SUBMODULE,
+        )
         status = query("git", "-C", str(ROOT), "submodule", "status", "--", SUBMODULE)
     if not status or status[0] != " ":
         raise RuntimeError(f"{SUBMODULE} is modified or at a different commit; refusing to reset or overwrite")
@@ -57,9 +69,7 @@ def ensure_soundfont():
         print(f"SoundFont already verified: {SOUNDFONT}")
         return
     SOUNDFONT.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{SOUNDFONT.name}.", suffix=".part", dir=SOUNDFONT.parent
-    )
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{SOUNDFONT.name}.", suffix=".part", dir=SOUNDFONT.parent)
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "wb") as output:

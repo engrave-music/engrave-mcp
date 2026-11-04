@@ -58,17 +58,17 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 
 ## 九个工具
 
-| 工具 | 作用 |
-|---|---|
-| `score_open` | 从 `path` 或 base64 `data` 打开（可带 `format`、`filename_hint`、`strict_ids`）。 |
-| `score_create` | 从 `template_id` 或 `template_path` 创建（可带 `title`、`subtitle`、`composer`、`lyricist`）。 |
-| `score_close` | 关闭文档并释放内存。 |
-| `score_outline` | 标题/元数据、声部、小节、拍号调号、页数、版本号。 |
-| `score_query` | `mode`：`elements`、`properties` 或 `audio_tracks`。 |
-| `score_describe` | `scope`：`types`、`type`（需带 `type`）或 `styles`。 |
-| `score_edit` | 原子 `ops` 批次，可带 `expected_revision`。 |
-| `score_export` | `kind`：`score`、`render`、`audio` 或 `positions`。 |
-| `runtime_info` | `action`：`get`、`add_font` 或 `set_soundfonts`。 |
+| 工具             | 作用                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| `score_open`     | 从 `path` 或 base64 `data` 打开（可带 `format`、`filename_hint`、`strict_ids`）。              |
+| `score_create`   | 从 `template_id` 或 `template_path` 创建（可带 `title`、`subtitle`、`composer`、`lyricist`）。 |
+| `score_close`    | 关闭文档并释放内存。                                                                           |
+| `score_outline`  | 标题/元数据、声部、小节、拍号调号、页数、版本号。                                              |
+| `score_query`    | `mode`：`elements`、`properties` 或 `audio_tracks`。                                           |
+| `score_describe` | `scope`：`types`、`type`（需带 `type`）或 `styles`。                                           |
+| `score_edit`     | 原子 `ops` 批次，可带 `expected_revision`。                                                    |
+| `score_export`   | `kind`：`score`、`render`、`audio` 或 `positions`。                                            |
+| `runtime_info`   | `action`：`get`、`add_font` 或 `set_soundfonts`。                                              |
 
 成功结果带 `ok: true`；失败结果带 `ok: false` 与
 `error: {code, message, ...}`，并设置 MCP 的 `isError` 标志。完整契约见

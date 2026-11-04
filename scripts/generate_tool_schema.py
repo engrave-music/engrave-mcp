@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Write or check the v2 tool contract from the standalone registry dump."""
+
 from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 

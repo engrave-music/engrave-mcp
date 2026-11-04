@@ -9,9 +9,7 @@ PROTOCOL_VERSION = "2025-11-25"
 # The advertised tool list must match the checked-in schema exactly.
 EXPECTED_TOOLS = [
     tool["name"]
-    for tool in json.loads(
-        (Path(__file__).resolve().parents[1] / "native/tools.json").read_text(encoding="utf-8")
-    )
+    for tool in json.loads((Path(__file__).resolve().parents[1] / "native/tools.json").read_text(encoding="utf-8"))
 ]
 EXPECTED_RESPONSE_IDS = [None, None, None, None, None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 EXPECTED_RESPONSE_COUNT = 15
@@ -40,7 +38,8 @@ def _run_server(exe: str, payload: str) -> dict:
     started = time.monotonic()
     try:
         completed = subprocess.run(
-            [exe] + (["--resources", os.environ["ENGRAVE_MCP_RESOURCES"]] if os.environ.get("ENGRAVE_MCP_RESOURCES") else []),
+            [exe]
+            + (["--resources", os.environ["ENGRAVE_MCP_RESOURCES"]] if os.environ.get("ENGRAVE_MCP_RESOURCES") else []),
             input=payload.encode("utf-8"),
             timeout=TIMEOUT_SECONDS,
             capture_output=True,
@@ -82,17 +81,13 @@ def _parse_responses(stdout: str, label: str, failures: list[str]) -> list[dict]
         try:
             value = json.loads(line)
         except json.JSONDecodeError as exc:
-            failures.append(
-                f"{label}: stdout line {line_number} is not valid JSON: {exc.msg}"
-            )
+            failures.append(f"{label}: stdout line {line_number} is not valid JSON: {exc.msg}")
             continue
         if not isinstance(value, dict):
             failures.append(f"{label}: stdout line {line_number} is not a JSON object")
             continue
         if value.get("jsonrpc") != "2.0":
-            failures.append(
-                f"{label}: stdout line {line_number} is not a JSON-RPC 2.0 message"
-            )
+            failures.append(f"{label}: stdout line {line_number} is not a JSON-RPC 2.0 message")
         responses.append(value)
     return responses
 
@@ -112,24 +107,18 @@ def _check(failures: list[str], condition: object, message: str) -> None:
         failures.append(message)
 
 
-def _check_error(
-    failures: list[str], response: dict | None, expected_code: int, label: str
-) -> None:
+def _check_error(failures: list[str], response: dict | None, expected_code: int, label: str) -> None:
     if not isinstance(response, dict):
         failures.append(f"{label}: missing response, expected error {expected_code}")
         return
     if "error" not in response:
-        failures.append(
-            f"{label}: expected error {expected_code}, got {_response_text(response)}"
-        )
+        failures.append(f"{label}: expected error {expected_code}, got {_response_text(response)}")
         return
     if "result" in response:
         failures.append(f"{label}: response contains both error and result")
     actual_code = _error_code(response)
     if actual_code != expected_code:
-        failures.append(
-            f"{label}: expected error {expected_code}, got {actual_code!r}"
-        )
+        failures.append(f"{label}: expected error {expected_code}, got {actual_code!r}")
 
 
 def _check_ok(failures: list[str], response: dict | None, label: str) -> bool:
@@ -196,9 +185,7 @@ def _check_main_responses(failures: list[str], responses: list[dict]) -> list[st
             "id" in response and response.get("id") is None,
             f"main stream: {label} response id must be null",
         )
-        _check_error(
-            failures, response, expected_code, f"main stream: {label} case"
-        )
+        _check_error(failures, response, expected_code, f"main stream: {label} case")
 
     by_id: dict[int, dict] = {}
     for response in responses:
@@ -229,39 +216,38 @@ def _check_main_responses(failures: list[str], responses: list[dict]) -> list[st
             if not isinstance(tools, list):
                 failures.append("id 3 (tools/list): tools is not an array")
             else:
-                expected_schema = json.loads((Path(__file__).resolve().parents[1] / "native/tools.json").read_text(encoding="utf-8"))
-                _check(failures, tools == expected_schema, "id 3 (tools/list): registry schemas differ")
+                expected_schema = json.loads(
+                    (Path(__file__).resolve().parents[1] / "native/tools.json").read_text(encoding="utf-8")
+                )
+                _check(
+                    failures,
+                    tools == expected_schema,
+                    "id 3 (tools/list): registry schemas differ",
+                )
                 for position, tool in enumerate(tools, 1):
                     if not isinstance(tool, dict):
-                        failures.append(
-                            f"id 3 (tools/list): tool {position} is not an object"
-                        )
+                        failures.append(f"id 3 (tools/list): tool {position} is not an object")
                         continue
                     name = tool.get("name")
                     if not isinstance(name, str) or not name:
-                        failures.append(
-                            f"id 3 (tools/list): tool {position} has no valid name"
-                        )
+                        failures.append(f"id 3 (tools/list): tool {position} has no valid name")
                     else:
                         tool_names.append(name)
 
                 _check(
                     failures,
                     len(tools) == len(EXPECTED_TOOLS),
-                    f"id 3 (tools/list): expected {len(EXPECTED_TOOLS)} tools, "
-                    f"got {len(tools)}",
+                    f"id 3 (tools/list): expected {len(EXPECTED_TOOLS)} tools, got {len(tools)}",
                 )
                 _check(
                     failures,
                     len(tool_names) == len(EXPECTED_TOOLS),
-                    f"id 3 (tools/list): expected {len(EXPECTED_TOOLS)} valid names, "
-                    f"got {len(tool_names)}",
+                    f"id 3 (tools/list): expected {len(EXPECTED_TOOLS)} valid names, got {len(tool_names)}",
                 )
                 _check(
                     failures,
                     set(tool_names) == set(EXPECTED_TOOLS),
-                    f"id 3 (tools/list): expected tool names {EXPECTED_TOOLS!r}, "
-                    f"got {tool_names!r}",
+                    f"id 3 (tools/list): expected tool names {EXPECTED_TOOLS!r}, got {tool_names!r}",
                 )
 
     expected_errors = (
@@ -286,8 +272,7 @@ def _check_main_responses(failures: list[str], responses: list[dict]) -> list[st
             _check(
                 failures,
                 response.get("result") == {},
-                f"id {request_id} ({label}): expected empty result, "
-                f"got {response.get('result')!r}",
+                f"id {request_id} ({label}): expected empty result, got {response.get('result')!r}",
             )
 
     return tool_names
@@ -308,9 +293,7 @@ def _check_oversized_responses(failures: list[str], responses: list[dict]) -> No
         "id" in first and first.get("id") is None,
         "oversized stream: oversize response id must be null",
     )
-    _check_error(
-        failures, first, -32700, "oversized stream: oversized line"
-    )
+    _check_error(failures, first, -32700, "oversized stream: oversized line")
 
     if len(responses) < 2:
         return
@@ -326,8 +309,7 @@ def _check_oversized_responses(failures: list[str], responses: list[dict]) -> No
         _check(
             failures,
             second.get("result") == {},
-            f"oversized stream: ping id 99 expected empty result, "
-            f"got {second.get('result')!r}",
+            f"oversized stream: ping id 99 expected empty result, got {second.get('result')!r}",
         )
 
 
@@ -344,9 +326,7 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     main_stderr_path = output_path.parent / f"{output_path.stem}.main.stderr.txt"
-    oversized_stderr_path = (
-        output_path.parent / f"{output_path.stem}.oversized.stderr.txt"
-    )
+    oversized_stderr_path = output_path.parent / f"{output_path.stem}.oversized.stderr.txt"
 
     initialize_params = {
         "protocolVersion": PROTOCOL_VERSION,
@@ -417,9 +397,7 @@ def main() -> int:
                 "method": "tools/call",
                 "params": {
                     "name": "score_open",
-                    "arguments": {
-                        "path": "artifacts/__transport_missing__/never-open-this-file.mscz"
-                    },
+                    "arguments": {"path": "artifacts/__transport_missing__/never-open-this-file.mscz"},
                 },
             }
         ),
@@ -431,7 +409,9 @@ def main() -> int:
     oversized_line_bytes = len(oversized_line.encode("utf-8"))
     boundary_prefix = '{"jsonrpc":"2.0","id":99,"method":"ping","params":{"padding":"'
     boundary_suffix = '"}}'
-    boundary_line = boundary_prefix + "a" * (4 * 1024 * 1024 - len(boundary_prefix) - len(boundary_suffix)) + boundary_suffix
+    boundary_line = (
+        boundary_prefix + "a" * (4 * 1024 * 1024 - len(boundary_prefix) - len(boundary_suffix)) + boundary_suffix
+    )
     assert len(boundary_line.encode("utf-8")) == 4 * 1024 * 1024
     oversized_input = oversized_line + "\n" + boundary_line + "\n"
 
@@ -443,9 +423,7 @@ def main() -> int:
 
     main_responses: list[dict] = []
     if main_run["timed_out"]:
-        failures.append(
-            f"main stream: server timed out after {TIMEOUT_SECONDS} seconds"
-        )
+        failures.append(f"main stream: server timed out after {TIMEOUT_SECONDS} seconds")
     elif main_run["run_error"]:
         failures.append(f"main stream: {main_run['run_error']}")
     else:
@@ -454,9 +432,7 @@ def main() -> int:
             main_run["returncode"] == 0,
             f"main stream: expected exit code 0, got {main_run['returncode']!r}",
         )
-        main_responses = _parse_responses(
-            main_run["stdout"], "main stream", failures
-        )
+        main_responses = _parse_responses(main_run["stdout"], "main stream", failures)
         tool_names = _check_main_responses(failures, main_responses)
 
     oversized_run = _run_server(exe, oversized_input)
@@ -464,21 +440,16 @@ def main() -> int:
 
     oversized_responses: list[dict] = []
     if oversized_run["timed_out"]:
-        failures.append(
-            f"oversized stream: server timed out after {TIMEOUT_SECONDS} seconds"
-        )
+        failures.append(f"oversized stream: server timed out after {TIMEOUT_SECONDS} seconds")
     elif oversized_run["run_error"]:
         failures.append(f"oversized stream: {oversized_run['run_error']}")
     else:
         _check(
             failures,
             oversized_run["returncode"] == 0,
-            f"oversized stream: expected exit code 0, "
-            f"got {oversized_run['returncode']!r}",
+            f"oversized stream: expected exit code 0, got {oversized_run['returncode']!r}",
         )
-        oversized_responses = _parse_responses(
-            oversized_run["stdout"], "oversized stream", failures
-        )
+        oversized_responses = _parse_responses(oversized_run["stdout"], "oversized stream", failures)
         _check_oversized_responses(failures, oversized_responses)
 
     main_record = {
@@ -505,9 +476,7 @@ def main() -> int:
         "duration_ms": oversized_run["duration_ms"],
         "stdout_line_count": len(oversized_run["stdout"].splitlines()),
         "response_count": len(oversized_responses),
-        "response_ids": [
-            response.get("id") for response in oversized_responses
-        ],
+        "response_ids": [response.get("id") for response in oversized_responses],
         "responses": oversized_responses,
         "stderr_path": str(oversized_stderr_path),
         "stderr_chars": len(oversized_run["stderr"]),

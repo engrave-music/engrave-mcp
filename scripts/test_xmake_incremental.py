@@ -1,10 +1,11 @@
 """Verify v2 registry regeneration, large UTF-8 descriptions and no-op builds."""
+
 import argparse
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,8 +25,10 @@ def main():
     marker_unit = "xmake schema regeneration 乐谱 "
     marker = marker_unit * 800
     old = ('"' + description + '"').encode("utf-8")
-    replacement = ('([] { std::string s = "' + description + '"; for (int i = 0; i < 800; ++i) '
-                   's += "' + marker_unit + '"; return s; }()).c_str()').encode("utf-8")
+    replacement = (
+        '([] { std::string s = "' + description + '"; for (int i = 0; i < 800; ++i) '
+        's += "' + marker_unit + '"; return s; }()).c_str()'
+    ).encode("utf-8")
     if original.count(old) != 1:
         raise RuntimeError("registry description to mutate is missing or ambiguous")
     changed_source = original.replace(old, replacement, 1)
@@ -35,8 +38,17 @@ def main():
         environment["PATH"] = str(prefix / "Library/bin") + os.pathsep + environment.get("PATH", "")
 
     def run(name, command, expected=0, **kwargs):
-        result = subprocess.run(command, cwd=ROOT, env=environment, capture_output=True,
-                                text=True, encoding="utf-8", errors="replace", timeout=240, **kwargs)
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=240,
+            **kwargs,
+        )
         (output / f"{name}.log").write_text(result.stdout + result.stderr, encoding="utf-8")
         if result.returncode != expected:
             raise AssertionError(f"{name}: exit {result.returncode}, expected {expected}: {result.stderr}")
@@ -46,26 +58,48 @@ def main():
         return run(name, ["xmake", "build", "-y", "-j", "4", "registry_dump", "engrave_mcp"])
 
     schema = ROOT / "native/tools.json"
-    generator = [sys.executable, str(ROOT / "scripts/generate_tool_schema.py"), "--dump", str(dump)]
+    generator = [
+        sys.executable,
+        str(ROOT / "scripts/generate_tool_schema.py"),
+        "--dump",
+        str(dump),
+    ]
     try:
         source.write_bytes(changed_source)
         log = build("changed")
         assert "schema_defs.cpp" in log and log.count("compiling.release") == 1, log
-        run("original-schema-rejected", [*generator, "--schema", str(schema), "--check"], expected=1)
+        run(
+            "original-schema-rejected",
+            [*generator, "--schema", str(schema), "--check"],
+            expected=1,
+        )
         generated = output / "regenerated.json"
         run("generate", [*generator, "--schema", str(generated), "--write"])
-        run("generated-schema-check", [*generator, "--schema", str(generated), "--check"])
+        run(
+            "generated-schema-check",
+            [*generator, "--schema", str(generated), "--check"],
+        )
         registry = json.loads(generated.read_text(encoding="utf-8"))
         assert registry[0]["description"] == description + marker
         requests = [
-            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-                "protocolVersion": "2025-11-25", "capabilities": {},
-                "clientInfo": {"name": "schema-test", "version": "1"}}},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "schema-test", "version": "1"},
+                },
+            },
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         ]
-        stdout = run("live-list", [str(binary), "--resources", str(ROOT / ".runtime/assets")],
-                     input="".join(json.dumps(r) + "\n" for r in requests))
+        stdout = run(
+            "live-list",
+            [str(binary), "--resources", str(ROOT / ".runtime/assets")],
+            input="".join(json.dumps(r) + "\n" for r in requests),
+        )
         response = next(json.loads(line) for line in stdout.splitlines() if json.loads(line).get("id") == 2)
         assert response["result"]["tools"][0]["description"] == description + marker
     finally:
@@ -76,8 +110,13 @@ def main():
     run("restored-schema-check", [*generator, "--schema", str(schema), "--check"])
     unchanged = build("unchanged")
     assert "compiling.release" not in unchanged and "linking.release" not in unchanged, unchanged
-    report = {"registry_regenerated": True, "large_utf8_schema_roundtrip": True,
-              "one_translation_unit_rebuilt": True, "noop_build": True, "source_restored": True}
+    report = {
+        "registry_regenerated": True,
+        "large_utf8_schema_roundtrip": True,
+        "one_translation_unit_rebuilt": True,
+        "noop_build": True,
+        "source_restored": True,
+    }
     (output / "evidence.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report))
 

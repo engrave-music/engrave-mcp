@@ -4,17 +4,18 @@ Only the dynamic loader dependencies visible through ldd are bundled. Libraries
 opened later with dlopen are out of scope, and validation is limited to the host
 that assembled the package rather than every Linux distribution.
 """
+
 import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import platform
 import re
 import shutil
 import stat
 import subprocess
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE_ENV = ROOT / ".pixi/envs/native"
@@ -32,14 +33,30 @@ CODEC_NOTICES = (
 )
 
 ENGINE_THIRDPARTY_NOTICES = (
-    ("fluidsynth", "muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/LICENSE", "thirdparty-fluidsynth-LICENSE"),
+    (
+        "fluidsynth",
+        "muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/LICENSE",
+        "thirdparty-fluidsynth-LICENSE",
+    ),
     ("dtl", "src/engraving/thirdparty/dtl/COPYING", "thirdparty-dtl-COPYING"),
-    ("beatroot", "src/importexport/midi/thirdparty/beatroot/COPYING", "thirdparty-beatroot-COPYING"),
+    (
+        "beatroot",
+        "src/importexport/midi/thirdparty/beatroot/COPYING",
+        "thirdparty-beatroot-COPYING",
+    ),
 )
 
 STAGED_FONT_DIRS = (
-    "bravura", "campania", "edwin", "finalebroadway",
-    "finalemaestro", "gootville", "leland", "mscore", "musejazz", "petaluma",
+    "bravura",
+    "campania",
+    "edwin",
+    "finalebroadway",
+    "finalemaestro",
+    "gootville",
+    "leland",
+    "mscore",
+    "musejazz",
+    "petaluma",
 )
 
 
@@ -106,7 +123,11 @@ def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Pa
 
     for font_name in STAGED_FONT_DIRS:
         fdir = fonts_root / font_name
-        found = [p for p in sorted(fdir.glob("*")) if any(k in p.name.upper() for k in ["OFL", "LICENSE", "COPYING", "README"])]
+        found = [
+            p
+            for p in sorted(fdir.glob("*"))
+            if any(k in p.name.upper() for k in ["OFL", "LICENSE", "COPYING", "README"])
+        ]
         if not found:
             if font_name == "mscore" and fonts_readme.is_file():
                 pass
@@ -117,17 +138,18 @@ def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Pa
 
     return notices
 
+
 HOST_RUNTIME = (
-    re.compile(r"^(?:libc|libm|libmvec|libpthread|libdl|librt|libresolv|libutil|libanl|libBrokenLocale|libthread_db|libc_malloc_debug)\.so(?:\.|$)"),
+    re.compile(
+        r"^(?:libc|libm|libmvec|libpthread|libdl|librt|libresolv|libutil|libanl|libBrokenLocale|libthread_db|libc_malloc_debug)\.so(?:\.|$)"
+    ),
     re.compile(r"^libnss_.*\.so(?:\.|$)"),
     re.compile(r"^libnsl\.so\.1$"),
     re.compile(r"^ld-linux.*\.so(?:\.|$)"),
     re.compile(r"^linux-vdso\.so(?:\.|$)"),
 )
 QT_LIBRARY = re.compile(r"^libQt[56]", re.IGNORECASE)
-LDD_LINE = re.compile(
-    r"^\s*(?P<name>\S+)(?:\s+=>\s+(?P<path>.*?))?(?:\s+\(0[xX][0-9a-fA-F]+\))?\s*$"
-)
+LDD_LINE = re.compile(r"^\s*(?P<name>\S+)(?:\s+=>\s+(?P<path>.*?))?(?:\s+\(0[xX][0-9a-fA-F]+\))?\s*$")
 CLEAN_LDD_ENV = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
 
 
@@ -213,9 +235,7 @@ def classify_dependencies(entries):
         if is_qt(resolved.name):
             raise RuntimeError(f"Qt dependency is not allowed in the Linux package: {resolved.name}")
         if soname in bundled and not same_file(bundled[soname], resolved):
-            raise RuntimeError(
-                f"Two different files resolve to SONAME {soname}: {bundled[soname]} and {resolved}"
-            )
+            raise RuntimeError(f"Two different files resolve to SONAME {soname}: {bundled[soname]} and {resolved}")
         bundled.setdefault(soname, resolved)
     return bundled
 
@@ -272,9 +292,7 @@ def validate_package(output, ldd, bundled):
         if is_qt(dependency.name):
             raise RuntimeError(f"Qt dependency is not allowed in the Linux package: {dependency.name}")
         if not dependency.is_relative_to(root):
-            raise RuntimeError(
-                f"Non-glibc dependency {soname} resolved outside the package: {dependency}"
-            )
+            raise RuntimeError(f"Non-glibc dependency {soname} resolved outside the package: {dependency}")
         resolved[soname] = str(dependency.relative_to(root))
     if set(resolved) != set(bundled):
         missing = sorted(set(bundled) - set(resolved))
@@ -321,8 +339,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/linux-package")
     parser.add_argument("--binary", type=Path, help="Override the built executable")
-    parser.add_argument("--source-root", type=Path, help="Override engine root (default: vendor/engrave)")
-    parser.add_argument("--check-notices", action="store_true", help="Validate all required package notices without packaging")
+    parser.add_argument(
+        "--source-root",
+        type=Path,
+        help="Override engine root (default: vendor/engrave)",
+    )
+    parser.add_argument(
+        "--check-notices",
+        action="store_true",
+        help="Validate all required package notices without packaging",
+    )
     args = parser.parse_args()
 
     engine_root = resolve_engine_root(ROOT, args.source_root)
@@ -340,7 +366,6 @@ def main():
     output = args.output.resolve()
     binary = (args.binary or ROOT / "build/xmake-linux/engrave-mcp").resolve()
     assets = (ROOT / ".runtime/assets").resolve()
-    upstream = engine_root
 
     if output.is_relative_to(assets):
         raise SystemExit("Package output must not be inside .runtime/assets")
@@ -359,7 +384,7 @@ def main():
         if not SOUNDFONT.is_file():
             raise RuntimeError(f"SoundFont is not a regular file: {SOUNDFONT}")
         soundfont = SOUNDFONT
-# Handled by collect_package_notices
+    # Handled by collect_package_notices
 
     conda_meta = NATIVE_ENV / "conda-meta"
     if not conda_meta.is_dir():
@@ -425,9 +450,11 @@ def main():
         "total_bytes": total_bytes,
         "glibc_baseline": glibc,
         "interpreter": interpreter,
-        "build_path_strings": [path.relative_to(output).as_posix()
-                               for path in [output / "engrave-mcp", *sorted((output / "lib").iterdir())]
-                               if str(ROOT).encode() in path.read_bytes()],
+        "build_path_strings": [
+            path.relative_to(output).as_posix()
+            for path in [output / "engrave-mcp", *sorted((output / "lib").iterdir())]
+            if str(ROOT).encode() in path.read_bytes()
+        ],
         "validation": {
             "scope": "local packaging host only",
             "runtime_smoke_test": "not run by this packaging script",

@@ -12,4 +12,4 @@ struct ExportLimits {
     std::uint64_t output_bytes = 1024ull * 1024 * 1024;
     std::chrono::milliseconds deadline{120000};
 };
-}
+} // namespace music::v2

@@ -4,22 +4,23 @@ This is a geometry/content spot check, not a visual proof of legibility. Path
 bounds are centerline/fill geometry (stroke width and clipping are not modeled).
 Glyph overlap is measured between transformed outline bounding boxes.
 """
+
 from __future__ import annotations
 
 import argparse
 import asyncio
 import hashlib
-from dataclasses import dataclass, field
-from functools import lru_cache
 import json
 import math
 import os
-from pathlib import Path
 import re
 import statistics
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SVG = "{http://www.w3.org/2000/svg}"
@@ -62,15 +63,20 @@ def compose(a, b):
     """Compose SVG affine matrices as a * b, so b acts on a point first."""
     a0, a1, a2, a3, a4, a5 = a
     b0, b1, b2, b3, b4, b5 = b
-    return (a0*b0 + a2*b1, a1*b0 + a3*b1,
-            a0*b2 + a2*b3, a1*b2 + a3*b3,
-            a0*b4 + a2*b5 + a4, a1*b4 + a3*b5 + a5)
+    return (
+        a0 * b0 + a2 * b1,
+        a1 * b0 + a3 * b1,
+        a0 * b2 + a2 * b3,
+        a1 * b2 + a3 * b3,
+        a0 * b4 + a2 * b5 + a4,
+        a1 * b4 + a3 * b5 + a5,
+    )
 
 
 def transform_point(point, mat):
     x, y = point
     a, b, c, d, e, f = mat
-    return a*x + c*y + e, b*x + d*y + f
+    return a * x + c * y + e, b * x + d * y + f
 
 
 class Scanner:
@@ -79,15 +85,14 @@ class Scanner:
         self.pos = 0
 
     def skip(self):
-        while self.pos < len(self.text) and (self.text[self.pos].isspace()
-                                              or self.text[self.pos] == ","):
+        while self.pos < len(self.text) and (self.text[self.pos].isspace() or self.text[self.pos] == ","):
             self.pos += 1
 
     def number(self):
         self.skip()
         match = NUMBER.match(self.text, self.pos)
         if not match:
-            raise ValueError(f"expected SVG number at {self.text[self.pos:self.pos+20]!r}")
+            raise ValueError(f"expected SVG number at {self.text[self.pos : self.pos + 20]!r}")
         self.pos = match.end()
         value = float(match.group())
         if not math.isfinite(value):
@@ -136,8 +141,7 @@ def parse_transform(text):
             matrix = (c, s, -s, c, 0, 0)
             if len(values) == 3:
                 cx, cy = values[1:]
-                matrix = compose(compose((1, 0, 0, 1, cx, cy), matrix),
-                                 (1, 0, 0, 1, -cx, -cy))
+                matrix = compose(compose((1, 0, 0, 1, cx, cy), matrix), (1, 0, 0, 1, -cx, -cy))
         elif name in ("skewX", "skewY") and len(values) == 1:
             tangent = math.tan(math.radians(values[0]))
             matrix = (1, 0, tangent, 1, 0, 0) if name == "skewX" else (1, tangent, 0, 1, 0, 0)
@@ -182,7 +186,7 @@ def path_segments(text):
                 command = None
                 continue
         elif command is None:
-            raise ValueError(f"expected SVG path command at {text[scan.pos:scan.pos+20]!r}")
+            raise ValueError(f"expected SVG path command at {text[scan.pos : scan.pos + 20]!r}")
 
         relative = command.islower()
         kind = command.upper()
@@ -209,7 +213,7 @@ def path_segments(text):
             segments.append(("C", current, c1, c2, end))
             current, control = end, c2
         elif kind == "S":
-            c1 = (2*current[0]-control[0], 2*current[1]-control[1]) if previous in ("C", "S") else current
+            c1 = (2 * current[0] - control[0], 2 * current[1] - control[1]) if previous in ("C", "S") else current
             c2, end = point(relative), point(relative)
             segments.append(("C", current, c1, c2, end))
             current, control = end, c2
@@ -218,7 +222,7 @@ def path_segments(text):
             segments.append(("Q", current, c1, end))
             current, control = end, c1
         elif kind == "T":
-            c1 = (2*current[0]-control[0], 2*current[1]-control[1]) if previous in ("Q", "T") else current
+            c1 = (2 * current[0] - control[0], 2 * current[1] - control[1]) if previous in ("Q", "T") else current
             end = point(relative)
             segments.append(("Q", current, c1, end))
             current, control = end, c1
@@ -236,12 +240,12 @@ def path_segments(text):
 
 def _quadratic_roots(a, b, c):
     if abs(a) < 1e-14:
-        return [] if abs(b) < 1e-14 else [-c/b]
-    disc = b*b - 4*a*c
+        return [] if abs(b) < 1e-14 else [-c / b]
+    disc = b * b - 4 * a * c
     if disc < 0:
         return []
     root = math.sqrt(disc)
-    return [(-b + root)/(2*a), (-b - root)/(2*a)]
+    return [(-b + root) / (2 * a), (-b - root) / (2 * a)]
 
 
 def _curve_points(points):
@@ -251,20 +255,19 @@ def _curve_points(points):
     for axis in (0, 1):
         p = [value[axis] for value in points]
         if len(p) == 3:
-            denominator = p[0] - 2*p[1] + p[2]
+            denominator = p[0] - 2 * p[1] + p[2]
             if abs(denominator) > 1e-14:
                 ts.append((p[0] - p[1]) / denominator)
         else:
-            a = -p[0] + 3*p[1] - 3*p[2] + p[3]
-            b = 3*p[0] - 6*p[1] + 3*p[2]
-            c = 3*(p[1] - p[0])
-            ts.extend(_quadratic_roots(3*a, 2*b, c))
+            a = -p[0] + 3 * p[1] - 3 * p[2] + p[3]
+            b = 3 * p[0] - 6 * p[1] + 3 * p[2]
+            c = 3 * (p[1] - p[0])
+            ts.extend(_quadratic_roots(3 * a, 2 * b, c))
     for t in ts:
         if 0 < t < 1:
             work = list(points)
             while len(work) > 1:
-                work = [((1-t)*a[0] + t*b[0], (1-t)*a[1] + t*b[1])
-                        for a, b in zip(work, work[1:])]
+                work = [((1 - t) * a[0] + t * b[0], (1 - t) * a[1] + t * b[1]) for a, b in zip(work, work[1:])]
             found.append(work[0])
     return found
 
@@ -276,33 +279,39 @@ def _arc_points(start, end, rx, ry, rotation, large, sweep, mat):
         return [p0, p1]
     phi = math.radians(rotation % 360)
     c, s = math.cos(phi), math.sin(phi)
-    dx, dy = (start[0]-end[0])/2, (start[1]-end[1])/2
-    xp, yp = c*dx + s*dy, -s*dx + c*dy
-    scale = xp*xp/(rx*rx) + yp*yp/(ry*ry)
+    dx, dy = (start[0] - end[0]) / 2, (start[1] - end[1]) / 2
+    xp, yp = c * dx + s * dy, -s * dx + c * dy
+    scale = xp * xp / (rx * rx) + yp * yp / (ry * ry)
     if scale > 1:
-        rx, ry = rx*math.sqrt(scale), ry*math.sqrt(scale)
-    denominator = rx*rx*yp*yp + ry*ry*xp*xp
-    numerator = max(0.0, rx*rx*ry*ry - denominator)
-    factor = math.sqrt(numerator/denominator) * (-1 if large == sweep else 1)
-    cxp, cyp = factor*rx*yp/ry, -factor*ry*xp/rx
-    center = (c*cxp - s*cyp + (start[0]+end[0])/2,
-              s*cxp + c*cyp + (start[1]+end[1])/2)
-    theta = math.atan2((yp-cyp)/ry, (xp-cxp)/rx)
-    last = math.atan2((-yp-cyp)/ry, (-xp-cxp)/rx)
-    delta = (last-theta) % (2*math.pi)
+        rx, ry = rx * math.sqrt(scale), ry * math.sqrt(scale)
+    denominator = rx * rx * yp * yp + ry * ry * xp * xp
+    numerator = max(0.0, rx * rx * ry * ry - denominator)
+    factor = math.sqrt(numerator / denominator) * (-1 if large == sweep else 1)
+    cxp, cyp = factor * rx * yp / ry, -factor * ry * xp / rx
+    center = (
+        c * cxp - s * cyp + (start[0] + end[0]) / 2,
+        s * cxp + c * cyp + (start[1] + end[1]) / 2,
+    )
+    theta = math.atan2((yp - cyp) / ry, (xp - cxp) / rx)
+    last = math.atan2((-yp - cyp) / ry, (-xp - cxp) / rx)
+    delta = (last - theta) % (2 * math.pi)
     if not sweep and delta > 0:
-        delta -= 2*math.pi
+        delta -= 2 * math.pi
     center_t = transform_point(center, mat)
     a, b, cc, d, _, _ = mat
-    u = (a*rx*c + cc*rx*s, b*rx*c + d*rx*s)
-    v = (-a*ry*s + cc*ry*c, -b*ry*s + d*ry*c)
+    u = (a * rx * c + cc * rx * s, b * rx * c + d * rx * s)
+    v = (-a * ry * s + cc * ry * c, -b * ry * s + d * ry * c)
     points = [p0, p1]
     for base in (math.atan2(v[0], u[0]), math.atan2(v[1], u[1])):
         for t in (base, base + math.pi):
-            distance = ((t-theta) % (2*math.pi)) if sweep else ((theta-t) % (2*math.pi))
+            distance = ((t - theta) % (2 * math.pi)) if sweep else ((theta - t) % (2 * math.pi))
             if distance <= abs(delta) + 1e-12:
-                points.append((center_t[0] + u[0]*math.cos(t) + v[0]*math.sin(t),
-                               center_t[1] + u[1]*math.cos(t) + v[1]*math.sin(t)))
+                points.append(
+                    (
+                        center_t[0] + u[0] * math.cos(t) + v[0] * math.sin(t),
+                        center_t[1] + u[1] * math.cos(t) + v[1] * math.sin(t),
+                    )
+                )
     return points
 
 
@@ -319,16 +328,24 @@ def path_bounds(text, mat=IDENTITY):
             points.extend(_arc_points(*segment[1:], mat))
     if not points:
         return None
-    return (min(p[0] for p in points), min(p[1] for p in points),
-            max(p[0] for p in points), max(p[1] for p in points))
+    return (
+        min(p[0] for p in points),
+        min(p[1] for p in points),
+        max(p[0] for p in points),
+        max(p[1] for p in points),
+    )
 
 
 def union_bounds(bounds):
     bounds = [box for box in bounds if box is not None]
     if not bounds:
         return None
-    return (min(b[0] for b in bounds), min(b[1] for b in bounds),
-            max(b[2] for b in bounds), max(b[3] for b in bounds))
+    return (
+        min(b[0] for b in bounds),
+        min(b[1] for b in bounds),
+        max(b[2] for b in bounds),
+        max(b[3] for b in bounds),
+    )
 
 
 def use_position(el):
@@ -344,10 +361,13 @@ def use_position(el):
 def min_scale(mat):
     """Smallest affine scale, including anisotropic scales and rotations."""
     a, b, c, d, _, _ = mat
-    largest = math.sqrt(max(0, (a*a + b*b + c*c + d*d +
-                                math.hypot(a*a + b*b - c*c - d*d,
-                                           2*(a*c + b*d))) / 2))
-    return abs(a*d - b*c) / largest if largest else 0.0
+    largest = math.sqrt(
+        max(
+            0,
+            (a * a + b * b + c * c + d * d + math.hypot(a * a + b * b - c * c - d * d, 2 * (a * c + b * d))) / 2,
+        )
+    )
+    return abs(a * d - b * c) / largest if largest else 0.0
 
 
 def style_properties(el):
@@ -358,14 +378,13 @@ def style_properties(el):
         name, separator, value = item.partition(":")
         if not separator:
             raise ValueError(f"invalid SVG style declaration {item!r}")
-        properties[name.strip().lower()] = re.sub(r"\s*!important\s*$", "", value.strip(), flags=re.I)
+        properties[name.strip().lower()] = re.sub(r"\s*!important\s*$", "", value.strip(), flags=re.IGNORECASE)
     return properties
 
 
 def zero_opacity(value):
     value = value.strip()
-    if value.endswith("%"):
-        value = value[:-1]
+    value = value.removesuffix("%")
     try:
         number = float(value)
     except ValueError as exc:
@@ -387,15 +406,19 @@ def visibility_state(el, inherited, hidden):
         reasons.append("display none")
     if properties.get("visibility", "").strip().lower() in ("hidden", "collapse"):
         reasons.append("visibility hidden")
-    if "opacity" in properties and properties["opacity"].strip().lower() != "inherit" and zero_opacity(properties["opacity"]):
+    if (
+        "opacity" in properties
+        and properties["opacity"].strip().lower() != "inherit"
+        and zero_opacity(properties["opacity"])
+    ):
         reasons.append("opacity 0")
     return state, reasons
 
 
 def unpainted(state):
     def invisible(name):
-        return (state[name] in ("none", "transparent") or
-                zero_opacity(state[name + "-opacity"]))
+        return state[name] in ("none", "transparent") or zero_opacity(state[name + "-opacity"])
+
     return invisible("fill") and invisible("stroke")
 
 
@@ -415,7 +438,7 @@ def parse_svg_page(svg_text):
     if len(viewbox) != 4 or viewbox[2] <= 0 or viewbox[3] <= 0:
         raise ValueError("invalid or missing SVG viewBox")
     vx, vy, vw, vh = viewbox
-    limits = (vx, vy, vx+vw, vy+vh)
+    limits = (vx, vy, vx + vw, vy + vh)
 
     definitions = {}
     parents = {child: parent for parent in root.iter() for child in parent}
@@ -508,38 +531,51 @@ def parse_svg_page(svg_text):
             local = glyph_local[name]
             notehead = False
             if local:
-                w, h = local[2]-local[0], local[3]-local[1]
+                w, h = local[2] - local[0], local[3] - local[1]
                 notehead = 4.0 <= w <= 9.0 and 2.5 <= h <= 7.5 and local[1] < 0 < local[3]
                 ref_state, ref_hidden = definition_state(name, state, hidden)
                 check_reference_paint(definitions[name], ref_state, ref_hidden, {name}, f"glyph {name}")
             placed = compose(mat, use_position(el))
             scales = ref_scales(definitions[name], placed, {name}) if local else []
-            glyphs.append((name, ref_bounds(definitions[name], placed, {name}), notehead,
-                           min(scales) if scales else None))
+            glyphs.append(
+                (
+                    name,
+                    ref_bounds(definitions[name], placed, {name}),
+                    notehead,
+                    min(scales) if scales else None,
+                )
+            )
         if el.tag == SVG + "g" and len(el.findall(SVG + "use")) > 1:
             text_runs += 1
         for child in el:
             walk(child, mat, state, hidden)
 
-    walk(root, IDENTITY, {"fill": "black", "stroke": "none", "fill-opacity": "1",
-                          "stroke-opacity": "1"}, [])
+    walk(
+        root,
+        IDENTITY,
+        {"fill": "black", "stroke": "none", "fill-opacity": "1", "stroke-opacity": "1"},
+        [],
+    )
     violations = []
-    for label, box in ([("path", box) for box in paths] +
-                       [(f"glyph {name}", box) for name, box, _, _ in glyphs]):
-        if box and (box[0] < limits[0]-VIEWBOX_EPSILON or box[1] < limits[1]-VIEWBOX_EPSILON
-                    or box[2] > limits[2]+VIEWBOX_EPSILON or box[3] > limits[3]+VIEWBOX_EPSILON):
+    for label, box in [("path", box) for box in paths] + [(f"glyph {name}", box) for name, box, _, _ in glyphs]:
+        if box and (
+            box[0] < limits[0] - VIEWBOX_EPSILON
+            or box[1] < limits[1] - VIEWBOX_EPSILON
+            or box[2] > limits[2] + VIEWBOX_EPSILON
+            or box[3] > limits[3] + VIEWBOX_EPSILON
+        ):
             violations.append(f"{label} bounds {tuple(round(v, 2) for v in box)} outside viewBox {tuple(viewbox)}")
 
     overlap_pairs = 0
     overlap_area = 0.0
     boxes = [box for _, box, _, _ in glyphs if box]
     for i, first in enumerate(boxes):
-        for second in boxes[i+1:]:
+        for second in boxes[i + 1 :]:
             width = min(first[2], second[2]) - max(first[0], second[0])
             height = min(first[3], second[3]) - max(first[1], second[1])
             if width > OVERLAP_EPSILON and height > OVERLAP_EPSILON:
                 overlap_pairs += 1
-                overlap_area += width*height
+                overlap_area += width * height
     scales = {}
     sizes = {}
     for _, box, notehead, scale in glyphs:
@@ -548,10 +584,22 @@ def parse_svg_page(svg_text):
             scales[kind] = min(scale, scales.get(kind, scale))
             if box:
                 sizes.setdefault(kind, []).append((box[2] - box[0], box[3] - box[1]))
-    medians = {kind: [statistics.median(size[axis] for size in values) for axis in (0, 1)]
-               for kind, values in sizes.items()}
-    return PageStats(viewbox, len(paths), text_runs, sum(g[2] for g in glyphs), len(glyphs),
-                     overlap_pairs, round(overlap_area, 6), scales, medians, violations, visibility_violations)
+    medians = {
+        kind: [statistics.median(size[axis] for size in values) for axis in (0, 1)] for kind, values in sizes.items()
+    }
+    return PageStats(
+        viewbox,
+        len(paths),
+        text_runs,
+        sum(g[2] for g in glyphs),
+        len(glyphs),
+        overlap_pairs,
+        round(overlap_area, 6),
+        scales,
+        medians,
+        violations,
+        visibility_violations,
+    )
 
 
 def compare_stat(actual, reference, delta):
@@ -563,7 +611,9 @@ def compare_stat(actual, reference, delta):
 
 def page_issues(actual, reference, count_exception=None):
     issues = list(actual.bbox_violations) + list(actual.visibility_violations)
-    if len(reference["viewbox"]) != 4 or any(abs(a-b) > VIEWBOX_EPSILON for a, b in zip(actual.viewbox, reference["viewbox"])):
+    if len(reference["viewbox"]) != 4 or any(
+        abs(a - b) > VIEWBOX_EPSILON for a, b in zip(actual.viewbox, reference["viewbox"])
+    ):
         issues.append(f"viewBox {actual.viewbox} differs from reference {reference['viewbox']}")
     for name in ("paths", "text_runs", "noteheads", "total_uses"):
         expected = (count_exception or {}).get(name, reference[name])
@@ -576,26 +626,40 @@ def page_issues(actual, reference, count_exception=None):
     for kind, scale in reference["glyph_min_scales"].items():
         actual_scale = actual.glyph_min_scales.get(kind, 0)
         if actual_scale < MIN_GLYPH_SCALE_RATIO * scale:
-            issues.append(f"{kind} glyph minimum scale {actual_scale:.6g} below "
-                          f"{MIN_GLYPH_SCALE_RATIO:g} of reference {scale:.6g}")
+            issues.append(
+                f"{kind} glyph minimum scale {actual_scale:.6g} below "
+                f"{MIN_GLYPH_SCALE_RATIO:g} of reference {scale:.6g}"
+            )
     for kind, size in reference["glyph_median_sizes"].items():
         actual_size = actual.glyph_median_sizes.get(kind, (0, 0))
         if any(a < MIN_GLYPH_SCALE_RATIO * b for a, b in zip(actual_size, size)):
-            issues.append(f"{kind} glyph median size {actual_size} below "
-                          f"{MIN_GLYPH_SCALE_RATIO:g} of reference {size}")
+            issues.append(f"{kind} glyph median size {actual_size} below {MIN_GLYPH_SCALE_RATIO:g} of reference {size}")
     return issues
 
 
 def count_exceptions(payload):
     result = {}
     for entry in payload.get("count_exceptions", []):
-        name, digest, counts, reason = (entry.get("page"), entry.get("svg_sha256"),
-                                        entry.get("counts"), entry.get("reason"))
-        if (name not in payload["pages"] or name in result or not isinstance(digest, str)
-                or not re.fullmatch(r"[0-9a-f]{64}", digest) or not isinstance(reason, str)
-                or not reason.strip() or not isinstance(counts, dict) or not counts
-                or any(k not in ("paths", "text_runs", "noteheads", "total_uses")
-                       or type(v) is not int or v < 0 for k, v in counts.items())):
+        name, digest, counts, reason = (
+            entry.get("page"),
+            entry.get("svg_sha256"),
+            entry.get("counts"),
+            entry.get("reason"),
+        )
+        if (
+            name not in payload["pages"]
+            or name in result
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            or not isinstance(reason, str)
+            or not reason.strip()
+            or not isinstance(counts, dict)
+            or not counts
+            or any(
+                k not in ("paths", "text_runs", "noteheads", "total_uses") or type(v) is not int or v < 0
+                for k, v in counts.items()
+            )
+        ):
             raise ValueError(f"invalid count exception for {name!r}")
         result[name] = entry
     return result
@@ -605,17 +669,28 @@ def png_exceptions(payload):
     """Validate page- and platform-specific pins for known snapshot drift."""
     result = {}
     for entry in payload.get("png_exceptions", []):
-        name, platform, digest, issues, reason = (entry.get("page"), entry.get("platform"),
-                                                  entry.get("png_sha256"), entry.get("issues"),
-                                                  entry.get("reason"))
+        name, platform, digest, issues, reason = (
+            entry.get("page"),
+            entry.get("platform"),
+            entry.get("png_sha256"),
+            entry.get("issues"),
+            entry.get("reason"),
+        )
         svg = str(Path(name).with_suffix(".svg").as_posix()) if isinstance(name, str) else None
         key = (platform, name)
-        if (svg not in payload["pages"] or payload["pages"][svg].get("png") is None
-                or platform not in ("windows", "linux") or key in result
-                or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
-                or not isinstance(reason, str) or not reason.strip()
-                or not isinstance(issues, list) or not issues
-                or any(not isinstance(issue, str) or not issue.strip() for issue in issues)):
+        if (
+            svg not in payload["pages"]
+            or payload["pages"][svg].get("png") is None
+            or platform not in ("windows", "linux")
+            or key in result
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            or not isinstance(reason, str)
+            or not reason.strip()
+            or not isinstance(issues, list)
+            or not issues
+            or any(not isinstance(issue, str) or not issue.strip() for issue in issues)
+        ):
             raise ValueError(f"invalid PNG exception for {name!r}")
         result[key] = entry
     return result
@@ -624,6 +699,7 @@ def png_exceptions(payload):
 def accepted_svg_counts(name, digest):
     """Existing platform render hashes can justify their recorded count changes."""
     import golden
+
     fixture, output = name.split("/", 1)
     platform = "windows" if sys.platform.startswith("win") else "linux"
     allowances = golden.load_allow(ROOT / "tests/golden/allow.json")
@@ -633,13 +709,22 @@ def accepted_svg_counts(name, digest):
 def restored_png_oracle(path, name, platform):
     """Match decoded pixels to the already pinned direct-engine descriptor."""
     import golden
+
     fixture, output = name.split("/", 1)
     migrations = golden.read_v2_migrations(ROOT / "tests/golden" / platform)
     pin = migrations.get((fixture, output + ".json"))
     if not pin or pin.get("kind") not in ("snapshot", "snapshot-precision"):
         return False
-    descriptor = json.dumps(golden.describe_png(path), indent=1, sort_keys=True,
-                            ensure_ascii=False, allow_nan=False) + "\n"
+    descriptor = (
+        json.dumps(
+            golden.describe_png(path),
+            indent=1,
+            sort_keys=True,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    )
     return hashlib.sha256(descriptor.encode()).hexdigest() == pin["direct_sha256"]
 
 
@@ -663,35 +748,51 @@ def png_stats(path):
     for row in range(GRID_SIZE):
         line = []
         for col in range(GRID_SIZE):
-            cell = ink[row*height//GRID_SIZE:(row+1)*height//GRID_SIZE,
-                       col*width//GRID_SIZE:(col+1)*width//GRID_SIZE]
+            cell = ink[
+                row * height // GRID_SIZE : (row + 1) * height // GRID_SIZE,
+                col * width // GRID_SIZE : (col + 1) * width // GRID_SIZE,
+            ]
             if not cell.size:
                 raise ValueError("PNG is smaller than the ink grid")
             line.append(round(float(cell.mean()), 10))
         grid.append(line)
-    return {"size": [width, height], "ink_share": count / (width * height),
-            "bbox": bbox, "grid_density": grid}
+    return {
+        "size": [width, height],
+        "ink_share": count / (width * height),
+        "bbox": bbox,
+        "grid_density": grid,
+    }
 
 
 def png_metrics(actual, reference):
     width, height = reference["size"]
     if reference["ink_share"] <= 0 or reference["bbox"] is None:
         raise ValueError("PNG reference has no ink")
-    edge_delta = (max(abs(a - b) / dim for a, b, dim in
-                      zip(actual["bbox"], reference["bbox"], (width, height, width, height)))
-                  if actual["bbox"] is not None else None)
-    if (len(actual["grid_density"]) != GRID_SIZE or len(reference["grid_density"]) != GRID_SIZE
-            or any(len(row) != GRID_SIZE for row in actual["grid_density"] + reference["grid_density"])):
+    edge_delta = (
+        max(abs(a - b) / dim for a, b, dim in zip(actual["bbox"], reference["bbox"], (width, height, width, height)))
+        if actual["bbox"] is not None
+        else None
+    )
+    if (
+        len(actual["grid_density"]) != GRID_SIZE
+        or len(reference["grid_density"]) != GRID_SIZE
+        or any(len(row) != GRID_SIZE for row in actual["grid_density"] + reference["grid_density"])
+    ):
         raise ValueError("invalid PNG ink grid")
     weighted_difference = 0.0
     for row in range(GRID_SIZE):
         for col in range(GRID_SIZE):
-            cell_area = ((row+1)*height//GRID_SIZE - row*height//GRID_SIZE) * (
-                (col+1)*width//GRID_SIZE - col*width//GRID_SIZE)
-            weighted_difference += abs(actual["grid_density"][row][col] -
-                                       reference["grid_density"][row][col]) * cell_area
-    return (actual["ink_share"] / reference["ink_share"], edge_delta,
-            weighted_difference / (reference["ink_share"] * width * height))
+            cell_area = ((row + 1) * height // GRID_SIZE - row * height // GRID_SIZE) * (
+                (col + 1) * width // GRID_SIZE - col * width // GRID_SIZE
+            )
+            weighted_difference += (
+                abs(actual["grid_density"][row][col] - reference["grid_density"][row][col]) * cell_area
+            )
+    return (
+        actual["ink_share"] / reference["ink_share"],
+        edge_delta,
+        weighted_difference / (reference["ink_share"] * width * height),
+    )
 
 
 def png_issues(actual, reference):
@@ -713,9 +814,20 @@ def png_issues(actual, reference):
 
 async def capture_pages(binary, resources, soundfont, output):
     """Capture the golden harness's SVGs and master page-0 PNGs through MCP."""
-    from golden import (ClientSession, GENERATE_EXCERPTS, StdioServerParameters,
-                        call_tool, export, fixture_files, generate_excerpts, normalize_svg,
-                        open_fixture, required, stdio_client, write_text)
+    from golden import (
+        GENERATE_EXCERPTS,
+        ClientSession,
+        StdioServerParameters,
+        call_tool,
+        export,
+        fixture_files,
+        generate_excerpts,
+        normalize_svg,
+        open_fixture,
+        required,
+        stdio_client,
+        write_text,
+    )
 
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
@@ -723,8 +835,15 @@ async def capture_pages(binary, resources, soundfont, output):
     output = output.resolve()
     params = StdioServerParameters(
         command=str(binary.resolve()),
-        args=["--resources", str(resources.resolve()), "--soundfont", str(soundfont.resolve())],
-        cwd=str(output), env=dict(os.environ))
+        args=[
+            "--resources",
+            str(resources.resolve()),
+            "--soundfont",
+            str(soundfont.resolve()),
+        ],
+        cwd=str(output),
+        env=dict(os.environ),
+    )
     with (output / "server-stderr.log").open("w", encoding="utf-8") as log:
         async with stdio_client(params, errlog=log) as (read, write):
             async with ClientSession(read, write) as session:
@@ -752,23 +871,45 @@ async def capture_pages(binary, resources, soundfont, output):
                         for index, excerpt in enumerate(excerpts):
                             path = folder / f"excerpt-{index}" / "page-0.svg"
                             path.parent.mkdir()
-                            error = await export(session, identity, "svg", path, excerpt=excerpt["id"], page=0)
+                            error = await export(
+                                session,
+                                identity,
+                                "svg",
+                                path,
+                                excerpt=excerpt["id"],
+                                page=0,
+                            )
                             if error:
                                 raise ValueError(f"{source.name}: excerpt {index}: {error}")
                             write_text(path, normalize_svg(path.read_text(encoding="utf-8")))
-                        print(f"captured {source.name}: {pages} master SVG page(s), PNG page 0, "
-                              f"{len(excerpts)} excerpt(s)", flush=True)
+                        print(
+                            f"captured {source.name}: {pages} master SVG page(s), PNG page 0, "
+                            f"{len(excerpts)} excerpt(s)",
+                            flush=True,
+                        )
                     finally:
                         await call_tool(session, "score_close", identity)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--golden", type=Path, default=ROOT / "tests/golden/windows",
-                        help="directory of already captured SVG and PNG pages to check")
-    parser.add_argument("--reference", type=Path, default=ROOT / "tests/golden/page_reference.json",
-                        help="checked-in 4.7.6 statistics")
-    parser.add_argument("--capture-only", action="store_true", help="capture exports without comparing them")
+    parser.add_argument(
+        "--golden",
+        type=Path,
+        default=ROOT / "tests/golden/windows",
+        help="directory of already captured SVG and PNG pages to check",
+    )
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        default=ROOT / "tests/golden/page_reference.json",
+        help="checked-in 4.7.6 statistics",
+    )
+    parser.add_argument(
+        "--capture-only",
+        action="store_true",
+        help="capture exports without comparing them",
+    )
     parser.add_argument("--binary", type=Path, help="MCP host used for page capture")
     parser.add_argument("--resources", type=Path, help="host resources for page capture")
     parser.add_argument("--soundfont", type=Path, help="host soundfont for page capture")
@@ -778,8 +919,12 @@ def main():
         if not all((args.binary, args.resources, args.soundfont, args.output)):
             parser.error("--capture-only requires --binary, --resources, --soundfont and --output")
         try:
-            asyncio.run(asyncio.wait_for(capture_pages(args.binary, args.resources, args.soundfont,
-                                                      args.output), timeout=1800))
+            asyncio.run(
+                asyncio.wait_for(
+                    capture_pages(args.binary, args.resources, args.soundfont, args.output),
+                    timeout=1800,
+                )
+            )
         except (ValueError, OSError, RuntimeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -790,8 +935,12 @@ def main():
         try:
             args.output.mkdir(parents=True, exist_ok=True)
             args.golden = Path(tempfile.mkdtemp(prefix="capture-", dir=args.output))
-            asyncio.run(asyncio.wait_for(capture_pages(args.binary, args.resources, args.soundfont,
-                                                      args.golden), timeout=1800))
+            asyncio.run(
+                asyncio.wait_for(
+                    capture_pages(args.binary, args.resources, args.soundfont, args.golden),
+                    timeout=1800,
+                )
+            )
         except (ValueError, OSError, RuntimeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -805,7 +954,10 @@ def main():
         return 2
     pages = payload["pages"]
     if any(not isinstance(entry, dict) or "png" not in entry for entry in pages.values()):
-        print("error: each SVG reference must declare its PNG reference or null", file=sys.stderr)
+        print(
+            "error: each SVG reference must declare its PNG reference or null",
+            file=sys.stderr,
+        )
         return 2
     try:
         exceptions = count_exceptions(payload)
@@ -839,8 +991,10 @@ def main():
                         allowed_counts = {key: getattr(actual, key) for key in exception["counts"]}
                     else:
                         issues.append("count exception SVG SHA-256 does not match")
-                elif any(value == reference["stats"][key] or getattr(actual, key) != value
-                         for key, value in exception["counts"].items()):
+                elif any(
+                    value == reference["stats"][key] or getattr(actual, key) != value
+                    for key, value in exception["counts"].items()
+                ):
                     issues.append("stale count exception or exception count does not match")
                 else:
                     allowed_counts = exception["counts"]
@@ -853,16 +1007,18 @@ def main():
             for issue in issues[:5]:
                 print(f"    {issue}")
             if len(issues) > 5:
-                print(f"    ... and {len(issues)-5} more")
+                print(f"    ... and {len(issues) - 5} more")
     missing = sorted(set(pages) - {p.relative_to(args.golden).as_posix() for p in files})
     for name in missing:
         print(f"{name}: FAIL: reference page missing from golden directory")
     failed += len(missing)
-    expected_png = {str(Path(name).with_suffix(".png").as_posix()): entry["png"]
-                    for name, entry in pages.items() if entry["png"] is not None}
+    expected_png = {
+        str(Path(name).with_suffix(".png").as_posix()): entry["png"]
+        for name, entry in pages.items()
+        if entry["png"] is not None
+    }
     svg_only = [name for name, entry in pages.items() if entry["png"] is None]
-    actual_png = {path.relative_to(args.golden).as_posix(): path
-                  for path in args.golden.rglob("*.png")}
+    actual_png = {path.relative_to(args.golden).as_posix(): path for path in args.golden.rglob("*.png")}
     for name in sorted(set(expected_png) | set(actual_png)):
         issues = []
         detail = ""
@@ -890,9 +1046,12 @@ def main():
                         issues = []
                 if not detail and actual["size"] == reference["size"]:
                     ratio, edge, grid = png_metrics(actual, reference)
-                    detail = (f" (ink {reference['ink_share']:.6f}->{actual['ink_share']:.6f}, "
-                              f"ratio {ratio:.4f}, bbox edge {edge:.4f}, grid L1 {grid:.4f})"
-                              if edge is not None else " (no ink bbox)")
+                    detail = (
+                        f" (ink {reference['ink_share']:.6f}->{actual['ink_share']:.6f}, "
+                        f"ratio {ratio:.4f}, bbox edge {edge:.4f}, grid L1 {grid:.4f})"
+                        if edge is not None
+                        else " (no ink bbox)"
+                    )
             except (ValueError, KeyError, OSError, TypeError) as exc:
                 issues = [f"invalid PNG or reference: {exc}"]
         print(f"{name}: {'FAIL' if issues else 'PASS'}{detail}")
@@ -902,8 +1061,10 @@ def main():
                 print(f"    {issue}")
     for name in svg_only:
         print(f"{name}: SVG only (golden harness exports PNG for master page 0 only)")
-    print(f"Total: {len(files)} SVG pages, {len(actual_png)} PNG pages, "
-          f"{len(svg_only)} SVG-only pages, {failed} failure(s)")
+    print(
+        f"Total: {len(files)} SVG pages, {len(actual_png)} PNG pages, "
+        f"{len(svg_only)} SVG-only pages, {failed} failure(s)"
+    )
     return 0 if failed == 0 else 1
 
 

@@ -117,20 +117,20 @@ killed.
 
 ## 6. Quotas and bounds
 
-| Bound | Value | Where |
-|---|---|---|
-| Request line | 4 MiB | `runtime_limits.h` |
-| Pending input lines | 64 lines / 32 MiB | transport |
-| In-flight tool calls | 64 | transport |
-| Single response | 16 MiB | transport |
-| Output queue | 48 MiB / 256 messages | transport |
-| Open documents | 16 | `host_api.cpp` |
-| Decoded score input | 8 MiB | engine `max_input_bytes` |
-| Edit batch | 1,024 operations | registry |
-| Export output | 1 GiB | `ExportLimits` |
-| Export deadline | 120 s, advisory | `ExportLimits` |
-| Export/report preflight text | 16 KiB (UTF-8 safe) | export reports and transport-generated diagnostics |
-| Engine/tool message text | up to the 16 MiB response cap | not separately bounded |
+| Bound                        | Value                         | Where                                              |
+| ---------------------------- | ----------------------------- | -------------------------------------------------- |
+| Request line                 | 4 MiB                         | `runtime_limits.h`                                 |
+| Pending input lines          | 64 lines / 32 MiB             | transport                                          |
+| In-flight tool calls         | 64                            | transport                                          |
+| Single response              | 16 MiB                        | transport                                          |
+| Output queue                 | 48 MiB / 256 messages         | transport                                          |
+| Open documents               | 16                            | `host_api.cpp`                                     |
+| Decoded score input          | 8 MiB                         | engine `max_input_bytes`                           |
+| Edit batch                   | 1,024 operations              | registry                                           |
+| Export output                | 1 GiB                         | `ExportLimits`                                     |
+| Export deadline              | 120 s, advisory               | `ExportLimits`                                     |
+| Export/report preflight text | 16 KiB (UTF-8 safe)           | export reports and transport-generated diagnostics |
+| Engine/tool message text     | up to the 16 MiB response cap | not separately bounded                             |
 
 The export budget is enforced while encoding and before publication; it is not a
 process-memory bound. Audio encoding splits the budget in half between the
@@ -147,12 +147,12 @@ exceed it (bounded only by the 16 MiB response limit).
 Accepted M4 evidence (Windows native and physical Linux `linux-host`, engine
 `engrave-31`):
 
-| Measurement | Windows | Linux |
-|---|---|---|
-| Render worst-row median / p95 | 8.348 / 9.534 ms (fixed replay 7.986 / 10.343) | 1.652 / 1.789 ms |
-| Dense-score cancellation p95 / max | 8.872 / 27.053 ms | 11.270 / 11.312 ms |
-| Warm WAV p95 | 274.877 ms clean full run; 270.094 ms corrected high-priority repeat | — |
-| Golden (identical / allowed / different / missing / extra) | 307 / 83 / 0 / 0 / 0 | 265 / 125 / 0 / 0 / 0 |
+| Measurement                                                | Windows                                                              | Linux                 |
+| ---------------------------------------------------------- | -------------------------------------------------------------------- | --------------------- |
+| Render worst-row median / p95                              | 8.348 / 9.534 ms (fixed replay 7.986 / 10.343)                       | 1.652 / 1.789 ms      |
+| Dense-score cancellation p95 / max                         | 8.872 / 27.053 ms                                                    | 11.270 / 11.312 ms    |
+| Warm WAV p95                                               | 274.877 ms clean full run; 270.094 ms corrected high-priority repeat | —                     |
+| Golden (identical / allowed / different / missing / extra) | 307 / 83 / 0 / 0 / 0                                                 | 265 / 125 / 0 / 0 / 0 |
 
 Audio latency is accepted as an **unresolved variance limit**, not a stable
 guarantee: full 1,000-call replays at the same binary produced one pass and

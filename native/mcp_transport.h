@@ -49,8 +49,6 @@ using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std
 // result. The server keeps draining the io_context until all engine completion
 // handlers have returned; it never calls io_context::stop() from a transport
 // failure path.
-int serve_stdio_async(const std::function<Json()>& list_tools,
-                      const std::function<bool(std::string_view)>& tool_exists,
-                      const AsyncToolCall& call_tool,
-                      const std::function<void()>& shutdown);
+int serve_stdio_async(const std::function<Json()> &list_tools, const std::function<bool(std::string_view)> &tool_exists,
+                      const AsyncToolCall &call_tool, const std::function<void()> &shutdown);
 } // namespace music

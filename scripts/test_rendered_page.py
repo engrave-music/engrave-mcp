@@ -1,4 +1,5 @@
 """Geometry and mutation controls for the rendered-page oracle."""
+
 from __future__ import annotations
 
 import contextlib
@@ -6,17 +7,16 @@ import hashlib
 import io
 import json
 import math
-from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest import mock
 import xml.etree.ElementTree as ET
-
-from PIL import Image, ImageDraw
-from PIL.PngImagePlugin import PngInfo
+from pathlib import Path
+from unittest import mock
 
 import check_rendered_page as page
+from PIL import Image, ImageDraw
+from PIL.PngImagePlugin import PngInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 PEDAL = ROOT / "tests/golden/windows/pedal.mscx/page-0.svg"
@@ -32,18 +32,14 @@ class TestSvgGeometry(unittest.TestCase):
             self.assertAlmostEqual(value, wanted, places=6)
 
     def test_relative_commands_implicit_lines_and_close(self):
-        self.assertBoxAlmostEqual(
-            page.path_bounds("M10 10 l10 0 0 10 h-10 z m2 3 v4"),
-            (10, 10, 20, 20))
+        self.assertBoxAlmostEqual(page.path_bounds("M10 10 l10 0 0 10 h-10 z m2 3 v4"), (10, 10, 20, 20))
         self.assertBoxAlmostEqual(page.path_bounds("M1e1,0 20 0 20 10z"), (10, 0, 20, 10))
 
     def test_curves_use_extrema_and_reset_reflection_after_line(self):
         self.assertBoxAlmostEqual(page.path_bounds("M0 0 q5 10 10 0 t10 0"), (0, -5, 20, 5))
         self.assertBoxAlmostEqual(page.path_bounds("M0 0 Q5 10 10 0 L12 0 T20 0"), (0, 0, 20, 5))
-        self.assertBoxAlmostEqual(page.path_bounds("M0 0 c0 12 12 12 12 0 s12 -12 12 0"),
-                                  (0, -9, 24, 9))
-        self.assertBoxAlmostEqual(page.path_bounds("M0 0 C0 12 12 12 12 0 L14 0 S20 0 24 0"),
-                                  (0, 0, 24, 9))
+        self.assertBoxAlmostEqual(page.path_bounds("M0 0 c0 12 12 12 12 0 s12 -12 12 0"), (0, -9, 24, 9))
+        self.assertBoxAlmostEqual(page.path_bounds("M0 0 C0 12 12 12 12 0 L14 0 S20 0 24 0"), (0, 0, 24, 9))
 
     def test_arcs_include_rotation_sweep_large_arc_and_radius_correction(self):
         self.assertBoxAlmostEqual(page.path_bounds("M0 0 a10 5 0 0 1 20 0"), (0, -5, 20, 0))
@@ -51,13 +47,13 @@ class TestSvgGeometry(unittest.TestCase):
         self.assertBoxAlmostEqual(page.path_bounds("M10 0 A10 10 0 1 1 0 10"), (0, 0, 20, 20))
         self.assertBoxAlmostEqual(page.path_bounds("M0 0 A10 10 0 0120 0"), (0, -10, 20, 0))
         mat = page.parse_transform("translate(30 40) rotate(90)")
-        self.assertBoxAlmostEqual(page.path_bounds("M0 0 a10 5 0 0 1 20 0", mat),
-                                  (30, 40, 35, 60))
+        self.assertBoxAlmostEqual(page.path_bounds("M0 0 a10 5 0 0 1 20 0", mat), (30, 40, 35, 60))
         diagonal = 10 * math.sqrt(2)
         extent = math.sqrt(125)
         self.assertBoxAlmostEqual(
             page.path_bounds(f"M0 0 A10 5 45 0 1 {diagonal} {diagonal}"),
-            (0, (10 - extent) / math.sqrt(2), (10 + extent) / math.sqrt(2), diagonal))
+            (0, (10 - extent) / math.sqrt(2), (10 + extent) / math.sqrt(2), diagonal),
+        )
 
     def test_transform_list_and_ancestor_composition(self):
         mat = page.parse_transform("translate(10,20) scale(2 3) rotate(90)")
@@ -95,9 +91,13 @@ class TestSvgGeometry(unittest.TestCase):
         with self.assertRaises(ValueError):
             page.parse_transform("translate(2) frobnicate(3)")
         with self.assertRaises(ValueError):
-            page.parse_svg_page('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><use href="#missing"/></svg>')
+            page.parse_svg_page(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><use href="#missing"/></svg>'
+            )
         with self.assertRaises(ValueError):
-            page.parse_svg_page('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><g id="x"/></defs><use href="#x" x="nan"/></svg>')
+            page.parse_svg_page(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><g id="x"/></defs><use href="#x" x="nan"/></svg>'
+            )
 
     def test_zero_reference_has_no_ratio_and_nonzero_is_rejected(self):
         self.assertEqual(page.compare_stat(0, 0, 0.05), (None, None))
@@ -141,14 +141,20 @@ class TestRenderedPageControls(unittest.TestCase):
         wrapper = ET.SubElement(parent, page.SVG + "g", {"transform": "translate(1000 0)"})
         wrapper.append(group)
         issues = page.page_issues(self.stats(), self.reference)
-        self.assertTrue(any(issue.startswith("glyph ") and "outside viewBox" in issue for issue in issues), issues)
+        self.assertTrue(
+            any(issue.startswith("glyph ") and "outside viewBox" in issue for issue in issues),
+            issues,
+        )
 
     def test_translated_path_outside_viewbox_is_rejected(self):
         defs = {el for d in self.root.iter(page.SVG + "defs") for el in d.iter()}
         path = next(p for p in self.root.iter(page.SVG + "path") if p not in defs)
         path.set("transform", "translate(1000 0) " + path.get("transform", ""))
         issues = page.page_issues(self.stats(), self.reference)
-        self.assertTrue(any(issue.startswith("path ") and "outside viewBox" in issue for issue in issues), issues)
+        self.assertTrue(
+            any(issue.startswith("path ") and "outside viewBox" in issue for issue in issues),
+            issues,
+        )
 
     def test_removed_glyph_group_is_rejected(self):
         group = next(g for g in self.root.iter(page.SVG + "g") if len(g.findall(page.SVG + "use")) >= 8)
@@ -191,8 +197,11 @@ class TestRenderedPageControls(unittest.TestCase):
 
     def test_hidden_ancestor_and_style_are_rejected(self):
         group = next(g for g in self.root.iter(page.SVG + "g") if g.find(page.SVG + "use") is not None)
-        for attribute, value in (("display", "none"), ("visibility", "hidden"),
-                                 ("style", "opacity: 0% !important")):
+        for attribute, value in (
+            ("display", "none"),
+            ("visibility", "hidden"),
+            ("style", "opacity: 0% !important"),
+        ):
             with self.subTest(attribute=attribute):
                 group.set(attribute, value)
                 issues = page.page_issues(self.stats(), self.reference)
@@ -203,34 +212,51 @@ class TestRenderedPageControls(unittest.TestCase):
         group = self.root.find(page.SVG + "defs").find(page.SVG + "g")
         group.set("visibility", "hidden")
         issues = page.page_issues(self.stats(), self.reference)
-        self.assertTrue(any("glyph " in issue and "visibility hidden" in issue for issue in issues), issues)
+        self.assertTrue(
+            any("glyph " in issue and "visibility hidden" in issue for issue in issues),
+            issues,
+        )
 
     def test_unpainted_path_and_glyph_ancestor_are_rejected(self):
         defs = {el for d in self.root.iter(page.SVG + "defs") for el in d.iter()}
-        path = next(p for p in self.root.iter(page.SVG + "path")
-                    if p not in defs and p.get("fill") == "none" and p.get("stroke"))
+        path = next(
+            p
+            for p in self.root.iter(page.SVG + "path")
+            if p not in defs and p.get("fill") == "none" and p.get("stroke")
+        )
         original = path.get("stroke")
         path.set("stroke", "none")
         issues = page.page_issues(self.stats(), self.reference)
-        self.assertTrue(any("path has no visible fill or stroke" in issue for issue in issues), issues)
+        self.assertTrue(
+            any("path has no visible fill or stroke" in issue for issue in issues),
+            issues,
+        )
         path.set("stroke", original)
         group = next(g for g in self.root.iter(page.SVG + "g") if g.find(page.SVG + "use") is not None)
         group.set("style", "fill:none; stroke:none")
         issues = page.page_issues(self.stats(), self.reference)
-        self.assertTrue(any("glyph " in issue and "no visible fill or stroke" in issue for issue in issues), issues)
+        self.assertTrue(
+            any("glyph " in issue and "no visible fill or stroke" in issue for issue in issues),
+            issues,
+        )
 
     def test_zero_fill_and_stroke_opacity_are_rejected(self):
         group = next(g for g in self.root.iter(page.SVG + "g") if g.find(page.SVG + "use") is not None)
         group.set("style", "fill-opacity:0; stroke-opacity:0")
         issues = page.page_issues(self.stats(), self.reference)
-        self.assertTrue(any("glyph " in issue and "no visible fill or stroke" in issue for issue in issues), issues)
+        self.assertTrue(
+            any("glyph " in issue and "no visible fill or stroke" in issue for issue in issues),
+            issues,
+        )
 
     def test_reviewer_removed_one_layout_glyph(self):
         root = ET.fromstring(LAYOUT.read_text(encoding="utf-8"))
         parents = {child: parent for parent in root.iter() for child in parent}
         use = next(root.iter(page.SVG + "use"))
         parents[use].remove(use)
-        reference = json.loads(REFERENCE.read_text(encoding="utf-8"))["pages"]["layout_elements.mscx/page-0.svg"]["stats"]
+        reference = json.loads(REFERENCE.read_text(encoding="utf-8"))["pages"]["layout_elements.mscx/page-0.svg"][
+            "stats"
+        ]
         issues = page.page_issues(page.parse_svg_page(ET.tostring(root, encoding="unicode")), reference)
         self.assertTrue(any(issue.startswith("total_uses:") for issue in issues), issues)
 
@@ -242,26 +268,44 @@ class TestRenderedPageControls(unittest.TestCase):
             target = temp / "pedal.mscx/page-0.svg"
             target.parent.mkdir()
             target.write_text(self.source, encoding="utf-8")
-            payload = {"version": 3, "pages": {"pedal.mscx/page-0.svg": {"stats": self.reference, "png": None}}}
+            payload = {
+                "version": 3,
+                "pages": {"pedal.mscx/page-0.svg": {"stats": self.reference, "png": None}},
+            }
             reference = temp / "reference.json"
             reference.write_text(json.dumps(payload), encoding="utf-8")
-            args = ["check_rendered_page.py", "--golden", str(temp),
-                    "--reference", str(reference)]
-            with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+            args = [
+                "check_rendered_page.py",
+                "--golden",
+                str(temp),
+                "--reference",
+                str(reference),
+            ]
+            with (
+                mock.patch.object(sys, "argv", args),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
                 self.assertEqual(page.main(), 0)
             path.set("transform", "translate(1000 0) " + path.get("transform", ""))
             target.write_text(ET.tostring(self.root, encoding="unicode"), encoding="utf-8")
             output = io.StringIO()
-            with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
+            with (
+                mock.patch.object(sys, "argv", args),
+                contextlib.redirect_stdout(output),
+            ):
                 self.assertEqual(page.main(), 1)
             self.assertIn("outside viewBox", output.getvalue())
 
     def test_existing_svg_allowance_is_exact_and_platform_specific(self):
         import golden
+
         name = "layout_elements.mscx/page-0.svg"
         entries = golden.load_allow(page.ROOT / "tests/golden/allow.json")
-        pin = next(e for e in entries if e["fixture"] == "layout_elements.mscx" and e["output"] == "page-0.svg"
-                   and "linux" in e.get("sha256", {}))
+        pin = next(
+            e
+            for e in entries
+            if e["fixture"] == "layout_elements.mscx" and e["output"] == "page-0.svg" and "linux" in e.get("sha256", {})
+        )
         digest = pin["sha256"]["linux"]
         with mock.patch.object(page.sys, "platform", "linux"):
             self.assertTrue(page.accepted_svg_counts(name, digest))
@@ -273,25 +317,47 @@ class TestRenderedPageControls(unittest.TestCase):
         self.parents[use].remove(use)
         source = ET.tostring(self.root, encoding="unicode")
         stats = page.parse_svg_page(source)
-        counts = {name: getattr(stats, name) for name in ("paths", "text_runs", "noteheads", "total_uses")
-                  if getattr(stats, name) != self.reference[name]}
+        counts = {
+            name: getattr(stats, name)
+            for name in ("paths", "text_runs", "noteheads", "total_uses")
+            if getattr(stats, name) != self.reference[name]
+        }
         with tempfile.TemporaryDirectory(prefix="rendered-count-") as temporary:
             temp = Path(temporary)
             target = temp / "pedal.mscx/page-0.svg"
             target.parent.mkdir()
             target.write_text(source, encoding="utf-8", newline="\n")
-            entry = {"page": "pedal.mscx/page-0.svg", "counts": counts,
-                     "svg_sha256": hashlib.sha256(target.read_bytes()).hexdigest(), "reason": "control"}
-            payload = {"version": 3, "pages": {entry["page"]: {"stats": self.reference, "png": None}},
-                       "count_exceptions": [entry]}
+            entry = {
+                "page": "pedal.mscx/page-0.svg",
+                "counts": counts,
+                "svg_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                "reason": "control",
+            }
+            payload = {
+                "version": 3,
+                "pages": {entry["page"]: {"stats": self.reference, "png": None}},
+                "count_exceptions": [entry],
+            }
             reference = temp / "reference.json"
-            args = ["check_rendered_page.py", "--golden", str(temp), "--reference", str(reference)]
+            args = [
+                "check_rendered_page.py",
+                "--golden",
+                str(temp),
+                "--reference",
+                str(reference),
+            ]
             reference.write_text(json.dumps(payload), encoding="utf-8")
-            with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+            with (
+                mock.patch.object(sys, "argv", args),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
                 self.assertEqual(page.main(), 0)
             target.write_text(source + "\n", encoding="utf-8", newline="\n")
             output = io.StringIO()
-            with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
+            with (
+                mock.patch.object(sys, "argv", args),
+                contextlib.redirect_stdout(output),
+            ):
                 self.assertEqual(page.main(), 1)
             self.assertIn("SHA-256 does not match", output.getvalue())
 
@@ -304,8 +370,13 @@ class TestPngInkControls(unittest.TestCase):
         self.reference_path = self.root / "reference.png"
         image = Image.new("RGBA", (128, 128), "white")
         draw = ImageDraw.Draw(image)
-        for box in ((14, 18, 114, 20), (14, 62, 114, 64), (14, 108, 114, 110),
-                    (24, 12, 27, 116), (96, 12, 99, 116)):
+        for box in (
+            (14, 18, 114, 20),
+            (14, 62, 114, 64),
+            (14, 108, 114, 110),
+            (24, 12, 27, 116),
+            (96, 12, 99, 116),
+        ):
             draw.rectangle(box, fill="black")
         image.save(self.reference_path)
         self.reference = page.png_stats(self.reference_path)
@@ -358,11 +429,24 @@ class TestPngInkControls(unittest.TestCase):
         target.parent.mkdir()
         target.write_text(PEDAL.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
         reference = json.loads(REFERENCE.read_text(encoding="utf-8"))["pages"]["pedal.mscx/page-0.svg"]
-        payload = {"version": 3, "pages": {"pedal.mscx/page-0.svg": {
-            "stats": reference["stats"], "png": {"stats": self.reference}}}}
+        payload = {
+            "version": 3,
+            "pages": {
+                "pedal.mscx/page-0.svg": {
+                    "stats": reference["stats"],
+                    "png": {"stats": self.reference},
+                }
+            },
+        }
         refpath = self.root / "reference.json"
         refpath.write_text(json.dumps(payload), encoding="utf-8")
-        args = ["check_rendered_page.py", "--golden", str(self.root), "--reference", str(refpath)]
+        args = [
+            "check_rendered_page.py",
+            "--golden",
+            str(self.root),
+            "--reference",
+            str(refpath),
+        ]
         # Keep synthetic source PNGs outside the captured tree's inventory.
         self.reference_path.unlink()
         output = io.StringIO()
@@ -371,11 +455,19 @@ class TestPngInkControls(unittest.TestCase):
         self.assertIn("reference PNG missing", output.getvalue())
         image = Image.new("RGBA", (128, 128), "white")
         draw = ImageDraw.Draw(image)
-        for box in ((14, 18, 114, 20), (14, 62, 114, 64), (14, 108, 114, 110),
-                    (24, 12, 27, 116), (96, 12, 99, 116)):
+        for box in (
+            (14, 18, 114, 20),
+            (14, 62, 114, 64),
+            (14, 108, 114, 110),
+            (24, 12, 27, 116),
+            (96, 12, 99, 116),
+        ):
             draw.rectangle(box, fill="black")
         image.save(target.with_suffix(".png"))
-        with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+        with (
+            mock.patch.object(sys, "argv", args),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             self.assertEqual(page.main(), 0)
         image.save(self.root / "unexpected.png")
         output = io.StringIO()
@@ -392,17 +484,37 @@ class TestPngInkControls(unittest.TestCase):
         png = target.with_suffix(".png")
         image.save(png)
         issues = page.png_issues(page.png_stats(png), self.reference)
-        pin = {"page": "pedal.mscx/page-0.png",
-               "platform": "windows" if sys.platform.startswith("win") else "linux",
-               "png_sha256": hashlib.sha256(png.read_bytes()).hexdigest(),
-               "issues": issues, "reason": "synthetic precision control"}
-        payload = {"version": 3, "pages": {"pedal.mscx/page-0.svg": {
-            "stats": svg_reference["stats"], "png": {"stats": self.reference}}}, "png_exceptions": [pin]}
+        pin = {
+            "page": "pedal.mscx/page-0.png",
+            "platform": "windows" if sys.platform.startswith("win") else "linux",
+            "png_sha256": hashlib.sha256(png.read_bytes()).hexdigest(),
+            "issues": issues,
+            "reason": "synthetic precision control",
+        }
+        payload = {
+            "version": 3,
+            "pages": {
+                "pedal.mscx/page-0.svg": {
+                    "stats": svg_reference["stats"],
+                    "png": {"stats": self.reference},
+                }
+            },
+            "png_exceptions": [pin],
+        }
         refpath = self.root / "reference.json"
         refpath.write_text(json.dumps(payload), encoding="utf-8")
         self.reference_path.unlink()
-        args = ["check_rendered_page.py", "--golden", str(self.root), "--reference", str(refpath)]
-        with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+        args = [
+            "check_rendered_page.py",
+            "--golden",
+            str(self.root),
+            "--reference",
+            str(refpath),
+        ]
+        with (
+            mock.patch.object(sys, "argv", args),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             self.assertEqual(page.main(), 0)
         # Add a PNG metadata chunk without changing any pixels: even that byte
         # change must invalidate this particular page's exception.
@@ -426,8 +538,11 @@ class TestPngInkControls(unittest.TestCase):
         payload = json.loads(REFERENCE.read_text(encoding="utf-8"))
         pin = page.png_exceptions(payload)[("windows", "drums_import.musicxml/page-0.png")]
         census = json.loads((ROOT / "tests/golden/output-census.json").read_text(encoding="utf-8"))
-        item = next(item for item in census["entries"] if item["fixture"] == "drums_import.musicxml"
-                    and item["output"] == "page-0.png.json")
+        item = next(
+            item
+            for item in census["entries"]
+            if item["fixture"] == "drums_import.musicxml" and item["output"] == "page-0.png.json"
+        )
         self.assertEqual(pin["png_sha256"], item["raw_reopened_png_sha256"])
         self.assertEqual(pin["issues"], item["rendered_page_diagnostic"]["issues"])
 

@@ -14,7 +14,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 
@@ -88,7 +87,8 @@ def main(argv: list[str] | None = None) -> int:
         help="only validate the checked-in inputs (default)",
     )
     parser.add_argument(
-        "--engine-source", "--source-root",
+        "--engine-source",
+        "--source-root",
         dest="source_root",
         type=Path,
         help="engine checkout to read (default: vendor/engrave)",

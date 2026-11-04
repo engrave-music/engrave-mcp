@@ -1,9 +1,10 @@
 """Check the native smoke-test exports against the MusicXML fixture."""
+
 import argparse
-from fractions import Fraction
 import json
-from pathlib import Path
 import xml.etree.ElementTree as ET
+from fractions import Fraction
+from pathlib import Path
 
 
 def canonical_notes(path):
@@ -31,13 +32,31 @@ def canonical_notes(path):
                         previous_start = cursor
                         cursor += duration
                     pitch = element.find("pitch")
-                    value = "rest" if pitch is None else ":".join(
-                        pitch.findtext(field, default)
-                        for field, default in (("step", ""), ("alter", "0"), ("octave", ""))
+                    value = (
+                        "rest"
+                        if pitch is None
+                        else ":".join(
+                            pitch.findtext(field, default)
+                            for field, default in (
+                                ("step", ""),
+                                ("alter", "0"),
+                                ("octave", ""),
+                            )
+                        )
                     )
                     ties = tuple(sorted(tie.get("type") for tie in element.findall("tie")))
-                    events.append((part_index, measure_index, str(start), str(duration),
-                                   element.findtext("voice", "1"), element.findtext("staff", "1"), value, ties))
+                    events.append(
+                        (
+                            part_index,
+                            measure_index,
+                            str(start),
+                            str(duration),
+                            element.findtext("voice", "1"),
+                            element.findtext("staff", "1"),
+                            value,
+                            ties,
+                        )
+                    )
     if not events:
         raise ValueError("MusicXML contains no notes")
     return sorted(events), measures
@@ -62,9 +81,13 @@ def main():
     metadata = json.loads((args.output / "metadata.json").read_text(encoding="utf-8"))
     if not isinstance(metadata, dict):
         raise ValueError("Expected metadata object")
-    report = {"musicxml_roundtrip": "exact note/rest, offset, duration, pitch, voice, staff and tie match",
-              "parts": len(measures), "measures_per_part": measures, "events": len(original),
-              "midi_pdf_svg": "format smoke checks only; rendering/audio not assessed"}
+    report = {
+        "musicxml_roundtrip": "exact note/rest, offset, duration, pitch, voice, staff and tie match",
+        "parts": len(measures),
+        "measures_per_part": measures,
+        "events": len(original),
+        "midi_pdf_svg": "format smoke checks only; rendering/audio not assessed",
+    }
     (args.output / "validation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report))
 

@@ -1,4 +1,5 @@
 """Check repeat-aware audio duration and exact encoder quotas on live WAV exports."""
+
 from __future__ import annotations
 
 import argparse
@@ -20,18 +21,38 @@ async def capture(args, repeats):
     async with Client(args, args.output) as client:
         doc = (await client.tool("score_open", {"path": str(source)}))["document"]
         duration = (await client.tool("score_outline", {"document": doc}))["outline"]["duration"]
-        await client.tool("score_export", {"document": doc, "kind": "score",
-            "options": {"format": "mscz"}, "destination": {"kind": "file", "path": str(snapshot)}})
+        await client.tool(
+            "score_export",
+            {
+                "document": doc,
+                "kind": "score",
+                "options": {"format": "mscz"},
+                "destination": {"kind": "file", "path": str(snapshot)},
+            },
+        )
         if repeats == 1000:
             no_repeat = (args.output / "no-repeat-live.wav").resolve()
-            await client.tool("score_export", {"document": doc, "kind": "audio",
-                "options": {"format": "wav", "use_repeats": False},
-                "destination": {"kind": "file", "path": str(no_repeat)}})
+            await client.tool(
+                "score_export",
+                {
+                    "document": doc,
+                    "kind": "audio",
+                    "options": {"format": "wav", "use_repeats": False},
+                    "destination": {"kind": "file", "path": str(no_repeat)},
+                },
+            )
             assert 0 < no_repeat.stat().st_size < 1024**3
             repeated = (args.output / "repeated-live.wav").resolve()
-            failed = await client.tool("score_export", {"document": doc, "kind": "audio",
-                "options": {"format": "wav", "use_repeats": True},
-                "destination": {"kind": "file", "path": str(repeated)}}, error=True)
+            failed = await client.tool(
+                "score_export",
+                {
+                    "document": doc,
+                    "kind": "audio",
+                    "options": {"format": "wav", "use_repeats": True},
+                    "destination": {"kind": "file", "path": str(repeated)},
+                },
+                error=True,
+            )
             assert failed["error"]["code"] == "ResourceLimit" and not repeated.exists(), failed
         await client.tool("score_close", {"document": doc})
     return snapshot, duration
@@ -41,23 +62,36 @@ async def capture_mid_measure_end(args):
     # The extra 2/4 bar puts the unexpanded end inside the next expanded 4/4
     # bar. Cover this duration edge case with the encoder's actual file cap.
     xml = REPEAT_FIXTURE_MUSICXML.replace('direction="backward"', 'direction="backward" times="1000"')
-    extra = '''    <measure number="3">
+    extra = """    <measure number="3">
       <attributes><time><beats>2</beats><beat-type>4</beat-type></time></attributes>
       <note><rest/><duration>2</duration><voice>1</voice><type>half</type></note>
     </measure>
-'''
-    xml = xml.replace('  </part>\n</score-partwise>', extra + '  </part>\n</score-partwise>')
+"""
+    xml = xml.replace("  </part>\n</score-partwise>", extra + "  </part>\n</score-partwise>")
     source = (args.output / "mid-measure.musicxml").resolve()
     snapshot = (args.output / "mid-measure.mscz").resolve()
     output = (args.output / "mid-measure-live.wav").resolve()
     source.write_text(xml, encoding="utf-8")
     async with Client(args, args.output) as client:
         doc = (await client.tool("score_open", {"path": str(source)}))["document"]
-        await client.tool("score_export", {"document": doc, "kind": "score",
-            "options": {"format": "mscz"}, "destination": {"kind": "file", "path": str(snapshot)}})
-        await client.tool("score_export", {"document": doc, "kind": "audio",
-            "options": {"format": "wav", "use_repeats": False},
-            "destination": {"kind": "file", "path": str(output)}})
+        await client.tool(
+            "score_export",
+            {
+                "document": doc,
+                "kind": "score",
+                "options": {"format": "mscz"},
+                "destination": {"kind": "file", "path": str(snapshot)},
+            },
+        )
+        await client.tool(
+            "score_export",
+            {
+                "document": doc,
+                "kind": "audio",
+                "options": {"format": "wav", "use_repeats": False},
+                "destination": {"kind": "file", "path": str(output)},
+            },
+        )
         await client.tool("score_close", {"document": doc})
     return snapshot, output.stat().st_size
 
@@ -79,10 +113,15 @@ def main():
     large, large_duration = asyncio.run(capture(args, 1000))
     short, expanded_duration = asyncio.run(capture(args, 4))
     mid_measure, mid_measure_size = asyncio.run(capture_mid_measure_end(args))
-    assert large_duration == 4000 and expanded_duration == 16, (large_duration, expanded_duration)
+    assert large_duration == 4000 and expanded_duration == 16, (
+        large_duration,
+        expanded_duration,
+    )
 
-    results = {"live_no_repeat_bytes": (args.output / "no-repeat-live.wav").stat().st_size,
-               "live_expanded_seconds": large_duration}
+    results = {
+        "live_no_repeat_bytes": (args.output / "no-repeat-live.wav").stat().st_size,
+        "live_expanded_seconds": large_duration,
+    }
     for repeats, seconds in ((False, 4), (True, expanded_duration)):
         options = {"format": "wav", "use_repeats": repeats}
         expected = projection(seconds)
@@ -92,21 +131,42 @@ def main():
         # WAV is uncompressed: at most half a second of rounding, 4096 header
         # bytes, and one millisecond for the engine's time truncation.
         difference = expected - produced["output_bytes"]
-        assert 0 <= difference <= math.ceil(0.501 * 44100) * 8 + 4096, (expected, produced)
+        assert 0 <= difference <= math.ceil(0.501 * 44100) * 8 + 4096, (
+            expected,
+            produced,
+        )
         results["repeats" if repeats else "no_repeats"] = {
-            "seconds": seconds, "projected_bytes": expected,
-            "encoded_bytes": produced["output_bytes"], "projection_minus_encoded": difference,
-            "one_byte_below_encoded_size": rejected["result"]}
+            "seconds": seconds,
+            "projected_bytes": expected,
+            "encoded_bytes": produced["output_bytes"],
+            "projection_minus_encoded": difference,
+            "one_byte_below_encoded_size": rejected["result"],
+        }
     # Use the actual captured 1000-repeat snapshot with a budget that fits
     # its unexpanded WAV and is far below the expanded projection.
     results["large_no_repeat_bounded"] = live_budget(
-        args, large, {"format": "wav", "use_repeats": False}, 2 * projection(4), "success")
+        args,
+        large,
+        {"format": "wav", "use_repeats": False},
+        2 * projection(4),
+        "success",
+    )
     results["mid_measure_no_repeat_at_encoded_size"] = live_budget(
-        args, mid_measure, {"format": "wav", "use_repeats": False}, 2 * mid_measure_size, "success")
+        args,
+        mid_measure,
+        {"format": "wav", "use_repeats": False},
+        2 * mid_measure_size,
+        "success",
+    )
     # The engine must stop one byte below the actual extent and deliver no
     # bytes to the sink, independent of measure boundaries or duration estimates.
     results["mid_measure_engine_overrun"] = live_budget(
-        args, mid_measure, {"format": "wav", "use_repeats": False}, 2 * mid_measure_size - 1, "ResourceLimit")
+        args,
+        mid_measure,
+        {"format": "wav", "use_repeats": False},
+        2 * mid_measure_size - 1,
+        "ResourceLimit",
+    )
     assert "audio intermediate byte limit exceeded" in results["mid_measure_engine_overrun"]["message"]
     print(json.dumps(results, indent=2))
 

@@ -26,13 +26,13 @@ before the operation and a mismatch returns `RevisionConflict` with
 
 Opens a score from `path`, or from base64 `data`.
 
-| Field | Type | Notes |
-|---|---|---|
-| `path` | string | Mutually exclusive with `data` (oneOf). |
-| `data` | string | Base64 bytes; decoded limit 8 MiB. |
-| `format` | enum | `mscz`, `mscx`, `musicxml`, `mxl`, `midi`, `guitarpro`, `mnx`. |
-| `filename_hint` | string | Helps format detection for `data`. |
-| `strict_ids` | boolean | Reject input with unusable element IDs instead of repairing. |
+| Field           | Type    | Notes                                                          |
+| --------------- | ------- | -------------------------------------------------------------- |
+| `path`          | string  | Mutually exclusive with `data` (oneOf).                        |
+| `data`          | string  | Base64 bytes; decoded limit 8 MiB.                             |
+| `format`        | enum    | `mscz`, `mscx`, `musicxml`, `mxl`, `midi`, `guitarpro`, `mnx`. |
+| `filename_hint` | string  | Helps format detection for `data`.                             |
+| `strict_ids`    | boolean | Reject input with unusable element IDs instead of repairing.   |
 
 Returns `{ok, document, revision, diagnostics[]}`. Pre-4.6 MuseScore files are
 rejected with `UnsupportedFormat`.
@@ -61,11 +61,11 @@ optional `title`, `subtitle`, `composer`, `lyricist`. Returns
 
 Three modes, selected by `mode`:
 
-| Mode | Required | Returns |
-|---|---|---|
-| `elements` | `document`, `mode`, optional `query` | `{elements[], total, next_cursor, revision, mode}` |
-| `properties` | `document`, `mode`, `target`, optional `props` | `{properties[], revision, mode}` |
-| `audio_tracks` | `document`, `mode`, optional `score` | `{audio_tracks: {master, tracks[]}, revision, mode}` |
+| Mode           | Required                                       | Returns                                              |
+| -------------- | ---------------------------------------------- | ---------------------------------------------------- |
+| `elements`     | `document`, `mode`, optional `query`           | `{elements[], total, next_cursor, revision, mode}`   |
+| `properties`   | `document`, `mode`, `target`, optional `props` | `{properties[], revision, mode}`                     |
+| `audio_tracks` | `document`, `mode`, optional `score`           | `{audio_tracks: {master, tracks[]}, revision, mode}` |
 
 `query` (elements) accepts `score: {excerpt}`, `types[]`, `staves[]`,
 `voices[]`, `first_measure`, `measure_count`, `from_measure`, `to_measure`
@@ -99,31 +99,31 @@ throws.
 
 There are 23 operations:
 
-| `op` | Required fields |
-|---|---|
-| `set_property` | `target`, `property`, `value` |
-| `reset_property` | `target`, `property` |
-| `set_style` | `score`, `style`, `value` |
-| `enter_notes` | `at`, `duration`, `pitches` |
-| `set_pitch` | `note`, `pitch` (optional `tpc`) |
-| `set_duration` | `chord_rest`, `duration` |
-| `remove` | `target` |
-| `insert_measures` | `count` (optional `before`, `kind`) |
-| `remove_measures` | `first`, `last` |
-| `set_time_sig` | `measure`, `sig` |
-| `set_key_sig` | `measure`, `key` (optional `staff`) |
-| `insert_clef` | `at`, `clef` |
-| `set_layout_break` | `measure`, `kind`, `on` |
-| `add_part` | `instrument_id` (optional `before`) |
-| `remove_part` | `part` |
-| `add_staff` | `part` |
-| `remove_staff` | `staff` |
-| `generate_excerpts` | `parts` |
-| `add_spanner` | `start`, `end`, `type` (optional `props`) |
-| `add_tie` | `note` |
-| `add_tuplet` | `first`, `last` (optional `actual`, `normal`) |
-| `add_text` | `at`, `style`, `text` |
-| `add` | `anchor`, `type` (optional `props`) |
+| `op`                | Required fields                               |
+| ------------------- | --------------------------------------------- |
+| `set_property`      | `target`, `property`, `value`                 |
+| `reset_property`    | `target`, `property`                          |
+| `set_style`         | `score`, `style`, `value`                     |
+| `enter_notes`       | `at`, `duration`, `pitches`                   |
+| `set_pitch`         | `note`, `pitch` (optional `tpc`)              |
+| `set_duration`      | `chord_rest`, `duration`                      |
+| `remove`            | `target`                                      |
+| `insert_measures`   | `count` (optional `before`, `kind`)           |
+| `remove_measures`   | `first`, `last`                               |
+| `set_time_sig`      | `measure`, `sig`                              |
+| `set_key_sig`       | `measure`, `key` (optional `staff`)           |
+| `insert_clef`       | `at`, `clef`                                  |
+| `set_layout_break`  | `measure`, `kind`, `on`                       |
+| `add_part`          | `instrument_id` (optional `before`)           |
+| `remove_part`       | `part`                                        |
+| `add_staff`         | `part`                                        |
+| `remove_staff`      | `staff`                                       |
+| `generate_excerpts` | `parts`                                       |
+| `add_spanner`       | `start`, `end`, `type` (optional `props`)     |
+| `add_tie`           | `note`                                        |
+| `add_tuplet`        | `first`, `last` (optional `actual`, `normal`) |
+| `add_text`          | `at`, `style`, `text`                         |
+| `add`               | `anchor`, `type` (optional `props`)           |
 
 Targets are EIDs, addresses, or a score selection; see the generated schema for
 the exact shapes.
@@ -134,12 +134,12 @@ Exports from the live document. `kind` selects the export family; every variant
 takes `document`, `kind`, `destination`, `options`, and optional
 `expected_revision`.
 
-| `kind` | Destination | `options.format` | Other options |
-|---|---|---|---|
-| `score` | `file` | `mscz`, `mscx`, `musicxml`, `mxl`, `midi` | `native_version` (`5.00` default, `4.70`), `score.excerpt`, and for MIDI only `midi_expand_repeats`, `midi_rpns` |
-| `render` | `file` (PDF) or `directory` (SVG/PNG) | `pdf`, `png`, `svg` | `first_page`, `last_page`, `background`, `score.excerpt`; `dpi` (36–1200) and `transparent` are PNG-only |
-| `audio` | `file` | `wav`, `flac`, `opus`, `mp3`, `aac` | `sample_rate`, `bit_depth`, `bitrate_kbps`, `reverb`, `reverb_send`, `master_volume_db`, `master_balance`, `tracks[]`, `use_repeats`, `score.excerpt` |
-| `positions` | `file` | — | `position_kind`: `measure` or `segment`, `score.excerpt` |
+| `kind`      | Destination                           | `options.format`                          | Other options                                                                                                                                         |
+| ----------- | ------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `score`     | `file`                                | `mscz`, `mscx`, `musicxml`, `mxl`, `midi` | `native_version` (`5.00` default, `4.70`), `score.excerpt`, and for MIDI only `midi_expand_repeats`, `midi_rpns`                                      |
+| `render`    | `file` (PDF) or `directory` (SVG/PNG) | `pdf`, `png`, `svg`                       | `first_page`, `last_page`, `background`, `score.excerpt`; `dpi` (36–1200) and `transparent` are PNG-only                                              |
+| `audio`     | `file`                                | `wav`, `flac`, `opus`, `mp3`, `aac`       | `sample_rate`, `bit_depth`, `bitrate_kbps`, `reverb`, `reverb_send`, `master_volume_db`, `master_balance`, `tracks[]`, `use_repeats`, `score.excerpt` |
+| `positions` | `file`                                | —                                         | `position_kind`: `measure` or `segment`, `score.excerpt`                                                                                              |
 
 `destination` is `{"kind":"file","path":...}` or
 `{"kind":"directory","path":...}`; directory destinations produce
@@ -151,16 +151,16 @@ The host validates the requested path and the resolved existing prefix before
 creating anything. Supported syntax is ordinary drive/UNC and POSIX paths,
 including non-ASCII UTF-8.
 
-| Condition | Outcome |
-|---|---|
-| Missing parent directory | Created recursively, then published. |
-| Empty/structurally invalid path, non-directory component, existing wrong destination type | `InvalidArgument`, naming the destination. |
-| Invalid UTF-8 or an unencodable resolved path | `InvalidArgument`, before creating anything. |
+| Condition                                                                                                                                                                                                      | Outcome                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Missing parent directory                                                                                                                                                                                       | Created recursively, then published.                                                       |
+| Empty/structurally invalid path, non-directory component, existing wrong destination type                                                                                                                      | `InvalidArgument`, naming the destination.                                                 |
+| Invalid UTF-8 or an unencodable resolved path                                                                                                                                                                  | `InvalidArgument`, before creating anything.                                               |
 | Windows invalid characters (`< > : " \| ? *`, controls), reserved devices (`CON`, `PRN`, `AUX`, `NUL`, `COM1–9`, `LPT1–9`, including extensions and superscript forms), trailing dots/spaces, empty components | `InvalidArgument`, before creating anything; drive/root syntax and `.`/`..` are preserved. |
-| Windows device namespaces (`\\.\`, `\\?\`) and incomplete UNC roots | `InvalidArgument`, before any metadata probe. |
-| POSIX filenames | No added restrictions beyond NUL and `/`. |
-| Permission denied | `Io`, retaining the filesystem diagnostic. |
-| Other filesystem failure (I/O, read-only, symlink loop, name too long, disk full) | `Io`, retaining the filesystem diagnostic. |
+| Windows device namespaces (`\\.\`, `\\?\`) and incomplete UNC roots                                                                                                                                            | `InvalidArgument`, before any metadata probe.                                              |
+| POSIX filenames                                                                                                                                                                                                | No added restrictions beyond NUL and `/`.                                                  |
+| Permission denied                                                                                                                                                                                              | `Io`, retaining the filesystem diagnostic.                                                 |
+| Other filesystem failure (I/O, read-only, symlink loop, name too long, disk full)                                                                                                                              | `Io`, retaining the filesystem diagnostic.                                                 |
 
 Complex DACLs, SMB authentication, device namespaces and multi-file
 transactions are non-goals; see [scope.md](scope.md).
@@ -184,9 +184,13 @@ file; PNG/SVG require a directory and write one file per page.
 A `positions` export writes UTF-8 JSON derived from `engrave::Positions`:
 
 ```json
-{"page_size":{"width":1000.0,"height":1500.0},
- "elements":[{"id":0,"x":10.0,"y":20.0,"sx":100.0,"sy":40.0,"page":0}],
- "events":[{"elid":0,"position":0}]}
+{
+  "page_size": { "width": 1000.0, "height": 1500.0 },
+  "elements": [
+    { "id": 0, "x": 10.0, "y": 20.0, "sx": 100.0, "sy": 40.0, "page": 0 }
+  ],
+  "events": [{ "elid": 0, "position": 0 }]
+}
 ```
 
 Coordinates and sizes are page-local 1200-DPI layout units; pages are
@@ -198,10 +202,10 @@ revision.
 
 ## `runtime_info`
 
-| `action` | Fields | Effect |
-|---|---|---|
-| `get` (default) | — | Return capabilities, templates, fonts and limits. |
-| `add_font` | `path` | Register a font and invalidate layout. |
+| `action`         | Fields    | Effect                                                   |
+| ---------------- | --------- | -------------------------------------------------------- |
+| `get` (default)  | —         | Return capabilities, templates, fonts and limits.        |
+| `add_font`       | `path`    | Register a font and invalidate layout.                   |
 | `set_soundfonts` | `files[]` | Replace the SoundFont set; an empty list disables audio. |
 
 `get` returns `{ok, tool_revision:"2", capabilities, templates[], fonts[],
@@ -221,20 +225,20 @@ no `structuredContent`; the transport owns that response. The structured
 result (for example an engine callback abort). Do not treat the two as
 interchangeable.
 
-| Code | Meaning |
-|---|---|
-| `InvalidArgument` | Malformed parameters or destination syntax. |
-| `InvalidInput` | Corrupt or unreadable score/archive content. |
-| `UnsupportedFormat` | Unknown format, or a MuseScore file older than 4.6. |
-| `Unsupported` | Valid request the engine cannot perform. |
-| `NotFound` | Unknown document handle, element, or path. |
-| `StaleHandle` | An ID/address no longer resolves. |
-| `RevisionConflict` | `expected_revision` does not match. |
-| `ResourceLimit` | A documented byte, count or result limit was exceeded. |
-| `EditRejected` | An edit violates notation or layout constraints. |
-| `Poisoned` | The document is unusable after an engine failure; close it. |
-| `EngineFailure` | Engine-level failure with no more specific code. |
-| `Io` | Filesystem failure; check `published_artifacts`. |
-| `Cancelled` | The client cancelled before publication. |
-| `DeadlineExceeded` | The advisory export deadline expired. |
-| `WorkerFailed` | Retained in the advertised enum for wire compatibility; the live-only host does not produce it. |
+| Code                | Meaning                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------- |
+| `InvalidArgument`   | Malformed parameters or destination syntax.                                                     |
+| `InvalidInput`      | Corrupt or unreadable score/archive content.                                                    |
+| `UnsupportedFormat` | Unknown format, or a MuseScore file older than 4.6.                                             |
+| `Unsupported`       | Valid request the engine cannot perform.                                                        |
+| `NotFound`          | Unknown document handle, element, or path.                                                      |
+| `StaleHandle`       | An ID/address no longer resolves.                                                               |
+| `RevisionConflict`  | `expected_revision` does not match.                                                             |
+| `ResourceLimit`     | A documented byte, count or result limit was exceeded.                                          |
+| `EditRejected`      | An edit violates notation or layout constraints.                                                |
+| `Poisoned`          | The document is unusable after an engine failure; close it.                                     |
+| `EngineFailure`     | Engine-level failure with no more specific code.                                                |
+| `Io`                | Filesystem failure; check `published_artifacts`.                                                |
+| `Cancelled`         | The client cancelled before publication.                                                        |
+| `DeadlineExceeded`  | The advisory export deadline expired.                                                           |
+| `WorkerFailed`      | Retained in the advertised enum for wire compatibility; the live-only host does not produce it. |

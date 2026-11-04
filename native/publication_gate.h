@@ -22,10 +22,16 @@ inline PublicationGate publication_gate;
 struct RequestExecution : std::atomic<int> {
     RequestExecution() : std::atomic<int>(0) {}
     std::function<void(nlohmann::json)> report;
-    void mark_report_sent() { std::lock_guard lock(response_mutex); report_sent = true; }
-    bool was_reported() const { std::lock_guard lock(response_mutex); return report_sent; }
+    void mark_report_sent() {
+        std::lock_guard lock(response_mutex);
+        report_sent = true;
+    }
+    bool was_reported() const {
+        std::lock_guard lock(response_mutex);
+        return report_sent;
+    }
 private:
     mutable std::mutex response_mutex;
     bool report_sent = false;
 };
-}
+} // namespace music

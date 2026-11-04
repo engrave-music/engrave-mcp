@@ -21,9 +21,7 @@ inline std::string utf8_abbrev(std::string_view text, std::size_t limit) {
     const std::size_t head_budget = (limit - ellipsis) / 2;
     const std::size_t head = utf8_prefix(text, head_budget);
     std::size_t tail_start = text.size() - (limit - ellipsis - head_budget);
-    while (tail_start < text.size() &&
-           (static_cast<unsigned char>(text[tail_start]) & 0xC0) == 0x80)
-        ++tail_start;
+    while (tail_start < text.size() && (static_cast<unsigned char>(text[tail_start]) & 0xC0) == 0x80) ++tail_start;
     std::string result;
     result.reserve(head + ellipsis + (text.size() - tail_start));
     result.append(text.substr(0, head));

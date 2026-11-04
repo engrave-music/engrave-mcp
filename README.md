@@ -64,17 +64,17 @@ and Linux build, test and packaging details are in [docs/dev/build.md](docs/dev/
 
 ## The nine tools
 
-| Tool | What it does |
-|---|---|
-| `score_open` | Open from `path` or base64 `data` (+ `format`, `filename_hint`, `strict_ids`). |
-| `score_create` | Create from `template_id` or `template_path` (+ `title`, `subtitle`, `composer`, `lyricist`). |
-| `score_close` | Close a document and free its memory. |
-| `score_outline` | Title/metadata, parts, measures, signatures, page count, revision. |
-| `score_query` | `mode`: `elements`, `properties`, or `audio_tracks`. |
-| `score_describe` | `scope`: `types`, `type` (with `type`), or `styles`. |
-| `score_edit` | Atomic `ops` batch with optional `expected_revision`. |
-| `score_export` | `kind`: `score`, `render`, `audio`, or `positions`. |
-| `runtime_info` | `action`: `get`, `add_font`, or `set_soundfonts`. |
+| Tool             | What it does                                                                                  |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| `score_open`     | Open from `path` or base64 `data` (+ `format`, `filename_hint`, `strict_ids`).                |
+| `score_create`   | Create from `template_id` or `template_path` (+ `title`, `subtitle`, `composer`, `lyricist`). |
+| `score_close`    | Close a document and free its memory.                                                         |
+| `score_outline`  | Title/metadata, parts, measures, signatures, page count, revision.                            |
+| `score_query`    | `mode`: `elements`, `properties`, or `audio_tracks`.                                          |
+| `score_describe` | `scope`: `types`, `type` (with `type`), or `styles`.                                          |
+| `score_edit`     | Atomic `ops` batch with optional `expected_revision`.                                         |
+| `score_export`   | `kind`: `score`, `render`, `audio`, or `positions`.                                           |
+| `runtime_info`   | `action`: `get`, `add_font`, or `set_soundfonts`.                                             |
 
 Every successful result carries `ok: true`. Failures carry
 `ok: false` and `error: {code, message, ...}` and set the MCP `isError` flag.

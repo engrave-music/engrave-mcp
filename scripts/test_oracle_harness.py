@@ -19,17 +19,18 @@ Tests:
      - Legacy blanked tree rejected unless the explicit migration flag is given
   4. Rendered-page SVG geometry/visibility and PNG ink controls (test_rendered_page.py).
 """
+
 from __future__ import annotations
 
-import copy
 import contextlib
+import copy
 import io
 import json
-from pathlib import Path
 import shutil
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,7 +40,6 @@ if str(SCRIPTS) not in sys.path:
 
 import check_semantic_dump as csd
 import golden
-from test_rendered_page import TestPngInkControls, TestRenderedPageControls, TestSvgGeometry
 from test_roundtrip import PAGE_STYLE_DEFAULTS, compare_mscz_xml, parse_mscx
 
 
@@ -47,30 +47,30 @@ class TestRoundTripXmlControls(unittest.TestCase):
     def test_only_the_exact_default_page_block_is_normalized(self):
         defaults = "".join(f"<{name}>{value}</{name}>" for name, value in PAGE_STYLE_DEFAULTS)
         before = '<museScore><Score><Style><spatium>1.75</spatium></Style><Note pitch="60"/></Score></museScore>'
-        after = before.replace('<spatium>', defaults + '<spatium>')
+        after = before.replace("<spatium>", defaults + "<spatium>")
         self.assertEqual(compare_mscz_xml(before, after), [])
-        self.assertTrue(compare_mscz_xml(before, after.replace('8.26772', '8.26773')))
+        self.assertTrue(compare_mscz_xml(before, after.replace("8.26772", "8.26773")))
         self.assertTrue(compare_mscz_xml(before, after.replace('pitch="60"', 'pitch="61"')))
-        self.assertTrue(compare_mscz_xml(before, after.replace('</Score>', '<unknown>1</unknown></Score>')))
-        self.assertTrue(compare_mscz_xml(before, after.replace('</pageWidth>', '</pageWidth>content')))
-        explicit = before.replace('<spatium>', '<pageWidth>9</pageWidth><spatium>')
+        self.assertTrue(compare_mscz_xml(before, after.replace("</Score>", "<unknown>1</unknown></Score>")))
+        self.assertTrue(compare_mscz_xml(before, after.replace("</pageWidth>", "</pageWidth>content")))
+        explicit = before.replace("<spatium>", "<pageWidth>9</pageWidth><spatium>")
         self.assertTrue(compare_mscz_xml(explicit, after))
 
     def test_excerpt_name_loss_remains_visible(self):
-        before = '<museScore><Score><name>Flute</name></Score></museScore>'
-        after = '<museScore><Score/></museScore>'
+        before = "<museScore><Score><name>Flute</name></Score></museScore>"
+        after = "<museScore><Score/></museScore>"
         differences = compare_mscz_xml(before, after)
         self.assertEqual(len(differences), 1)
-        self.assertIn('Flute', repr(differences))
+        self.assertIn("Flute", repr(differences))
 
     def test_whitespace_in_score_text_is_not_discarded(self):
-        before = '<museScore><Score><text> </text></Score></museScore>'
-        after = '<museScore><Score><text/></Score></museScore>'
+        before = "<museScore><Score><text> </text></Score></museScore>"
+        after = "<museScore><Score><text/></Score></museScore>"
         self.assertTrue(compare_mscz_xml(before, after))
-        self.assertTrue(compare_mscz_xml(before.replace('> </text>', '>\n</text>'), after))
-        mixed = '<museScore><Score><text> <font/></text></Score></museScore>'
-        self.assertTrue(compare_mscz_xml(mixed, mixed.replace('> <font', '><font')))
-        self.assertTrue(compare_mscz_xml(mixed.replace('> <font', '>\n<font'), mixed.replace('> <font', '><font')))
+        self.assertTrue(compare_mscz_xml(before.replace("> </text>", ">\n</text>"), after))
+        mixed = "<museScore><Score><text> <font/></text></Score></museScore>"
+        self.assertTrue(compare_mscz_xml(mixed, mixed.replace("> <font", "><font")))
+        self.assertTrue(compare_mscz_xml(mixed.replace("> <font", ">\n<font"), mixed.replace("> <font", "><font")))
 
 
 class TestV2GoldenInventory(unittest.TestCase):
@@ -83,15 +83,30 @@ class TestV2GoldenInventory(unittest.TestCase):
                 fixture = "pedal.mscx"
                 pin = migrations[(fixture, name)]
                 self.assertEqual(pin["kind"], "snapshot")
-                self.assertIsNotNone(golden.allow_accept(
-                    allowances, fixture, name, "different", pin["direct_sha256"], "windows")[1])
+                self.assertIsNotNone(
+                    golden.allow_accept(
+                        allowances,
+                        fixture,
+                        name,
+                        "different",
+                        pin["direct_sha256"],
+                        "windows",
+                    )[1]
+                )
                 self.assertNotEqual(pin["direct_sha256"], pin["actual_sha256"])
                 root = Path(temporary)
-                baseline, actual, report = root / "windows", root / "actual", root / "report"
+                baseline, actual, report = (
+                    root / "windows",
+                    root / "actual",
+                    root / "report",
+                )
                 (baseline / fixture).mkdir(parents=True)
                 (actual / fixture).mkdir(parents=True)
                 report.mkdir()
-                shutil.copyfile(ROOT / "tests/golden/windows" / fixture / name, baseline / fixture / name)
+                shutil.copyfile(
+                    ROOT / "tests/golden/windows" / fixture / name,
+                    baseline / fixture / name,
+                )
                 golden.write_json(baseline / "index.json", {fixture: {name: pin["baseline_sha256"]}})
                 target = actual / fixture / name
 
@@ -104,20 +119,38 @@ class TestV2GoldenInventory(unittest.TestCase):
                         return pin["actual_sha256"]
                     return real_sha256(data)
 
-                with mock.patch.object(golden, "sha256", side_effect=digest), \
-                        mock.patch.object(golden, "read_v2_index", return_value=(None, {}, {})), \
-                        contextlib.redirect_stdout(io.StringIO()):
+                with (
+                    mock.patch.object(golden, "sha256", side_effect=digest),
+                    mock.patch.object(golden, "read_v2_index", return_value=(None, {}, {})),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
                     target.write_bytes(b"direct")
                     with mock.patch.object(golden, "read_v2_migrations", return_value={}):
-                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 0)
-                    with mock.patch.object(golden, "read_v2_migrations", return_value={(fixture, name): pin}):
-                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 0)
+                        self.assertEqual(
+                            golden.compare_trees(baseline, actual, allowances, report, "windows"),
+                            0,
+                        )
+                    with mock.patch.object(
+                        golden,
+                        "read_v2_migrations",
+                        return_value={(fixture, name): pin},
+                    ):
+                        self.assertEqual(
+                            golden.compare_trees(baseline, actual, allowances, report, "windows"),
+                            0,
+                        )
                         result = json.loads((report / "report.json").read_text(encoding="utf-8"))
                         self.assertEqual(result["fixtures"][fixture][name]["status"], "allowed")
                         target.write_bytes(b"host")
-                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 0)
+                        self.assertEqual(
+                            golden.compare_trees(baseline, actual, allowances, report, "windows"),
+                            0,
+                        )
                         target.unlink()
-                        self.assertEqual(golden.compare_trees(baseline, actual, allowances, report, "windows"), 1)
+                        self.assertEqual(
+                            golden.compare_trees(baseline, actual, allowances, report, "windows"),
+                            1,
+                        )
 
     def test_writer_precision_pins_every_recorded_output_and_exact_hash(self):
         migrations = golden.read_v2_migrations(ROOT / "tests/golden/windows")
@@ -159,7 +192,11 @@ class TestV2GoldenInventory(unittest.TestCase):
     def test_precision_png_comparator_requires_the_raw_file_hash(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            baseline, actual, output = root / "windows", root / "actual", root / "report"
+            baseline, actual, output = (
+                root / "windows",
+                root / "actual",
+                root / "report",
+            )
             (baseline / "fixture").mkdir(parents=True)
             (actual / "fixture").mkdir(parents=True)
             output.mkdir()
@@ -168,23 +205,38 @@ class TestV2GoldenInventory(unittest.TestCase):
             (baseline / "fixture" / name).write_bytes(old)
             (actual / "fixture" / name).write_bytes(new)
             golden.write_json(baseline / "index.json", {"fixture": {name: golden.sha256(old)}})
-            pin = {"kind": "snapshot-precision", "output": name, "baseline_sha256": golden.sha256(old),
-                   "actual_sha256": golden.sha256(new), "direct_sha256": golden.sha256(old), "raw_png_sha256": "a" * 64,
-                   "reason": "test", "oracle": "test"}
+            pin = {
+                "kind": "snapshot-precision",
+                "output": name,
+                "baseline_sha256": golden.sha256(old),
+                "actual_sha256": golden.sha256(new),
+                "direct_sha256": golden.sha256(old),
+                "raw_png_sha256": "a" * 64,
+                "reason": "test",
+                "oracle": "test",
+            }
             migrations = {("fixture", name): pin}
-            with mock.patch.object(golden, "read_v2_index", return_value=(None, {}, {})), \
-                    mock.patch.object(golden, "read_v2_migrations", return_value=migrations), \
-                    contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows",
-                                                      {"fixture": "a" * 64}), 0)
-                self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows",
-                                                      {"fixture": "b" * 64}), 1)
+            with (
+                mock.patch.object(golden, "read_v2_index", return_value=(None, {}, {})),
+                mock.patch.object(golden, "read_v2_migrations", return_value=migrations),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(
+                    golden.compare_trees(baseline, actual, [], output, "windows", {"fixture": "a" * 64}),
+                    0,
+                )
+                self.assertEqual(
+                    golden.compare_trees(baseline, actual, [], output, "windows", {"fixture": "b" * 64}),
+                    1,
+                )
                 self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows"), 1)
                 # Returning to the independently pinned direct descriptor is
                 # accepted; unrecorded descriptors still fail the guard.
                 (actual / "fixture" / name).write_bytes(old)
-                self.assertEqual(golden.compare_trees(baseline, actual, [], output, "windows",
-                                                      {"fixture": "a" * 64}), 0)
+                self.assertEqual(
+                    golden.compare_trees(baseline, actual, [], output, "windows", {"fixture": "a" * 64}),
+                    0,
+                )
 
     def test_writer_precision_rejects_changed_evidence_and_inventory(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -209,8 +261,7 @@ class TestV2GoldenInventory(unittest.TestCase):
             item["fixture_sha256"] = "0" * 64
             check(altered, "invalid v2 migration provenance")
             altered = copy.deepcopy(original)
-            altered["entries"] = [item for item in altered["entries"]
-                                  if item.get("kind") != "snapshot-precision"]
+            altered["entries"] = [item for item in altered["entries"] if item.get("kind") != "snapshot-precision"]
             check(altered, "migrations do not match the census inventory")
             with self.assertRaisesRegex(ValueError, "census header"):
                 golden.read_precision_census(original, "linux")
@@ -239,10 +290,10 @@ class TestV2GoldenInventory(unittest.TestCase):
         key = ("bend.gp", "page-0.png.json")
         entry = migrations[key]
         self.assertEqual(entry["kind"], "snapshot")
-        self.assertIsNotNone(golden.v2_migration_accept(
-            migrations, *key, entry["baseline_sha256"], entry["actual_sha256"]))
-        self.assertIsNone(golden.v2_migration_accept(
-            migrations, *key, entry["baseline_sha256"], "0" * 64))
+        self.assertIsNotNone(
+            golden.v2_migration_accept(migrations, *key, entry["baseline_sha256"], entry["actual_sha256"])
+        )
+        self.assertIsNone(golden.v2_migration_accept(migrations, *key, entry["baseline_sha256"], "0" * 64))
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "golden"
             baseline, overlay = root / "windows", root / "v2/windows"
@@ -277,8 +328,12 @@ class TestV2GoldenInventory(unittest.TestCase):
     def test_mnx_indexes_cover_legacy_and_v2_files_and_detect_tampering(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            baseline, overlay, actual, output = (root / "golden/windows", root / "golden/v2/windows",
-                                                 root / "actual", root / "report")
+            baseline, overlay, actual, output = (
+                root / "golden/windows",
+                root / "golden/v2/windows",
+                root / "actual",
+                root / "report",
+            )
             baseline.mkdir(parents=True)
             actual.mkdir()
             output.mkdir()
@@ -295,8 +350,10 @@ class TestV2GoldenInventory(unittest.TestCase):
             def compare(platform="windows"):
                 # This inventory control copies historical files as its actual
                 # tree; snapshot migrations are tested independently above.
-                with mock.patch.object(golden, "read_v2_migrations", return_value={}), \
-                        contextlib.redirect_stdout(io.StringIO()):
+                with (
+                    mock.patch.object(golden, "read_v2_migrations", return_value={}),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
                     code = golden.compare_trees(baseline, actual, [], output, platform)
                 return code, json.loads((output / "report.json").read_text(encoding="utf-8"))
 
@@ -323,7 +380,11 @@ class TestV2GoldenInventory(unittest.TestCase):
     def test_only_retired_metadata_is_excluded_and_index_still_gates(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            baseline, actual, output = root / "baseline", root / "actual", root / "report"
+            baseline, actual, output = (
+                root / "baseline",
+                root / "actual",
+                root / "report",
+            )
             (baseline / "score").mkdir(parents=True)
             (actual / "score").mkdir(parents=True)
             output.mkdir()
@@ -448,8 +509,11 @@ class TestCentroidSilenceEvidence(unittest.TestCase):
     def audio(self, centroid, nonzero, rms=None):
         """A minimal audio.json with exact PCM silence evidence for one window."""
         return {
-            "sampleRate": 44100, "channels": 2, "frames": 22050,
-            "peak": [0.0, 0.0], "rms": [0.0, 0.0],
+            "sampleRate": 44100,
+            "channels": 2,
+            "frames": 22050,
+            "peak": [0.0, 0.0],
+            "rms": [0.0, 0.0],
             "rmsEnvelope": [rms if rms is not None else [0.0, 0.0]],
             "centroidEnvelope": [centroid],
             "nonzeroSamples": [nonzero],
@@ -493,8 +557,7 @@ class TestCentroidSilenceEvidence(unittest.TestCase):
     def test_missing_silence_evidence_is_rejected(self):
         """A baseline captured before the evidence field fails clearly instead of skipping."""
         golden_audio = self.audio(0.0, [0, 0])
-        legacy = {key: value for key, value in golden_audio.items()
-                  if key != golden.SILENCE_EVIDENCE}
+        legacy = {key: value for key, value in golden_audio.items() if key != golden.SILENCE_EVIDENCE}
         with tempfile.TemporaryDirectory(prefix="golden-audio-") as temporary:
             directory = Path(temporary)
             (directory / "golden").write_text(json.dumps(legacy), encoding="utf-8")
@@ -595,7 +658,11 @@ class TestEidTokenNormalization(unittest.TestCase):
         norm_b = golden.normalize_mscx(score_b)
         self.assertIn("<startMeasure>e1</startMeasure>", norm_a)
         self.assertIn("<startMeasure>e2</startMeasure>", norm_b)
-        self.assertNotEqual(norm_a, norm_b, "Scores targeting different measures must produce different normalized tokens")
+        self.assertNotEqual(
+            norm_a,
+            norm_b,
+            "Scores targeting different measures must produce different normalized tokens",
+        )
 
     def test_legacy_blank_eids_hides_target_change(self):
         """The 4.7.6 blanked representation cannot see a retargeted lock (why it is not automatic)."""
@@ -612,8 +679,10 @@ class TestEidTokenNormalization(unittest.TestCase):
         blank_a = golden.normalize_mscx(score_a, legacy_blank_eids=True)
         blank_b = golden.normalize_mscx(score_b, legacy_blank_eids=True)
         self.assertIn("<startMeasure/>", blank_a)
-        self.assertIn("<sharedPart/>", golden.normalize_mscx(
-            "<Score><sharedPart>501</sharedPart></Score>", legacy_blank_eids=True))
+        self.assertIn(
+            "<sharedPart/>",
+            golden.normalize_mscx("<Score><sharedPart>501</sharedPart></Score>", legacy_blank_eids=True),
+        )
         self.assertEqual(blank_a, blank_b)
 
     def test_legacy_tree_rejected_without_explicit_flag(self):
@@ -623,7 +692,8 @@ class TestEidTokenNormalization(unittest.TestCase):
             (root / "fixture.mscx").mkdir(parents=True)
             (root / "fixture.mscx" / "score.mscx").write_text(
                 '<museScore version="4.70">\n<Score><eid/></Score>\n</museScore>\n',
-                encoding="utf-8")
+                encoding="utf-8",
+            )
             self.assertTrue(golden.uses_blanked_eids(root))
             with self.assertRaises(SystemExit) as raised:
                 golden.require_eid_mode(root, legacy_blank_eids=False)
@@ -635,7 +705,8 @@ class TestEidTokenNormalization(unittest.TestCase):
             (root / "fixture.mscx").mkdir(parents=True)
             (root / "fixture.mscx" / "score.mscx").write_text(
                 '<museScore version="5.00">\n<Score><eid>e1</eid></Score>\n</museScore>\n',
-                encoding="utf-8")
+                encoding="utf-8",
+            )
             self.assertFalse(golden.uses_blanked_eids(root))
             golden.require_eid_mode(root, legacy_blank_eids=False)
 

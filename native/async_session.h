@@ -13,13 +13,12 @@ class AsyncSession {
 public:
     explicit AsyncSession(engrave::EngineOptions options);
     ~AsyncSession();
-    AsyncSession(const AsyncSession&) = delete;
-    AsyncSession& operator=(const AsyncSession&) = delete;
-    asio::awaitable<nlohmann::json> call(std::string name, nlohmann::json arguments,
-        std::shared_ptr<RequestExecution> execution = {});
+    AsyncSession(const AsyncSession &) = delete;
+    AsyncSession &operator=(const AsyncSession &) = delete;
+    asio::awaitable<nlohmann::json> call(std::string name, nlohmann::json arguments, std::shared_ptr<RequestExecution> execution = {});
     void shutdown() noexcept;
 private:
     struct Impl;
     std::shared_ptr<Impl> impl_;
 };
-}
+} // namespace music

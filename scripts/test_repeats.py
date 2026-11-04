@@ -5,18 +5,19 @@ via the native MCP server, exporting measurePositions, converting the
 repeat-expanded measure element sequence into 1-based measure numbers,
 and comparing against expected sequences defined in upstream repeat_tests.cpp.
 """
+
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
 import os
-from pathlib import Path
 import re
 import sys
 import time
-from typing import Any
 import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -75,21 +76,41 @@ def parse_repeat_tests(cpp_path: Path, data_dir: Path) -> list[dict[str, Any]]:
         clean_body = re.sub(r"//.*", "", body).strip()
         m = re.search(r'repeat\s*\(\s*"([^"]+)"\s*,\s*u?"([^"]*)"\s*\);', clean_body)
         if not m:
-            tests.append({"name": name, "fixture": "", "status": "SKIP",
-                          "reason": "Non-standard helper or arguments", "mappable": False})
+            tests.append(
+                {
+                    "name": name,
+                    "fixture": "",
+                    "status": "SKIP",
+                    "reason": "Non-standard helper or arguments",
+                    "mappable": False,
+                }
+            )
             continue
 
         fixture_name, expected = m.group(1), m.group(2)
         fixture_path = data_dir / fixture_name
         if not fixture_path.exists():
-            tests.append({"name": name, "fixture": fixture_name, "status": "SKIP",
-                          "reason": f"Fixture not found: {fixture_name}", "mappable": False})
+            tests.append(
+                {
+                    "name": name,
+                    "fixture": fixture_name,
+                    "status": "SKIP",
+                    "reason": f"Fixture not found: {fixture_name}",
+                    "mappable": False,
+                }
+            )
             continue
 
-        tests.append({
-            "name": name, "fixture": fixture_name, "path": fixture_path,
-            "expected": re.sub(r"\s+", "", expected), "status": "PENDING", "mappable": True,
-        })
+        tests.append(
+            {
+                "name": name,
+                "fixture": fixture_name,
+                "path": fixture_path,
+                "expected": re.sub(r"\s+", "", expected),
+                "status": "PENDING",
+                "mappable": True,
+            }
+        )
     return tests
 
 
@@ -127,39 +148,69 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
 
                 async def call(name: str, arguments: dict[str, Any]) -> tuple[bool, Any]:
                     res = await session.call_tool(name, arguments)
-                    content = (res.structured_content if res.structured_content is not None
-                               else (json.loads(res.content[0].text) if res.content else {}))
+                    content = (
+                        res.structured_content
+                        if res.structured_content is not None
+                        else (json.loads(res.content[0].text) if res.content else {})
+                    )
                     return bool(res.is_error), content
 
                 for test in tests:
                     tname = test["name"]
                     if not test.get("mappable", False):
-                        results.append({"name": tname, "fixture": test.get("fixture", ""),
-                                        "status": "SKIP", "reason": test.get("reason", "Unmappable")})
+                        results.append(
+                            {
+                                "name": tname,
+                                "fixture": test.get("fixture", ""),
+                                "status": "SKIP",
+                                "reason": test.get("reason", "Unmappable"),
+                            }
+                        )
                         print(f"  [SKIP] {tname}: {test.get('reason', '')}")
                         continue
 
                     fixture_path = test["path"]
                     err_open, opened = await call("score_open", {"path": str(fixture_path.resolve())})
                     if err_open or not isinstance(opened, dict) or "document" not in opened:
-                        results.append({"name": tname, "fixture": test["fixture"], "status": "FAIL",
-                                        "expected": test["expected"], "actual": "",
-                                        "error": f"score_open failed: {opened}"})
+                        results.append(
+                            {
+                                "name": tname,
+                                "fixture": test["fixture"],
+                                "status": "FAIL",
+                                "expected": test["expected"],
+                                "actual": "",
+                                "error": f"score_open failed: {opened}",
+                            }
+                        )
                         print(f"  [FAIL] {tname} (score_open failed: {opened})")
                         continue
 
                     doc_id = opened["document"]
                     try:
                         pos_path = output_dir / f"{tname}_positions.json"
-                        err_exp, exported = await call("score_export", {
-                            "document": doc_id, "kind": "positions",
-                            "options": {"position_kind": "measure"},
-                            "destination": {"kind": "file", "path": str(pos_path.resolve())},
-                        })
+                        err_exp, exported = await call(
+                            "score_export",
+                            {
+                                "document": doc_id,
+                                "kind": "positions",
+                                "options": {"position_kind": "measure"},
+                                "destination": {
+                                    "kind": "file",
+                                    "path": str(pos_path.resolve()),
+                                },
+                            },
+                        )
                         if err_exp or not pos_path.exists():
-                            results.append({"name": tname, "fixture": test["fixture"], "status": "FAIL",
-                                            "expected": test["expected"], "actual": "",
-                                            "error": f"score_export failed: {exported}"})
+                            results.append(
+                                {
+                                    "name": tname,
+                                    "fixture": test["fixture"],
+                                    "status": "FAIL",
+                                    "expected": test["expected"],
+                                    "actual": "",
+                                    "error": f"score_export failed: {exported}",
+                                }
+                            )
                             print(f"  [FAIL] {tname} (score_export failed: {exported})")
                             continue
 
@@ -173,10 +224,15 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
                         expected_str = test["expected"]
 
                         status = "PASS" if actual_str == expected_str else "FAIL"
-                        results.append({
-                            "name": tname, "fixture": test["fixture"], "status": status,
-                            "expected": expected_str, "actual": actual_str,
-                        })
+                        results.append(
+                            {
+                                "name": tname,
+                                "fixture": test["fixture"],
+                                "status": status,
+                                "expected": expected_str,
+                                "actual": actual_str,
+                            }
+                        )
                         if status == "PASS":
                             print(f"  [PASS] {tname}")
                         else:
@@ -190,12 +246,20 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
     failed = sum(1 for r in results if r["status"] == "FAIL")
     skipped = sum(1 for r in results if r["status"] == "SKIP")
     if total != EXPECTED_TOTAL:
-        print(f"ERROR: ran {total} tests, expected exactly {EXPECTED_TOTAL}", file=sys.stderr)
+        print(
+            f"ERROR: ran {total} tests, expected exactly {EXPECTED_TOTAL}",
+            file=sys.stderr,
+        )
         return 1
 
     report: dict[str, Any] = {
-        "summary": {"total": total, "passed": passed, "failed": failed,
-                    "skipped": skipped, "elapsed_seconds": elapsed},
+        "summary": {
+            "total": total,
+            "passed": passed,
+            "failed": failed,
+            "skipped": skipped,
+            "elapsed_seconds": elapsed,
+        },
         "results": results,
     }
     (output_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -206,15 +270,28 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True, help="Path to engrave-mcp server binary")
-    parser.add_argument("--resources", type=Path, required=True, help="Path to .runtime/assets directory")
+    parser.add_argument(
+        "--resources",
+        type=Path,
+        required=True,
+        help="Path to .runtime/assets directory",
+    )
     parser.add_argument("--output", type=Path, required=True, help="Scratch output directory")
-    parser.add_argument("--upstream", type=Path, default=ROOT / "vendor/engrave",
-                        help="Path to vendor/engrave submodule")
+    parser.add_argument(
+        "--upstream",
+        type=Path,
+        default=ROOT / "vendor/engrave",
+        help="Path to vendor/engrave submodule",
+    )
     args = parser.parse_args()
 
     exit_code = asyncio.run(
-        execute_tests(binary=args.binary, resources=args.resources,
-                      output_dir=args.output, upstream=args.upstream)
+        execute_tests(
+            binary=args.binary,
+            resources=args.resources,
+            output_dir=args.output,
+            upstream=args.upstream,
+        )
     )
     sys.exit(exit_code)
 
