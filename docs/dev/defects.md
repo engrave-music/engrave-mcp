@@ -23,6 +23,8 @@ investigation).
 | 024 | 4.70 cannot represent part EIDs | Accepted format limitation | EXECUTED, SOURCE-REVIEWED | Shared-part downgrades keep numeric part IDs but cannot write part EIDs; representable element EIDs are preserved. |
 | 025 | 4.70 refuses scores with generated accidentals | Open, bounded-contract gap | EXECUTED | Accidental conversion is not implemented. A score that needs generated accidentals is refused with `B470_UNSUPPORTED_FEATURE` rather than degraded. |
 | 026 | Standalone MSCX drops style blocks and reflows on reopen | Open | EXECUTED | MSCX round trips can shift a segment by up to 25.26 pt and change 23,909 pixels; the same scores round-trip exactly as MSCZ. Page margins and default style blocks are not written. |
+| 027 | Dynamic placement edit can be ignored | Open; unrelated to the upstream grouping change | EXECUTED | On Windows at `engrave-33`, a batch setting an imported dynamic's `VELOCITY` to 73 and `placement` to `above` reports success, but placement remains `below` immediately and after MSCX reopen. Repairing this existing editing behavior is outside the grouping adaptation. |
+| 028 | Default-valued text-frame overrides may lose their override status | Open; outside the grouping adaptation | SOURCE-REVIEWED | The native writer omits unstyled properties that equal the current default. An explicit no-frame or zero-rounding override can reopen as styled and follow a later style change. This is a general serialization behavior present at `engrave-33`. |
 
 ## Accepted limitations (not defects to chase)
 
