@@ -40,6 +40,12 @@ investigation).
   multi-file transactions are explicit non-goals; see [scope.md](scope.md).
 - **No isolation mode.** A render/audio/writer crash ends the session. Use one
   disposable server per untrusted file operationally.
+- **Complex MusicXML dynamics.** Exact round trips for arbitrary mixtures of
+  conflicting dynamics, literal pseudo-markup and unsupported vendor glyphs are
+  outside the compatibility target. Source review of candidate `8eb0c25a52`
+  found that a container with `ff`, `pp`, textual `sf`, and `p` can change the
+  resulting dynamic type when exported and reimported; this has not been
+  executed. This is separate from the chosen initial grouping playback change.
 
 ## Resolved (index)
 
