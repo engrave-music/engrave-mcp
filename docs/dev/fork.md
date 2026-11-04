@@ -2,7 +2,7 @@
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/engrave` (shallow, pinned by SHA with an `engrave-<n>` tag per pin).
-The current pin is `engrave-33` (`bf44cdeb88`).
+The current pin is `engrave-34` (`8eb0c25a52`).
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
 terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
@@ -101,6 +101,8 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 | `engrave-32` | `9d13ae4938` | `32f0a26e5b` | `da3885cb` | Two focused upstream adaptations: the 5.00 instrument-label reader applies `showNumberShort` to the short flag (MuseScore `eb9a30246be93a3d3ddbb3738b44da3d664837f1`), and ChordLine clones retain their playback flag (from MuseScore `da68d0f6f3b1e1b65ce6501ef605a50fd3674b28`). Focused tests cover label flag combinations and tag order with native reopen, plus enabled/disabled playback in generated excerpts and articulation selection. Full engine gates passed on Windows (213 identical/38 allowed/0 different/0 missing) and physical linux-host (186/65/0/0), using the existing hash-pinned allow-list. The first Windows gate run missed the dense-audio synthesis cancellation p95 limit (30.1587 ms vs 30 ms); a complete rerun passed with 26.7596 ms p95. The clone regression checks the flag and articulation parser, not audible waveform equivalence. |
 
 | `engrave-33` | `bf44cdeb88` | `32f0a26e5b` | `da3885cb` | MusicXML dynamics velocity conversion clamps before integer conversion, handles numeric overflow and underflow, and preserves ordinary direction and note defaults. This fixes an existing defect also present in the upstream grouping change `3d6d7ffe70a2a914767a36fc70a5ec8fb5ca56ed`; the grouping change itself is not included in this pin. Focused read and native-reopen tests passed on Windows and physical linux-host; 12 before/after playback cases had byte-identical WAV and MIDI output on each. Full engine gates passed at this exact commit on Windows (213 identical/38 allowed/0 different/0 missing) and linux-host (186/65/0/0), with the existing hash-pinned allow-list. |
+
+| `engrave-34` | `8eb0c25a52` | `32f0a26e5b` | `da3885cb` | Adapts MusicXML dynamics grouping from MuseScore `3d6d7ffe70a2a914767a36fc70a5ec8fb5ca56ed`: each nonempty container becomes one dynamic, without private playback metadata. This intentionally changes some audio and MIDI; common grouped and single markings, native reopen, MusicXML round trips and host velocity edits were executed on Windows and linux-host. Both host golden comparisons passed with the existing hash-pinned allow-list. The full Linux engine gate passed (186 identical/65 allowed/0 different/0 missing). The full Windows gate failed the dense-audio cancellation timing assertion; a diagnostic run excluding that one test passed its remaining checks and golden comparison (213/38/0/0). See [validation.md](validation.md) and [defects.md](defects.md) for the timing result and compatibility limits. |
 
 The superproject's `.gitmodules` now tracks `branch = main`.
 

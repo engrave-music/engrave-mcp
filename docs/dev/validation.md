@@ -103,6 +103,24 @@ with the same counts on Windows and linux-host. The MusicXML velocity regression
 and 12 before/after playback cases also passed on both; the saved WAV and MIDI
 files for those cases were byte-identical.
 
+At `engrave-34` (`8eb0c25a52`), 17 focused MusicXML dynamics tests, the host
+native-edit test and the host golden comparison passed on both platforms. The
+golden counts were 307 identical/83 allowed on Windows and 265/125 on linux-host,
+with zero unexpected outputs using `tests/golden/allow.json` SHA-256
+`a19f8f905e182ccd9e3f25a3eaad726300366ba2993e858ba01586ec70e8979d`.
+The full Linux engine gate passed at the exact commit (186 identical/65 allowed/
+0 different/0 missing). Twelve before/after playback probes on each platform
+confirmed the intentional grouped-dynamics audio and MIDI changes.
+
+The full Windows engine gate **failed** at the exact commit: dense-audio
+synthesis cancellation measured 140.0552 ms p95 and 176.2603 ms maximum,
+above its 30 ms and 50 ms limits. A separate exact-commit diagnostic run excluded
+only `AudioInternal.DenseScoreCancellationLatencyAndRecovery` and passed the
+remaining checks and golden comparison (213 identical/38 allowed/0 different/
+0 missing). It is not a full gate pass. Earlier normal-priority runs at related
+candidate commits also missed this timing assertion. The cause and stability of
+the timing variation are not established.
+
 ## Accepted evidence (M4, 2026-11-03)
 
 Host code through `cd0f504`, engine `engrave-31` (`629027f1`), acceptance record

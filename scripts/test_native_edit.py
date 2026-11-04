@@ -54,6 +54,44 @@ def change(note, value):
     return {'op': 'set_pitch', 'note': {'kind': 'id', 'id': note['id']}, 'pitch': value}
 
 
+async def check_dynamics_edit(client, out):
+    for label, tags, expected_type in [('single', ('f',), 'f'), ('grouped', ('f', 'p'), 'fp')]:
+        root = ET.fromstring(fixture())
+        measure = root.find('./part/measure')
+        direction = ET.Element('direction')
+        dynamic = ET.SubElement(ET.SubElement(direction, 'direction-type'), 'dynamics')
+        for tag in tags:
+            ET.SubElement(dynamic, tag)
+        measure.insert(1, direction)
+        data = base64.b64encode(ET.tostring(root)).decode()
+        doc = (await client.tool('score_open', {'data': data, 'format': 'musicxml'}))['document']
+
+        async def properties(document):
+            found = await client.tool('score_query', {'document': document, 'mode': 'elements',
+                                                      'query': {'types': ['Dynamic']}})
+            assert len(found['elements']) == 1, found
+            target = {'kind': 'id', 'id': found['elements'][0]['id']}
+            result = await client.tool('score_query', {'document': document, 'mode': 'properties',
+                                        'target': target, 'props': ['DYNAMIC_TYPE', 'VELOCITY']})
+            return target, {item['name']: item['value']['value'] for item in result['properties']}
+
+        target, before = await properties(doc)
+        assert before == {'DYNAMIC_TYPE': expected_type, 'VELOCITY': '96'}, before
+        await client.tool('score_edit', {'document': doc, 'ops': [
+            {'op': 'set_property', 'target': target, 'property': 'VELOCITY',
+             'value': {'kind': 'int', 'value': '73'}}]})
+        _, edited = await properties(doc)
+        assert edited == {'DYNAMIC_TYPE': expected_type, 'VELOCITY': '73'}, edited
+        path = out / f'dynamics-{label}.mscx'
+        await client.tool('score_export', {'document': doc, 'kind': 'score',
+            'options': {'format': 'mscx'}, 'destination': {'kind': 'file', 'path': str(path)}})
+        await client.tool('score_close', {'document': doc})
+        reopened = (await client.tool('score_open', {'path': str(path)}))['document']
+        _, saved = await properties(reopened)
+        assert saved == edited, saved
+        await client.tool('score_close', {'document': reopened})
+
+
 async def run(args):
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -120,8 +158,10 @@ async def run(args):
         xml = ET.parse(export).getroot()
         assert len(xml.findall('./part')) == 2 and len(xml.findall('./part/measure/note')) == 16
         await client.tool('score_close', {'document': doc})
+        await check_dynamics_edit(client, out)
     report = {'status': 'passed', 'sequential_independent_edits': 4, 'same_revision_winners': 1,
-              'stable_note_ids': 16, 'invalid_batch_unchanged': True, 'stale_revision_rejected': True}
+              'stable_note_ids': 16, 'invalid_batch_unchanged': True, 'stale_revision_rejected': True,
+              'dynamics_edits_survive_reopen': 2}
     (out / 'evidence.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     print(json.dumps(report))
 
