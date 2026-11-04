@@ -55,7 +55,7 @@ xmake build live_export_test staging_test
 (`-Targets` takes a PowerShell array; passing a comma-separated string to
 `pwsh -File` does not split it.)
 
-`--musescore_source=DIR` overrides the engine checkout. `releasedbg` is available
+`--engine_source=DIR` overrides the engine checkout. `releasedbg` is available
 for symbolized profiling.
 
 ### Running the dev build

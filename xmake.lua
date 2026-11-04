@@ -46,18 +46,9 @@ option("engine_source")
     set_description("engrave engine source tree (default: the vendor/engrave submodule)")
 option_end()
 
-option("musescore_source")
-    set_default("")
-    set_showmenu(true)
-    set_description("deprecated alias for engine_source")
-option_end()
-
 local project_root = os.projectdir()
 local vendor_root = path.join(project_root, "vendor", "engrave")
 local source_root = get_config("engine_source")
-if not source_root or source_root == "" then
-    source_root = get_config("musescore_source")
-end
 if not source_root or source_root == "" then
     source_root = vendor_root
 end

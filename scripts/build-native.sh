@@ -14,7 +14,7 @@ if [[ -n "$cairo_prefix" ]]; then
     extra_config+=("--cairo_prefix=$cairo_prefix")
 fi
 pixi run --locked -e native xmake f -y -m release -o "$build_directory" \
-    --engine_source="$engine_source" --musescore_source= \
+    --engine_source="$engine_source" \
     --cc="gcc@$PWD/.pixi/envs/native/bin/x86_64-conda-linux-gnu-cc" \
     --cxx="g++@$PWD/.pixi/envs/native/bin/x86_64-conda-linux-gnu-c++" \
     --ld="g++@$PWD/.pixi/envs/native/bin/x86_64-conda-linux-gnu-c++" "${extra_config[@]}"

@@ -23,7 +23,7 @@ try {
     if ($LASTEXITCODE) { throw 'Native source preparation failed' }
     & pixi run --locked -e native python scripts/prepare_xmake.py --check --engine-source $EngineSource
     if ($LASTEXITCODE) { throw 'xmake input validation failed' }
-    & xmake f -y -m release -o $BuildDirectory "--engine_source=$EngineSource" '--musescore_source='
+    & xmake f -y -m release -o $BuildDirectory "--engine_source=$EngineSource"
     if ($LASTEXITCODE) { throw 'Native configuration failed' }
     & xmake build -y -j $Jobs @Targets
     if ($LASTEXITCODE) { throw 'Native build failed' }
