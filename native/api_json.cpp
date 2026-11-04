@@ -15,8 +15,9 @@ using detail::invalid;
 
 std::size_t unicode_length(const std::string &s) {
     std::size_t n = 0;
-    for (unsigned char c : s)
+    for (unsigned char c : s) {
         if ((c & 0xc0) != 0x80) ++n;
+    }
     return n;
 }
 
@@ -62,12 +63,14 @@ bool conforms(const Json &schema, const Json &instance, const Json &root) {
         if (type == "null" && !instance.is_null()) return false;
         if (type == "number" && (!instance.is_number() || !std::isfinite(instance.get<double>()))) return false;
         if (type == "integer" && (!instance.is_number() || !std::isfinite(instance.get<double>()) ||
-                                  std::trunc(instance.get<double>()) != instance.get<double>()))
+                                  std::trunc(instance.get<double>()) != instance.get<double>())) {
             return false;
+        }
     }
     if (schema.contains("const") && instance != schema.at("const")) return false;
-    if (schema.contains("enum") && std::find(schema.at("enum").begin(), schema.at("enum").end(), instance) == schema.at("enum").end())
+    if (schema.contains("enum") && std::find(schema.at("enum").begin(), schema.at("enum").end(), instance) == schema.at("enum").end()) {
         return false;
+    }
     if (instance.is_number()) {
         const long double n = instance.get<long double>();
         if (schema.contains("minimum") && n < schema.at("minimum").get<long double>()) return false;
@@ -82,33 +85,41 @@ bool conforms(const Json &schema, const Json &instance, const Json &root) {
             const auto &pattern = schema.at("pattern").get_ref<const std::string &>();
             if (pattern.starts_with("^(?:[A-Za-z0-9+/]")) {
                 if (!base64_shape(s)) return false;
-            } else if (!std::regex_search(s, compiled_pattern(pattern)))
+            } else if (!std::regex_search(s, compiled_pattern(pattern))) {
                 return false;
+            }
         }
     }
     if (instance.is_array()) {
         if (schema.contains("maxItems") && instance.size() > schema.at("maxItems").get<std::size_t>()) return false;
-        if (schema.contains("items"))
-            for (const auto &v : instance)
+        if (schema.contains("items")) {
+            for (const auto &v : instance) {
                 if (!conforms(schema.at("items"), v, root)) return false;
+            }
+        }
     }
     if (instance.is_object()) {
-        if (schema.contains("required"))
-            for (const auto &key : schema.at("required"))
+        if (schema.contains("required")) {
+            for (const auto &key : schema.at("required")) {
                 if (!instance.contains(key.get<std::string>())) return false;
+            }
+        }
         if (schema.contains("properties")) {
             const auto &props = schema.at("properties");
             for (auto it = instance.begin(); it != instance.end(); ++it) {
                 if (props.contains(it.key())) {
                     if (!conforms(props.at(it.key()), it.value(), root)) return false;
-                } else if (schema.value("additionalProperties", true) == false)
+                } else if (schema.value("additionalProperties", true) == false) {
                     return false;
+                }
             }
         }
     }
-    if (schema.contains("allOf"))
-        for (const auto &s : schema.at("allOf"))
+    if (schema.contains("allOf")) {
+        for (const auto &s : schema.at("allOf")) {
             if (!conforms(s, instance, root)) return false;
+        }
+    }
     if (schema.contains("anyOf")) {
         bool found = false;
         for (const auto &s : schema.at("anyOf")) found |= conforms(s, instance, root);
@@ -177,10 +188,12 @@ const char *unit(engrave::Unit u) {
 namespace detail {
 [[noreturn]] void invalid(std::string message) { throw DecodeError{HostError{"InvalidArgument", std::move(message)}}; }
 void validate_xml_text(std::string_view value) {
-    for (unsigned char c : value)
+    for (unsigned char c : value) {
         if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') invalid("text contains a character forbidden by XML 1.0");
-    if (value.find("\xef\xbf\xbe") != std::string_view::npos || value.find("\xef\xbf\xbf") != std::string_view::npos)
+    }
+    if (value.find("\xef\xbf\xbe") != std::string_view::npos || value.find("\xef\xbf\xbf") != std::string_view::npos) {
         invalid("text contains a character forbidden by XML 1.0");
+    }
 }
 void validate_tool(std::string_view name, const Json &value) {
     const auto &root = schema_for(name);
@@ -188,8 +201,9 @@ void validate_tool(std::string_view name, const Json &value) {
 }
 void validate_def(std::string_view tool, std::string_view name, const Json &value) {
     const auto &root = schema_for(tool);
-    if (!conforms(root.at("$defs").at(std::string(name)), value, root))
+    if (!conforms(root.at("$defs").at(std::string(name)), value, root)) {
         invalid("value does not match the declared " + std::string(name) + " schema");
+    }
 }
 std::int64_t signed_decimal(const Json &j) {
     const auto &s = j.get_ref<const std::string &>();
@@ -212,9 +226,10 @@ engrave::Fraction fraction(const Json &j) {
 engrave::ScoreSel score(const Json &j) { return {j.contains("excerpt") ? std::optional(eid(j.at("excerpt"))) : std::nullopt}; }
 engrave::Address address(const Json &j) {
     const auto k = j.at("kind").get<std::string>();
-    if (k == "segment")
+    if (k == "segment") {
         return engrave::SegmentAddress{eid(j.at("measure")), j.at("staff").get<int>(), j.at("voice").get<int>(), fraction(j.at("tick")),
                                        j.at("segment_kind").get<std::string>()};
+    }
     if (k == "page") return engrave::PageAddress{score(j.at("score")), j.at("index").get<int>()};
     if (k == "system") return engrave::SystemAddress{score(j.at("score")), j.at("page").get<int>(), j.at("index").get<int>()};
     if (k == "spanner_segment") return engrave::SpannerSegmentAddress{eid(j.at("spanner")), j.at("index").get<int>()};
@@ -246,9 +261,10 @@ engrave::Value value(const Json &j) {
     if (k == "fraction") return fraction(v);
     if (k == "point") return engrave::Point{v.at("x").get<double>(), v.at("y").get<double>()};
     if (k == "size") return engrave::Size{v.at("w").get<double>(), v.at("h").get<double>()};
-    if (k == "color")
+    if (k == "color") {
         return engrave::Color{v.at("r").get<std::uint8_t>(), v.at("g").get<std::uint8_t>(), v.at("b").get<std::uint8_t>(),
                               v.at("a").get<std::uint8_t>()};
+    }
     if (k == "enum") return engrave::Enum{v.get<std::string>()};
     if (k == "int_list") {
         std::vector<std::int64_t> xs;
@@ -274,8 +290,9 @@ Result<std::uint64_t> decode_revision(const Json &j) {
         const auto &s = j.get_ref<const std::string &>();
         std::uint64_t n{};
         const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), n);
-        if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s)
+        if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s) {
             invalid("revision is not a canonical uint64 decimal");
+        }
         return n;
     } catch (const detail::DecodeError &e) {
         return std::unexpected(e.error);
@@ -325,30 +342,31 @@ Json encode(const engrave::Value &v) {
     return std::visit(
         [](const auto &x) -> Json {
             using T = std::decay_t<decltype(x)>;
-            if constexpr (std::is_same_v<T, std::monostate>)
+            if constexpr (std::is_same_v<T, std::monostate>) {
                 return nullptr;
-            else if constexpr (std::is_same_v<T, bool>)
+            } else if constexpr (std::is_same_v<T, bool>) {
                 return {{"kind", "bool"}, {"value", x}};
-            else if constexpr (std::is_same_v<T, std::int64_t>)
+            } else if constexpr (std::is_same_v<T, std::int64_t>) {
                 return {{"kind", "int"}, {"value", std::to_string(x)}};
-            else if constexpr (std::is_same_v<T, double>)
+            } else if constexpr (std::is_same_v<T, double>) {
                 return {{"kind", "real"}, {"value", x}};
-            else if constexpr (std::is_same_v<T, std::string>)
+            } else if constexpr (std::is_same_v<T, std::string>) {
                 return {{"kind", "string"}, {"value", x}};
-            else if constexpr (std::is_same_v<T, engrave::Fraction>)
+            } else if constexpr (std::is_same_v<T, engrave::Fraction>) {
                 return {{"kind", "fraction"}, {"value", fraction_json(x)}};
-            else if constexpr (std::is_same_v<T, engrave::Point>)
+            } else if constexpr (std::is_same_v<T, engrave::Point>) {
                 return {{"kind", "point"}, {"value", {{"x", x.x}, {"y", x.y}}}};
-            else if constexpr (std::is_same_v<T, engrave::Size>)
+            } else if constexpr (std::is_same_v<T, engrave::Size>) {
                 return {{"kind", "size"}, {"value", {{"w", x.w}, {"h", x.h}}}};
-            else if constexpr (std::is_same_v<T, engrave::Color>)
+            } else if constexpr (std::is_same_v<T, engrave::Color>) {
                 return {{"kind", "color"}, {"value", {{"r", x.r}, {"g", x.g}, {"b", x.b}, {"a", x.a}}}};
-            else if constexpr (std::is_same_v<T, engrave::Enum>)
+            } else if constexpr (std::is_same_v<T, engrave::Enum>) {
                 return {{"kind", "enum"}, {"value", x.token}};
-            else if constexpr (std::is_same_v<T, std::vector<std::int64_t>>)
+            } else if constexpr (std::is_same_v<T, std::vector<std::int64_t>>) {
                 return {{"kind", "int_list"}, {"value", mapped(x, [](auto n) { return Json(std::to_string(n)); })}};
-            else if constexpr (std::is_same_v<T, engrave::Opaque>)
+            } else if constexpr (std::is_same_v<T, engrave::Opaque>) {
                 return {{"kind", "opaque"}, {"type", x.type}};
+            }
         },
         v);
 }

@@ -51,10 +51,11 @@ std::string destination_message(std::string_view requested, std::string_view rea
 }
 
 HostError with_destination(HostError error, std::string_view requested) {
-    if (error.message.rfind("destination '", 0) == 0)
+    if (error.message.rfind("destination '", 0) == 0) {
         error.message.resize(utf8_prefix(error.message, kDiagnosticLimit));
-    else
+    } else {
         error.message = destination_message(requested, error.message);
+    }
     return error;
 }
 
@@ -83,8 +84,9 @@ std::vector<std::byte> position_json(const engrave::Positions &positions, const 
     std::vector<std::byte> result;
     auto append = [&](const std::string &part) {
         check_request_cancelled(capture);
-        if (part.size() > available - result.size())
+        if (part.size() > available - result.size()) {
             throw detail::DecodeError{HostError{"ResourceLimit", "position JSON exceeds output byte limit"}};
+        }
         const auto *data = reinterpret_cast<const std::byte *>(part.data());
         result.insert(result.end(), data, data + part.size());
     };
@@ -155,8 +157,9 @@ engrave::AudioOptions effective_mix(engrave::Document &document, const ExportReq
     std::set<std::int32_t> seen;
     for (const auto &track : result.tracks) {
         if (!seen.insert(track.track).second) invalid("duplicate audio track");
-        if (std::none_of(defaults.tracks.begin(), defaults.tracks.end(), [&](const auto &t) { return t.track == track.track; }))
+        if (std::none_of(defaults.tracks.begin(), defaults.tracks.end(), [&](const auto &t) { return t.track == track.track; })) {
             invalid("audio track is out of range");
+        }
     }
     auto overrides = std::move(result.tracks);
     result.tracks.clear();
@@ -186,8 +189,9 @@ engrave::AudioOptions effective_mix(engrave::Document &document, const ExportReq
 Result<ExportRequest> decode_export(const Json &j) {
     auto destination_error = [&](HostError error) -> Result<ExportRequest> {
         if (j.contains("destination") && j.at("destination").is_object() && j.at("destination").contains("path") &&
-            j.at("destination").at("path").is_string())
+            j.at("destination").at("path").is_string()) {
             error.message = destination_message(j.at("destination").at("path").get<std::string>(), error.message);
+        }
         return std::unexpected(std::move(error));
     };
     try {
@@ -239,7 +243,7 @@ Result<ExportRequest> decode_export(const Json &j) {
             assign_if(options, "sample_rate", o.sample_rate);
             if (options.contains("master_volume_db")) o.master_volume_db = options.at("master_volume_db").get<double>();
             if (options.contains("master_balance")) o.master_balance = options.at("master_balance").get<double>();
-            if (options.contains("tracks"))
+            if (options.contains("tracks")) {
                 for (const auto &t : options.at("tracks")) {
                     engrave::AudioTrackOptions track;
                     track.track = t.at("track").get<std::int32_t>();
@@ -255,6 +259,7 @@ Result<ExportRequest> decode_export(const Json &j) {
                     }
                     o.tracks.push_back(std::move(track));
                 }
+            }
         } else {
             result.kind = ExportKind::Positions;
             result.position_score = selection;
@@ -290,12 +295,13 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
             }
-            if (!stage.empty() && std::getenv("ENGRAVE_MCP_TEST_FAIL_CLEANUP"))
+            if (!stage.empty() && std::getenv("ENGRAVE_MCP_TEST_FAIL_CLEANUP")) {
                 ec = std::make_error_code(std::errc::permission_denied);
-            else
+            } else
 #endif
-                if (!stage.empty())
+                if (!stage.empty()) {
                 fs::remove_all(stage, ec);
+            }
             if (ec) {
                 {
                     std::lock_guard lock(publication_gate.mutex);
@@ -312,8 +318,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
     bool test_deadline = false;
     auto check = [&] {
         if (cancelled()) throw detail::DecodeError{HostError{"Cancelled", "live export cancelled"}};
-        if (test_deadline || ExportTiming::Clock::now() - submitted >= limits.deadline)
+        if (test_deadline || ExportTiming::Clock::now() - submitted >= limits.deadline) {
             throw detail::DecodeError{HostError{"DeadlineExceeded", "export deadline exceeded"}};
+        }
     };
     try {
         check();
@@ -326,8 +333,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                 const auto status = output_path_status(request.destination.path);
                 if (fs::exists(status) && !fs::is_directory(status)) throw std::invalid_argument("destination must be a directory");
                 cleanup.destination = fs::weakly_canonical(fs::absolute(request.destination.path));
-            } else
+            } else {
                 cleanup.destination = normalize_output_path(request.destination.path);
+            }
         } catch (const std::invalid_argument &e) {
             invalid(destination_message(request.destination.requested_path, e.what()));
         }
@@ -359,18 +367,20 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         validate_report_path(cleanup.destination);
         try {
             validate_output_path_syntax(cleanup.destination);
-            if (request.destination.directory)
+            if (request.destination.directory) {
                 require_output_directory(cleanup.destination);
-            else if (fs::is_directory(output_path_status(cleanup.destination)))
+            } else if (fs::is_directory(output_path_status(cleanup.destination))) {
                 invalid(destination_message(request.destination.requested_path, "file destination is a directory"));
-            else
+            } else {
                 require_output_directory(cleanup.destination.parent_path());
+            }
         } catch (const std::invalid_argument &e) {
             invalid(destination_message(request.destination.requested_path, e.what()));
         }
 #ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING"))
+        if (std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING")) {
             throw std::system_error(EIO, std::generic_category(), "Injected staging directory failure");
+        }
 #endif
         cleanup.stage = create_private_directory(request.destination.directory ? cleanup.destination : cleanup.destination.parent_path());
         std::uint64_t total = 0;
@@ -383,12 +393,14 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             check();
             auto start = ExportTiming::Clock::now();
             if (bytes.empty()) throw detail::DecodeError{HostError{"EngineFailure", "export produced an empty artifact"}};
-            if (bytes.size() > limits.output_bytes - total)
+            if (bytes.size() > limits.output_bytes - total) {
                 throw detail::DecodeError{HostError{"ResourceLimit", "export exceeds output byte limit"}};
+            }
             const auto destination = request.destination.directory ? cleanup.destination / name : cleanup.destination;
-            if (report_path_text(destination).size() > 4096)
+            if (report_path_text(destination).size() > 4096) {
                 throw detail::DecodeError{
                     HostError{"ResourceLimit", destination_message(request.destination.requested_path, "artifact path exceeds limit")}};
+            }
             auto path = cleanup.stage / name;
             std::ofstream out(path, std::ios::binary | std::ios::trunc);
             out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -431,10 +443,11 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     publication_gate.changed.wait(lock, [] { return publication_gate.closing; });
                     std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n");
                     std::fflush(stderr);
-                } else if (const auto *delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS"))
+                } else if (const auto *delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS")) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(std::stoul(delay)));
-                else
+                } else {
                     std::this_thread::sleep_for(std::chrono::seconds(30));
+                }
             }
             if (request.destination.path.string().find(".test-live-cancel") != std::string::npos &&
                 ++cancellation_polls == (request.kind == ExportKind::Render ? 2 : 8)) {
@@ -482,8 +495,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             options.cancelled = capture.cancelled;
             const auto last = options.last_page < 0 ? count - 1 : options.last_page;
             if (options.first_page >= count || last >= count) invalid("render page range is outside the score");
-            if (static_cast<std::int64_t>(last) - options.first_page + 1 > 4096)
+            if (static_cast<std::int64_t>(last) - options.first_page + 1 > 4096) {
                 throw detail::DecodeError{HostError{"ResourceLimit", "too many output pages"}};
+            }
             timing.add("engine_call", start);
             if (options.format == engrave::RenderFormat::Pdf) {
                 check();
@@ -498,8 +512,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     options.first_page = options.last_page = page;
                     auto output = engine_value(document.render(options));
                     timing.add("engine_call", start);
-                    if (output.pages.size() != 1)
+                    if (output.pages.size() != 1) {
                         throw detail::DecodeError{HostError{"EngineFailure", "renderer returned invalid page count"}};
+                    }
                     const bool png = options.format == engrave::RenderFormat::Png;
                     std::ostringstream name;
                     name << "page-" << std::setfill('0') << std::setw(4) << page + 1 << (png ? ".png" : ".svg");
@@ -511,8 +526,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             auto options = effective_mix(document, request, runtime);
             options.cancelled = capture.cancelled;
             const auto rate = runtime.audio_sample_rate;
-            if (options.sample_rate && options.sample_rate != rate)
+            if (options.sample_rate && options.sample_rate != rate) {
                 throw detail::DecodeError{HostError{"Unsupported", "audio sample rate differs from the engine rate"}};
+            }
             // The engine derives playback duration and checks its global projection
             // after the cancellable model build. Do not ask outline() for it:
             // outline also scans lyrics/metadata without cancellation. Per-request
@@ -534,8 +550,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             }));
             out.close();
             if (!out) throw detail::DecodeError{HostError{"Io", "cannot close staged audio"}};
-            if (!bytes || bytes != audio.bytes || fs::file_size(path) != bytes)
+            if (!bytes || bytes != audio.bytes || fs::file_size(path) != bytes) {
                 throw detail::DecodeError{HostError{"EngineFailure", "invalid audio byte count"}};
+            }
             const char *mime = "audio/wav";
             switch (options.format) {
                 case engrave::AudioFormat::Flac: mime = "audio/flac"; break;
@@ -546,9 +563,10 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             }
             timing.add("engine_call", start);
             const auto destination = request.destination.directory ? cleanup.destination / "output" : cleanup.destination;
-            if (report_path_text(destination).size() > 4096)
+            if (report_path_text(destination).size() > 4096) {
                 throw detail::DecodeError{
                     HostError{"ResourceLimit", destination_message(request.destination.requested_path, "artifact path exceeds limit")}};
+            }
             staged.push_back({path, {mime, destination, bytes}});
         }
         // Preflight both complete and worst-case partial reports before any rename.
@@ -578,8 +596,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         std::fprintf(stderr, "PUBLICATION_REPORT_BOUND %zu\n", report_bytes);
         std::fflush(stderr);
 #endif
-        if (report_bytes > report_limit)
+        if (report_bytes > report_limit) {
             throw detail::DecodeError{HostError{"ResourceLimit", "export artifact report exceeds transport budget"}};
+        }
         // All rendering and staging succeeds before any file becomes visible.
         check();
         // Atomically exclude watchdog termination before the first visible file.
@@ -591,8 +610,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 #endif
-        if (begin_publication && !begin_publication())
+        if (begin_publication && !begin_publication()) {
             throw detail::DecodeError{HostError{"Cancelled", "watchdog claimed export before publication"}};
+        }
         artifacts.reserve(staged.size()); // all storage allocated before visibility
         std::vector<std::string> prepared_paths;
         if (visible_paths) {
@@ -608,8 +628,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     artifacts.push_back(std::move(file.artifact));
                     if (visible_paths) visible_paths->push_back(std::move(prepared_paths[artifacts.size() - 1]));
 #ifdef MUSIC_ASYNC_TEST_HOOKS
-                    if (const auto *after = std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_RENAME"))
+                    if (const auto *after = std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_RENAME")) {
                         if (artifacts.size() == std::stoul(after)) throw std::runtime_error("Injected post-rename failure");
+                    }
 #endif
                 });
             } catch (const std::exception &e) {
@@ -625,14 +646,16 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     {"export_warnings", encode(warnings)}};
     } catch (const detail::DecodeError &e) {
 #ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (!artifacts.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_ERROR_REPORT"))
+        if (!artifacts.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_ERROR_REPORT")) {
             throw std::runtime_error("Injected error report construction failure");
+        }
 #endif
         auto error = e.error;
-        if (error.code == "Io")
+        if (error.code == "Io") {
             error = with_destination(std::move(error), request.destination.requested_path);
-        else
+        } else {
             error.message.resize(utf8_prefix(error.message, kDiagnosticLimit));
+        }
         if (error.code == "Cancelled" && !cancelled()) error = HostError{"DeadlineExceeded", "export deadline exceeded"};
         for (const auto &a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));

@@ -37,22 +37,25 @@ struct AssetFile {
 
 Result<std::shared_ptr<const AssetFile>> copy_asset(const fs::path &source) {
     std::error_code ec;
-    if (!fs::is_regular_file(source, ec))
+    if (!fs::is_regular_file(source, ec)) {
         return std::unexpected(HostError{"NotFound", "runtime asset is not a file: " + detail::path_text(source)});
+    }
     auto result = std::make_shared<AssetFile>();
     const auto temp = fs::temp_directory_path(ec);
     if (ec) return std::unexpected(HostError{"Io", "cannot locate runtime asset directory: " + ec.message()});
     for (int attempt = 0; attempt < 16; ++attempt) {
         result->directory = temp / ("engrave-mcp-asset-" + nonce());
         if (fs::create_directory(result->directory, ec)) break;
-        if (ec && ec != std::errc::file_exists)
+        if (ec && ec != std::errc::file_exists) {
             return std::unexpected(HostError{"Io", "cannot create runtime asset directory: " + ec.message()});
+        }
         result->directory.clear();
     }
     if (result->directory.empty()) return std::unexpected(HostError{"Io", "cannot allocate runtime asset directory"});
     result->file = result->directory / source.filename();
-    if (!fs::copy_file(source, result->file, fs::copy_options::none, ec))
+    if (!fs::copy_file(source, result->file, fs::copy_options::none, ec)) {
         return std::unexpected(HostError{"Io", "cannot copy runtime asset: " + ec.message()});
+    }
     fs::permissions(result->file, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write, fs::perm_options::remove, ec);
     if (ec) return std::unexpected(HostError{"Io", "cannot protect runtime asset copy: " + ec.message()});
     return std::shared_ptr<const AssetFile>(std::move(result));
@@ -161,8 +164,9 @@ struct HostApi::Impl {
     std::unordered_set<std::string> needs_recovery_check;
 
     void check_thread() const {
-        if (std::this_thread::get_id() != owner)
+        if (std::this_thread::get_id() != owner) {
             throw detail::DecodeError{HostError{"EngineFailure", "HostApi called outside its owner thread"}};
+        }
     }
     engrave::Document &get(const std::string &token, std::optional<std::uint64_t> expected) {
         auto it = documents.find(token);
@@ -181,9 +185,10 @@ struct HostApi::Impl {
             needs_recovery_check.erase(token);
         }
         const auto actual = doc.revision();
-        if (expected && *expected != actual)
+        if (expected && *expected != actual) {
             throw detail::DecodeError{
                 HostError{"RevisionConflict", "document revision does not match expected_revision", {}, token, actual}};
+        }
         return doc;
     }
     Json publish(std::unique_ptr<engrave::Document> doc) {
@@ -270,8 +275,9 @@ Json HostApi::close(const Json &j) {
         impl_->check_thread();
         detail::validate_tool("score_close", j);
         const auto token = j.at("document").get<std::string>();
-        if (impl_->borrowed.contains(token))
+        if (impl_->borrowed.contains(token)) {
             throw detail::DecodeError{HostError{"InvalidArgument", "document is in use by with_document", {}, token}};
+        }
         if (!impl_->documents.erase(token)) throw detail::DecodeError{HostError{"NotFound", "unknown or closed document", {}, token}};
         impl_->needs_recovery_check.erase(token);
         return Json{{"ok", true}};
@@ -336,9 +342,10 @@ Json HostApi::describe(const Json &j) {
         detail::validate_tool("score_describe", j);
         auto scope = j.at("scope").get<std::string>();
         if (scope == "types") return Json{{"ok", true}, {"scope", scope}, {"types", encoded_array(impl_->engine->describe())}};
-        if (scope == "type")
+        if (scope == "type") {
             return Json{
                 {"ok", true}, {"scope", scope}, {"type", encode(engine_result(impl_->engine->describe(j.at("type").get<std::string>())))}};
+        }
         return Json{{"ok", true}, {"scope", scope}, {"styles", encoded_array(impl_->engine->describe_styles())}};
     });
 }
@@ -439,8 +446,9 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<std::u
     try {
         impl_->check_thread();
         auto &doc = impl_->get(key, expected);
-        if (!impl_->borrowed.insert(key).second)
+        if (!impl_->borrowed.insert(key).second) {
             return std::unexpected(HostError{"InvalidArgument", "document is already in use by with_document", {}, key});
+        }
         struct Guard {
             std::unordered_set<std::string> &set;
             const std::string &key;

@@ -48,10 +48,11 @@ int main() {
         require(report(high) > limit, "synthetic list did not cross limit");
         while (high - low > 1) {
             const int middle = (low + high) / 2;
-            if (report(middle) <= limit)
+            if (report(middle) <= limit) {
                 low = middle;
-            else
+            } else {
                 high = middle;
+            }
         }
         const auto under = report(low), over = report(high);
         require(under <= limit && over > limit, "publication boundary incorrect");

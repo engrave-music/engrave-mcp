@@ -133,14 +133,15 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                                  preserve_completed](std::exception_ptr error, T result) mutable {
                     asio::post(executor, [self, guard, slot, completion_handler, owner_task, error, running_cancel, preserve_completed,
                                           result = std::move(result)]() mutable {
-                        if (!preserve_completed && !error && running_cancel && running_cancel->load(std::memory_order_acquire))
+                        if (!preserve_completed && !error && running_cancel && running_cancel->load(std::memory_order_acquire)) {
                             error = std::make_exception_ptr(asio::system_error(asio::error::operation_aborted));
+                        }
                         if (slot.is_connected()) slot.clear();
                         if (owner_task) --self->owner_pending;
                         (*completion_handler)(error, std::move(result));
                     });
                 };
-                if (slot.is_connected())
+                if (slot.is_connected()) {
                     slot.assign([state, task, complete, running_cancel](asio::cancellation_type type) mutable {
                         if (type == asio::cancellation_type::none) return;
                         if (running_cancel) running_cancel->store(true, std::memory_order_release);
@@ -150,6 +151,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                             complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), T{});
                         }
                     });
+                }
                 if (owner_task) ++self->owner_pending;
                 try {
                     asio::post(target, [self, task, complete, state, running_cancel, preserve_completed]() mutable {
@@ -174,8 +176,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         try {
                             if (self->stopping.load(std::memory_order_acquire)) throw asio::system_error(asio::error::operation_aborted);
                             result = (**task)();
-                            if (!preserve_completed && running_cancel && running_cancel->load(std::memory_order_acquire))
+                            if (!preserve_completed && running_cancel && running_cancel->load(std::memory_order_acquire)) {
                                 throw asio::system_error(asio::error::operation_aborted);
+                            }
                         } catch (...) {
                             error = std::current_exception();
                         }
@@ -282,8 +285,9 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                                 },
                                 &visible_paths);
 #ifdef MUSIC_ASYNC_TEST_HOOKS
-                            if (!visible_paths.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK"))
+                            if (!visible_paths.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
                                 throw 42; // exercise the non-standard exception boundary too
+                            }
 #endif
                             if (!output) return std::unexpected(output.error());
                             payload = std::move(*output);
@@ -301,15 +305,17 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                     }
                     return payload;
                 } catch (...) {
-                    if (publication.owns_lock() && execution && execution->load() == 4 && execution->report)
+                    if (publication.owns_lock() && execution && execution->load() == 4 && execution->report) {
                         execution->report(Json{}); // terminal: trustworthy report unavailable
+                    }
                     throw;
                 }
             },
             true, request_cancel, true, execution);
 #ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (execution && execution->was_reported() && std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_REPORT"))
+        if (execution && execution->was_reported() && std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_REPORT")) {
             throw std::runtime_error("Injected post-report completion failure");
+        }
 #endif
         timing->finish();
         co_return payload;

@@ -645,8 +645,9 @@ private:
                 Json paths = Json::array();
                 if (payload.contains("artifacts")) {
                     for (const auto &a : payload.at("artifacts")) paths.push_back(a.at("path"));
-                } else
+                } else {
                     paths = payload.at("error").value("published_artifacts", Json::array());
+                }
                 result["structuredContent"]["error"]["published_artifacts"] = std::move(paths);
             }
             auto wire =
@@ -1316,8 +1317,9 @@ private:
                     auto self = shared_from_this();
                     timer->async_wait([self, target, timer](const asio::error_code &error) {
                         if (error || target->tool_finished || target->response_started ||
-                            target->execution->load(std::memory_order_acquire) != 1)
+                            target->execution->load(std::memory_order_acquire) != 1) {
                             return;
+                        }
                         int running = 1;
                         if (!target->execution->compare_exchange_strong(running, 5, std::memory_order_acq_rel)) return;
 #ifdef MUSIC_ASYNC_TEST_HOOKS

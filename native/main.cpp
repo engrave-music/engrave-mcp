@@ -12,17 +12,19 @@
 int main(int argc, char **argv) {
     try {
 #ifdef _WIN32
-        if (_setmode(_fileno(stdin), _O_BINARY) == -1 || _setmode(_fileno(stdout), _O_BINARY) == -1)
+        if (_setmode(_fileno(stdin), _O_BINARY) == -1 || _setmode(_fileno(stdout), _O_BINARY) == -1) {
             throw std::runtime_error("Cannot configure binary stdio");
+        }
 #endif
         std::string soundfont, resources;
         for (int i = 1; i < argc; ++i) {
-            if (std::string(argv[i]) == "--soundfont" && i + 1 < argc)
+            if (std::string(argv[i]) == "--soundfont" && i + 1 < argc) {
                 soundfont = argv[++i];
-            else if (std::string(argv[i]) == "--resources" && i + 1 < argc)
+            } else if (std::string(argv[i]) == "--resources" && i + 1 < argc) {
                 resources = argv[++i];
-            else
+            } else {
                 throw std::invalid_argument("Usage: engrave-mcp [--soundfont FILE.sf2|FILE.sf3] [--resources DIR]");
+            }
         }
         engrave::EngineOptions options;
         options.resources = resources.empty() ? music::current_executable_path().parent_path() / "assets" :

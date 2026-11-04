@@ -46,24 +46,25 @@ std::string path_text(const fs::path &p) {
 }
 Json call(HostApi &host, const std::string &tool, const Json &arg) {
     Json out;
-    if (tool == "score_open")
+    if (tool == "score_open") {
         out = host.open(arg);
-    else if (tool == "score_create")
+    } else if (tool == "score_create") {
         out = host.create_document(arg);
-    else if (tool == "score_close")
+    } else if (tool == "score_close") {
         out = host.close(arg);
-    else if (tool == "score_outline")
+    } else if (tool == "score_outline") {
         out = host.outline(arg);
-    else if (tool == "score_query")
+    } else if (tool == "score_query") {
         out = host.query(arg);
-    else if (tool == "score_describe")
+    } else if (tool == "score_describe") {
         out = host.describe(arg);
-    else if (tool == "score_edit")
+    } else if (tool == "score_edit") {
         out = host.edit(arg);
-    else if (tool == "runtime_info")
+    } else if (tool == "runtime_info") {
         out = host.runtime_info(arg);
-    else
+    } else {
         throw std::logic_error("unknown test tool");
+    }
     std::cout << "HOST_CASE " << Json{{"tool", tool}, {"arguments", arg}, {"result", out}}.dump() << '\n';
     return out;
 }
@@ -337,11 +338,12 @@ int main(int argc, char **argv) {
         auto notes =
             ok(*host, "score_query", {{"document", linked_doc}, {"mode", "elements"}, {"query", {{"types", Json::array({"Note"})}}}});
         Json target;
-        for (const auto &note : notes.at("elements"))
+        for (const auto &note : notes.at("elements")) {
             if (note.at("links").size() > 1) {
                 target = note;
                 break;
             }
+        }
         require(target.is_object(), "fixture has no linked note");
         const auto note = target.at("id").get<std::string>(), copy = target.at("links").at(1).get<std::string>();
         Json color = {{"kind", "color"}, {"value", {{"r", 12}, {"g", 34}, {"b", 56}, {"a", 255}}}};

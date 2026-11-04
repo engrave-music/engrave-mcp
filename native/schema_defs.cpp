@@ -37,8 +37,9 @@ void collect(const J &node, const J &defs, J &used) {
             }
         }
         for (auto &v : node) collect(v, defs, used);
-    } else if (node.is_array())
+    } else if (node.is_array()) {
         for (auto &v : node) collect(v, defs, used);
+    }
 }
 J schema(J body, const J &defs) {
     J used = J::object();
@@ -83,8 +84,9 @@ void output_bounds(J &node, const std::string &field = {}) {
     for (auto it = node.begin(); it != node.end(); ++it) {
         if (it.key() == "properties" && it->is_object()) {
             for (auto property = it->begin(); property != it->end(); ++property) output_bounds(property.value(), property.key());
-        } else
+        } else {
             output_bounds(it.value(), field);
+        }
     }
 }
 } // namespace
@@ -128,8 +130,9 @@ Json declared_tools() {
         J req = J::array();
         for (auto it = p.begin(); it != p.end(); ++it) {
             bool skip = false;
-            for (auto &x : optional)
+            for (auto &x : optional) {
                 if (x == it.key()) skip = true;
+            }
             if (!skip) req.push_back(it.key());
         }
         ops.push_back(object(p, req));
@@ -400,8 +403,9 @@ Json declared_tools() {
             variant["if"] = {{"properties", {{"options", {{"properties", {{"format", en({"png", "svg"})}}}}}}}};
             variant["then"] = {{"properties", {{"destination", {{"properties", {{"kind", lit("directory")}}}}}}}};
             variant["else"] = {{"properties", {{"destination", {{"properties", {{"kind", lit("file")}}}}}}}};
-        } else
+        } else {
             variant["properties"]["destination"] = object({{"kind", lit("file")}, {"path", text}});
+        }
         exports.push_back(variant);
     }
     tool("score_export",

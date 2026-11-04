@@ -104,7 +104,7 @@ def main() -> int:
         print(f"Running clang-tidy on {len(cpp_files)} C++ file(s)...", flush=True)
         cmd = ["clang-tidy", "-p", str(repo_root)]
         if args.fix:
-            cmd.append("--fix-errors")
+            cmd.extend(["--fix-errors", "--format-style=file"])
         cmd.extend(map(str, cpp_files))
         res = subprocess.run(cmd, cwd=repo_root, check=False)
         if res.returncode != 0:

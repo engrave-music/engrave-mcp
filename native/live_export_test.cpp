@@ -16,9 +16,10 @@ std::vector<std::byte> read(const fs::path &p) {
 }
 int main(int argc, char **argv) {
     try {
-        if (argc != 4 || std::string(argv[1]) != "--partial-write")
+        if (argc != 4 || std::string(argv[1]) != "--partial-write") {
             throw std::runtime_error("partial: no content comparison; use scripts/test_live_export.py --direct-binary BINARY (file-writing "
                                      "mode: live_export_test --partial-write RESOURCES OUTPUT)");
+        }
         engrave::EngineOptions options;
         options.resources = fs::absolute(fs::u8path(argv[2]));
         options.deterministic_ids = true;
@@ -30,8 +31,9 @@ int main(int argc, char **argv) {
         fixtures.emplace_back("fixtures/evening.musicxml");
         fixtures.emplace_back("tests/live_export/created.musicxml");
         for (const char *name : {"engine/two-notes.mnx", "project_examples/tupletSimple.mnx", "project_examples/percussionKit.mnx",
-                                 "project_examples/graceArps.mnx"})
+                                 "project_examples/graceArps.mnx"}) {
             fixtures.emplace_back(fs::path("vendor/engrave/src/importexport/mnx/tests/data") / name);
+        }
         for (const auto &fixture : fixtures) {
             auto ext = fixture.path().extension().string();
             if (ext != ".mscx" && ext != ".mscz" && ext != ".musicxml" && ext != ".mid" && ext != ".gp" && ext != ".mnx") continue;
@@ -54,8 +56,9 @@ int main(int argc, char **argv) {
                 if (svg || pdf) {
                     auto rendered = value(doc->render(request->render_options));
                     expected = pdf ? std::move(rendered.document) : std::move(rendered.pages.at(0));
-                } else
+                } else {
                     expected = value(doc->export_score(request->score_options));
+                }
                 ExportTiming timing("oracle", target);
                 auto actual = live_export(*doc, *request, ExportLimits{}, [] { return false; }, ExportTiming::Clock::now(), timing);
                 if (!actual) throw std::runtime_error(actual.error().message);
@@ -64,8 +67,9 @@ int main(int argc, char **argv) {
                 if (svg) fs::create_directories(denied_request.destination.path);
                 auto cancelled = live_export(*doc, denied_request, ExportLimits{}, [] { return true; }, ExportTiming::Clock::now(), timing);
                 if (cancelled || cancelled.error().code != "Cancelled") throw std::runtime_error("cancellation failed");
-                if (svg ? !fs::is_empty(denied_request.destination.path) : fs::exists(denied_request.destination.path))
+                if (svg ? !fs::is_empty(denied_request.destination.path) : fs::exists(denied_request.destination.path)) {
                     throw std::runtime_error("cancel published an artifact");
+                }
                 ExportLimits tiny;
                 tiny.output_bytes = 1;
                 auto limited = live_export(*doc, denied_request, tiny, [] { return false; }, ExportTiming::Clock::now(), timing);
@@ -76,8 +80,9 @@ int main(int argc, char **argv) {
                     // The Python harness compares complete golden.describe_pdf descriptors.
                     std::ofstream direct(out / (pdf ? "direct.pdf" : "direct.mscz"), std::ios::binary);
                     direct.write(reinterpret_cast<const char *>(expected.data()), expected.size());
-                } else if (read(path) != expected)
+                } else if (read(path) != expected) {
                     throw std::runtime_error("direct byte mismatch: " + fixture.path().string() + "/" + fmt);
+                }
             }
         }
         std::cout << "partial: no content comparison for PDF/MSCZ; run scripts/test_live_export.py\n";

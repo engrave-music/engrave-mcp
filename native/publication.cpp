@@ -79,12 +79,14 @@ struct PrivateDirectorySecurity {
         acl_buffer.resize(acl_size);
         auto *acl = reinterpret_cast<ACL *>(acl_buffer.data());
         if (!InitializeAcl(acl, acl_size, ACL_REVISION)) windows_error("InitializeAcl failed");
-        if (!AddAccessAllowedAceEx(acl, ACL_REVISION, OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE, GENERIC_ALL, user->User.Sid))
+        if (!AddAccessAllowedAceEx(acl, ACL_REVISION, OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE, GENERIC_ALL, user->User.Sid)) {
             windows_error("AddAccessAllowedAceEx failed");
+        }
         if (!InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION)) windows_error("InitializeSecurityDescriptor failed");
         if (!SetSecurityDescriptorDacl(&descriptor, TRUE, acl, FALSE)) windows_error("SetSecurityDescriptorDacl failed");
-        if (!SetSecurityDescriptorControl(&descriptor, SE_DACL_PROTECTED, SE_DACL_PROTECTED))
+        if (!SetSecurityDescriptorControl(&descriptor, SE_DACL_PROTECTED, SE_DACL_PROTECTED)) {
             windows_error("SetSecurityDescriptorControl failed");
+        }
         attributes.nLength = sizeof(attributes);
         attributes.lpSecurityDescriptor = &descriptor;
         attributes.bInheritHandle = FALSE;
@@ -178,11 +180,13 @@ void validate_output_path_syntax(const std::filesystem::path &path) {
         if (component.empty()) reject();
         if (component != L"." && component != L"..") {
             if (component.back() == L'.' || component.back() == L' ') reject();
-            for (auto c : component)
+            for (auto c : component) {
                 if (c < 32 || std::wstring_view(L"<>:\"|?*").find(c) != std::wstring_view::npos) reject();
+            }
             auto base = component.substr(0, component.find(L'.'));
-            for (auto &c : base)
+            for (auto &c : base) {
                 if (c >= L'a' && c <= L'z') c -= L'a' - L'A';
+            }
             // Windows also treats the ISO-8859-1 superscript digits as device
             // digits: COM¹/²/³ and LPT¹/²/³ are reserved exactly like COM1–9.
             auto device_digit = [](wchar_t c) { return (c >= L'1' && c <= L'9') || c == L'\u00B9' || c == L'\u00B2' || c == L'\u00B3'; };
@@ -191,8 +195,9 @@ void validate_output_path_syntax(const std::filesystem::path &path) {
             const bool unc_server = unc && component_index == 0;
             if (!unc_server &&
                 (base == L"CON" || base == L"PRN" || base == L"AUX" || base == L"NUL" ||
-                 (base.size() == 4 && (base.substr(0, 3) == L"COM" || base.substr(0, 3) == L"LPT") && device_digit(base[3]))))
+                 (base.size() == 4 && (base.substr(0, 3) == L"COM" || base.substr(0, 3) == L"LPT") && device_digit(base[3])))) {
                 reject();
+            }
         }
         ++component_index;
         if (end == std::wstring::npos) break;
@@ -273,12 +278,14 @@ void publish_output(const std::filesystem::path &staged, const std::filesystem::
     if (GetFileAttributesW(destination_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
         const auto result = GetNamedSecurityInfoW(destination_path.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr,
                                                   &acl.dacl, nullptr, &acl.descriptor);
-        if (result != ERROR_SUCCESS)
+        if (result != ERROR_SUCCESS) {
             throw std::system_error(static_cast<int>(result), std::system_category(), "Cannot inspect publication ACL");
+        }
     } else {
         const auto missing = GetLastError();
-        if (missing != ERROR_FILE_NOT_FOUND && missing != ERROR_PATH_NOT_FOUND)
+        if (missing != ERROR_FILE_NOT_FOUND && missing != ERROR_PATH_NOT_FOUND) {
             throw std::system_error(static_cast<int>(missing), std::system_category(), "Cannot inspect publication destination");
+        }
         auto parent = destination_path.parent_path();
         if (parent.empty()) parent = ".";
         std::random_device random;
@@ -294,19 +301,22 @@ void publish_output(const std::filesystem::path &staged, const std::filesystem::
             const auto result = GetSecurityInfo(handle.value, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &acl.dacl,
                                                 nullptr, &acl.descriptor);
             handle.reset(); // delete-on-close removes the probe
-            if (result != ERROR_SUCCESS)
+            if (result != ERROR_SUCCESS) {
                 throw std::system_error(static_cast<int>(result), std::system_category(), "Cannot inspect publication ACL");
+            }
             created = true;
         }
         if (!created) throw std::runtime_error("Cannot allocate publication ACL probe");
     }
     SECURITY_DESCRIPTOR_CONTROL control = 0;
     DWORD revision = 0;
-    if (!GetSecurityDescriptorControl(acl.descriptor, &control, &revision))
+    if (!GetSecurityDescriptorControl(acl.descriptor, &control, &revision)) {
         throw std::runtime_error("Cannot inspect publication DACL control");
+    }
     acl.protected_dacl = (control & SE_DACL_PROTECTED) != 0;
-    if (!MoveFileExW(staged.c_str(), destination_path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    if (!MoveFileExW(staged.c_str(), destination_path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         windows_error("Cannot publish output");
+    }
     if (on_visible) on_visible();
     Handle published(CreateFileW(destination_path.c_str(), WRITE_DAC | READ_CONTROL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
