@@ -121,6 +121,20 @@ remaining checks and golden comparison (213 identical/38 allowed/0 different/
 candidate commits also missed this timing assertion. The cause and stability of
 the timing variation are not established.
 
+At `engrave-35` (`8e522af6b7`), both exact-commit full engine gates passed:
+Windows 213 identical/38 allowed/0 different/0 missing, and physical linux-host
+186/65/0/0. Seven focused chord-line read tests and nine edit tests also passed
+on each platform, including the existing three-point legacy path, 5.00 offsets,
+MSCX/MSCZ reopen after edits, linked parts and undo/rollback. Host golden
+comparisons passed with 307 identical/83 allowed on Windows and 265/125 on linux-host,
+using the unchanged allow-list hash above. An executed host probe confirmed 5.00
+offset export and the existing fail-closed 4.70 refusal for chord lines.
+
+The Windows dense-audio cancellation test passed in this run: synthesis p95
+26.1483 ms and maximum 27.7273 ms, against 30 ms and 50 ms limits. This does
+not resolve or explain the prior `engrave-34` failures. The optional warm-graph
+timing test was skipped by its default test configuration.
+
 ## Accepted evidence (M4, 2026-11-03)
 
 Host code through `cd0f504`, engine `engrave-31` (`629027f1`), acceptance record
