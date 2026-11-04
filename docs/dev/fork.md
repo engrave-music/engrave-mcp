@@ -2,7 +2,7 @@
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/engrave` (shallow, pinned by SHA with an `engrave-<n>` tag per pin).
-The current pin is `engrave-35` (`8e522af6b7`).
+The current pin is `engrave-36` (`8b479f2994`).
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
 terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
@@ -105,5 +105,6 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 | `engrave-34` | `8eb0c25a52` | `32f0a26e5b` | `da3885cb` | Adapts MusicXML dynamics grouping from MuseScore `3d6d7ffe70a2a914767a36fc70a5ec8fb5ca56ed`: each nonempty container becomes one dynamic, without private playback metadata. This intentionally changes some audio and MIDI; common grouped and single markings, native reopen, MusicXML round trips and host velocity edits were executed on Windows and linux-host. Both host golden comparisons passed with the existing hash-pinned allow-list. The full Linux engine gate passed (186 identical/65 allowed/0 different/0 missing). The full Windows gate failed the dense-audio cancellation timing assertion; a diagnostic run excluding that one test passed its remaining checks and golden comparison (213/38/0/0). See [validation.md](validation.md) and [defects.md](defects.md) for the timing result and compatibility limits. |
 
 | `engrave-35` | `8e522af6b7` | `32f0a26e5b` | `da3885cb` | Adapts the 5.00 chord-line `o1`–`o4` offset changes from MuseScore `daa0e5f3c9a9f996d5b71646a9fd23eecce38228`, preserving arbitrary legacy paths and offset state through editing, undo and linked-part operations. Native MSCX/MSCZ reopen, focused tests and host golden comparisons passed on Windows and physical linux-host. Both exact-commit full engine gates passed: Windows 213 identical/38 allowed/0 different/0 missing, linux-host 186/65/0/0. The restricted 4.70 writer continues to refuse chord lines rather than silently dropping them. See [validation.md](validation.md) for timing and test details. |
+| `engrave-36` | `8b479f2994` | `32f0a26e5b` | `da3885cb` | Full codebase formatting with clang-format: adds `.clang-format` to submodule and formats all 1,461 C/C++ source and header files across the engine. Validated with clean xmake build and test suites. |
 
 The superproject's `.gitmodules` now tracks `branch = main`.
