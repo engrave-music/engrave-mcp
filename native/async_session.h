@@ -1,4 +1,5 @@
 #pragma once
+
 #include "publication_gate.h"
 #include <asio/awaitable.hpp>
 #include <filesystem>
@@ -7,7 +8,9 @@
 #include <string>
 #include <nlohmann/json.hpp>
 #include <engrave/engine.h>
+
 namespace music {
+
 // Invoke on the session I/O thread. A separate owning OS thread contains the engine.
 class AsyncSession {
 public:
@@ -17,8 +20,10 @@ public:
     AsyncSession &operator=(const AsyncSession &) = delete;
     asio::awaitable<nlohmann::json> call(std::string name, nlohmann::json arguments, std::shared_ptr<RequestExecution> execution = {});
     void shutdown() noexcept;
+
 private:
     struct Impl;
     std::shared_ptr<Impl> impl_;
 };
+
 } // namespace music

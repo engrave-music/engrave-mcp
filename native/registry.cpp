@@ -3,6 +3,7 @@
 #include "host_api.h"
 #include <set>
 #include <stdexcept>
+
 namespace music::v2 {
 namespace {
 constexpr std::array specs = {
@@ -11,6 +12,7 @@ constexpr std::array specs = {
     ToolSpec{"score_query", HandlerId::Query, Scheduling::Owner},       ToolSpec{"score_describe", HandlerId::Describe, Scheduling::Owner},
     ToolSpec{"score_edit", HandlerId::Edit, Scheduling::Owner},         ToolSpec{"score_export", HandlerId::Export, Scheduling::Owner},
     ToolSpec{"runtime_info", HandlerId::RuntimeInfo, Scheduling::Owner}};
+
 consteval bool complete() {
     std::array<int, static_cast<std::size_t>(HandlerId::Count)> counts{};
     for (auto &s : specs) ++counts[static_cast<std::size_t>(s.handler)];
@@ -19,11 +21,14 @@ consteval bool complete() {
     }
     return true;
 }
+
 static_assert(complete());
+
 const Json &schemas() {
     static const Json tools = declared_tools();
     return tools;
 }
+
 const Json &definition(std::string_view name) {
     for (auto &tool : schemas()) {
         if (tool.at("name").get<std::string>() == name) return tool;
@@ -31,25 +36,32 @@ const Json &definition(std::string_view name) {
     throw std::logic_error("missing tool definition");
 }
 } // namespace
+
 std::string ToolSpec::description() const { return definition(name).at("description").get<std::string>(); }
+
 const Json &ToolSpec::input_schema() const { return definition(name).at("inputSchema"); }
+
 std::span<const ToolSpec> registry() { return specs; }
+
 const ToolSpec *find_tool(std::string_view name) {
     for (auto &s : specs) {
         if (s.name == name) return &s;
     }
     return nullptr;
 }
+
 Json tools_json() {
     Json tools = Json::array();
     for (auto &spec : specs) tools.push_back(definition(spec.name));
     return tools;
 }
+
 void validate_handlers(const HandlerTable &handlers) {
     for (auto handler : handlers) {
         if (!handler) throw std::logic_error("unbound v2 handler");
     }
 }
+
 void validate_registry() {
     auto tools = tools_json();
     if (schemas().size() != specs.size()) throw std::logic_error("tool count mismatch");

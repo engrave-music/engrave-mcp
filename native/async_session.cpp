@@ -27,6 +27,7 @@
 #include <utility>
 
 namespace music {
+
 namespace {
 using namespace v2;
 
@@ -35,15 +36,23 @@ struct HandlerContext {
 };
 
 Json open(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->open(a); }
+
 Json create(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->create_document(a); }
+
 Json close(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->close(a); }
+
 Json outline(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->outline(a); }
+
 Json query(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->query(a); }
+
 Json describe(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->describe(a); }
+
 Json edit(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->edit(a); }
+
 Json runtime_info(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->runtime_info(a); }
 
 Json export_request(void *, const Json &) { throw std::logic_error("export must route through owner"); }
+
 const HandlerTable handlers{open, create, close, outline, query, describe, edit, export_request, runtime_info};
 } // namespace
 
@@ -209,7 +218,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
 };
 
 AsyncSession::AsyncSession(engrave::EngineOptions options) : impl_(std::make_shared<Impl>(std::move(options))) {}
+
 AsyncSession::~AsyncSession() { shutdown(); }
+
 void AsyncSession::shutdown() noexcept {
     if (impl_) impl_->shutdown();
 }

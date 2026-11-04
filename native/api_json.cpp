@@ -10,6 +10,7 @@
 #include <type_traits>
 
 namespace music::v2 {
+
 namespace {
 using detail::invalid;
 
@@ -145,18 +146,24 @@ const Json &schema_for(std::string_view tool) {
 }
 
 Json fraction_json(const engrave::Fraction &f) { return {{"num", std::to_string(f.num)}, {"den", std::to_string(f.den)}}; }
+
 Json eid_json(const std::optional<engrave::ElementId> &id) { return id ? Json(engrave::to_string(*id)) : Json(nullptr); }
+
 Json score_json(const engrave::ScoreSel &s) { return s.excerpt ? Json{{"excerpt", engrave::to_string(*s.excerpt)}} : Json::object(); }
+
 template <class T, class F>
 Json mapped(const std::vector<T> &items, F f) {
     Json out = Json::array();
     for (const auto &x : items) out.push_back(f(x));
     return out;
 }
+
 Json ids(const std::vector<engrave::ElementId> &items) {
     return mapped(items, [](const auto &x) { return Json(engrave::to_string(x)); });
 }
+
 Json mix(const engrave::AudioMix &m) { return {{"volume_db", m.volume_db}, {"balance", m.balance}, {"mute", m.mute}, {"solo", m.solo}}; }
+
 const char *kind(engrave::ValueKind k) {
     switch (k) {
         case engrave::ValueKind::Bool: return "bool";
@@ -173,6 +180,7 @@ const char *kind(engrave::ValueKind k) {
     }
     throw std::logic_error("unknown ValueKind");
 }
+
 const char *unit(engrave::Unit u) {
     switch (u) {
         case engrave::Unit::None: return "none";
@@ -187,6 +195,7 @@ const char *unit(engrave::Unit u) {
 
 namespace detail {
 [[noreturn]] void invalid(std::string message) { throw DecodeError{HostError{"InvalidArgument", std::move(message)}}; }
+
 void validate_xml_text(std::string_view value) {
     for (unsigned char c : value) {
         if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') invalid("text contains a character forbidden by XML 1.0");
@@ -195,16 +204,19 @@ void validate_xml_text(std::string_view value) {
         invalid("text contains a character forbidden by XML 1.0");
     }
 }
+
 void validate_tool(std::string_view name, const Json &value) {
     const auto &root = schema_for(name);
     if (!conforms(root, value, root)) invalid("arguments do not match the declared " + std::string(name) + " schema");
 }
+
 void validate_def(std::string_view tool, std::string_view name, const Json &value) {
     const auto &root = schema_for(tool);
     if (!conforms(root.at("$defs").at(std::string(name)), value, root)) {
         invalid("value does not match the declared " + std::string(name) + " schema");
     }
 }
+
 std::int64_t signed_decimal(const Json &j) {
     const auto &s = j.get_ref<const std::string &>();
     std::int64_t n{};
@@ -212,18 +224,22 @@ std::int64_t signed_decimal(const Json &j) {
     if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s) invalid("integer is not a canonical int64 decimal");
     return n;
 }
+
 engrave::ElementId eid(const Json &j) {
     auto id = engrave::element_id_from_string(j.get<std::string>());
     if (!id || engrave::to_string(*id) != j.get<std::string>()) invalid("invalid canonical element id");
     return *id;
 }
+
 engrave::Fraction fraction(const Json &j) {
     auto n = signed_decimal(j.at("num"));
     auto d = signed_decimal(j.at("den"));
     if (d <= 0) invalid("fraction denominator must be positive");
     return {n, d};
 }
+
 engrave::ScoreSel score(const Json &j) { return {j.contains("excerpt") ? std::optional(eid(j.at("excerpt"))) : std::nullopt}; }
+
 engrave::Address address(const Json &j) {
     const auto k = j.at("kind").get<std::string>();
     if (k == "segment") {
@@ -235,6 +251,7 @@ engrave::Address address(const Json &j) {
     if (k == "spanner_segment") return engrave::SpannerSegmentAddress{eid(j.at("spanner")), j.at("index").get<int>()};
     invalid("unknown address kind");
 }
+
 engrave::Ref ref(const Json &j, bool allow_op, std::size_t before) {
     const auto k = j.at("kind").get<std::string>();
     if (k == "id") return eid(j.at("id"));
@@ -246,6 +263,7 @@ engrave::Ref ref(const Json &j, bool allow_op, std::size_t before) {
     }
     invalid("OpRef is only valid in an edit batch");
 }
+
 engrave::Value value(const Json &j) {
     if (j.is_null()) return std::monostate{};
     const auto k = j.at("kind").get<std::string>();
@@ -273,11 +291,13 @@ engrave::Value value(const Json &j) {
     }
     invalid("unknown or read-only value kind");
 }
+
 std::filesystem::path path(const Json &j) {
     const auto &s = j.get_ref<const std::string &>();
     if (s.find('\0') != std::string::npos) invalid("path contains a NUL byte");
     return std::filesystem::u8path(s);
 }
+
 std::string path_text(const std::filesystem::path &p) {
     auto s = p.generic_u8string();
     return {reinterpret_cast<const char *>(s.data()), s.size()};
@@ -298,6 +318,7 @@ Result<std::uint64_t> decode_revision(const Json &j) {
         return std::unexpected(e.error);
     }
 }
+
 Result<engrave::ScoreSel> decode_score(const Json &j) {
     try {
         detail::validate_def("score_outline", "score", j);
@@ -306,6 +327,7 @@ Result<engrave::ScoreSel> decode_score(const Json &j) {
         return std::unexpected(e.error);
     }
 }
+
 Result<engrave::Ref> decode_ref(const Json &j) {
     try {
         detail::validate_def("score_query", "read_ref", j);
@@ -314,6 +336,7 @@ Result<engrave::Ref> decode_ref(const Json &j) {
         return std::unexpected(e.error);
     }
 }
+
 Result<engrave::Query> decode_query(const Json &j) {
     try {
         detail::validate_tool("score_query", Json{{"document", "doc-A-1"}, {"mode", "elements"}, {"query", j}});
@@ -370,12 +393,15 @@ Json encode(const engrave::Value &v) {
         },
         v);
 }
+
 Json encode(const engrave::PropertyRead &p) {
     return {{"name", p.name}, {"value", encode(p.value)}, {"is_default", p.is_default}, {"styled", p.styled}};
 }
+
 Json encode(const engrave::Diagnostic &d) {
     return {{"severity", d.severity == engrave::Severity::Info ? "info" : "warning"}, {"message", d.message}};
 }
+
 Json encode(const engrave::Outline &o) {
     auto parts = mapped(o.parts, [](const auto &p) {
         return Json{{"id", engrave::to_string(p.id)},
@@ -415,6 +441,7 @@ Json encode(const engrave::Outline &o) {
             {"signatures", sigs},
             {"excerpts", excerpts}};
 }
+
 Json encode(const engrave::QueryResult &q) {
     auto elements = mapped(q.elements, [](const auto &e) {
         Json box = nullptr;
@@ -435,6 +462,7 @@ Json encode(const engrave::QueryResult &q) {
     });
     return {{"elements", elements}, {"total", q.total}, {"next_cursor", q.next_cursor ? Json(*q.next_cursor) : Json(nullptr)}};
 }
+
 Json encode(const engrave::EditResult &r) {
     return {
         {"revision", std::to_string(r.revision)},
@@ -445,6 +473,7 @@ Json encode(const engrave::EditResult &r) {
         {"replaced", ids(r.replaced)},
         {"diagnostics", mapped(r.diagnostics, [](const auto &d) { return encode(d); })}};
 }
+
 Json encode(const engrave::AudioTracks &a) {
     return {{"tracks", mapped(a.tracks,
                               [](const auto &t) {
@@ -458,6 +487,7 @@ Json encode(const engrave::AudioTracks &a) {
                               })},
             {"master", mix(a.master)}};
 }
+
 Json encode(const engrave::Positions &p) {
     return {{"page_size", {{"width", p.page_width}, {"height", p.page_height}}},
             {"elements", mapped(p.elements,
@@ -466,6 +496,7 @@ Json encode(const engrave::Positions &p) {
                                 })},
             {"events", mapped(p.events, [](const auto &e) { return Json{{"elid", e.elid}, {"position", e.position}}; })}};
 }
+
 Json encode(const engrave::TypeInfo &t) {
     return {{"type", t.type},
             {"props", mapped(t.props, [](const auto &p) {
@@ -473,6 +504,7 @@ Json encode(const engrave::TypeInfo &t) {
                              {"settable", p.settable}, {"link", p.link},       {"group", p.group}};
              })}};
 }
+
 Json encode(const engrave::StyleInfo &s) {
     return {{"name", s.name},
             {"kind", kind(s.kind)},
@@ -480,9 +512,11 @@ Json encode(const engrave::StyleInfo &s) {
             {"enum_tokens", s.enum_tokens},
             {"default_value", encode(s.default_value)}};
 }
+
 Json encode(const engrave::TemplateInfo &t) {
     return {{"id", t.id}, {"title", t.title}, {"category", t.category}, {"path", detail::path_text(t.path)}};
 }
+
 Json encode(const engrave::Capabilities &c) {
     auto format = [](engrave::Format f) -> const char * {
         switch (f) {
@@ -522,6 +556,7 @@ Json encode(const engrave::Capabilities &c) {
             {"soundfonts", mapped(c.soundfonts, [](const auto &p) { return Json(detail::path_text(p)); })},
             {"audio_sample_rate", c.audio_sample_rate}};
 }
+
 Json encode(const std::vector<engrave::ExportWarning> &warnings) {
     Json result = Json::array();
     for (const auto &warning : warnings) {
@@ -531,11 +566,13 @@ Json encode(const std::vector<engrave::ExportWarning> &warnings) {
     }
     return result;
 }
+
 HostError api_error(const engrave::Error &e) {
     HostError result{std::string(engrave::to_string(e.code)), e.message, e.op_index};
     result.export_warnings = e.export_warnings;
     return result;
 }
+
 Json error_envelope(const HostError &e) {
     Json err = {{"code", e.code}, {"message", e.message}};
     if (e.op_index) err["op_index"] = *e.op_index;

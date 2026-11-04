@@ -29,26 +29,34 @@ namespace {
 #ifdef _WIN32
 struct Handle {
     HANDLE value;
+
     explicit Handle(HANDLE v) : value(v) {}
+
     ~Handle() { reset(); }
+
     void reset() {
         if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value);
         value = nullptr;
     }
+
     Handle(const Handle &) = delete;
     Handle &operator=(const Handle &) = delete;
 };
+
 [[noreturn]] void windows_error(const char *what) {
     throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), what);
 }
+
 struct LocalSecurity {
     PSECURITY_DESCRIPTOR descriptor = nullptr;
     PACL dacl = nullptr;
     bool protected_dacl = false;
+
     ~LocalSecurity() {
         if (descriptor) LocalFree(descriptor);
     }
 };
+
 // A protected DACL that grants only the current user full control and lets
 // children inherit it. Without this, a staging directory created under a
 // permissive destination inherits Authenticated Users:Modify on Windows.
@@ -94,6 +102,7 @@ struct PrivateDirectorySecurity {
 };
 #endif
 } // namespace
+
 std::filesystem::path current_executable_path() {
 #ifdef _WIN32
     std::vector<wchar_t> buffer(512);
@@ -328,10 +337,12 @@ void publish_output(const std::filesystem::path &staged, const std::filesystem::
 #else
     struct Descriptor {
         int fd;
+
         ~Descriptor() {
             if (fd >= 0) ::close(fd);
         }
     };
+
     auto parent = destination.parent_path();
     if (parent.empty()) parent = ".";
     Descriptor directory{::open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC)};

@@ -2,16 +2,26 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+
 namespace music::v2 {
+
 namespace {
 using J = Json;
+
 J str(int max = 4096) { return {{"type", "string"}, {"maxLength", max}}; }
+
 J num() { return {{"type", "number"}}; }
+
 J boolean() { return {{"type", "boolean"}}; }
+
 J integer(int low = 0, int high = 2147483647) { return {{"type", "integer"}, {"minimum", low}, {"maximum", high}}; }
+
 J lit(J v) { return {{"const", v}}; }
+
 J en(J v) { return {{"type", "string"}, {"enum", v}}; }
+
 J array(J v, int max = 4096) { return {{"type", "array"}, {"items", v}, {"maxItems", max}}; }
+
 J object(J p, J required = nullptr) {
     if (required.is_null()) {
         required = J::array();
@@ -19,14 +29,20 @@ J object(J p, J required = nullptr) {
     }
     return {{"type", "object"}, {"properties", p}, {"required", required}, {"additionalProperties", false}};
 }
+
 J one(J v) { return {{"oneOf", v}}; }
+
 J ref(const char *n) { return {{"$ref", std::string("#/$defs/") + n}}; }
+
 J nullable(J v) { return one(J::array({v, J{{"type", "null"}}})); }
+
 J tagged(const char *kind, J value) { return object({{"kind", lit(kind)}, {"value", value}}); }
+
 J success(J p) {
     p["ok"] = lit(true);
     return object(p);
 }
+
 void collect(const J &node, const J &defs, J &used) {
     if (node.is_object()) {
         if (node.contains("$ref")) {
@@ -41,6 +57,7 @@ void collect(const J &node, const J &defs, J &used) {
         for (auto &v : node) collect(v, defs, used);
     }
 }
+
 J schema(J body, const J &defs) {
     J used = J::object();
     collect(body, defs, used);
@@ -90,6 +107,7 @@ void output_bounds(J &node, const std::string &field = {}) {
     }
 }
 } // namespace
+
 Json declared_tools() {
     const J b = boolean(), n = num(), idx = integer(), text = str();
     const J u = {{"type", "string"}, {"pattern", "^(0|[1-9][0-9]*)$"}, {"maxLength", 20}};

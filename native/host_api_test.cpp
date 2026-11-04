@@ -15,11 +15,13 @@ namespace {
 void require(bool condition, const std::string &message) {
     if (!condition) throw std::runtime_error(message);
 }
+
 std::string read(const fs::path &p) {
     std::ifstream f(p, std::ios::binary);
     require(bool(f), "cannot read " + p.string());
     return {std::istreambuf_iterator<char>(f), {}};
 }
+
 std::string b64(const std::string &s) {
     constexpr char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     std::string out;
@@ -33,17 +35,23 @@ std::string b64(const std::string &s) {
     }
     return out;
 }
+
 Json idref(const std::string &id) { return {{"kind", "id"}, {"id", id}}; }
+
 Json opref(int op, int item) { return {{"kind", "op"}, {"op", op}, {"item", item}}; }
+
 Json fraction(const char *num, const char *den) { return {{"num", num}, {"den", den}}; }
+
 Json address(const std::string &measure, const char *num, const char *den) {
     return {{"kind", "segment"}, {"measure", measure},         {"staff", 0},
             {"voice", 0},        {"tick", fraction(num, den)}, {"segment_kind", "ChordRest"}};
 }
+
 std::string path_text(const fs::path &p) {
     auto s = p.generic_u8string();
     return {reinterpret_cast<const char *>(s.data()), s.size()};
 }
+
 Json call(HostApi &host, const std::string &tool, const Json &arg) {
     Json out;
     if (tool == "score_open") {
@@ -68,11 +76,13 @@ Json call(HostApi &host, const std::string &tool, const Json &arg) {
     std::cout << "HOST_CASE " << Json{{"tool", tool}, {"arguments", arg}, {"result", out}}.dump() << '\n';
     return out;
 }
+
 Json ok(HostApi &host, const std::string &tool, const Json &arg) {
     auto out = call(host, tool, arg);
     require(out.value("ok", false), tool + " failed: " + out.dump());
     return out;
 }
+
 Json error(HostApi &host, const std::string &tool, const Json &arg, const std::string &code) {
     auto out = call(host, tool, arg);
     require(!out.value("ok", true) && out.at("error").at("code") == code, tool + " expected " + code + ": " + out.dump());

@@ -24,6 +24,7 @@
 #endif
 
 namespace music::v2 {
+
 namespace {
 using detail::invalid;
 
@@ -118,12 +119,14 @@ engrave::Format score_format(const std::string &s) {
     if (s == "midi") return engrave::Format::Midi;
     invalid("unknown score format");
 }
+
 engrave::RenderFormat render_format(const std::string &s) {
     if (s == "pdf") return engrave::RenderFormat::Pdf;
     if (s == "png") return engrave::RenderFormat::Png;
     if (s == "svg") return engrave::RenderFormat::Svg;
     invalid("unknown render format");
 }
+
 engrave::AudioFormat audio_format(const std::string &s) {
     if (s == "wav") return engrave::AudioFormat::Wav;
     if (s == "flac") return engrave::AudioFormat::Flac;
@@ -283,8 +286,10 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                          const engrave::EngineOptions &runtime, const std::function<bool()> &begin_publication,
                          std::vector<std::string> *visible_paths) {
     namespace fs = std::filesystem;
+
     struct Cleanup {
         fs::path destination, stage;
+
         ~Cleanup() {
             std::error_code ec;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
@@ -313,6 +318,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             }
         }
     } cleanup;
+
     std::vector<Artifact> artifacts;
     std::vector<engrave::ExportWarning> warnings;
     bool test_deadline = false;
@@ -384,10 +390,12 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
 #endif
         cleanup.stage = create_private_directory(request.destination.directory ? cleanup.destination : cleanup.destination.parent_path());
         std::uint64_t total = 0;
+
         struct Staged {
             fs::path source;
             Artifact artifact;
         };
+
         std::vector<Staged> staged;
         auto write = [&](const std::string &name, const std::string &mime, std::span<const std::byte> bytes) {
             check();

@@ -1,4 +1,5 @@
 #pragma once
+
 #include "utf8_text.h"
 #include <string_view>
 #ifdef _WIN32
@@ -8,7 +9,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #endif
+
 namespace music {
+
 // One synchronous nonblocking attempt, no threads or retained messages.
 // Pipes that cannot be made nonblocking are deliberately skipped.
 inline bool terminal_diagnostic(std::string_view message) noexcept {
@@ -30,4 +33,5 @@ inline bool terminal_diagnostic(std::string_view message) noexcept {
     return ::write(STDERR_FILENO, message.data(), message.size()) == static_cast<ssize_t>(message.size());
 #endif
 }
+
 } // namespace music

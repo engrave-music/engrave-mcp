@@ -57,6 +57,7 @@ AlwaysBreakBeforeMultilineStrings: false
 ColumnLimit: 140
 SortIncludes: Never
 SortUsingDeclarations: false
+SeparateDefinitionBlocks: Always
 CompactNamespaces: true
 ContinuationIndentWidth: 4
 IndentCaseLabels: true

@@ -1,4 +1,5 @@
 #pragma once
+
 #include "publication_gate.h"
 #include <functional>
 #include <memory>
@@ -51,4 +52,5 @@ using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std
 // failure path.
 int serve_stdio_async(const std::function<Json()> &list_tools, const std::function<bool(std::string_view)> &tool_exists,
                       const AsyncToolCall &call_tool, const std::function<void()> &shutdown);
+
 } // namespace music

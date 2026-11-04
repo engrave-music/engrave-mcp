@@ -1,10 +1,12 @@
 #pragma once
+
 #include <nlohmann/json.hpp>
 #include "runtime_limits.h"
 #include <cstdlib>
 #include <stdexcept>
 
 namespace music {
+
 // Successful results carry the payload both as legacy text and as
 // structuredContent. Duplicating a large query payload
 // would exceed the 16 MiB wire cap even though the structured payload itself
@@ -39,4 +41,5 @@ inline std::size_t export_report_bound(const nlohmann::json &payload) {
     result["content"][0]["text"] = payload.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
     return result.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace).size() + v2::transport_request_limit + 1024;
 }
+
 } // namespace music

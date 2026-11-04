@@ -9,11 +9,14 @@ namespace music::v2::detail {
 struct DecodeError {
     HostError error;
 };
+
 [[noreturn]] void invalid(std::string message);
 void validate_tool(std::string_view name, const Json &value);
 void validate_def(std::string_view tool, std::string_view name, const Json &value);
+
 // Text persisted to MSCX/MusicXML must satisfy XML 1.0 character rules.
 void validate_xml_text(std::string_view value);
+
 std::int64_t signed_decimal(const Json &value);
 engrave::ElementId eid(const Json &value);
 engrave::Fraction fraction(const Json &value);

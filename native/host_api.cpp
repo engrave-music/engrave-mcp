@@ -10,6 +10,7 @@
 #include <unordered_set>
 
 namespace music::v2 {
+
 namespace {
 namespace fs = std::filesystem;
 using detail::invalid;
@@ -27,6 +28,7 @@ std::string nonce() {
 
 struct AssetFile {
     fs::path directory, file;
+
     ~AssetFile() {
         std::error_code ec;
         fs::permissions(file, fs::perms::owner_write, fs::perm_options::add, ec);
@@ -60,6 +62,7 @@ Result<std::shared_ptr<const AssetFile>> copy_asset(const fs::path &source) {
     if (ec) return std::unexpected(HostError{"Io", "cannot protect runtime asset copy: " + ec.message()});
     return std::shared_ptr<const AssetFile>(std::move(result));
 }
+
 bool same_asset(const fs::path &a, const fs::path &b) {
     std::error_code ec;
     auto a_size = fs::file_size(a, ec);
@@ -91,19 +94,23 @@ Json boundary(F &&fn) {
         return error_envelope({"EngineFailure", "unknown engine failure"});
     }
 }
+
 template <class T>
 T unwrap(Result<T> r) {
     if (!r) throw detail::DecodeError{std::move(r.error())};
     return std::move(*r);
 }
+
 template <class T>
 T engine_result(engrave::Result<T> r) {
     if (!r) throw detail::DecodeError{api_error(r.error())};
     return std::move(*r);
 }
+
 std::optional<std::uint64_t> revision_arg(const Json &j) {
     return j.contains("expected_revision") ? std::optional(unwrap(decode_revision(j.at("expected_revision")))) : std::nullopt;
 }
+
 std::vector<std::byte> base64(const std::string &s) {
     std::size_t padding = 0;
     if (!s.empty() && s.back() == '=') ++padding;
@@ -127,6 +134,7 @@ std::vector<std::byte> base64(const std::string &s) {
     }
     return bytes;
 }
+
 engrave::Format input_format(const std::string &s) {
     if (s == "mscz") return engrave::Format::Mscz;
     if (s == "mscx") return engrave::Format::Mscx;
@@ -137,6 +145,7 @@ engrave::Format input_format(const std::string &s) {
     if (s == "mnx") return engrave::Format::Mnx;
     invalid("unknown input format");
 }
+
 template <class T>
 Json encoded_array(const std::vector<T> &values) {
     Json result = Json::array();
@@ -168,6 +177,7 @@ struct HostApi::Impl {
             throw detail::DecodeError{HostError{"EngineFailure", "HostApi called outside its owner thread"}};
         }
     }
+
     engrave::Document &get(const std::string &token, std::optional<std::uint64_t> expected) {
         auto it = documents.find(token);
         if (it == documents.end()) throw detail::DecodeError{HostError{"NotFound", "unknown or closed document", {}, token}};
@@ -191,6 +201,7 @@ struct HostApi::Impl {
         }
         return doc;
     }
+
     Json publish(std::unique_ptr<engrave::Document> doc) {
         if (next == 0) throw detail::DecodeError{HostError{"ResourceLimit", "document token space exhausted"}};
         auto token = "doc-" + session + "-" + std::to_string(next++);
@@ -201,9 +212,11 @@ struct HostApi::Impl {
         documents.emplace(token, std::move(doc));
         return out;
     }
+
     void capacity() const {
         if (documents.size() >= 16) throw detail::DecodeError{HostError{"ResourceLimit", "at most 16 documents may be open"}};
     }
+
     engrave::EngineOptions asset_options() const {
         auto result = options;
         result.fonts.clear();
@@ -215,9 +228,11 @@ struct HostApi::Impl {
 };
 
 HostApi::HostApi(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
+
 HostApi::~HostApi() {
     if (impl_ && std::this_thread::get_id() != impl_->owner) std::terminate();
 }
+
 Result<std::unique_ptr<HostApi>> HostApi::create(const engrave::EngineOptions &options, ExportLimits limits) {
     try {
         auto impl = std::make_unique<Impl>();
@@ -254,6 +269,7 @@ Json HostApi::open(const Json &j) {
         return impl_->publish(std::move(doc));
     });
 }
+
 Json HostApi::create_document(const Json &j) {
     return boundary([&] {
         impl_->check_thread();
@@ -270,6 +286,7 @@ Json HostApi::create_document(const Json &j) {
         return impl_->publish(engine_result(impl_->engine->create_document(o)));
     });
 }
+
 Json HostApi::close(const Json &j) {
     return boundary([&] {
         impl_->check_thread();
@@ -283,6 +300,7 @@ Json HostApi::close(const Json &j) {
         return Json{{"ok", true}};
     });
 }
+
 Json HostApi::outline(const Json &j) {
     return boundary([&] {
         impl_->check_thread();
@@ -298,6 +316,7 @@ Json HostApi::outline(const Json &j) {
         return Json{{"ok", true}, {"revision", std::to_string(doc.revision())}, {"outline", encode(*result)}};
     });
 }
+
 Json HostApi::query(const Json &j) {
     return boundary([&] {
         impl_->check_thread();
@@ -336,6 +355,7 @@ Json HostApi::query(const Json &j) {
         return result;
     });
 }
+
 Json HostApi::describe(const Json &j) {
     return boundary([&] {
         impl_->check_thread();
@@ -349,6 +369,7 @@ Json HostApi::describe(const Json &j) {
         return Json{{"ok", true}, {"scope", scope}, {"styles", encoded_array(impl_->engine->describe_styles())}};
     });
 }
+
 Json HostApi::edit(const Json &j) {
     return boundary([&] {
         impl_->check_thread();
@@ -384,6 +405,7 @@ Json HostApi::edit(const Json &j) {
         return result;
     });
 }
+
 Json HostApi::runtime_info(const Json &j) {
     return boundary([&] {
         impl_->check_thread();
@@ -434,6 +456,7 @@ Json HostApi::runtime_info(const Json &j) {
                       {"transport_request_bytes", transport_request_limit}}}};
     });
 }
+
 Result<void> HostApi::with_document(std::string_view token, std::optional<std::uint64_t> expected,
                                     const std::function<Result<void>(engrave::Document &)> &fn,
                                     const std::vector<std::string> *visible_paths) {
@@ -449,11 +472,14 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<std::u
         if (!impl_->borrowed.insert(key).second) {
             return std::unexpected(HostError{"InvalidArgument", "document is already in use by with_document", {}, key});
         }
+
         struct Guard {
             std::unordered_set<std::string> &set;
             const std::string &key;
+
             ~Guard() { set.erase(key); }
         } guard{impl_->borrowed, key};
+
         entered = true;
         return fn(doc);
     } catch (const detail::DecodeError &e) {
@@ -466,6 +492,7 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<std::u
         return failure(HostError{"EngineFailure", "unknown engine failure", {}, key});
     }
 }
+
 Result<engrave::EngineOptions> HostApi::runtime_options() const {
     try {
         impl_->check_thread();

@@ -38,12 +38,15 @@ static std::set<std::wstring> dacl_sids(const fs::path &path, bool *protected_da
     const auto result =
         GetNamedSecurityInfoW(path.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &dacl, nullptr, &descriptor);
     if (result != ERROR_SUCCESS) throw std::system_error(static_cast<int>(result), std::system_category(), "GetNamedSecurityInfoW failed");
+
     struct FreeDescriptor {
         PSECURITY_DESCRIPTOR value;
+
         ~FreeDescriptor() {
             if (value) LocalFree(value);
         }
     } free_descriptor{descriptor};
+
     if (!dacl) return {};
 
     SECURITY_DESCRIPTOR_CONTROL control = 0;
@@ -75,12 +78,15 @@ static std::wstring dacl_sddl(const fs::path &path) {
     const auto result =
         GetNamedSecurityInfoW(path.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &dacl, nullptr, &descriptor);
     if (result != ERROR_SUCCESS) throw std::system_error(static_cast<int>(result), std::system_category(), "GetNamedSecurityInfoW failed");
+
     struct FreeDescriptor {
         PSECURITY_DESCRIPTOR value;
+
         ~FreeDescriptor() {
             if (value) LocalFree(value);
         }
     } free_descriptor{descriptor};
+
     LPWSTR text = nullptr;
     require(ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &text, nullptr) !=
                 FALSE,
@@ -103,12 +109,15 @@ static void check_private_acl(const fs::path &stage, bool require_protected = tr
 static void grant_users_full(const fs::path &path, bool protect = false) {
     PSID users = nullptr;
     require(ConvertStringSidToSidW(L"S-1-5-32-545", &users) != FALSE, "ConvertStringSidToSidW failed");
+
     struct FreeSid {
         PSID value;
+
         ~FreeSid() {
             if (value) LocalFree(value);
         }
     } free_sid{users};
+
     const auto acl_size = static_cast<DWORD>(sizeof(ACL) + sizeof(ACCESS_ALLOWED_ACE) - sizeof(DWORD) + GetLengthSid(users));
     std::vector<std::byte> buffer(acl_size);
     auto *acl = reinterpret_cast<ACL *>(buffer.data());

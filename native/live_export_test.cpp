@@ -2,18 +2,22 @@
 #include "export_timing.h"
 #include <fstream>
 #include <iostream>
+
 using namespace music::v2;
 namespace fs = std::filesystem;
+
 template <class T>
 T value(engrave::Result<T> r) {
     if (!r) throw std::runtime_error(r.error().message);
     return std::move(*r);
 }
+
 std::vector<std::byte> read(const fs::path &p) {
     std::ifstream f(p, std::ios::binary);
     std::string s((std::istreambuf_iterator<char>(f)), {});
     return {reinterpret_cast<const std::byte *>(s.data()), reinterpret_cast<const std::byte *>(s.data() + s.size())};
 }
+
 int main(int argc, char **argv) {
     try {
         if (argc != 4 || std::string(argv[1]) != "--partial-write") {

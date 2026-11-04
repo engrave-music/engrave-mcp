@@ -11,6 +11,7 @@
 
 static int calls, fail_at;
 extern "C" int __real_fsync(int);
+
 extern "C" int __wrap_fsync(int fd) {
     struct stat info{};
     if (::fstat(fd, &info)) throw std::runtime_error("fstat");
@@ -22,9 +23,11 @@ extern "C" int __wrap_fsync(int fd) {
     }
     return __real_fsync(fd);
 }
+
 static void require(bool ok) {
     if (!ok) throw std::runtime_error("publication assertion");
 }
+
 int main(int argc, char **argv) {
     require(argc == 2);
     const auto root = std::filesystem::path(argv[1]);

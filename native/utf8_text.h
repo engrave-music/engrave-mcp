@@ -5,6 +5,7 @@
 #include <string_view>
 
 namespace music {
+
 // Largest prefix of [text] that ends on a UTF-8 code-point boundary.
 inline std::size_t utf8_prefix(std::string_view text, std::size_t limit) {
     if (text.size() <= limit) return text.size();
@@ -29,4 +30,5 @@ inline std::string utf8_abbrev(std::string_view text, std::size_t limit) {
     result.append(text.substr(tail_start));
     return result;
 }
+
 } // namespace music

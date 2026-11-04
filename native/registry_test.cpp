@@ -11,6 +11,7 @@ template <std::size_t I>
 Json mock_handler(void *, const Json &) {
     return I;
 }
+
 template <std::size_t... I>
 constexpr HandlerTable handlers(std::index_sequence<I...>) {
     return {&mock_handler<I>...};
