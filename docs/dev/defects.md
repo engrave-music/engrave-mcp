@@ -44,8 +44,9 @@ investigation).
   conflicting dynamics, literal pseudo-markup and unsupported vendor glyphs are
   outside the compatibility target. Source review of candidate `8eb0c25a52`
   found that a container with `ff`, `pp`, textual `sf`, and `p` can change the
-  resulting dynamic type when exported and reimported; this has not been
-  executed. This is separate from the chosen initial grouping playback change.
+  resulting dynamic type when exported and reimported. An executed Linux probe
+  at `8eb0c25a52` observed `SF` become `SFP` with identical displayed text.
+  This is separate from the chosen initial grouping playback change.
 
 ## Resolved (index)
 
