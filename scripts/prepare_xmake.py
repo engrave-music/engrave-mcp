@@ -88,7 +88,8 @@ def main(argv: list[str] | None = None) -> int:
         help="only validate the checked-in inputs (default)",
     )
     parser.add_argument(
-        "--source-root",
+        "--engine-source", "--source-root",
+        dest="source_root",
         type=Path,
         help="engine checkout to read (default: vendor/engrave)",
     )

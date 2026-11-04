@@ -6,7 +6,7 @@
 -- targets, the engrave adapter library and their tests, all in the engine
 -- checkout's xmake/ directory.  This file includes that build - from
 -- vendor/engrave by default, or from the checkout named by
--- --musescore_source - and keeps what is the host's:
+-- --engine_source - and keeps what is the host's:
 --
 --   v2_registry, registry_dump       standalone v2 schema authority
 --   registry_test, registry_check    v2 contract validation
@@ -40,16 +40,26 @@ set_policy("package.precompiled", false)
 includes("xmake/packages/asio.lua")
 add_requires("asio 1.36.0", {system = false})
 
-option("musescore_source")
+option("engine_source")
     set_default("")
     set_showmenu(true)
     set_description("engrave engine source tree (default: the vendor/engrave submodule)")
 option_end()
 
+option("musescore_source")
+    set_default("")
+    set_showmenu(true)
+    set_description("deprecated alias for engine_source")
+option_end()
+
 local project_root = os.projectdir()
-local source_root = get_config("musescore_source")
+local vendor_root = path.join(project_root, "vendor", "engrave")
+local source_root = get_config("engine_source")
 if not source_root or source_root == "" then
-    source_root = path.join(project_root, "vendor", "engrave")
+    source_root = get_config("musescore_source")
+end
+if not source_root or source_root == "" then
+    source_root = vendor_root
 end
 source_root = path.absolute(source_root, project_root)
 
@@ -71,10 +81,19 @@ end
 
 local engine_build = path.join(source_root, "xmake", "engrave.lua")
 if not os.isfile(engine_build) then
-    configure_failure("the engine checkout has no xmake build: " .. engine_build
-        .. "\nPoint --musescore_source at an engrave checkout that carries xmake/engrave.lua"
-        .. "\n(the pinned vendor/engrave submodule gets it with the next pin bump).")
-    return
+    local vendor_build = path.join(vendor_root, "xmake", "engrave.lua")
+    if os.isfile(vendor_build) then
+        print("warning: configured engine source has no xmake/engrave.lua: " .. source_root
+            .. "; automatically falling back to vendor/engrave (" .. vendor_root .. ")")
+        source_root = vendor_root
+        engine_build = vendor_build
+    else
+        configure_failure("the engine checkout has no xmake build: " .. engine_build
+            .. "\nThe vendor/engrave build is also missing: " .. vendor_build
+            .. "\nRun scripts/bootstrap.py to initialize vendor/engrave,"
+            .. " or point --engine_source at an engrave checkout that carries xmake/engrave.lua.")
+        return
+    end
 end
 
 ENGRAVE_SOURCE_ROOT = source_root
