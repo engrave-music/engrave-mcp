@@ -1,14 +1,15 @@
 #pragma once
 
-#include "schema_defs.h"
 #include <array>
 #include <span>
 #include <string_view>
 
+#include "schema_defs.h"
+
 namespace music::v2 {
 
-enum class HandlerId { Open, Create, Close, Outline, Query, Describe, Edit, Export, RuntimeInfo, Count };
-enum class Scheduling { Owner };
+enum class HandlerId { OPEN, CREATE, CLOSE, OUTLINE, QUERY, DESCRIBE, EDIT, EXPORT, RUNTIME_INFO, COUNT };
+enum class Scheduling { OWNER };
 
 struct ToolSpec {
     std::string_view name;
@@ -30,7 +31,7 @@ void validate_registry();
 // unknown tools remain JSON-RPC invalid parameters. structuredContent is the
 // authoritative envelope; the text representation remains bounded by transport.
 using Handler = Json (*)(void *context, const Json &arguments);
-using HandlerTable = std::array<Handler, static_cast<std::size_t>(HandlerId::Count)>;
+using HandlerTable = std::array<Handler, static_cast<std::size_t>(HandlerId::COUNT)>;
 
 void validate_handlers(const HandlerTable &);
 

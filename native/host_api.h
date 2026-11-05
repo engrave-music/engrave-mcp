@@ -1,10 +1,11 @@
 #pragma once
 
-#include "api_json.h"
-#include "runtime_limits.h"
 #include <functional>
 #include <memory>
 #include <thread>
+
+#include "api_json.h"
+#include "runtime_limits.h"
 
 namespace music::v2 {
 
@@ -12,8 +13,7 @@ namespace music::v2 {
 // Impl owns Engine first, then Documents; close all documents before Engine.
 // Session nonce + monotonic counter tokens are never reused. No Document escapes
 // to I/O threads; with_document is synchronous on the owner thread.
-class HostApi {
-public:
+struct HostApi {
     static Result<std::unique_ptr<HostApi>> create(const engrave::EngineOptions &, ExportLimits = {});
     ~HostApi();
     HostApi(const HostApi &) = delete;

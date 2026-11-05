@@ -1,19 +1,20 @@
 #pragma once
 
-#include "publication_gate.h"
-#include <asio/awaitable.hpp>
+#include <atomic>
 #include <filesystem>
 #include <memory>
-#include <atomic>
 #include <string>
-#include <nlohmann/json.hpp>
+
+#include <asio/awaitable.hpp>
 #include <engrave/engine.h>
+#include <nlohmann/json.hpp>
+
+#include "publication_gate.h"
 
 namespace music {
 
 // Invoke on the session I/O thread. A separate owning OS thread contains the engine.
-class AsyncSession {
-public:
+struct AsyncSession {
     explicit AsyncSession(engrave::EngineOptions options);
     ~AsyncSession();
     AsyncSession(const AsyncSession &) = delete;

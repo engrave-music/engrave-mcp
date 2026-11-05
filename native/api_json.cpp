@@ -1,5 +1,4 @@
 #include "api_json_internal.h"
-#include "registry.h"
 
 #include <algorithm>
 #include <charconv>
@@ -8,6 +7,8 @@
 #include <map>
 #include <regex>
 #include <type_traits>
+
+#include "registry.h"
 
 namespace music::v2 {
 

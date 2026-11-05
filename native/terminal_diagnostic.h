@@ -1,14 +1,16 @@
 #pragma once
 
-#include "utf8_text.h"
 #include <string_view>
+
 #ifdef _WIN32
 #include <windows.h>
 #else
-#include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
+
+#include "utf8_text.h"
 
 namespace music {
 

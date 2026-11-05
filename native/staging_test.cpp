@@ -1,7 +1,4 @@
 // Direct regression for the private staging and publication ACL contract.
-#include "publication.h"
-#include "utf8_text.h"
-
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -17,13 +14,16 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <Windows.h>
 #include <aclapi.h>
 #include <sddl.h>
+#include <windows.h>
 #pragma comment(lib, "advapi32.lib")
 #else
 #include <sys/stat.h>
 #endif
+
+#include "publication.h"
+#include "utf8_text.h"
 
 namespace fs = std::filesystem;
 

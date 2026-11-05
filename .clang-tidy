@@ -13,7 +13,7 @@ CheckOptions:
   - key: readability-identifier-naming.EnumCase
     value: CamelCase
   - key: readability-identifier-naming.EnumConstantCase
-    value: CamelCase
+    value: UPPER_CASE
   - key: readability-identifier-naming.UnionCase
     value: CamelCase
   - key: readability-identifier-naming.MethodCase
@@ -27,11 +27,7 @@ CheckOptions:
   - key: readability-identifier-naming.VariableCase
     value: lower_case
   - key: readability-identifier-naming.GlobalConstantCase
-    value: CamelCase
-  - key: readability-identifier-naming.GlobalConstantPrefix
-    value: k
-  - key: readability-identifier-naming.GlobalConstantIgnoredRegexp
-    value: "^([a-z_][a-z0-9_]*|k[A-Z0-9].*)$"
+    value: lower_case
   - key: readability-identifier-naming.ParameterIgnoredRegexp
     value: "^([A-Z]|([A-Z][A-Z0-9]))$"
   - key: readability-identifier-naming.VariableIgnoredRegexp

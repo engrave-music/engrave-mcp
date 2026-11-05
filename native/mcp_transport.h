@@ -1,9 +1,8 @@
 #pragma once
 
-#include "publication_gate.h"
+#include <atomic>
 #include <functional>
 #include <memory>
-#include <atomic>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -14,14 +13,15 @@
 #include <asio/awaitable.hpp>
 #include <nlohmann/json.hpp>
 
+#include "publication_gate.h"
+
 namespace music {
 using Json = nlohmann::json;
 
 // Structured, transport-independent failure raised by AsyncSession (or any
 // tool implementation) when a call has a stable machine-readable code. The
 // transport serialises it as a v2 error envelope and a bounded text item.
-class ToolCallError : public std::runtime_error {
-public:
+struct ToolCallError : std::runtime_error {
     ToolCallError(std::string code, std::string message);
 
     std::string code;

@@ -1,10 +1,11 @@
 #pragma once
 
-#include <mutex>
-#include <cstddef>
-#include <condition_variable>
 #include <atomic>
+#include <condition_variable>
+#include <cstddef>
 #include <functional>
+#include <mutex>
+
 #include <nlohmann/json.hpp>
 
 namespace music {

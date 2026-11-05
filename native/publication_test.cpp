@@ -1,10 +1,11 @@
 // Linux durability ordering and error visibility; link with --wrap=fsync.
-#include "publication.h"
 #include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+
+#include "publication.h"
 #ifndef _WIN32
 #include <sys/stat.h>
 #include <unistd.h>

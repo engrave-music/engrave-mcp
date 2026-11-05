@@ -1,9 +1,4 @@
 #include "mcp_transport.h"
-#include "publication_gate.h"
-#include "terminal_diagnostic.h"
-#include "tool_result.h"
-#include "runtime_limits.h"
-#include "utf8_text.h"
 
 #include <algorithm>
 #include <atomic>
@@ -50,15 +45,21 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
 #include <fcntl.h>
 #include <io.h>
+#include <windows.h>
 #else
 #include <csignal>
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
 #endif
+
+#include "publication_gate.h"
+#include "runtime_limits.h"
+#include "terminal_diagnostic.h"
+#include "tool_result.h"
+#include "utf8_text.h"
 
 namespace music {
 
@@ -67,29 +68,29 @@ ToolCallError::ToolCallError(std::string error_code, std::string message)
 
 namespace {
 
-constexpr std::size_t kMaxLineBytes = v2::transport_request_limit;
-constexpr std::size_t kMaxPendingLines = 64u;
-constexpr std::size_t kMaxPendingBytes = 32u * 1024u * 1024u;
+constexpr std::size_t k_max_line_bytes = v2::transport_request_limit;
+constexpr std::size_t k_max_pending_lines = 64u;
+constexpr std::size_t k_max_pending_bytes = 32u * 1024u * 1024u;
 
-constexpr std::size_t kMaxInflightCalls = 64u;
-constexpr std::size_t kDrainBatch = 64u;
+constexpr std::size_t k_max_inflight_calls = 64u;
+constexpr std::size_t k_drain_batch = 64u;
 
 // A single wire response is capped at 16 MiB (including its newline). The
 // output budget covers both serialised-but-not-yet-queued responses and
 // messages queued for (or being written by) the writer thread, so the total
 // response memory held by the transport is bounded independently of how fast
 // the client reads stdout.
-constexpr std::size_t kMaxResponseBytes = 16u * 1024u * 1024u;
-constexpr std::size_t kOutputBudgetBytes = 48u * 1024u * 1024u;
-constexpr std::size_t kMaxOutputMessages = 256u;
+constexpr std::size_t k_max_response_bytes = 16u * 1024u * 1024u;
+constexpr std::size_t k_output_budget_bytes = 48u * 1024u * 1024u;
+constexpr std::size_t k_max_output_messages = 256u;
 
-constexpr int kReadError = -1;
-constexpr int kReadEof = 0;
-constexpr int kReadStopped = -2;
+constexpr int k_read_error = -1;
+constexpr int k_read_eof = 0;
+constexpr int k_read_stopped = -2;
 
-enum class ServerState { Uninitialized, InitializedPending, Ready };
+enum class ServerState { UNINITIALIZED, INITIALIZED_PENDING, READY };
 
-enum class WireStatus { Ok, TooLarge, Failed };
+enum class WireStatus { OK, TOO_LARGE, FAILURE };
 
 bool is_valid_id(const Json &id) { return id.is_string() || id.is_number_integer(); }
 
@@ -98,9 +99,9 @@ bool is_cancellation_code(const std::string &code) {
 }
 
 struct ReaderEvent {
-    enum class Kind { Line, Oversize, Error, Eof };
+    enum class Kind { LINE, OVERSIZE, ERR, END_OF_FILE };
 
-    Kind kind = Kind::Line;
+    Kind kind = Kind::LINE;
     std::string data;
 };
 
@@ -125,15 +126,13 @@ struct OutputMessage {
 
 // A type-erased suspended coroutine completion handler. The use_awaitable
 // handler is move-only, so it cannot live directly in std::function.
-class OutputWaiter {
-public:
+struct OutputWaiter {
     virtual ~OutputWaiter() = default;
     virtual void resume() noexcept = 0;
 };
 
 template <typename Handler>
-class TypedOutputWaiter final : public OutputWaiter {
-public:
+struct TypedOutputWaiter final : OutputWaiter {
     explicit TypedOutputWaiter(Handler handler) : handler_(std::move(handler)) {}
 
     void resume() noexcept override {
@@ -164,13 +163,12 @@ bool is_operation_aborted(const std::exception_ptr &error) noexcept {
     }
 }
 
-class Session : public std::enable_shared_from_this<Session> {
-public:
+struct Session : std::enable_shared_from_this<Session> {
     Session(asio::io_context &ioc, const std::function<Json()> &list_tools, const std::function<bool(std::string_view)> &tool_exists,
             const AsyncToolCall &call_tool, const std::function<void()> &shutdown)
         : ioc_(ioc), list_tools_(list_tools), tool_exists_(tool_exists), call_tool_(call_tool), shutdown_(shutdown),
           work_(asio::make_work_guard(ioc)) {
-        inflight_.reserve(kMaxInflightCalls);
+        inflight_.reserve(k_max_inflight_calls);
 #if !defined(_WIN32)
         if (::pipe2(reader_wake_, O_CLOEXEC | O_NONBLOCK) != 0) {
             throw std::system_error(errno, std::generic_category(), "stdin wake pipe");
@@ -287,7 +285,7 @@ private:
             }
 
             const int n = read_chunk(buffer, sizeof(buffer), stop, read_error);
-            if (n == kReadStopped) {
+            if (n == k_read_stopped) {
                 return;
             }
             if (n < 0) {
@@ -306,7 +304,7 @@ private:
         if (saw_eof) {
             if (oversized) {
                 ReaderEvent event;
-                event.kind = ReaderEvent::Kind::Oversize;
+                event.kind = ReaderEvent::Kind::OVERSIZE;
                 if (!enqueue(std::move(event))) {
                     return;
                 }
@@ -317,7 +315,7 @@ private:
                     line.pop_back();
                 }
                 ReaderEvent event;
-                event.kind = ReaderEvent::Kind::Line;
+                event.kind = ReaderEvent::Kind::LINE;
                 event.data = std::move(line);
                 if (!enqueue(std::move(event))) {
                     return;
@@ -325,11 +323,11 @@ private:
             }
 
             ReaderEvent eof;
-            eof.kind = ReaderEvent::Kind::Eof;
+            eof.kind = ReaderEvent::Kind::END_OF_FILE;
             (void) enqueue(std::move(eof));
         } else if (saw_error) {
             ReaderEvent event;
-            event.kind = ReaderEvent::Kind::Error;
+            event.kind = ReaderEvent::Kind::ERR;
             event.data = read_error.empty() ? std::string("unknown stdin read error") : read_error;
             (void) enqueue(std::move(event));
         }
@@ -346,7 +344,7 @@ private:
                 const std::size_t newline_pos = static_cast<std::size_t>(static_cast<const char *>(newline) - data);
 
                 ReaderEvent event;
-                event.kind = ReaderEvent::Kind::Oversize;
+                event.kind = ReaderEvent::Kind::OVERSIZE;
                 if (!enqueue(std::move(event))) {
                     return false;
                 }
@@ -360,7 +358,7 @@ private:
             const void *newline = std::memchr(data + pos, '\n', size - pos);
             const std::size_t segment_end = newline ? static_cast<std::size_t>(static_cast<const char *>(newline) - data) : size;
             const std::size_t segment_size = segment_end - pos;
-            const std::size_t room = kMaxLineBytes - current.size();
+            const std::size_t room = k_max_line_bytes - current.size();
 
             if (segment_size > room) {
                 if (room > 0) {
@@ -385,7 +383,7 @@ private:
                 }
 
                 ReaderEvent event;
-                event.kind = ReaderEvent::Kind::Line;
+                event.kind = ReaderEvent::Kind::LINE;
                 event.data = std::move(line);
                 if (!enqueue(std::move(event))) {
                     return false;
@@ -403,10 +401,10 @@ private:
         const auto raw = _get_osfhandle(_fileno(stdin));
         if (raw == -1) {
             error = "invalid stdin handle";
-            return kReadError;
+            return k_read_error;
         }
         if (stop.stop_requested() || stop_reader_.load(std::memory_order_acquire)) {
-            return kReadStopped;
+            return k_read_stopped;
         }
         DWORD count = 0;
         if (::ReadFile(reinterpret_cast<HANDLE>(raw), buffer, static_cast<DWORD>(capacity), &count, nullptr)) {
@@ -414,17 +412,17 @@ private:
         }
         const DWORD code = ::GetLastError();
         if (stop.stop_requested() || stop_reader_.load(std::memory_order_acquire)) {
-            return kReadStopped;
+            return k_read_stopped;
         }
         if (code == ERROR_BROKEN_PIPE || code == ERROR_PIPE_NOT_CONNECTED || code == ERROR_HANDLE_EOF) {
-            return kReadEof;
+            return k_read_eof;
         }
         error = "stdin ReadFile failed with error " + std::to_string(code);
-        return kReadError;
+        return k_read_error;
 #else
         for (;;) {
             if (stop.stop_requested() || stop_reader_.load(std::memory_order_acquire)) {
-                return kReadStopped;
+                return k_read_stopped;
             }
 
             struct pollfd descriptors[2] = {{STDIN_FILENO, POLLIN, 0}, {reader_wake_[0], POLLIN, 0}};
@@ -434,14 +432,14 @@ private:
                     continue;
                 }
                 error = "stdin poll failed: " + std::error_code(errno, std::generic_category()).message();
-                return kReadError;
+                return k_read_error;
             }
             if (descriptors[1].revents != 0) {
-                return kReadStopped;
+                return k_read_stopped;
             }
             if ((descriptors[0].revents & (POLLERR | POLLNVAL)) != 0) {
                 error = "stdin poll reported an error";
-                return kReadError;
+                return k_read_error;
             }
             if ((descriptors[0].revents & (POLLIN | POLLHUP)) == 0) {
                 continue;
@@ -456,10 +454,10 @@ private:
                     continue;
                 }
                 error = "stdin read failed: " + std::error_code(errno, std::generic_category()).message();
-                return kReadError;
+                return k_read_error;
             }
             if (n == 0) {
-                return kReadEof;
+                return k_read_eof;
             }
             return static_cast<int>(n);
         }
@@ -469,7 +467,7 @@ private:
     bool enqueue(ReaderEvent event) noexcept {
         bool schedule = false;
         try {
-            const std::size_t line_bytes = event.kind == ReaderEvent::Kind::Line ? event.data.size() : 0;
+            const std::size_t line_bytes = event.kind == ReaderEvent::Kind::LINE ? event.data.size() : 0;
 
             {
                 std::unique_lock<std::mutex> lock(queue_mutex_);
@@ -477,10 +475,10 @@ private:
                     if (stop_reader_.load(std::memory_order_acquire) || fatal_.load(std::memory_order_acquire)) {
                         return true;
                     }
-                    if (queue_.size() >= kMaxPendingLines) {
+                    if (queue_.size() >= k_max_pending_lines) {
                         return false;
                     }
-                    if (line_bytes != 0 && queued_bytes_ + line_bytes > kMaxPendingBytes) {
+                    if (line_bytes != 0 && queued_bytes_ + line_bytes > k_max_pending_bytes) {
                         return false;
                     }
                     return true;
@@ -653,7 +651,7 @@ private:
             auto wire =
                 Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}}.dump(-1, ' ', false, Json::error_handler_t::replace);
             wire.push_back('\n');
-            if (wire.size() > kMaxResponseBytes) post_writer_failure("published report exceeds limit", true);
+            if (wire.size() > k_max_response_bytes) post_writer_failure("published report exceeds limit", true);
             if (!write_report_bytes(wire)) post_writer_failure("stdout write failed", true);
         } catch (...) {
             post_writer_failure("cannot construct published report", true);
@@ -800,10 +798,10 @@ private:
         if (out_abort_ || out_graceful_stop_ || writer_abort_.load(std::memory_order_acquire)) {
             return false;
         }
-        if (out_message_slots_ >= kMaxOutputMessages) {
+        if (out_message_slots_ >= k_max_output_messages) {
             return false;
         }
-        if (out_budget_used_ + bytes > kOutputBudgetBytes) {
+        if (out_budget_used_ + bytes > k_output_budget_bytes) {
             return false;
         }
         out_budget_used_ += bytes;
@@ -897,18 +895,18 @@ private:
 
     asio::awaitable<WireStatus> send_wire(const Json &value) {
         if (fatal_.load(std::memory_order_acquire)) {
-            co_return WireStatus::Failed;
+            co_return WireStatus::FAILURE;
         }
 
         for (;;) {
             if (fatal_.load(std::memory_order_acquire)) {
-                co_return WireStatus::Failed;
+                co_return WireStatus::FAILURE;
             }
-            if (try_reserve_output(kMaxResponseBytes)) {
+            if (try_reserve_output(k_max_response_bytes)) {
                 break;
             }
             if (output_closed()) {
-                co_return WireStatus::Failed;
+                co_return WireStatus::FAILURE;
             }
             co_await wait_for_output_room();
         }
@@ -918,21 +916,21 @@ private:
             wire = value.dump(-1, ' ', false, Json::error_handler_t::replace);
             wire.push_back('\n');
         } catch (...) {
-            release_output_reservation(kMaxResponseBytes);
+            release_output_reservation(k_max_response_bytes);
             fatal_shutdown("cannot serialise MCP response");
-            co_return WireStatus::Failed;
+            co_return WireStatus::FAILURE;
         }
 
-        if (wire.size() > kMaxResponseBytes) {
-            release_output_reservation(kMaxResponseBytes);
-            co_return WireStatus::TooLarge;
+        if (wire.size() > k_max_response_bytes) {
+            release_output_reservation(k_max_response_bytes);
+            co_return WireStatus::TOO_LARGE;
         }
 
-        if (!commit_output(kMaxResponseBytes, wire)) {
+        if (!commit_output(k_max_response_bytes, wire)) {
             fatal_shutdown("cannot queue MCP response");
-            co_return WireStatus::Failed;
+            co_return WireStatus::FAILURE;
         }
-        co_return WireStatus::Ok;
+        co_return WireStatus::OK;
     }
 
     asio::awaitable<WireStatus> send_result_status(const Json &id, Json result) {
@@ -944,7 +942,7 @@ private:
             co_return co_await send_wire(response);
         } catch (...) {
             fatal_shutdown("cannot build MCP result response");
-            co_return WireStatus::Failed;
+            co_return WireStatus::FAILURE;
         }
     }
 
@@ -955,10 +953,10 @@ private:
             error["id"] = is_valid_id(id) ? id : Json(nullptr);
             error["error"] = {{"code", code}, {"message", message}};
             const WireStatus status = co_await send_wire(error);
-            if (status == WireStatus::TooLarge) {
+            if (status == WireStatus::TOO_LARGE) {
                 fatal_shutdown("MCP error response exceeded the 16 MiB limit");
             }
-            co_return status == WireStatus::Ok;
+            co_return status == WireStatus::OK;
         } catch (...) {
             fatal_shutdown("cannot build MCP error response");
             co_return false;
@@ -969,10 +967,10 @@ private:
     // with a bounded protocol resource error rather than silently dropping it.
     asio::awaitable<bool> send_result(const Json &id, Json result) {
         const WireStatus status = co_await send_result_status(id, std::move(result));
-        if (status == WireStatus::Ok) {
+        if (status == WireStatus::OK) {
             co_return true;
         }
-        if (status == WireStatus::TooLarge && !fatal_.load(std::memory_order_acquire)) {
+        if (status == WireStatus::TOO_LARGE && !fatal_.load(std::memory_order_acquire)) {
             co_return co_await send_error(id, -32603, "Internal error: response exceeds the 16 MiB transport limit");
         }
         co_return false;
@@ -1014,7 +1012,7 @@ private:
 
                     event = std::move(queue_.front());
                     queue_.pop_front();
-                    if (event.kind == ReaderEvent::Kind::Line) {
+                    if (event.kind == ReaderEvent::Kind::LINE) {
                         queued_bytes_ -= event.data.size();
                     }
                 }
@@ -1028,7 +1026,7 @@ private:
                     break;
                 }
 
-                if (++processed >= kDrainBatch) {
+                if (++processed >= k_drain_batch) {
                     processed = 0;
                     // Yield so queued owner completions and timers run even
                     // while input is continuously available.
@@ -1048,16 +1046,16 @@ private:
 
     asio::awaitable<bool> process_event(ReaderEvent &event) {
         switch (event.kind) {
-            case ReaderEvent::Kind::Line: co_return co_await handle_line(event.data);
+            case ReaderEvent::Kind::LINE: co_return co_await handle_line(event.data);
 
-            case ReaderEvent::Kind::Oversize: co_return co_await send_error(nullptr, -32700, "Parse error: line exceeds 4 MiB limit");
+            case ReaderEvent::Kind::OVERSIZE: co_return co_await send_error(nullptr, -32700, "Parse error: line exceeds 4 MiB limit");
 
-            case ReaderEvent::Kind::Error: try { std::cerr << "stdin read error: " << event.data << '\n';
+            case ReaderEvent::Kind::ERR: try { std::cerr << "stdin read error: " << event.data << '\n';
                 } catch (...) {}
                 fatal_shutdown("stdin read error: " + event.data);
                 co_return false;
 
-            case ReaderEvent::Kind::Eof:
+            case ReaderEvent::Kind::END_OF_FILE:
                 eof_ = true;
                 // This cancels queued engine work, but running committed
                 // operations still complete and their responses are drained.
@@ -1144,8 +1142,8 @@ private:
 
             if (!req.contains("id")) {
                 if (method == "notifications/initialized") {
-                    if (state_ == ServerState::InitializedPending) {
-                        state_ = ServerState::Ready;
+                    if (state_ == ServerState::INITIALIZED_PENDING) {
+                        state_ = ServerState::READY;
                     }
                 } else if (method == "notifications/cancelled") {
                     handle_cancelled(req);
@@ -1176,7 +1174,7 @@ private:
             }
 
             if (method == "initialize") {
-                if (state_ != ServerState::Uninitialized) {
+                if (state_ != ServerState::UNINITIALIZED) {
                     co_return co_await send_error(id, -32600, "Server already initialized");
                 }
                 if (!params.contains("protocolVersion") || !params["protocolVersion"].is_string()) {
@@ -1200,7 +1198,7 @@ private:
                 if (!co_await send_result(id, std::move(result))) {
                     co_return false;
                 }
-                state_ = ServerState::InitializedPending;
+                state_ = ServerState::INITIALIZED_PENDING;
                 co_return true;
             }
 
@@ -1209,7 +1207,7 @@ private:
             }
 
             if (method == "tools/list") {
-                if (state_ != ServerState::Ready) {
+                if (state_ != ServerState::READY) {
                     co_return co_await send_error(id, -32600, "Tools available only after initialized notification");
                 }
 
@@ -1241,7 +1239,7 @@ private:
             }
 
             if (method == "tools/call") {
-                if (state_ != ServerState::Ready) {
+                if (state_ != ServerState::READY) {
                     co_return co_await send_error(id, -32600, "Tools available only after initialized notification");
                 }
                 if (!params.contains("name") || !params["name"].is_string()) {
@@ -1254,7 +1252,7 @@ private:
                     arguments = params["arguments"];
                 }
 
-                if (inflight_.size() >= kMaxInflightCalls) {
+                if (inflight_.size() >= k_max_inflight_calls) {
                     co_return co_await send_error(id, -32000, "Server overload: 64 outstanding tool calls already in flight");
                 }
 
@@ -1416,8 +1414,8 @@ private:
     }
 
     asio::awaitable<void> run_tool_call(CallStatePtr call, std::string name, Json arguments) {
-        enum class FailureDelivery { None, Cancelled, ToolError, Generic };
-        FailureDelivery delivery = FailureDelivery::None;
+        enum class FailureDelivery { NONE, CANCELLED, TOOL_ERROR, GENERIC };
+        FailureDelivery delivery = FailureDelivery::NONE;
         std::string error_code;
         std::string error_message;
 
@@ -1455,28 +1453,28 @@ private:
             // A coroutine catch handler must not suspend. Record the failure
             // here only; the response is awaited after the handler.
             if (call->cancel_requested && is_cancellation_code(error.code)) {
-                delivery = FailureDelivery::Cancelled;
+                delivery = FailureDelivery::CANCELLED;
             } else {
-                delivery = FailureDelivery::ToolError;
+                delivery = FailureDelivery::TOOL_ERROR;
                 error_code = error.code;
                 error_message = error.what();
             }
         } catch (const std::system_error &error) {
             if (call->cancel_requested && is_operation_aborted_code(error)) {
-                delivery = FailureDelivery::Cancelled;
+                delivery = FailureDelivery::CANCELLED;
             } else if (is_operation_aborted_code(error)) {
-                delivery = FailureDelivery::ToolError;
+                delivery = FailureDelivery::TOOL_ERROR;
                 error_code = "Cancelled";
                 error_message = "Session is shutting down";
             } else {
-                delivery = FailureDelivery::Generic;
+                delivery = FailureDelivery::GENERIC;
                 error_message = error.what();
             }
         } catch (const std::exception &error) {
-            delivery = FailureDelivery::Generic;
+            delivery = FailureDelivery::GENERIC;
             error_message = error.what();
         } catch (...) {
-            delivery = FailureDelivery::Generic;
+            delivery = FailureDelivery::GENERIC;
             error_message = "Unknown application error";
         }
 
@@ -1488,10 +1486,10 @@ private:
         co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
 
         switch (delivery) {
-            case FailureDelivery::Cancelled: co_await deliver_cancelled(call); break;
-            case FailureDelivery::ToolError: co_await deliver_tool_error(call, std::move(error_code), std::move(error_message)); break;
-            case FailureDelivery::Generic: co_await deliver_generic_error(call, std::move(error_message)); break;
-            case FailureDelivery::None: break;
+            case FailureDelivery::CANCELLED: co_await deliver_cancelled(call); break;
+            case FailureDelivery::TOOL_ERROR: co_await deliver_tool_error(call, std::move(error_code), std::move(error_message)); break;
+            case FailureDelivery::GENERIC: co_await deliver_generic_error(call, std::move(error_message)); break;
+            case FailureDelivery::NONE: break;
         }
         co_return;
     }
@@ -1520,14 +1518,14 @@ private:
         call->response_started = true;
 
         const WireStatus status = co_await send_result_status(call->id, std::move(result));
-        if (status == WireStatus::TooLarge && !fatal_.load(std::memory_order_acquire)) {
+        if (status == WireStatus::TOO_LARGE && !fatal_.load(std::memory_order_acquire)) {
             Json fallback = make_tool_error_result("ResourceLimit", "Tool response exceeds the 16 MiB transport limit; "
                                                                     "the requested operation may already have completed.");
             const WireStatus fallback_status = co_await send_result_status(call->id, std::move(fallback));
-            if (fallback_status == WireStatus::TooLarge) {
+            if (fallback_status == WireStatus::TOO_LARGE) {
                 fatal_shutdown("tool resource-limit response exceeded 16 MiB");
             }
-        } else if (status == WireStatus::Failed) {
+        } else if (status == WireStatus::FAILURE) {
             // The connection is already failing; stop producing output.
         }
 
@@ -1547,10 +1545,10 @@ private:
 
         Json result = make_tool_error_result(code, message);
         const WireStatus status = co_await send_result_status(call->id, std::move(result));
-        if (status == WireStatus::TooLarge && !fatal_.load(std::memory_order_acquire)) {
+        if (status == WireStatus::TOO_LARGE && !fatal_.load(std::memory_order_acquire)) {
             // Fall back to a tiny bounded resource error.
             Json fallback = make_tool_error_result("ResourceLimit", "Tool error exceeds the 16 MiB transport limit.");
-            if (co_await send_result_status(call->id, std::move(fallback)) == WireStatus::TooLarge) {
+            if (co_await send_result_status(call->id, std::move(fallback)) == WireStatus::TOO_LARGE) {
                 fatal_shutdown("tool error response exceeded 16 MiB");
             }
         }
@@ -1574,7 +1572,7 @@ private:
         }
         Json result = make_tool_error_result("EngineFailure", message);
         const WireStatus status = co_await send_result_status(call->id, std::move(result));
-        if (status == WireStatus::TooLarge) {
+        if (status == WireStatus::TOO_LARGE) {
             fatal_shutdown("generic tool error response exceeded 16 MiB");
         }
 
@@ -1713,7 +1711,7 @@ private:
     std::function<void()> shutdown_;
     asio::executor_work_guard<asio::io_context::executor_type> work_;
 
-    ServerState state_ = ServerState::Uninitialized;
+    ServerState state_ = ServerState::UNINITIALIZED;
     std::vector<CallStatePtr> inflight_;
 
     // Reader admission queue. Only the reader thread waits on queue_cv_; the

@@ -1,8 +1,10 @@
 #include "registry.h"
-#include "tool_result.h"
+
 #include <iostream>
 #include <stdexcept>
 #include <utility>
+
+#include "tool_result.h"
 
 namespace {
 using namespace music::v2;
@@ -60,7 +62,7 @@ int main() {
         require(music::make_tool_result(payload).dump().size() < over, "wire exceeds bound");
         std::cout << "synthetic publication boundary: " << under << " <= " << limit << " < " << over << " bytes\n";
         validate_registry();
-        auto bound = handlers(std::make_index_sequence<static_cast<std::size_t>(HandlerId::Count)>{});
+        auto bound = handlers(std::make_index_sequence<static_cast<std::size_t>(HandlerId::COUNT)>{});
         validate_handlers(bound);
         for (std::size_t i = 0; i < bound.size(); ++i) {
             auto missing = bound;
@@ -70,12 +72,12 @@ int main() {
         auto shared = bound;
         shared[1] = shared[0];
         validate_handlers(shared); // Different IDs may use the same callable.
-        require(find_tool("score_export")->scheduling == Scheduling::Owner, "wrong export scheduling");
+        require(find_tool("score_export")->scheduling == Scheduling::OWNER, "wrong export scheduling");
         require(find_tool("runtime_job") == nullptr, "retired job tool resolved");
         require(find_tool("unknown") == nullptr, "unknown tool resolved");
         for (const auto &spec : registry()) {
             require(find_tool(spec.name) == &spec, "registry lookup failed");
-            if (spec.handler != HandlerId::Export) require(spec.scheduling == Scheduling::Owner, "wrong owner scheduling");
+            if (spec.handler != HandlerId::EXPORT) require(spec.scheduling == Scheduling::OWNER, "wrong owner scheduling");
         }
         std::cout << "registry handler and scheduling checks passed\n";
     } catch (const std::exception &error) {

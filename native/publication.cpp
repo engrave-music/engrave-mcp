@@ -1,22 +1,23 @@
 #include "publication.h"
-#include <cstdlib>
-#include <chrono>
-#include <thread>
-#include <cstdio>
+
 #include <cerrno>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <Windows.h>
 #include <aclapi.h>
+#include <windows.h>
 #pragma comment(lib, "advapi32.lib")
 #else
 #include <fcntl.h>

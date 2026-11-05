@@ -1,10 +1,12 @@
-#include "registry.h"
 #include <exception>
 #include <iostream>
+
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
 #endif
+
+#include "registry.h"
 
 int main() {
 #ifdef _WIN32

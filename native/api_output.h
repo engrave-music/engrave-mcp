@@ -1,13 +1,14 @@
 #pragma once
 
+#include <filesystem>
+
 #include "api_json.h"
 #include "runtime_limits.h"
-#include <filesystem>
 
 namespace music::v2 {
 
 struct ExportTiming;
-enum class ExportKind { Score, Render, Audio, Positions };
+enum class ExportKind { SCORE, RENDER, AUDIO, POSITIONS };
 
 struct Destination {
     std::filesystem::path path;
@@ -18,7 +19,7 @@ struct Destination {
 struct ExportRequest {
     std::string document;
     std::optional<std::uint64_t> expected_revision;
-    ExportKind kind = ExportKind::Score;
+    ExportKind kind = ExportKind::SCORE;
     Destination destination;
     engrave::ExportOptions score_options;
     engrave::RenderOptions render_options;

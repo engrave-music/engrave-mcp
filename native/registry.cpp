@@ -1,20 +1,23 @@
 #include "registry.h"
-#include "api_json.h"
-#include "host_api.h"
+
 #include <set>
 #include <stdexcept>
 
+#include "api_json.h"
+#include "host_api.h"
+
 namespace music::v2 {
+
 namespace {
 constexpr std::array specs = {
-    ToolSpec{"score_open", HandlerId::Open, Scheduling::Owner},         ToolSpec{"score_create", HandlerId::Create, Scheduling::Owner},
-    ToolSpec{"score_close", HandlerId::Close, Scheduling::Owner},       ToolSpec{"score_outline", HandlerId::Outline, Scheduling::Owner},
-    ToolSpec{"score_query", HandlerId::Query, Scheduling::Owner},       ToolSpec{"score_describe", HandlerId::Describe, Scheduling::Owner},
-    ToolSpec{"score_edit", HandlerId::Edit, Scheduling::Owner},         ToolSpec{"score_export", HandlerId::Export, Scheduling::Owner},
-    ToolSpec{"runtime_info", HandlerId::RuntimeInfo, Scheduling::Owner}};
+    ToolSpec{"score_open", HandlerId::OPEN, Scheduling::OWNER},          ToolSpec{"score_create", HandlerId::CREATE, Scheduling::OWNER},
+    ToolSpec{"score_close", HandlerId::CLOSE, Scheduling::OWNER},        ToolSpec{"score_outline", HandlerId::OUTLINE, Scheduling::OWNER},
+    ToolSpec{"score_query", HandlerId::QUERY, Scheduling::OWNER},        ToolSpec{"score_describe", HandlerId::DESCRIBE, Scheduling::OWNER},
+    ToolSpec{"score_edit", HandlerId::EDIT, Scheduling::OWNER},          ToolSpec{"score_export", HandlerId::EXPORT, Scheduling::OWNER},
+    ToolSpec{"runtime_info", HandlerId::RUNTIME_INFO, Scheduling::OWNER}};
 
 consteval bool complete() {
-    std::array<int, static_cast<std::size_t>(HandlerId::Count)> counts{};
+    std::array<int, static_cast<std::size_t>(HandlerId::COUNT)> counts{};
     for (auto &s : specs) ++counts[static_cast<std::size_t>(s.handler)];
     for (auto count : counts) {
         if (count != 1) return false;

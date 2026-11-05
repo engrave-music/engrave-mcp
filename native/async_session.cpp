@@ -1,30 +1,32 @@
 #include "async_session.h"
-#include "publication_gate.h"
-#include "api_json_internal.h"
-#include "api_output.h"
-#include "host_api.h"
-#include "mcp_transport.h"
-#include "registry.h"
-#include "export_timing.h"
+
+#include <atomic>
+#include <chrono>
 #ifdef MUSIC_ASYNC_TEST_HOOKS
 #include <cstdio>
 #include <cstdlib>
 #endif
+#include <future>
+#include <optional>
+#include <thread>
+#include <utility>
 
-#include <asio/async_result.hpp>
 #include <asio/associated_cancellation_slot.hpp>
 #include <asio/associated_executor.hpp>
+#include <asio/async_result.hpp>
 #include <asio/executor_work_guard.hpp>
 #include <asio/io_context.hpp>
 #include <asio/post.hpp>
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
-#include <atomic>
-#include <chrono>
-#include <future>
-#include <optional>
-#include <thread>
-#include <utility>
+
+#include "api_json_internal.h"
+#include "api_output.h"
+#include "export_timing.h"
+#include "host_api.h"
+#include "mcp_transport.h"
+#include "publication_gate.h"
+#include "registry.h"
 
 namespace music {
 
@@ -247,8 +249,8 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
     if (!spec) throw ToolCallError("InvalidArgument", "Unknown tool");
     const auto handler = handlers[static_cast<std::size_t>(spec->handler)];
     const auto submitted = std::chrono::steady_clock::now();
-    auto request_cancel = spec->handler == HandlerId::Export ? std::make_shared<std::atomic<bool>>(false) : nullptr;
-    if (spec->handler == HandlerId::Export) {
+    auto request_cancel = spec->handler == HandlerId::EXPORT ? std::make_shared<std::atomic<bool>>(false) : nullptr;
+    if (spec->handler == HandlerId::EXPORT) {
         auto request = decode_export(arguments);
         if (!request) co_return error_envelope(request.error());
         auto timing = std::make_shared<ExportTiming>("live", request->destination.path);

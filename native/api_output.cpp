@@ -1,34 +1,36 @@
 #include "api_output.h"
-#include "api_json_internal.h"
-#include "publication.h"
-#include "export_timing.h"
-#include "audio_budget.h"
-#include "tool_result.h"
-#include "publication_gate.h"
-#include "terminal_diagnostic.h"
-#include "utf8_text.h"
-#include <fstream>
-#include <iomanip>
-#include <sstream>
 
 #include <algorithm>
-#include <cstring>
-#include <cstdlib>
 #include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <limits>
 #include <set>
+#include <sstream>
 #include <thread>
-#include <cstdio>
+
 #ifdef MUSIC_ASYNC_TEST_HOOKS
 #include <engrave/testing/write470.h>
 #endif
+
+#include "api_json_internal.h"
+#include "audio_budget.h"
+#include "export_timing.h"
+#include "publication.h"
+#include "publication_gate.h"
+#include "terminal_diagnostic.h"
+#include "tool_result.h"
+#include "utf8_text.h"
 
 namespace music::v2 {
 
 namespace {
 using detail::invalid;
 
-constexpr std::size_t kDiagnosticLimit = 16384;
+constexpr std::size_t k_diagnostic_limit = 16384;
 
 // Keep the requested destination and the reason in a bounded, UTF-8-safe
 // diagnostic. A very long path is abbreviated in the middle rather than cut
@@ -38,14 +40,14 @@ std::string destination_message(std::string_view requested, std::string_view rea
     constexpr std::string_view mid = "': ";
     std::string bounded_reason = reason.size() > 8192 ? utf8_abbrev(reason, 8192) : std::string(reason);
     const auto fixed = prefix.size() + mid.size() + bounded_reason.size();
-    if (fixed >= kDiagnosticLimit) {
-        const auto allowed = kDiagnosticLimit - prefix.size() - mid.size() - 3;
+    if (fixed >= k_diagnostic_limit) {
+        const auto allowed = k_diagnostic_limit - prefix.size() - mid.size() - 3;
         return std::string(prefix) + "..." + std::string(mid) + utf8_abbrev(bounded_reason, allowed);
     }
     std::string result;
-    result.reserve(kDiagnosticLimit);
+    result.reserve(k_diagnostic_limit);
     result.append(prefix);
-    result.append(utf8_abbrev(requested, kDiagnosticLimit - fixed));
+    result.append(utf8_abbrev(requested, k_diagnostic_limit - fixed));
     result.append(mid);
     result.append(bounded_reason);
     return result;
@@ -53,7 +55,7 @@ std::string destination_message(std::string_view requested, std::string_view rea
 
 HostError with_destination(HostError error, std::string_view requested) {
     if (error.message.rfind("destination '", 0) == 0) {
-        error.message.resize(utf8_prefix(error.message, kDiagnosticLimit));
+        error.message.resize(utf8_prefix(error.message, k_diagnostic_limit));
     } else {
         error.message = destination_message(requested, error.message);
     }
@@ -215,7 +217,7 @@ Result<ExportRequest> decode_export(const Json &j) {
         const auto selection = options.contains("score") ? detail::score(options.at("score")) : engrave::ScoreSel{};
         const auto kind = j.at("kind").get<std::string>();
         if (kind == "score") {
-            result.kind = ExportKind::Score;
+            result.kind = ExportKind::SCORE;
             auto &o = result.score_options;
             o.score = selection;
             o.format = score_format(options.at("format").get<std::string>());
@@ -223,7 +225,7 @@ Result<ExportRequest> decode_export(const Json &j) {
             assign_if(options, "midi_rpns", o.midi_rpns);
             assign_if(options, "native_version", o.native_version);
         } else if (kind == "render") {
-            result.kind = ExportKind::Render;
+            result.kind = ExportKind::RENDER;
             auto &o = result.render_options;
             o.score = selection;
             o.format = render_format(options.at("format").get<std::string>());
@@ -234,7 +236,7 @@ Result<ExportRequest> decode_export(const Json &j) {
             assign_if(options, "transparent", o.transparent);
             if (o.last_page != -1 && o.last_page < o.first_page) invalid("last_page precedes first_page");
         } else if (kind == "audio") {
-            result.kind = ExportKind::Audio;
+            result.kind = ExportKind::AUDIO;
             auto &o = result.audio_options;
             o.score = selection;
             o.format = audio_format(options.at("format").get<std::string>());
@@ -264,7 +266,7 @@ Result<ExportRequest> decode_export(const Json &j) {
                 }
             }
         } else {
-            result.kind = ExportKind::Positions;
+            result.kind = ExportKind::POSITIONS;
             result.position_score = selection;
             result.position_kind =
                 options.at("position_kind") == "measure" ? engrave::PositionKind::Measure : engrave::PositionKind::Segment;
@@ -458,7 +460,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                 }
             }
             if (request.destination.path.string().find(".test-live-cancel") != std::string::npos &&
-                ++cancellation_polls == (request.kind == ExportKind::Render ? 2 : 8)) {
+                ++cancellation_polls == (request.kind == ExportKind::RENDER ? 2 : 8)) {
                 std::fprintf(stderr, "LIVE_CANCEL_POLL\n");
                 std::fflush(stderr);
                 while (!cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -466,7 +468,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
 #endif
             return test_deadline || cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline;
         };
-        if (request.kind == ExportKind::Score) {
+        if (request.kind == ExportKind::SCORE) {
             auto start = ExportTiming::Clock::now();
             auto options = request.score_options;
             options.capture = capture;
@@ -488,7 +490,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                 default: break;
             }
             write("output", mime, result.bytes);
-        } else if (request.kind == ExportKind::Positions) {
+        } else if (request.kind == ExportKind::POSITIONS) {
             auto start = ExportTiming::Clock::now();
             auto positions = engine_value(document.positions(request.position_kind, request.position_score, capture));
             timing.add("engine_call", start);
@@ -496,7 +498,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             auto bytes = position_json(positions, capture);
             timing.add("encode_write", start);
             write("output", "application/json", bytes);
-        } else if (request.kind == ExportKind::Render) {
+        } else if (request.kind == ExportKind::RENDER) {
             auto start = ExportTiming::Clock::now();
             const auto count = engine_value(document.page_count(request.render_options.score));
             auto options = request.render_options;
@@ -529,7 +531,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     write(name.str(), png ? "image/png" : "image/svg+xml", output.pages[0]);
                 }
             }
-        } else if (request.kind == ExportKind::Audio) {
+        } else if (request.kind == ExportKind::AUDIO) {
             auto start = ExportTiming::Clock::now();
             auto options = effective_mix(document, request, runtime);
             options.cancelled = capture.cancelled;
@@ -594,7 +596,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         Json partial{
             {"ok", false},
             {"error",
-             {{"code", "EngineFailure"}, {"message", std::string(kDiagnosticLimit, '\1')}, {"published_artifacts", std::move(paths)}}}};
+             {{"code", "EngineFailure"}, {"message", std::string(k_diagnostic_limit, '\1')}, {"published_artifacts", std::move(paths)}}}};
         const auto report_start = ExportTiming::Clock::now();
         const auto report_bytes = std::max(export_report_bound(success), export_report_bound(partial));
         timing.add("report_preflight", report_start);
@@ -662,7 +664,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         if (error.code == "Io") {
             error = with_destination(std::move(error), request.destination.requested_path);
         } else {
-            error.message.resize(utf8_prefix(error.message, kDiagnosticLimit));
+            error.message.resize(utf8_prefix(error.message, k_diagnostic_limit));
         }
         if (error.code == "Cancelled" && !cancelled()) error = HostError{"DeadlineExceeded", "export deadline exceeded"};
         for (const auto &a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
@@ -673,7 +675,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         return std::unexpected(std::move(error));
     } catch (const std::exception &e) {
         std::string message = e.what();
-        message.resize(utf8_prefix(message, kDiagnosticLimit));
+        message.resize(utf8_prefix(message, k_diagnostic_limit));
         HostError error{"EngineFailure", std::move(message)};
         for (const auto &a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));

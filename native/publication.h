@@ -1,8 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <system_error>
@@ -30,8 +30,7 @@ std::filesystem::path normalize_output_path(const std::filesystem::path &path);
 
 // A directory-sync failure occurs after visibility commits. Callers must
 // include that destination in published_artifacts even though durability failed.
-class PublicationError : public std::system_error {
-public:
+struct PublicationError : std::system_error {
     PublicationError(int code, const char *message, bool visible)
         : std::system_error(code, std::generic_category(), message), visible(visible) {}
 

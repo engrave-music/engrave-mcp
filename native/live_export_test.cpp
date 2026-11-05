@@ -1,7 +1,8 @@
-#include "api_output.h"
-#include "export_timing.h"
 #include <fstream>
 #include <iostream>
+
+#include "api_output.h"
+#include "export_timing.h"
 
 using namespace music::v2;
 namespace fs = std::filesystem;

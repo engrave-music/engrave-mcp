@@ -1,5 +1,4 @@
 #include "host_api.h"
-#include "api_json_internal.h"
 
 #include <algorithm>
 #include <array>
@@ -8,6 +7,8 @@
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
+
+#include "api_json_internal.h"
 
 namespace music::v2 {
 
