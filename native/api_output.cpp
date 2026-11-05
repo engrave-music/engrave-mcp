@@ -114,27 +114,28 @@ std::vector<std::byte> position_json(const engrave::Positions &positions, const 
 }
 
 engrave::Format score_format(const std::string &s) {
-    if (s == "mscz") return engrave::Format::Mscz;
-    if (s == "mscx") return engrave::Format::Mscx;
-    if (s == "musicxml") return engrave::Format::MusicXml;
-    if (s == "mxl") return engrave::Format::Mxl;
-    if (s == "midi") return engrave::Format::Midi;
+    if (s == "mscz") return engrave::Format::MSCZ;
+    if (s == "mscx") return engrave::Format::MSCX;
+    if (s == "musicxml") return engrave::Format::MUSIC_XML;
+    if (s == "mxl") return engrave::Format::MXL;
+    if (s == "midi") return engrave::Format::MIDI;
     invalid("unknown score format");
 }
 
 engrave::RenderFormat render_format(const std::string &s) {
-    if (s == "pdf") return engrave::RenderFormat::Pdf;
-    if (s == "png") return engrave::RenderFormat::Png;
-    if (s == "svg") return engrave::RenderFormat::Svg;
+    if (s == "pdf") return engrave::RenderFormat::PDF;
+    if (s == "png") return engrave::RenderFormat::PNG;
+    if (s == "svg") return engrave::RenderFormat::SVG;
     invalid("unknown render format");
 }
 
 engrave::AudioFormat audio_format(const std::string &s) {
-    if (s == "wav") return engrave::AudioFormat::Wav;
-    if (s == "flac") return engrave::AudioFormat::Flac;
-    if (s == "opus") return engrave::AudioFormat::Opus;
-    if (s == "mp3") return engrave::AudioFormat::Mp3;
-    if (s == "aac") return engrave::AudioFormat::Aac;
+    if (s == "wav") return engrave::AudioFormat::WAV;
+    if (s == "flac") return engrave::AudioFormat::FLAC;
+    if (s == "ogg") return engrave::AudioFormat::OGG;
+    if (s == "opus") return engrave::AudioFormat::OPUS;
+    if (s == "mp3") return engrave::AudioFormat::MP3;
+    if (s == "aac") return engrave::AudioFormat::AAC;
     invalid("unknown audio format");
 }
 
@@ -269,7 +270,7 @@ Result<ExportRequest> decode_export(const Json &j) {
             result.kind = ExportKind::POSITIONS;
             result.position_score = selection;
             result.position_kind =
-                options.at("position_kind") == "measure" ? engrave::PositionKind::Measure : engrave::PositionKind::Segment;
+                options.at("position_kind") == "measure" ? engrave::PositionKind::MEASURE : engrave::PositionKind::SEGMENT;
         }
         return result;
     } catch (const detail::DecodeError &e) {
@@ -473,7 +474,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             auto options = request.score_options;
             options.capture = capture;
             auto output = document.export_score_with_warnings(options);
-            if (!output && output.error().code == engrave::ErrorCode::Unsupported && options.format == engrave::Format::Midi) {
+            if (!output && output.error().code == engrave::ErrorCode::UNSUPPORTED && options.format == engrave::Format::MIDI) {
                 check();
                 options.capture = {};
                 output = document.export_score_with_warnings(options);
@@ -483,10 +484,10 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             warnings = std::move(result.warnings);
             const char *mime = "audio/midi";
             switch (options.format) {
-                case engrave::Format::Mscx: mime = "application/vnd.musescore.mscx+xml"; break;
-                case engrave::Format::Mscz: mime = "application/vnd.musescore"; break;
-                case engrave::Format::MusicXml: mime = "application/vnd.recordare.musicxml+xml"; break;
-                case engrave::Format::Mxl: mime = "application/vnd.recordare.musicxml"; break;
+                case engrave::Format::MSCX: mime = "application/vnd.musescore.mscx+xml"; break;
+                case engrave::Format::MSCZ: mime = "application/vnd.musescore"; break;
+                case engrave::Format::MUSIC_XML: mime = "application/vnd.recordare.musicxml+xml"; break;
+                case engrave::Format::MXL: mime = "application/vnd.recordare.musicxml"; break;
                 default: break;
             }
             write("output", mime, result.bytes);
@@ -509,7 +510,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                 throw detail::DecodeError{HostError{"ResourceLimit", "too many output pages"}};
             }
             timing.add("engine_call", start);
-            if (options.format == engrave::RenderFormat::Pdf) {
+            if (options.format == engrave::RenderFormat::PDF) {
                 check();
                 start = ExportTiming::Clock::now();
                 auto output = engine_value(document.render(options));
@@ -525,7 +526,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     if (output.pages.size() != 1) {
                         throw detail::DecodeError{HostError{"EngineFailure", "renderer returned invalid page count"}};
                     }
-                    const bool png = options.format == engrave::RenderFormat::Png;
+                    const bool png = options.format == engrave::RenderFormat::PNG;
                     std::ostringstream name;
                     name << "page-" << std::setfill('0') << std::setw(4) << page + 1 << (png ? ".png" : ".svg");
                     write(name.str(), png ? "image/png" : "image/svg+xml", output.pages[0]);
@@ -565,10 +566,11 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             }
             const char *mime = "audio/wav";
             switch (options.format) {
-                case engrave::AudioFormat::Flac: mime = "audio/flac"; break;
-                case engrave::AudioFormat::Opus: mime = "audio/ogg"; break;
-                case engrave::AudioFormat::Mp3: mime = "audio/mpeg"; break;
-                case engrave::AudioFormat::Aac: mime = "audio/aac"; break;
+                case engrave::AudioFormat::FLAC: mime = "audio/flac"; break;
+                case engrave::AudioFormat::OGG:
+                case engrave::AudioFormat::OPUS: mime = "audio/ogg"; break;
+                case engrave::AudioFormat::MP3: mime = "audio/mpeg"; break;
+                case engrave::AudioFormat::AAC: mime = "audio/aac"; break;
                 default: break;
             }
             timing.add("engine_call", start);

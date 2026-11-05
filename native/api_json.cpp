@@ -400,7 +400,7 @@ Json encode(const engrave::PropertyRead &p) {
 }
 
 Json encode(const engrave::Diagnostic &d) {
-    return {{"severity", d.severity == engrave::Severity::Info ? "info" : "warning"}, {"message", d.message}};
+    return {{"severity", d.severity == engrave::Severity::INFO ? "info" : "warning"}, {"message", d.message}};
 }
 
 Json encode(const engrave::Outline &o) {
@@ -521,31 +521,32 @@ Json encode(const engrave::TemplateInfo &t) {
 Json encode(const engrave::Capabilities &c) {
     auto format = [](engrave::Format f) -> const char * {
         switch (f) {
-            case engrave::Format::Mscz: return "mscz";
-            case engrave::Format::Mscx: return "mscx";
-            case engrave::Format::MusicXml: return "musicxml";
-            case engrave::Format::Mxl: return "mxl";
-            case engrave::Format::Midi: return "midi";
-            case engrave::Format::GuitarPro: return "guitarpro";
-            case engrave::Format::Mnx: return "mnx";
+            case engrave::Format::MSCZ: return "mscz";
+            case engrave::Format::MSCX: return "mscx";
+            case engrave::Format::MUSIC_XML: return "musicxml";
+            case engrave::Format::MXL: return "mxl";
+            case engrave::Format::MIDI: return "midi";
+            case engrave::Format::GUITAR_PRO: return "guitarpro";
+            case engrave::Format::MNX: return "mnx";
         }
         throw std::logic_error("unknown Format");
     };
     auto render = [](engrave::RenderFormat f) -> const char * {
         switch (f) {
-            case engrave::RenderFormat::Pdf: return "pdf";
-            case engrave::RenderFormat::Png: return "png";
-            case engrave::RenderFormat::Svg: return "svg";
+            case engrave::RenderFormat::PDF: return "pdf";
+            case engrave::RenderFormat::PNG: return "png";
+            case engrave::RenderFormat::SVG: return "svg";
         }
         throw std::logic_error("unknown RenderFormat");
     };
     auto audio = [](engrave::AudioFormat f) -> const char * {
         switch (f) {
-            case engrave::AudioFormat::Wav: return "wav";
-            case engrave::AudioFormat::Flac: return "flac";
-            case engrave::AudioFormat::Opus: return "opus";
-            case engrave::AudioFormat::Mp3: return "mp3";
-            case engrave::AudioFormat::Aac: return "aac";
+            case engrave::AudioFormat::WAV: return "wav";
+            case engrave::AudioFormat::FLAC: return "flac";
+            case engrave::AudioFormat::OGG: return "ogg";
+            case engrave::AudioFormat::OPUS: return "opus";
+            case engrave::AudioFormat::MP3: return "mp3";
+            case engrave::AudioFormat::AAC: return "aac";
         }
         throw std::logic_error("unknown AudioFormat");
     };

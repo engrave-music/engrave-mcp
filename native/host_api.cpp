@@ -137,13 +137,13 @@ std::vector<std::byte> base64(const std::string &s) {
 }
 
 engrave::Format input_format(const std::string &s) {
-    if (s == "mscz") return engrave::Format::Mscz;
-    if (s == "mscx") return engrave::Format::Mscx;
-    if (s == "musicxml") return engrave::Format::MusicXml;
-    if (s == "mxl") return engrave::Format::Mxl;
-    if (s == "midi") return engrave::Format::Midi;
-    if (s == "guitarpro") return engrave::Format::GuitarPro;
-    if (s == "mnx") return engrave::Format::Mnx;
+    if (s == "mscz") return engrave::Format::MSCZ;
+    if (s == "mscx") return engrave::Format::MSCX;
+    if (s == "musicxml") return engrave::Format::MUSIC_XML;
+    if (s == "mxl") return engrave::Format::MXL;
+    if (s == "midi") return engrave::Format::MIDI;
+    if (s == "guitarpro") return engrave::Format::GUITAR_PRO;
+    if (s == "mnx") return engrave::Format::MNX;
     invalid("unknown input format");
 }
 

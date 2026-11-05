@@ -27,7 +27,7 @@ struct ExportRequest {
     // Score, render and audio selections live in their public options above.
     // Positions use Document::positions(position_kind, position_score).
     engrave::ScoreSel position_score;
-    engrave::PositionKind position_kind = engrave::PositionKind::Measure;
+    engrave::PositionKind position_kind = engrave::PositionKind::MEASURE;
 };
 
 struct Artifact {
