@@ -55,6 +55,13 @@
 #include <unistd.h>
 #endif
 
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef EOF
+#undef EOF
+#endif
+
 #include "publication_gate.h"
 #include "runtime_limits.h"
 #include "terminal_diagnostic.h"
@@ -90,7 +97,7 @@ constexpr int k_read_stopped = -2;
 
 enum class ServerState { UNINITIALIZED, INITIALIZED_PENDING, READY };
 
-enum class WireStatus { OK, TOO_LARGE, FAILURE };
+enum class WireStatus { OK, TOO_LARGE, FAILED };
 
 bool is_valid_id(const Json &id) { return id.is_string() || id.is_number_integer(); }
 
@@ -99,7 +106,7 @@ bool is_cancellation_code(const std::string &code) {
 }
 
 struct ReaderEvent {
-    enum class Kind { LINE, OVERSIZE, ERR, END_OF_FILE };
+    enum class Kind { LINE, OVERSIZE, ERROR, EOF };
 
     Kind kind = Kind::LINE;
     std::string data;
@@ -323,11 +330,11 @@ private:
             }
 
             ReaderEvent eof;
-            eof.kind = ReaderEvent::Kind::END_OF_FILE;
+            eof.kind = ReaderEvent::Kind::EOF;
             (void) enqueue(std::move(eof));
         } else if (saw_error) {
             ReaderEvent event;
-            event.kind = ReaderEvent::Kind::ERR;
+            event.kind = ReaderEvent::Kind::ERROR;
             event.data = read_error.empty() ? std::string("unknown stdin read error") : read_error;
             (void) enqueue(std::move(event));
         }
@@ -895,18 +902,18 @@ private:
 
     asio::awaitable<WireStatus> send_wire(const Json &value) {
         if (fatal_.load(std::memory_order_acquire)) {
-            co_return WireStatus::FAILURE;
+            co_return WireStatus::FAILED;
         }
 
         for (;;) {
             if (fatal_.load(std::memory_order_acquire)) {
-                co_return WireStatus::FAILURE;
+                co_return WireStatus::FAILED;
             }
             if (try_reserve_output(k_max_response_bytes)) {
                 break;
             }
             if (output_closed()) {
-                co_return WireStatus::FAILURE;
+                co_return WireStatus::FAILED;
             }
             co_await wait_for_output_room();
         }
@@ -918,7 +925,7 @@ private:
         } catch (...) {
             release_output_reservation(k_max_response_bytes);
             fatal_shutdown("cannot serialise MCP response");
-            co_return WireStatus::FAILURE;
+            co_return WireStatus::FAILED;
         }
 
         if (wire.size() > k_max_response_bytes) {
@@ -928,7 +935,7 @@ private:
 
         if (!commit_output(k_max_response_bytes, wire)) {
             fatal_shutdown("cannot queue MCP response");
-            co_return WireStatus::FAILURE;
+            co_return WireStatus::FAILED;
         }
         co_return WireStatus::OK;
     }
@@ -942,7 +949,7 @@ private:
             co_return co_await send_wire(response);
         } catch (...) {
             fatal_shutdown("cannot build MCP result response");
-            co_return WireStatus::FAILURE;
+            co_return WireStatus::FAILED;
         }
     }
 
@@ -1050,12 +1057,12 @@ private:
 
             case ReaderEvent::Kind::OVERSIZE: co_return co_await send_error(nullptr, -32700, "Parse error: line exceeds 4 MiB limit");
 
-            case ReaderEvent::Kind::ERR: try { std::cerr << "stdin read error: " << event.data << '\n';
+            case ReaderEvent::Kind::ERROR: try { std::cerr << "stdin read error: " << event.data << '\n';
                 } catch (...) {}
                 fatal_shutdown("stdin read error: " + event.data);
                 co_return false;
 
-            case ReaderEvent::Kind::END_OF_FILE:
+            case ReaderEvent::Kind::EOF:
                 eof_ = true;
                 // This cancels queued engine work, but running committed
                 // operations still complete and their responses are drained.
@@ -1525,7 +1532,7 @@ private:
             if (fallback_status == WireStatus::TOO_LARGE) {
                 fatal_shutdown("tool resource-limit response exceeded 16 MiB");
             }
-        } else if (status == WireStatus::FAILURE) {
+        } else if (status == WireStatus::FAILED) {
             // The connection is already failing; stop producing output.
         }
 

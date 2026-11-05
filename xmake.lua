@@ -165,7 +165,7 @@ add_defines(table.unpack(ENGRAVE_DEFINES))
 if is_plat("windows") then
     set_runtimes("MD")
     set_exceptions("cxx")
-    add_defines("WIN32", "_WINDOWS", "NOMINMAX", "_USE_MATH_DEFINES", "UNICODE", "_UNICODE",
+    add_defines("WIN32", "_WINDOWS", "NOMINMAX", "WIN32_LEAN_AND_MEAN", "NOGDI", "_USE_MATH_DEFINES", "UNICODE", "_UNICODE",
         "_CRT_SECURE_NO_WARNINGS", "_CRT_NONSTDC_NO_WARNINGS",
         "_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING")
     add_defines("Q_OS_WIN", "Q_OS_WIN32", "Q_OS_WINDOWS")
