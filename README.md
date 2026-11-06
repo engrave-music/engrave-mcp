@@ -128,8 +128,10 @@ in your MCP client configuration using absolute paths:
   flushed to disk, and atomically renamed into place. Multi-file exports are atomic per file;
   errors report which files were already published.
 - **Cooperative cancellation and watchdog.** Long operations poll a cancellation
-  flag. A cancelled export that remains blocked for 5 seconds triggers a
-  process-wide publication gate and exit code 70 rather than killing threads asynchronously.
+  flag. Before publication starts, cancellation publishes nothing. Once publication begins,
+  late cancellation can still finish successfully or report already-published files. If a cancelled
+  live export remains blocked, a watchdog timer (5 seconds) waits for the publication gate held through
+  synchronous report delivery (deferred indefinitely if stdout is unread), then exits 70 rather than killing threads.
 - **Explicit quotas.** 4 MiB request line, 64 in-flight calls, 16 MiB response cap,
   1 GiB export file budget, 8 MiB decoded input limit, and up to 16 open documents.
 

@@ -57,9 +57,9 @@ The engine polls cooperative cancellation hooks at defined boundaries:
 - Synthesis blocks and audio encoder chunk writes in audio rendering
 - Periodic byte intervals (every ≤4 KiB) during score conversion and export
 
-A cancelled operation stops execution and publishes no partial output at the destination.
+If cancellation arrives before publication begins, the operation stops execution and publishes no partial output at the destination. Once publication has started, however, a late cancellation does not abort already-staged writes: publication proceeds, and the export can finish successfully or return an I/O error if a subsequent file write fails, reporting exactly the files that were already published (`published_artifacts`).
 
-If a cancelled live export remains blocked on the owner thread for more than 5 seconds, the watchdog intervenes. The watchdog acquires the process publication gate to allow any in-flight write to complete cleanly, then terminates the process with exit code `70`. If stdout write errors occur, the process exits with code `74`. Worker threads are never terminated asynchronously.
+If a cancelled live export remains blocked on the owner thread, a watchdog timer expires after 5 seconds. The watchdog claims the request, waits 250 ms for committed reports, and attempts to acquire the process-wide publication gate before terminating the process with exit code `70`. Because the publication gate stays held through report serialization and synchronous stdout delivery, unread or blocked stdout on the owner thread can defer the watchdog exit indefinitely, ensuring a file that has become visible is reported before termination. If a stdout write error is detected, the server ceases new publications and exits with code `74` after best-effort cleanup of active owners (up to 500 ms); staging files may remain, pending reports cannot be delivered, and already-visible files stay on disk. Worker threads are never terminated asynchronously.
 
 ## 6. Runtime quotas and bounds
 
