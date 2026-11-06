@@ -30,14 +30,17 @@ pixi run -e native python scripts/prepare.py
 
 ## Development builds
 
-Once configured (via the build scripts or `xmake f`), build targets directly:
+Once configured (via the build scripts or `xmake f`), build targets directly.
+
+Because host targets (`engrave_mcp`, `engrave_mcp_test`, `host_api_test`, `registry_dump`, `registry_check`, etc.) are declared with `set_default(false)` in `engrave_mcp/xmake.lua`, running `pixi run build` (which invokes `xmake build -y`) without arguments builds only default engine targets and will not compile the host server or its tools. Specify host targets explicitly or use the native build script:
 
 ```powershell
-pixi run build                         # default targets
-pixi run build engrave_mnx_import_test # specific targets
-```
+# Build host binaries and tools directly
+pixi run build engrave_mcp engrave_mcp_test host_api_test registry_dump registry_check
 
-`pixi run build` invokes `xmake build -y`.
+# Build specific engine test targets
+pixi run build engrave_mnx_import_test
+```
 
 ## Windows native build
 
@@ -47,10 +50,12 @@ pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 
 The script enters the Visual Studio developer shell, verifies submodule status, validates xmake inputs, configures `build/xmake-windows`, and builds default host targets: `engrave_mcp`, `engrave_mcp_test`, `registry_dump`, `registry_check`, and `host_api_test`.
 
-To build additional test targets:
+To build additional host test targets:
 
 ```powershell
 xmake build live_export_test staging_test
+# On Linux:
+# xmake build publication_test
 ```
 
 ### Running the development binary
@@ -110,9 +115,10 @@ The packagers assemble runtime DLL/ELF dependencies, asset folders, SoundFonts, 
 
 ## Tests and lanes
 
-Run the smoke and transport tests against the compiled binary:
+Run the smoke and transport tests against the compiled binary (pointing `ENGRAVE_MCP_RESOURCES` at `.runtime/assets`):
 
 ```powershell
+$env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 pixi run -e native python tests/integration/test_mcp_smoke.py
 pixi run -e native python tests/integration/test_transport.py build/xmake-windows/engrave-mcp.exe
 ```

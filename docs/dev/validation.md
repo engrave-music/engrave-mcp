@@ -11,14 +11,22 @@ pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 xmake build live_export_test staging_test
 ```
 
-The `golden`, `semantic_check`, and `compat_corpus` lanes require the engine's `semantic_dump` probe, which is opt-in:
+Lanes require both host test targets and opt-in engine test targets. Configure with `--engrave_tests=y` and build:
 
 ```powershell
+# Configure with engine tests enabled
 xmake f --engrave_tests=y
-xmake build semantic_dump
-```
 
-Engine test binaries used by certain lanes (`score_edit_test`, `score_audio_test`, `excerpts_test`, `assets_test`, `archive_test`, `noqt_probe`, `engine_audio_probe`, `engraving_playback_tests`, `mpe_tests`) are built with the same `--engrave_tests=y` configuration.
+# Build engine test suite (engine_testsphony target pulls in semantic_dump, score_edit_test,
+# score_audio_test, score_positions_test, excerpts_test, archive_test, assets_test, diagnostics_test,
+# io_boundary_test, engraving_playback_tests, etc.) plus the noqt_probe runtime probe
+xmake build engine_tests noqt_probe
+
+# Build required host test targets
+xmake build live_export_test staging_test
+# On Linux:
+# xmake build publication_test
+```
 
 ## Running lanes
 
