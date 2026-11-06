@@ -1,60 +1,34 @@
 # Filesystem support scope
 
-M4 exports target **ordinary, single-user, unprivileged local filesystem use**.
-This file is the triage rule for reviews and for future changes. A finding
-outside this scope is documented as a non-goal; it is not a release blocker and
-does not get a fix merely because it is real.
+Exports target **ordinary, single-user, unprivileged local filesystem use**. This document defines the boundary and triage policy for code changes and reviews. Findings outside this scope are documented as non-goals.
 
 ## Supported
 
-- Local volumes on Windows and POSIX, with the host running as an ordinary user.
-- Ordinary directories and files, including missing parents that the host may
-  create recursively.
-- Ordinary inherited permissions: the published file is usable by the account
-  that ran the export. Existing ordinary DACLs are preserved on Windows as a
-  best effort; a new file gets the permissions a normally created file in that
-  directory would get.
-- POSIX owner-only staging (`0700`) and Windows private staging.
-- The documented destination syntax: normal drive/UNC paths, POSIX paths,
-  non-ASCII UTF-8 paths, and the Windows filename rules in
-  [tools.md](tools.md#destination-syntax).
-- Per-file publication: a completed file is visible; a later file may fail and
-  the error reports exactly the files already published. Multi-file publication
-  is not a transaction.
-- The host may leave parents created before a later failure and may clean
-  staging only on a best-effort basis; both are documented outcomes.
+- Local storage volumes on Windows and POSIX systems running as an unprivileged user.
+- Standard directory trees and files, creating missing parent directories recursively as needed.
+- Standard inherited permissions: published files are accessible to the account running the server. Existing Windows DACLs are preserved on a best-effort basis; newly created files inherit default directory permissions.
+- POSIX owner-only staging (`0700`) and Windows restricted staging directories.
+- Documented path syntax: drive letters, UNC paths, POSIX paths, UTF-8 encoded paths, and documented Windows filename constraints.
+- Atomic per-file publication: completed files are made visible; subsequent file failures report all previously published files in the returned error payload.
+- Cleanup of temporary staging folders and creation of parent directories are best-effort.
 
 ## Non-goals
 
-Do not add fixes or open review rounds for these unless the user re-scopes them:
+Do not add complexity or open defect reports for items outside this defined scope:
 
-- Complex, custom, protected or deny-ACE-heavy DACLs; ACL merging or exact
-  security-descriptor reproduction beyond the current best-effort path.
-- SACLs/auditing, ownership, creation-time, alternate data streams, encryption,
-  compression, or resource-attribute preservation.
-- Remote-share authentication, SMB server semantics, IPv6-literal UNC hosts, and
-  hostnames that only exist in a particular network.
-- Windows device namespaces (`\\.\`, `\\?\`), extended-length paths, drive-
-  relative edge forms, and exotic reserved-name corpora beyond the documented
-  table.
-- Cross-volume publication, multi-file atomicity, crash-consistent directory
-  metadata, and rollback of created parents.
-- ACL behavior under a second account, elevated tokens, service accounts, or
-  domain policy. The normal-privilege single-user case is the contract.
+- Complex, custom, protected, or deny-ACE-heavy DACLs, explicit security descriptor reconstruction, or ACL merging beyond the best-effort path.
+- SACLs, auditing, file ownership changes, creation timestamps, NTFS alternate data streams, filesystem compression, or encryption flags.
+- Network authentication for remote shares, SMB-specific semantics, IPv6-literal UNC hosts, and network-dependent domain hostnames.
+- Windows device namespaces (`\\.\`, `\\?\`), extended-length paths, and drive-relative edge forms.
+- Cross-volume publication transactions, multi-file atomic transactions, crash-consistent directory journaling, or automatic rollback of created parent folders.
+- Elevated token execution, service accounts, or domain policy corner cases.
 
-If one of these is encountered, the host may return `Io` or `InvalidArgument`,
-may leave created parents, and must not publish partial content. That is an
-acceptable failure, not a defect to chase.
+If these conditions are encountered, the host may return `Io` or `InvalidArgument` without publishing corrupt files.
 
-## Review rule
+## Review and triage policy
 
-A reviewer may report anything, but the orchestrator triages it:
+When evaluating bug reports and proposed changes:
 
-1. Does it affect ordinary single-user local export? If yes, fix it.
-2. If no, add or update a non-goal note and move on.
-3. Do not reopen an accepted surface for a non-goal; do not add tests that only
-   exercise it.
-
-The destination preflight, staging and publication code is frozen at this
-scope. Phase acceptance depends on the normal-use tests, not on exhaustive
-coverage of ACL or namespace corners.
+1. Does the issue affect ordinary single-user local export on supported filesystems? If yes, address it.
+2. If no, document it as a non-goal.
+3. Do not expand the accepted filesystem surface for edge-case non-goals.

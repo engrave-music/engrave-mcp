@@ -6,32 +6,33 @@ JSON-RPC.
 
 The engine is **engrave**, a pinned hard fork of the MuseScore 5.0 core
 ([github.com/Locietta/engrave](https://github.com/Locietta/engrave), consumed as
-`vendor/engrave`). It is compiled into the server. There is no Qt, Node.js,
+`vendor/engrave`). It is compiled directly into the server. There is no Qt, Node.js,
 WebAssembly or desktop MuseScore dependency at runtime.
 
-The goal is interop, not compatibility: an agent-made score must open and remain
+The goal is interop, not legacy compatibility: an agent-made score must open and remain
 editable in MuseScore, and a MuseScore score must open and remain editable by
-the agent. MuseScore's legacy surface is not a goal. Only scores from MuseScore
-4.6 onward open. The default MSCZ writer emits 5.00; a bounded 4.70 writer is
-available for MuseScore 4.x interop where the score stays inside its documented
-subset.
+the agent. The reader accepts MuseScore format 4.60 up to 5.00 and rejects versions
+above 5.00 or prior to 4.60. MSCZ and MusicXML inputs with embedded images are rejected.
+The default MSCZ writer emits 5.00 format; a bounded 4.70 writer targeting MuseScore 4.7.0–4.7.6
+is available for MuseScore 4.x interop where the score stays inside its documented subset.
 
 ## What it can do
 
 - Open MSCZ/MSCX, MusicXML/MXL, MIDI, Guitar Pro (GP3–GP7/GPX/PTB) and MNX.
 - Create a score from an engine template.
-- Read the outline, query elements/measures/segments/properties/audio tracks,
+- Read score outlines, query elements/measures/segments/properties/audio tracks,
   and describe element types and style keys.
 - Apply atomic edit batches (23 operations) with strict revisions; a failed
   batch rolls back.
-- Export score files, PDF/PNG/SVG pages, audio (WAV/FLAC/Opus/MP3/AAC) and
-  position data from the **live** document, with durable publication.
+- Export score files, PDF/PNG/SVG vector and raster pages, synthesized audio
+  (WAV/FLAC/Opus/MP3/AAC) and layout position data directly from the **live**
+  in-memory document, with durable publication.
 - Hot-load fonts and replace SoundFonts at runtime.
 
 ## Quick start (Windows)
 
 Prerequisites: Git, [Pixi](https://pixi.sh/), and the Visual Studio C++ x64
-toolchain.
+toolchain (MSVC 14.51+).
 
 ```powershell
 pixi install -e native --locked
@@ -52,7 +53,7 @@ $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
 pixi run -e native python tests/integration/test_mcp_smoke.py
 ```
 
-To run the server by hand, pass resources explicitly; `--soundfont` is optional:
+To run the server manually, pass resources explicitly; `--soundfont` is optional:
 
 ```powershell
 build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
@@ -81,9 +82,7 @@ Every successful result carries `ok: true`. Failures carry
 The full contract is in [docs/dev/tools.md](docs/dev/tools.md) and the generated
 schema in [engrave_mcp/tools.json](engrave_mcp/tools.json).
 
-Schematic of the arguments and the `structuredContent` each call returns. This is
-not a wire transcript: a real session starts with `initialize` and wraps each
-call in a JSON-RPC 2.0 request/response with an id.
+Schematic of the arguments and the `structuredContent` each call returns:
 
 ```json
 {"method":"tools/call","params":{"name":"score_create",
@@ -103,7 +102,7 @@ call in a JSON-RPC 2.0 request/response with an id.
 ## Client configuration
 
 After packaging (for example to `artifacts/windows-next`), register the server
-with absolute paths:
+in your MCP client configuration using absolute paths:
 
 ```json
 {
@@ -119,23 +118,23 @@ with absolute paths:
 }
 ```
 
-## Design in one screen
+## Architecture overview
 
-- **One engine, one owner thread.** All document work is serialized on a
-  dedicated owner thread. Up to 16 documents can be open; they share the engine.
-  Concurrent editing of one document is not supported, by design.
-- **Live export.** Exports run against the in-memory document. The earlier
-  worker/snapshot/job design was deleted: save-and-reopen changed layout, added
-  hundreds of milliseconds and created a large failure surface.
+- **One engine, one owner thread.** All score engine operations are serialized on a
+  dedicated owner thread. Up to 16 documents can remain open concurrently; they share the engine.
+  Concurrent editing of one document is not supported by design.
+- **Direct in-memory export.** Exports execute directly against the in-memory document,
+  avoiding save-and-reopen layout reflow and minimizing export latency.
 - **Durable publication.** Output is written to a private staging directory,
-  flushed, then atomically renamed into place. Multi-file exports are per-file
-  atomic, not a transaction; an error reports exactly which files were already
-  published.
-- **Cooperative cancellation + watchdog.** Long operations poll a cancellation
-  flag. A cancelled export that stays blocked for 5 seconds triggers a
-  process-wide publication gate and exit 70 rather than killing threads.
-- **Explicit quotas.** 4 MiB request line, 64 in-flight calls, 16 MiB response,
-  1 GiB export budget, 8 MiB decoded input, 16 documents.
+  flushed to disk, and atomically renamed into place. Multi-file exports are atomic per file;
+  errors report which files were already published.
+- **Cooperative cancellation and watchdog.** Long operations poll a cancellation
+  flag. Before publication starts, cancellation publishes nothing. Once publication begins,
+  late cancellation can still finish successfully or report already-published files. If a cancelled
+  live export remains blocked, a watchdog timer (5 seconds) waits for the publication gate held through
+  synchronous report delivery (deferred indefinitely if stdout is unread), then exits 70 rather than killing threads.
+- **Explicit quotas.** 4 MiB request line, 64 in-flight calls, 16 MiB response cap,
+  1 GiB export file budget, 8 MiB decoded input limit, and up to 16 open documents.
 
 The reasoning behind these choices is in [docs/dev/design.md](docs/dev/design.md).
 
@@ -145,21 +144,20 @@ Supported: ordinary single-user local filesystems on Windows and Linux, ordinary
 inherited permissions, the documented path syntax, and scores from MuseScore 4.6
 onward.
 
-Explicit non-goals: MuseScore 1.x–4.5 readers, full MuseScore compatibility,
-complex/protected DACLs and ACL merging, SMB authentication, device namespaces
-and extended-length paths, cross-volume or multi-file transactional
-publication, and interactive/streaming playback. See
-[docs/dev/scope.md](docs/dev/scope.md) for the triage rule.
+Explicit non-goals: MuseScore 1.x–4.5 readers, full MuseScore desktop feature parity,
+complex/protected DACLs and ACL merging, SMB network share authentication, device namespaces
+and extended-length paths, cross-volume or multi-file transactional publication,
+and interactive/streaming playback. See [docs/dev/scope.md](docs/dev/scope.md) for the triage policy.
 
 ## Repository layout
 
 ```
-engrave_mcp/            MCP transport, registry, JSON codecs, live export, publication
-vendor/engrave   pinned engrave engine (submodule, pinned by commit)
-xmake.lua          host build; includes the engine build from vendor/engrave
-scripts/           bootstrap, build, packaging
-tests/             lane runner, integration tests, support, benchmarks, data
-docs/dev/          design, tool contract, build, validation, fork ledger, history
+engrave_mcp/     MCP transport, tool registry, JSON codecs, live export, publication
+vendor/engrave/  pinned engrave engine (submodule, pinned by commit)
+xmake.lua        host build; includes engine build from vendor/engrave
+scripts/         bootstrap, build, packaging dev tools
+tests/           acceptance lane runner, integration tests, support, benchmarks, test data
+docs/dev/        design, tool contract, build, validation, engine fork guide
 ```
 
 ## Documentation
@@ -167,10 +165,9 @@ docs/dev/          design, tool contract, build, validation, fork ledger, histor
 - [Design and rationale](docs/dev/design.md)
 - [Tool contract](docs/dev/tools.md)
 - [Build and test](docs/dev/build.md)
-- [Validation lanes and accepted evidence](docs/dev/validation.md)
-- [Engine fork and pin ledger](docs/dev/fork.md)
+- [Validation and test lanes](docs/dev/validation.md)
+- [Engine fork guide](docs/dev/fork.md)
 - [Supported scope and non-goals](docs/dev/scope.md)
-- [Open defects](docs/dev/defects.md)
-- [Project history](docs/dev/history.md)
+- [Open defects and limitations](docs/dev/defects.md)
 - [Branching and tags](docs/dev/branching.md)
 - [中文说明](README.zh-CN.md)

@@ -8,10 +8,10 @@ stdio JSON-RPC 创建、查询、编辑、排版并导出乐谱。
 `vendor/engrave` 引入），直接编译进服务。运行时不需要 Qt、Node.js、WASM，
 也不需要安装桌面版 MuseScore。
 
-目标是互操作，而不是兼容：Agent 做出的乐谱要能在 MuseScore 中打开并继续编辑，
-MuseScore 的乐谱也要能被 Agent 打开并继续编辑。MuseScore 的历史包袱不是目标：
-只打开 MuseScore 4.6 及以后版本的乐谱。默认 MSCZ 写入 5.00；需要与 MuseScore 4.x
-互通时，可在文档规定的子集内使用有界的 4.70 写入器。
+目标是互操作，而不是历史兼容：Agent 制作的乐谱要能在 MuseScore 中打开并继续编辑，
+MuseScore 的乐谱也要能被 Agent 打开并继续编辑。读取器接受 MuseScore 4.60 至 5.00 格式的乐谱，
+高于 5.00 或低于 4.60 的版本均会被拒绝。包含内嵌图像的 MSCZ 与 MusicXML 输入会被拒绝。
+默认 MSCZ 写入 5.00 格式；需要与 MuseScore 4.x 互通时，可在文档规定的子集内使用面向 MuseScore 4.7.0–4.7.6 的有界 4.70 写入器。
 
 ## 能力
 
@@ -19,13 +19,13 @@ MuseScore 的乐谱也要能被 Agent 打开并继续编辑。MuseScore 的历�
 - 从引擎模板创建乐谱。
 - 读取大纲，查询元素/小节/段/属性/音轨，查询元素类型与样式目录。
 - 以原子批次执行编辑（23 种操作），并校验严格版本号；批次失败会回滚。
-- 从**内存中的实时文档**导出乐谱文件、PDF/PNG/SVG 页面、音频
-  （WAV/FLAC/Opus/MP3/AAC）与位置数据，并保证持久化发布。
+- 从**内存中的实时文档**直接导出乐谱文件、PDF/PNG/SVG 矢量与栅格页面、合成音频
+  （WAV/FLAC/Opus/MP3/AAC）与排版位置数据，并保证持久化发布。
 - 运行时热加载字体、替换 SoundFont。
 
 ## 快速开始（Windows）
 
-需要 Git、[Pixi](https://pixi.sh/) 与 Visual Studio C++ x64 工具链。
+环境要求：Git、[Pixi](https://pixi.sh/) 与 Visual Studio C++ x64 工具链（MSVC 14.51+）。
 
 ```powershell
 pixi install -e native --locked
@@ -74,8 +74,7 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 `error: {code, message, ...}`，并设置 MCP 的 `isError` 标志。完整契约见
 [工具文档](docs/dev/tools.md)，生成的 schema 见 [engrave_mcp/tools.json](engrave_mcp/tools.json)。
 
-下面是调用参数与返回 `structuredContent` 的示意，不是完整的线上报文：真实会话先
-发送 `initialize`，每次调用都包在带 id 的 JSON-RPC 2.0 请求/响应中。
+下面是调用参数与返回 `structuredContent` 的示意：
 
 ```json
 {"method":"tools/call","params":{"name":"score_create",
@@ -94,7 +93,7 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 
 ## 客户端配置
 
-打包后（例如输出到 `artifacts/windows-next`），用绝对路径注册服务：
+打包后（例如输出到 `artifacts/windows-next`），在客户端配置中使用绝对路径注册服务：
 
 ```json
 {
@@ -110,51 +109,50 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 }
 ```
 
-## 一页纸设计
+## 架构概览
 
-- **单引擎、单 owner 线程。** 所有文档操作在一个专用 owner 线程上串行执行。
-  最多同时打开 16 个文档，它们共享同一个引擎。不支持对同一文档并发编辑，这是
-  有意的设计。
-- **实时导出。** 导出直接作用于内存中的文档。此前的 worker/快照/任务设计已被删除：
-  保存再打开会改变排版，增加数百毫秒延迟，并带来大量故障面。
+- **单引擎、单 owner 线程。** 所有乐谱引擎操作在一个专用 owner 线程上串行执行。
+  最多同时打开 16 个文档，它们共享同一个引擎。不支持对同一文档并发编辑。
+- **内存实时导出。** 导出直接作用于内存中的实时文档，避免保存再打开引起的排版重排，
+  并尽可能降低导出延迟。
 - **持久化发布。** 输出先写入私有暂存目录并刷盘，再原子重命名到目标位置。多文件
-  导出按文件原子，而不是一个事务；出错时会精确报告哪些文件已经发布。
-- **协作式取消 + 看门狗。** 长操作轮询取消标志。被取消的导出如果继续阻塞 5 秒，
-  会先取得进程级发布锁，然后以退出码 70 结束进程，而不是强杀线程。
-- **明确的配额。** 请求行 4 MiB、64 个在途调用、响应 16 MiB、导出预算 1 GiB、
-  解码输入 8 MiB、最多 16 个文档。
+  导出按文件原子发布，并在出错时精确报告哪些文件已发布。
+- **协作式取消与看门狗。** 长操作轮询取消标志。在发布开始前取消不会发布任何文件；发布一旦开始，
+  迟到的取消仍可能成功完成或报告已发布的文件。若被取消的实时导出持续阻塞，5 秒看门狗定时器到期后
+  会等待同步报告交付全程持有的发布锁（未读 stdout 会无限期推迟退出），之后以退出码 70 退出进程，而不是异步强杀线程。
+- **明确的配额限制。** 请求行 4 MiB、64 个在途调用、响应 16 MiB 上限、导出预算 1 GiB、
+  解码输入上限 8 MiB、最多 16 个打开文档。
 
-这些选择的理由见[设计文档](docs/dev/design.md)。
+设计取舍与理由见[设计文档](docs/dev/design.md)。
 
 ## 范围与非目标
 
-支持：Windows 与 Linux 上普通的单用户本地文件系统、普通继承权限、文档规定的路径
+支持范围：Windows 与 Linux 上普通的单用户本地文件系统、普通继承权限、文档规定的路径
 语法，以及 MuseScore 4.6 及以后版本的乐谱。
 
-明确的非目标：MuseScore 1.x–4.5 读取器、完整的 MuseScore 兼容性、复杂/受保护的
-DACL 与 ACL 合并、SMB 认证、设备命名空间与超长路径、跨卷或多文件事务发布、
+明确的非目标：MuseScore 1.x–4.5 读取器、桌面完整功能同等性、复杂/受保护的
+DACL 与 ACL 合并、SMB 网络共享认证、设备命名空间与超长路径、跨卷或多文件事务发布、
 交互式/流式播放。判定规则见[范围文档](docs/dev/scope.md)。
 
 ## 仓库结构
 
 ```
-engrave_mcp/            MCP 传输、注册表、JSON 编解码、实时导出、发布
-vendor/engrave   固定的 engrave 引擎（子模块，按提交固定）
-xmake.lua          宿主构建；从 vendor/engrave 引入引擎构建
-scripts/           引导、构建、打包
-tests/             测试道、集成测试、支持、基准、测试数据
-docs/dev/          设计、工具契约、构建、验证、fork 台账、历史
+engrave_mcp/     MCP 传输、工具注册表、JSON 编解码、实时导出、发布
+vendor/engrave/  固定的 engrave 引擎（子模块，按提交固定）
+xmake.lua        宿主构建；从 vendor/engrave 引入引擎构建
+scripts/         引导、构建、打包等开发工具
+tests/           验收测试道、集成测试、支持库、性能基准、测试数据
+docs/dev/        架构设计、工具契约、构建指南、测试验证、分叉指南
 ```
 
-## 文档
+## 文档索引
 
-- [设计与取舍](docs/dev/design.md)
-- [工具契约](docs/dev/tools.md)
-- [构建与测试](docs/dev/build.md)
-- [验证道与已验收证据](docs/dev/validation.md)
-- [引擎分叉与 pin 台账](docs/dev/fork.md)
+- [架构设计与取舍](docs/dev/design.md)
+- [工具契约说明](docs/dev/tools.md)
+- [构建与测试指南](docs/dev/build.md)
+- [验证测试道与规范](docs/dev/validation.md)
+- [引擎分叉指南](docs/dev/fork.md)
 - [支持范围与非目标](docs/dev/scope.md)
-- [未解决缺陷](docs/dev/defects.md)
-- [项目历史](docs/dev/history.md)
+- [已知缺陷与限制](docs/dev/defects.md)
 - [分支与标签策略](docs/dev/branching.md)
 - [English README](README.md)

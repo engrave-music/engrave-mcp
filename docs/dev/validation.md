@@ -1,32 +1,36 @@
 # Validation
 
-Acceptance is execution-based: a claim is only accepted when the named lane or
-gate was built and run at the recorded pin, on native Windows and on the
-physical Linux host (`ssh <linux-host>`). Source review alone is labelled as such.
+Acceptance is execution-based: a claim is accepted when the named lane or gate was built and run on native Windows and on the physical Linux host (`ssh <linux-host>`). Source review alone is labeled as such.
 
 ## Prerequisites
 
-Build the binaries the selected lanes need:
+Build the binaries required by the selected lanes:
 
 ```powershell
 pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 xmake build live_export_test staging_test
 ```
 
-The `golden`, `semantic_check` and `compat_corpus` lanes need the engine's
-`semantic_dump` probe, which is opt-in:
+Lanes require both host test targets and opt-in engine test targets. Configure with `--engrave_tests=y` and build:
 
 ```powershell
+# Configure with engine tests enabled
 xmake f --engrave_tests=y
-xmake build semantic_dump
+
+# Build engine test suite (the engine_tests phony target pulls in semantic_dump, score_edit_test,
+# score_audio_test, score_positions_test, excerpts_test, archive_test, assets_test, diagnostics_test,
+# io_boundary_test, engraving_playback_tests, etc.) plus the noqt_probe runtime probe
+xmake build engine_tests noqt_probe
+
+# Build required host test targets
+xmake build live_export_test staging_test
+# On Linux:
+# xmake build publication_test
 ```
 
-Engine test binaries used by some lanes (`score_edit_test`, `score_audio_test`,
-`excerpts_test`, `assets_test`, `archive_test`, `noqt_probe`,
-`engine_audio_probe`, `engraving_playback_tests`, `mpe_tests`) come from the same
-`--engrave_tests=y` configuration.
-
 ## Running lanes
+
+Run the unified test runner:
 
 ```powershell
 $env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
@@ -38,14 +42,11 @@ $env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
   --output notes/lanes/latest
 ```
 
-Use `--only lane1,lane2` for a subset. The runner checks line endings, the
-native include boundary and the expected binaries before starting, and writes a
-per-lane log plus a summary.
+Use `--only lane1,lane2` to execute a subset. The runner verifies line endings, native include boundaries, and required binaries before execution, writing per-lane logs and a consolidated summary.
 
 ## Lanes
 
-There are 36 lanes; 35 run by default. `native_470_oracle` is opt-in and needs the
-pinned 4.7.6 oracle archive, executable and assets.
+There are 36 lanes; 35 run by default. `native_470_oracle` is opt-in and requires the pinned 4.7.6 oracle archive, executable, and assets.
 
 | Area                        | Lanes                                                                                             |
 | --------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -57,132 +58,78 @@ pinned 4.7.6 oracle archive, executable and assets.
 | Golden and semantics        | `golden`, `semantic_check`, `compat_corpus`, `rendered_page`, `oracle_harness`                    |
 | Assets and engine           | `runtime_assets`, `assets`, `noqt_probe`, `upstream_gtest`, `version_info`                        |
 | Smoke                       | `mcp_smoke`                                                                                       |
-| Opt-in                      | `native_470_oracle` (4.70 writer, pinned oracle)                                                  |
+| Opt-in                      | `native_470_oracle` (4.70 writer, pinned Linux oracle)                                            |
 
-The `live_export` lane also runs the focused publication checks
-(`test_live_publication_cancel.py`, `test_live_publication_limits.py`,
-`test_live_path_utf8.py`, `test_live_report_delivery.py`). The
-`test_output_schema_boundaries.py`, `test_native_470_conversion_cancel.py`,
-`test_native_470_serialization_cancel.py`, `test_live_queued_cancel.py`,
-`test_live_dense_cancel.py`, `test_transport_wakeup.py` and
-`test_native_export_versions.py` checks are documented focused tests, not default lanes;
-run them explicitly when touching those areas.
+### Focused tests
+
+The `live_export` lane includes focused publication tests (`test_live_publication_cancel.py`, `test_live_publication_limits.py`, `test_live_path_utf8.py`, `test_live_report_delivery.py`).
+
+Additional focused tests located in `tests/integration/` can be run directly when touching specific areas:
+
+- `test_output_schema_boundaries.py` — exported score schema conformance
+- `test_native_470_conversion_cancel.py` — interruptible 4.70 conversion
+- `test_native_470_serialization_cancel.py` — low-level 4.70 serialization cancellation
+- `test_live_queued_cancel.py` — queued export cancellation
+- `test_live_dense_cancel.py` — large score cancellation recovery
+- `test_transport_wakeup.py` — transport teardown and idle CPU checks
+- `test_native_export_versions.py` — native version options and warnings
+- `test_destination_errors.py` — destination path error mapping
+- `test_document_stress.py` — bounded repeated document lifecycles
+- `test_native_includes.py` — public C++ header boundary verification
+- `test_native_inputs.py` — malformed and corrupt input handling
+- `test_xmake_incremental.py` — incremental build behavior
 
 ## Engine gate
 
-The engine owns its standalone public-boundary gate in `vendor/engrave/tests/gate.py`.
-The host compatibility entry point is separate from the host lanes:
+The engine owns its standalone public boundary gate in `vendor/engrave/tests/gate.py`. The host provides a thin wrapper at `tests/engine_gate.py`:
+
+Windows (PowerShell 7):
 
 ```powershell
-python tests/engine_gate.py --engine-source FORK --build-dir FORK/build/c0 `
-  --assets ASSETS --soundfont SF3 --output OUTPUT --cairo-prefix PREFIX
+.pixi\envs\native\python.exe tests/engine_gate.py --engine-source vendor/engrave `
+  --build-dir vendor/engrave/build/gate `
+  --assets .runtime/assets `
+  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 `
+  --output .runtime/gate-run
 ```
 
-On Windows, use the Pixi native Python and PowerShell 7, and add
-`--mutex-wrapper <wrapper.ps1>` when the engine build needs the project's xmake
-lock. On Linux the Cairo prefix is the Pixi environment root; put its `bin` on
-`PATH` and `lib` on `LD_LIBRARY_PATH`. Use a fresh `--output` directory for each
-run; the runner rejects existing captures. `--skip-build` is for diagnostics
-only.
+Linux:
 
-The gate builds the fork's `engine_tests` target and runs the API, import, playback
-and adapter suites, plus `diagnostics_test`, `io_boundary_test`, the engine
-installer's unit tests and verification of the supplied asset directory. The
-`mnx_schema` step validates the MNX files that `engrave_mnx_import_test`
-exports against the vendored W3C MNX schema with a draft 2020-12 validator
-(`tests/support/check_mnx_schema.py`; mnxdom's own validator implements draft 7). It
-compares outputs against the pinned goldens with `golden.py`'s comparators and
-the per-platform hash allow-list. At `engrave-31` the gate was green on Windows
-(213 identical / 38 allowed / 0 different / 0 missing) and on linux-host
-(186 / 65 / 0 / 0).
+```bash
+python tests/engine_gate.py --engine-source vendor/engrave \
+  --build-dir vendor/engrave/build/gate \
+  --assets .runtime/assets \
+  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 \
+  --output .runtime/gate-run \
+  --cairo-prefix .pixi/envs/native
+```
 
-At `engrave-32` (`9d13ae4938`), the complete gate passed with the same counts
-on both platforms. The first Windows attempt failed the existing dense-audio
-synthesis cancellation p95 assertion at 30.1587 ms against a 30 ms limit; a
-subsequent complete run passed at 26.7596 ms. The result is an observed rerun,
-not evidence that the timing threshold is stable.
+On Windows, use native Python (`.pixi\envs\native\python.exe`) in PowerShell 7 (`--cairo-prefix` is optional on Windows). Pass `--mutex-wrapper scripts/xmake_mutex.ps1` when the engine build shares xmake's build lock. On Linux, set `--cairo-prefix` to the Pixi environment root, with its `bin` on `PATH` and `lib` on `LD_LIBRARY_PATH`. Use a fresh `--output` directory for each run; existing capture directories are rejected.
 
-At `engrave-33` (`bf44cdeb88`), the complete gate passed at the exact commit
-with the same counts on Windows and linux-host. The MusicXML velocity regression
-and 12 before/after playback cases also passed on both; the saved WAV and MIDI
-files for those cases were byte-identical.
+The gate builds the fork's `engine_tests` target and executes the API, import, playback, and adapter suites, along with `diagnostics_test`, `io_boundary_test`, installer tests, and asset manifest verification. It compares outputs against pinned goldens using `golden.py` comparators and the platform hash allow-list (`vendor/engrave/tests/data/golden/allow.json`).
 
-At `engrave-34` (`8eb0c25a52`), 17 focused MusicXML dynamics tests, the host
-native-edit test and the host golden comparison passed on both platforms. The
-golden counts were 307 identical/83 allowed on Windows and 265/125 on linux-host,
-with zero unexpected outputs using `vendor/engrave/tests/data/golden/allow.json` SHA-256
-`a19f8f905e182ccd9e3f25a3eaad726300366ba2993e858ba01586ec70e8979d`.
-The full Linux engine gate passed at the exact commit (186 identical/65 allowed/
-0 different/0 missing). Twelve before/after playback probes on each platform
-confirmed the intentional grouped-dynamics audio and MIDI changes.
+## Known timing and platform limitations
 
-The full Windows engine gate **failed** at the exact commit: dense-audio
-synthesis cancellation measured 140.0552 ms p95 and 176.2603 ms maximum,
-above its 30 ms and 50 ms limits. A separate exact-commit diagnostic run excluded
-only `AudioInternal.DenseScoreCancellationLatencyAndRecovery` and passed the
-remaining checks and golden comparison (213 identical/38 allowed/0 different/
-0 missing). It is not a full gate pass. Earlier normal-priority runs at related
-candidate commits also missed this timing assertion. The cause and stability of
-the timing variation are not established.
-
-At `engrave-35` (`8e522af6b7`), both exact-commit full engine gates passed:
-Windows 213 identical/38 allowed/0 different/0 missing, and physical linux-host
-186/65/0/0. Seven focused chord-line read tests and nine edit tests also passed
-on each platform, including the existing three-point legacy path, 5.00 offsets,
-MSCX/MSCZ reopen after edits, linked parts and undo/rollback. Host golden
-comparisons passed with 307 identical/83 allowed on Windows and 265/125 on linux-host,
-using the unchanged allow-list hash above. An executed host probe confirmed 5.00
-offset export and the existing fail-closed 4.70 refusal for chord lines.
-
-The Windows dense-audio cancellation test passed in this run: synthesis p95
-26.1483 ms and maximum 27.7273 ms, against 30 ms and 50 ms limits. This does
-not resolve or explain the prior `engrave-34` failures. The optional warm-graph
-timing test was skipped by its default test configuration.
-
-## Accepted evidence (M4, 2026-11-03)
-
-Host code through `cd0f504`, engine `engrave-31` (`629027f1`), acceptance record
-in `d07e624`.
-
-| Measurement                                                | Windows                                                              | Linux                 |
-| ---------------------------------------------------------- | -------------------------------------------------------------------- | --------------------- |
-| Render worst-row median / p95                              | 8.348 / 9.534 ms (fixed replay 7.986 / 10.343)                       | 1.652 / 1.789 ms      |
-| Dense cancellation p95 / max                               | 8.872 / 27.053 ms                                                    | 11.270 / 11.312 ms    |
-| Golden (identical / allowed / different / missing / extra) | 307 / 83 / 0 / 0 / 0                                                 | 265 / 125 / 0 / 0 / 0 |
-| WAV/FLAC corpus pairs                                      | 44/44 byte-identical                                                 | 44/44                 |
-| Warm WAV p95                                               | 274.877 ms clean full run; 270.094 ms corrected high-priority repeat | —                     |
-
-Read the audio row as an observation. Full 1,000-call replays produced both
-passing and failing runs at the same binary. `engine_call` dominated the failing
-samples, but phase timing cannot separate engine work, I/O and scheduling, so do
-not attribute the variance to the host alone. M4 accepted audio latency as an
-unresolved variance limit, backed by functional parity, byte-identical audio and
-cancellation. Do not present a single passing run as a stable p95.
-
-The earlier A5/M1–M3 phase evidence, measurement variance studies and per-lane
-JSON dumps are not carried in this tree; they are in Git history at `704295d`
-under `docs/dev/`.
+- **Windows dense-audio cancellation variance**: The dense-audio cancellation assertion can fail intermittently on Windows. The engine test (`AudioInternal.DenseScoreCancellationLatencyAndRecovery`) uses a 30 ms p95 threshold; the host integration test (`tests/integration/test_live_dense_cancel.py:188`) asserts a 50 ms p95 and 100 ms maximum. The cause of the timing variation is not established. An intermittent failure must not be reported as a clean pass.
+- **Windows path length limitations**: On Windows, long output paths approaching or exceeding standard path limits require short temporary roots to avoid filesystem IO failures during staging and atomic publication.
 
 ## Benchmarks
 
-- `tests/benchmarks/bench_export_latency.py` — warm/cold render and score-export latency,
-  phase breakdown, optional high-priority mode
-  (`ENGRAVE_MCP_BENCH_HIGH_PRIORITY=1`).
-- `tests/benchmarks/bench_live_audio.py` — warm/cold audio latency and RSS.
-- `tests/benchmarks/bench_document_lifetime.py` — open, cold-to-PDF and long-run drift.
-- `tests/benchmarks/bench_export_rss.py` — RSS sampling around exports.
-- `tests/integration/test_live_dense_cancel.py` — cancellation on a 49,152-note score.
-- `tests/integration/test_xmake_incremental.py` — incremental-build behaviour.
+- `tests/benchmarks/bench_export_latency.py` — warm/cold render and score export latency, phase breakdown, optional high-priority mode (`ENGRAVE_MCP_BENCH_HIGH_PRIORITY=1`)
+- `tests/benchmarks/bench_live_audio.py` — warm/cold audio synthesis latency and RSS
+- `tests/benchmarks/bench_document_lifetime.py` — open, cold-to-PDF, and long-run drift
+- `tests/benchmarks/bench_export_rss.py` — RSS memory sampling across export cycles
+- `tests/benchmarks/bench_audio_distribution.py` — repeated audio synthesis measurement distribution
+- `tests/benchmarks/bench_native_writer_precision.py` — writer precision round-trip measurements
+- `tests/integration/test_live_dense_cancel.py` — cancellation on a 49,152-note score
+- `tests/integration/test_xmake_incremental.py` — incremental build behavior
 
-Keep raw samples, phase timings and host conditions with any reported number.
-A timing claim without its host, build, priority and sample count is not
-evidence.
+Benchmark claims must retain raw samples, phase timings, hardware specification, and environment conditions.
 
 ## What is not covered
 
-- No leak-clean claim: LSan findings are open (defect 001).
-- No hard process-memory bound; the export budget is a logical file budget.
-- No stable audio p95 guarantee.
-- No macOS or non-x86_64 validation.
-- No claim that the full lane set passes on a host that lacks the opt-in engine
-  test binaries; the runner fails closed on missing binaries.
+- No leak-clean guarantee: LeakSanitizer findings remain open (see `docs/dev/defects.md`).
+- No hard process-memory bound: export quotas enforce logical file output limits, not process RSS limits.
+- No hard audio latency p95 guarantee under host contention.
+- No macOS or non-x86_64 platform validation.
+- Missing opt-in binaries fail closed: running the full suite requires compiling the optional engine test targets.

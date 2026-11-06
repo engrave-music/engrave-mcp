@@ -1,37 +1,39 @@
 # engrave-mcp
 
 Native C++ MCP host for the engrave engine, a pinned, trimmed fork of MuseScore
-core. Renamed from musescore-mcp on 2026-10-30; A5 renamed the binary, MCP
-server name and `ENGRAVE_MCP_*` client and test environment variables. This is a
-separate project from `C:/path/to/llm-music`, which holds baseline experiments.
+core. This is a separate project from the separate llm-music project, which holds baseline
+experiments.
 
 Goal: give LLM agents a tool to compose music, with enough MuseScore interop that
 agent-made scores can be edited by humans in MuseScore and vice versa. Full MuseScore
 compatibility and its legacy are not a goal: only scores from MuseScore 4.6 on open,
-and nothing is kept or validated just because MuseScore has it. Since 2026-10-31 the
-fork is a hard fork (one last upstream sync, then cherry-picks only).
+and nothing is kept or validated just because MuseScore has it. The engine operates
+as a hard fork (cherry-picks only, no bulk upstream merges).
 
-- The engine is the fork github.com/Locietta/engrave (renamed from Locietta/MuseScore on 2026-10-28), consumed as the shallow submodule
-  `vendor/engrave` (ledger and rules in `docs/dev/fork.md`; never force-push fork branches;
-  pin commits on `main` by SHA with a ledger row, no pin tags). webmscore and `patches/` are retired.
+- The engine is the fork github.com/Locietta/engrave, consumed as the shallow submodule
+  `vendor/engrave` (governance rules in `docs/dev/fork.md`; never force-push fork branches;
+  pin commits on fork `main` by SHA; push fork `main` first and record the commit range
+  and validation evidence in the host bump commit message, no pin tags). webmscore and `patches/` are retired.
   Native compilation is the target; do not introduce Node.js or WASM as runtime dependencies.
 - No computer use, screenshots, simulated input, or dependence on a desktop MuseScore install.
-- The build is Qt-free xmake: the engine's build lives in the fork (`xmake/engrave.lua`
-  with folder globs, pinned engine package recipes), the host's in this repository's
+- The build is Qt-free xmake: the engine build lives in the fork (`xmake/engrave.lua`
+  with folder globs, pinned engine package recipes), the host build in this repository's
   `xmake.lua`, which includes the engine build from `vendor/engrave`; validate Windows
   and Linux.
   Work natively on Windows (PowerShell, `.pixi/envs/native/python.exe`). Linux means the
   physical host `ssh <linux-host>` (checkout `~/OSS/engrave-mcp`); never use WSL for this project.
-  Both repositories are on GitHub (host: private `Locietta/engrave-mcp`); move commits
+  Both repositories are on GitHub (host: `Locietta/engrave-mcp`); move commits
   between machines by pushing and fetching branches, never git bundles or copied
   worktrees (`docs/dev/branching.md`).
   Current design and rationale: `docs/dev/design.md`; open issues: `docs/dev/defects.md`;
-  project history: `docs/dev/history.md`; branch and tag policy: `docs/dev/branching.md`.
+  branch and tag policy: `docs/dev/branching.md`.
   Keep only `main` as a long-lived branch: merge topic branches and delete them; tag
-  accepted checkpoints instead of keeping phase branches.
-- Avoid rewriting music algorithms; preserve an executable baseline for each later refactor.
-  Compare every engine change against `vendor/engrave/tests/data/golden` (`tests/support/golden.py`) with an explicit,
-  hash-pinned allow-list.
+  formal releases instead of keeping phase branches.
+- Avoid rewriting music algorithms; preserve an executable baseline for each refactor.
+  Compare every engine change against the engine gate (`vendor/engrave/tests/gate.py`,
+  wrapped by `tests/engine_gate.py`) and goldens in `vendor/engrave/tests/data/golden`
+  (`tests/support/golden.py`) with the explicit, hash-pinned allow-list
+  (`vendor/engrave/tests/data/golden/allow.json`).
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
