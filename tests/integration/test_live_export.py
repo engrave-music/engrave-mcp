@@ -59,6 +59,7 @@ def main():
             str(a.resources.resolve()),
             str(oracle),
             str(ROOT / "vendor/engrave/tests/data"),
+            str(ROOT / "tests/data/live_export/created.musicxml"),
         ],
         capture_output=True,
         text=True,
