@@ -301,7 +301,7 @@ class TestRenderedPageControls(unittest.TestCase):
                 self.assertEqual(page.main(), 1)
             self.assertIn("outside viewBox", output.getvalue())
 
-    def test_indexed_svg_hash_is_exact_and_platform_specific(self):
+    def test_reviewed_svg_hash_is_exact_and_platform_specific(self):
         name = "layout_elements.mscx/page-0.svg"
         index = json.loads((page.ROOT / "tests/data/golden/linux/index.json").read_text(encoding="utf-8"))
         digest = index["layout_elements.mscx"]["page-0.svg"]
@@ -311,6 +311,44 @@ class TestRenderedPageControls(unittest.TestCase):
             self.assertFalse(page.accepted_svg_counts("unknown.mscx/page-0.svg", digest))
         with mock.patch.object(page.sys, "platform", "win32"):
             self.assertFalse(page.accepted_svg_counts(name, digest))
+
+    def test_removed_glyph_with_updated_index_fails(self):
+        name = "layout_elements.mscx/page-0.svg"
+        platform = "windows" if sys.platform.startswith("win") else "linux"
+        source = page.ROOT / "tests/data/golden" / platform / name
+        payload = json.loads((page.ROOT / "tests/data/golden/page_reference.json").read_text())
+        payload["pages"] = {name: payload["pages"][name]}
+        payload["pages"][name]["png"] = None
+        payload["png_exceptions"] = []
+        payload["count_exceptions"] = [e for e in payload["count_exceptions"] if e["page"] == name]
+        with tempfile.TemporaryDirectory() as temporary:
+            temp = Path(temporary)
+            target = temp / "capture" / name
+            target.parent.mkdir(parents=True)
+            target.write_bytes(source.read_bytes())
+            reference = temp / "reference.json"
+            reference.write_text(json.dumps(payload))
+            args = ["checker", "--golden", str(temp / "capture"), "--reference", str(reference)]
+            with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(page.main(), 0)
+            tree = ET.fromstring(target.read_text())
+            use = next(tree.iter(page.SVG + "use"))
+            parents = {child: parent for parent in tree.iter() for child in parent}
+            parents[use].remove(use)
+            target.write_text(ET.tostring(tree, encoding="unicode"))
+            fake = temp / "repo"
+            baseline = fake / "tests/data/golden" / platform / name
+            baseline.parent.mkdir(parents=True)
+            baseline.write_bytes(target.read_bytes())
+            (baseline.parent.parent / "index.json").write_text(
+                json.dumps({"layout_elements.mscx": {"page-0.svg": hashlib.sha256(target.read_bytes()).hexdigest()}})
+            )
+            with (
+                mock.patch.object(page, "ROOT", fake),
+                mock.patch.object(sys, "argv", args),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(page.main(), 1)
 
     def test_count_exception_requires_exact_changed_counts_and_svg_hash(self):
         use = next(self.root.iter(page.SVG + "use"))
