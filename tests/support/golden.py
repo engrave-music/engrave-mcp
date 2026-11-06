@@ -90,7 +90,7 @@ EXTRA_FIXTURES = (ROOT / "tests/data/inputs" / "evening.musicxml",)
 # Fixtures without stored excerpts whose part excerpts are generated (after the master
 # outputs are captured) to cover excerpt creation, e.g. ChordLine path copying.
 GENERATE_EXCERPTS = {"chordline_path.mscx"}
-SUPPLEMENTAL_MNX = (
+MNX_FIXTURES = (
     "engine/two-notes.mnx",
     "project_examples/tupletSimple.mnx",
     "project_examples/percussionKit.mnx",
@@ -946,7 +946,7 @@ async def capture_edit(session, name, scenario, raw_root, out_dir, roots):
 
 
 async def apply_edit_scenario(session, identity, name, scenario, raw):
-    """Apply the same fixed edits as the legacy oracle, via v2 operations."""
+    """Apply the pinned edit scenario through score_apply operations."""
     if scenario.get("generate"):
         await generate_excerpts(session, identity)
     outline = await required(session, "score_outline", identity)
@@ -1079,14 +1079,14 @@ def fixture_files() -> list[Path]:
     return files + [path for path in EXTRA_FIXTURES if path.is_file()]
 
 
-def supplemental_mnx_files() -> list[Path]:
-    """The engine-gate MNX fixtures have baseline files but no index entries."""
+def mnx_fixture_files() -> list[Path]:
+    """Engine-owned MNX inputs covered by the platform baseline."""
     engine = Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor/engrave"))
     data = engine / "src/importexport/mnx/tests/data"
-    files = [data / name for name in SUPPLEMENTAL_MNX]
+    files = [data / name for name in MNX_FIXTURES]
     missing = [str(path) for path in files if not path.is_file()]
     if missing:
-        raise FileNotFoundError(f"missing supplemental MNX fixtures: {missing}")
+        raise FileNotFoundError(f"missing MNX fixtures: {missing}")
     return files
 
 
@@ -1118,7 +1118,6 @@ async def capture_tree(
     soundfont,
     target,
     log_path,
-    golden_root: Path | None = None,
 ):
     dump = binary.parent / ("semantic_dump.exe" if sys.platform.startswith("win") else "semantic_dump")
     if not dump.is_file():
@@ -1137,7 +1136,7 @@ async def capture_tree(
             async with stdio_client(params, errlog=log) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    for source in fixture_files() + supplemental_mnx_files():
+                    for source in fixture_files() + mnx_fixture_files():
                         try:
                             await capture_fixture(
                                 session,
@@ -1484,7 +1483,6 @@ def command_capture(args) -> int:
                     args.soundfont,
                     args.golden,
                     Path(temporary) / "server-stderr.log",
-                    golden_root=args.golden,
                 ),
                 timeout=1800,
             )
@@ -1514,7 +1512,6 @@ def command_compare(args) -> int:
                     args.soundfont,
                     actual,
                     Path(temporary) / "server-stderr.log",
-                    golden_root=args.golden,
                 ),
                 timeout=1800,
             )
