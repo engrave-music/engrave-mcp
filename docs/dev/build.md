@@ -1,9 +1,6 @@
 # Build and test
 
-The host is built with **xmake**; **Pixi** provides the pinned toolchain and
-native libraries. The engine's build lives in the fork
-(`vendor/engrave/xmake/engrave.lua`) and is included by the host's
-`xmake.lua`.
+The host is built with **xmake**; **Pixi** provides the pinned toolchain and native libraries. The engine build lives in the submodule (`vendor/engrave/xmake/engrave.lua`) and is included by the host's `xmake.lua`.
 
 ## Prerequisites
 
@@ -11,18 +8,17 @@ Windows:
 
 - Git and [Pixi](https://pixi.sh/).
 - Visual Studio 2022 with the x64 C++ toolchain (MSVC 14.51+).
-- xmake 3.1.1+ (the build scripts use the one available on `PATH`).
+- xmake 3.1.1+ (available on `PATH`).
 
 Linux (validated on Linux x86_64, GCC 15.3, C++23):
 
 - Git and Pixi.
 - Cairo in the Pixi environment (passed with `--cairo_prefix`).
-- WSL is not used for this project.
+- WSL is not supported.
 
-> If xmake's bundled aria2 fails to download a package with a TLS handshake
-> error, run `xmake g --downloader=curl` once.
+> If xmake's bundled aria2 fails to download a package with a TLS handshake error, run `xmake g --downloader=curl` once.
 
-## First checkout
+## Initial checkout and setup
 
 ```powershell
 pixi install -e native --locked
@@ -30,55 +26,36 @@ pixi run -e native python scripts/bootstrap.py --soundfont
 pixi run -e native python scripts/prepare.py
 ```
 
-`bootstrap.py` initializes the `vendor/engrave` submodule and downloads the
-base SoundFont. `prepare.py` verifies the submodule pin and installs the engine's
-hash-pinned asset manifest (345 files, 28,380,646 bytes) into `.runtime/assets`;
-it refuses to run before the submodule exists.
+`bootstrap.py` initializes the `vendor/engrave` submodule and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies the submodule pin and stages the engine's hash-pinned asset manifest (348 files, 28,404,538 bytes) into `.runtime/assets`.
 
 ## Development builds
 
-Once a build directory is configured (by the wrapper below or `xmake f`), iterate
-with:
+Once configured (via the build scripts or `xmake f`), build targets directly:
 
 ```powershell
-pixi run build                       # default targets
-pixi run build engrave_mnx_import_test  # specific targets
+pixi run build                         # default targets
+pixi run build engrave_mnx_import_test # specific targets
 ```
 
-This runs `xmake build -y` directly, with no pin or clean-tree checks, so an
-uncommitted engine change builds as is. xmake finds MSVC itself; no developer
-shell is needed. The wrappers below are for first, packaging and acceptance
-builds: they refuse to build unless `vendor/engrave` is clean and at the
-recorded pin.
+`pixi run build` invokes `xmake build -y`.
 
-## Windows build
+## Windows native build
 
 ```powershell
 pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 ```
 
-The wrapper enters the Visual Studio developer shell, runs bootstrap/prepare and
-the xmake input check, configures `build/xmake-windows`, and builds these
-targets by default:
+The script enters the Visual Studio developer shell, verifies submodule status, validates xmake inputs, configures `build/xmake-windows`, and builds default host targets: `engrave_mcp`, `engrave_mcp_test`, `registry_dump`, `registry_check`, and `host_api_test`.
 
-`engrave_mcp`, `engrave_mcp_test`, `registry_dump`, `registry_check`,
-`host_api_test`.
-
-Build other targets explicitly, for example:
+To build additional test targets:
 
 ```powershell
 xmake build live_export_test staging_test
 ```
 
-(`-Targets` takes a PowerShell array; passing a comma-separated string to
-`pwsh -File` does not split it.)
+### Running the development binary
 
-`--engine_source=DIR` overrides the engine checkout. `releasedbg` is available
-for symbolized profiling.
-
-### Running the dev build
-
-The build links Pixi's native libraries, so they must be on `PATH`:
+Development builds link against Pixi DLLs, which must be on `PATH`:
 
 ```powershell
 $env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
@@ -86,40 +63,32 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
 
-Without the Pixi DLL directory the process exits during `initialize`; this is a
-loader failure, not a server failure. Packaged builds bundle the DLLs.
-
 ## Linux build
 
 ```bash
 bash scripts/build-native.sh 8 build/xmake-linux "$PWD/.pixi/envs/native"
 ```
 
-The third argument is the Cairo prefix (`<prefix>/include/cairo`, `<prefix>/lib`).
-The output is `build/xmake-linux/engrave-mcp`.
+The third argument specifies the Cairo prefix (`<prefix>/include/cairo`, `<prefix>/lib`). The output binary is `build/xmake-linux/engrave-mcp`.
 
 ## Test binaries
 
-Some lanes need targets that the default build does not produce:
+Specific lanes and tests use standalone binaries not built by default:
 
 ```powershell
 xmake build live_export_test staging_test
 ```
 
-- `live_export_test` — direct public-API oracle for live export.
-- `staging_test` — private staging and Windows ACL contract.
-- `publication_test` — Linux-only fsync ordering/failure injection.
+- `live_export_test` — direct engine live export oracle
+- `staging_test` — staging folder permissions and DACL tests
+- `publication_test` — Linux fsync ordering and failure injection tests
 
-The golden and compatibility lanes also need the engine's `semantic_dump`
-probe, which is opt-in:
+The golden and semantic check suites also require the engine's `semantic_dump` tool:
 
 ```powershell
 xmake f --engrave_tests=y
 xmake build semantic_dump
 ```
-
-`--engrave_tests=y` pulls GoogleTest and the engine's own test targets into the
-build graph; it is not part of the production build.
 
 ## Packaging
 
@@ -137,40 +106,26 @@ pixi run --locked -e native python scripts/package_linux.py \
   --binary build/xmake-linux/engrave-mcp --output artifacts/linux-next
 ```
 
-Both packagers collect the runtime DLL/ELF closure, assets and SoundFonts, and
-refuse Qt libraries. A packaged server finds its sibling `assets/` directory
-automatically, so `--resources` is unnecessary. File counts and sizes are
-whatever the generated `manifest.json` records; do not hardcode them.
+The packagers assemble runtime DLL/ELF dependencies, asset folders, SoundFonts, and licenses into a self-contained folder. A packaged binary automatically resolves its adjacent `assets/` directory without needing `--resources`.
 
 ## Tests and lanes
 
-Run the smoke test first:
+Run the smoke and transport tests against the compiled binary:
 
 ```powershell
 pixi run -e native python tests/integration/test_mcp_smoke.py
 pixi run -e native python tests/integration/test_transport.py build/xmake-windows/engrave-mcp.exe
 ```
 
-The acceptance runner and its lane list are documented in
-[validation.md](validation.md). It needs a build directory that contains the
-binaries the selected lanes use; pass `--build-dir build/xmake-windows` for the
-Windows build, not the repository's `build/` directory.
+The acceptance runner and lane catalog are detailed in [validation.md](validation.md). Pass `--build-dir build/xmake-windows` (or the corresponding Linux build directory) when executing lanes.
 
-## Layout notes
+## Layout rules
 
-- `engrave_mcp/` host sources may include only public `engrave/...` headers;
-  `native_include_check` enforces this before host targets build.
-- `engrave_mcp/tools.json` is generated by `registry_dump` and checked by
-  `registry_check`; regenerate it instead of editing it by hand.
-- `build/`, `.pixi/`, `.xmake/`, `.runtime/`, `.upstream/`, `artifacts/` and
-  `notes/` are ignored.
+- Host sources in `engrave_mcp/` include only public engine headers from `engrave/...`, validated by `scripts/check_native_includes.py`.
+- `engrave_mcp/tools.json` is generated by `registry_dump` and validated by `registry_check`; do not edit manually.
+- `build/`, `.pixi/`, `.runtime/`, `artifacts/`, and `notes/` are gitignored.
 
-## Style checks
-
-Engine naming follows `vendor/engrave/.clang-tidy`: CamelCase types, snake_case functions,
-variables and members, and UPPER_CASE enum constants. Members may retain a
-trailing `_`. Use `struct` for custom types. clang-format enforces own-header,
-standard, external and project include groups using the engine configuration.
+## Code formatting and linting
 
 ```powershell
 pixi run format -- .
@@ -182,22 +137,4 @@ pixi run lint -- --engine
 pixi run setup-hooks
 ```
 
-Engine commands accept file or directory arguments relative to the current
-working directory and exclude thirdparty directories. `format-check -- --engine`
-checks all owned engine C++ files. `lint -- --engine` checks compiled owned TUs
-from the root `compile_commands.json` in parallel and fails on naming diagnostics
-or empty selections. Generate the database with `xmake project -k compile_commands`
-after configuring `--engrave_tests=y`. The full engine lint is an acceptance step
-for engine changes. The installed engine pre-commit hook format-checks staged
-blobs; naming is checked at acceptance.
-
-For a build using `--engine_source=DIR`, pass `--engine-root DIR` to engine
-lint, format and setup-hooks. Supply DIR as a selection path as well when it is
-outside the current directory. Hook setup validates an initialized engine
-checkout before changing hooks. Rerun setup-hooks after updating hook code.
-Engine lint intentionally rejects `--fix`, since parallel TUs share headers.
-For a scoped format check, use `pixi run format -- --check --engine PATH`;
-the format-check task includes `.` and checks the full selected engine.
-
-Engine format/lint commands delegate to the fork tools. Standalone invocation and
-tool versions are documented in `vendor/engrave/README.md`.
+Formatting and linting rules follow `vendor/engrave/.clang-tidy` and `.clang-format`. The pre-commit hook installed by `setup-hooks` verifies staged changes prior to commit.
