@@ -2,7 +2,7 @@
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/engrave` (shallow, pinned by commit SHA).
-The current pin is `42c6b2550a`.
+The candidate pin on cleanup/engine-tests is `fdc3bdea26`. It is pending acceptance on fork main.
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
 terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
