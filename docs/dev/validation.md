@@ -75,16 +75,28 @@ Additional focused tests located in `tests/integration/` can be run directly whe
 
 The engine owns its standalone public boundary gate in `vendor/engrave/tests/gate.py`. The host provides a thin wrapper at `tests/engine_gate.py`:
 
+Windows (PowerShell 7):
+
 ```powershell
-python tests/engine_gate.py --engine-source vendor/engrave `
+.pixi\envs\native\python.exe tests/engine_gate.py --engine-source vendor/engrave `
   --build-dir vendor/engrave/build/gate `
   --assets .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 `
-  --output .runtime/gate-run `
-  --cairo-prefix <path-to-cairo-prefix>
+  --output .runtime/gate-run
 ```
 
-On Windows, use native Python and PowerShell 7, passing `--mutex-wrapper <wrapper.ps1>` when the engine build shares xmake's build lock. On Linux, set `cairo-prefix` to the Pixi environment root, with its `bin` on `PATH` and `lib` on `LD_LIBRARY_PATH`. Use a fresh `--output` directory for each run; existing capture directories are rejected.
+Linux:
+
+```bash
+python tests/engine_gate.py --engine-source vendor/engrave \
+  --build-dir vendor/engrave/build/gate \
+  --assets .runtime/assets \
+  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 \
+  --output .runtime/gate-run \
+  --cairo-prefix .pixi/envs/native
+```
+
+On Windows, use native Python (`.pixi\envs\native\python.exe`) in PowerShell 7 (`--cairo-prefix` is optional on Windows). Pass `--mutex-wrapper scripts/xmake_mutex.ps1` when the engine build shares xmake's build lock. On Linux, set `--cairo-prefix` to the Pixi environment root, with its `bin` on `PATH` and `lib` on `LD_LIBRARY_PATH`. Use a fresh `--output` directory for each run; existing capture directories are rejected.
 
 The gate builds the fork's `engine_tests` target and executes the API, import, playback, and adapter suites, along with `diagnostics_test`, `io_boundary_test`, installer tests, and asset manifest verification. It compares outputs against pinned goldens using `golden.py` comparators and the platform hash allow-list (`vendor/engrave/tests/data/golden/allow.json`).
 
