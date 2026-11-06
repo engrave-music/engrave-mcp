@@ -5,11 +5,12 @@ normalizes known-volatile fields, and stores one directory per fixture plus an
 ``index.json`` manifest of sha256 values. Compare re-captures the same tree and
 diffs it against the stored goldens, honoring an explicit allow-list.
 
-Allow entries match a fixture/output glob pair and only accept the expected
-``kind`` (``different``, ``missing`` or ``extra``). Differences and extras must
-also pin the actual file's normalized sha256 for the current platform, so an
-entry cannot silently cover future changes. ``pin`` prints skeleton entries for
-the un-allowed differences in an existing compare report.
+Allow entries name exact fixture/output pairs and platform SHA-256 pins for
+``different`` or ``extra`` artifacts. Missing artifacts cannot be waived.
+Every entry in the comparison context must be exercised; stale entries fail.
+Archive MSCX exceptions are restricted to the engine-gate context. ``pin``
+prints skeleton entries from an existing report for review; missing-artifact
+skeletons are diagnostic only and are rejected by the policy loader.
 
 Volatile fields normalized (observed by running twice):
   * Every MSCX/MSCZ inner ``<eid>`` and EID-reference value (``linkedTo``,
