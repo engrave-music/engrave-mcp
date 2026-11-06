@@ -5,6 +5,16 @@
   <Score>
     <eid>e1</eid>
     <Division>480</Division>
+    <Style>
+      <minSystemDistance>7.2</minSystemDistance>
+      <lyricsMinBottomDistance>6</lyricsMinBottomDistance>
+      <frameSystemDistance>13</frameSystemDistance>
+      <measureSpacing>1.14</measureSpacing>
+      <voltaPosAbove x="0" y="0"/>
+      <rehearsalMarkFrameRound>0.403175</rehearsalMarkFrameRound>
+      <defaultsVersion>301</defaultsVersion>
+      <spatium>1.564</spatium>
+      </Style>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
     <showFrames>1</showFrames>

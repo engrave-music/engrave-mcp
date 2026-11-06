@@ -563,14 +563,6 @@
    [
     3839,
     {
-     "data": "07a120",
-     "metaType": 81,
-     "type": "meta"
-    }
-   ],
-   [
-    3839,
-    {
      "ch": 0,
      "pitch": 60,
      "type": "note_off",
@@ -591,14 +583,6 @@
     {
      "data": "04021808",
      "metaType": 88,
-     "type": "meta"
-    }
-   ],
-   [
-    3840,
-    {
-     "data": "07a120",
-     "metaType": 81,
      "type": "meta"
     }
    ],

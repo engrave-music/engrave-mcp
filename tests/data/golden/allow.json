@@ -1,1351 +1,304 @@
 {
  "entries": [
   {
+   "context": "engine-gate-archive",
+   "fixture": "bend.gp",
+   "kind": "different",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
+   "sha256": {
+    "linux": "e05235df929a26ab3ccf07c6802e77f11332472e8be60c4dc03c36c4d35a7b53",
+    "windows": "e05235df929a26ab3ccf07c6802e77f11332472e8be60c4dc03c36c4d35a7b53"
+   },
+   "step": "archive MSCX"
+  },
+  {
+   "context": "engine-gate-archive",
    "fixture": "bends.mid",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 1 centroidEnvelope window(s) 59..59 (14.75-15.00 s) are the 5.0 reverb-tail class, first 956.8 Hz -> 1692.3 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "c7e8266c6b399acdf76b5f505c046ca90dfc584ddf3f6cd6dfd28b7885597267",
-    "windows": "0b5bb0019c49862933c3588d5a1176f753e78a862f94c82621a06285c7cf2181"
+    "linux": "4870f1d6fb2119b54f8f02eb95e1d5b03f8d03c42a1a25658b34a9b905085a90",
+    "windows": "4870f1d6fb2119b54f8f02eb95e1d5b03f8d03c42a1a25658b34a9b905085a90"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "chordline_path.mscx",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 247 centroidEnvelope window(s) 21..267 (5.25-67.00 s) are the 5.0 reverb-tail class, first 1414.5 Hz -> 1593.9 Hz; 246 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: 5.3e-07 (-125 dBFS) down to 5.6e-42 at 31 s). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "081edcd6b494952b4030424219d69f9ba444159f2d0fe3bd7fc457df13f186a2",
-    "windows": "aac227f932262e62849d5f067f4310d34a6f74cfc91f576794ac9dacb5aec6aa"
+    "linux": "a2d67cd7bd032bcb57326e75cc7da2e28e99ff8495850a8054a1581aef215b3b",
+    "windows": "a2d67cd7bd032bcb57326e75cc7da2e28e99ff8495850a8054a1581aef215b3b"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "coverage.musicxml",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d enables the written D.C. al Fine repeat (352800 to 507150 frames); cabd23667d6923faf5a5e951c7dd60ceee873915 and 362f33d08f7b2a3e09cd0bc30a2055fa785daacd account for the velocity mapping; framework 2a68e47ad03265ee4da43ebb5169bbadf06cd7bd allocates SND channels per staff/voice and narrows sostenuto across staves. Those changes were accepted in the A2 decisions; the pedal scope is an upstream report candidate. See notes/a2/audio-parity-roots.md for prior executed isolation.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "2088fe4022b308765334d3699b674bddb1d1485ef40cedd5362e67c15d73b125",
-    "windows": "16f7a697daf8452e3fda5b635588a7abfe8a6a0b82078d8af2f47974074f6be1"
+    "linux": "10368e7d628ce9f4a5de992a7d5751f69eca4a201b7331a8d615b67137b94a2f",
+    "windows": "10368e7d628ce9f4a5de992a7d5751f69eca4a201b7331a8d615b67137b94a2f"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "coverage.musicxml",
-   "kind": "different",
-   "output": "midi.json",
-   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d (Import explicit MusicXML sound jump attributes regardless of inferTextType) reads this fixture's explicit Fine and Da Capo al Fine as navigation, restoring the written repeat in export/playback.",
-   "sha256": {
-    "linux": "e65c0d43472e9fcf5d65c41d3095a856c86536a057cf7b6f1896df41722b7a72",
-    "windows": "e65c0d43472e9fcf5d65c41d3095a856c86536a057cf7b6f1896df41722b7a72"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "coverage.musicxml",
-   "kind": "different",
-   "output": "musicxml-semantic.json",
-   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d (Import explicit MusicXML sound jump attributes regardless of inferTextType) reads this fixture's explicit Fine and Da Capo al Fine as navigation, restoring the written repeat in export/playback.",
-   "sha256": {
-    "linux": "931c5aed8afb8110eaac5f342008b1a43bf7b48bc0458bdb8a0958e22b993193",
-    "windows": "931c5aed8afb8110eaac5f342008b1a43bf7b48bc0458bdb8a0958e22b993193"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "coverage.musicxml",
-   "kind": "different",
-   "output": "semantic-source.json",
-   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d imports the explicit MusicXML Fine and Da Capo sound attributes as navigation: StaffText becomes marker/jump and the playback order gains the written repeat.",
-   "sha256": {
-    "linux": "b463f4fc52836e807bff9bbb40ebabb07d4e81ea5f75d0f95ef88ce9dcc1106c",
-    "windows": "b463f4fc52836e807bff9bbb40ebabb07d4e81ea5f75d0f95ef88ce9dcc1106c"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "coverage.musicxml",
-   "kind": "different",
-   "output": "semantic.json",
-   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d imports the explicit MusicXML Fine and Da Capo sound attributes as navigation: StaffText becomes marker/jump and the playback order gains the written repeat.",
-   "sha256": {
-    "linux": "b463f4fc52836e807bff9bbb40ebabb07d4e81ea5f75d0f95ef88ce9dcc1106c",
-    "windows": "b463f4fc52836e807bff9bbb40ebabb07d4e81ea5f75d0f95ef88ce9dcc1106c"
-   },
-   "step": "A2"
-  },
-  {
+   "context": "engine-gate-archive",
    "fixture": "custom_part_name.mscx",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 1 centroidEnvelope window(s) 43..43 (10.75-11.00 s) are the 5.0 reverb-tail class, first 1561.4 Hz -> 1814.5 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "d28db2cf1147075e662bdfa9a6c7d9c6fb414033ca5c210b9c05a83d605c0039",
-    "windows": "16339fae3048d07263c0de81c155aaf649c4b3b86aa0bd24e6a8314000df1f9c"
+    "linux": "e4c8af6db300e43e97e18a850a8dc001e5cc55b7d85303d2f13d9e0d8bb6527c",
+    "windows": "e4c8af6db300e43e97e18a850a8dc001e5cc55b7d85303d2f13d9e0d8bb6527c"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "custom_part_name.mscx",
-   "kind": "different",
-   "output": "metadata.json",
-   "reason": "5.0 has no Part-level name field (upstream 8bba2d2823 Group naming); a 4.x custom part name that differs from the instrument long name is not preserved",
-   "sha256": {
-    "linux": "9cf59da6f85f6312d1eaf6862f5106383581c7af50a55638d7401d8fbd85a5cf",
-    "windows": "9cf59da6f85f6312d1eaf6862f5106383581c7af50a55638d7401d8fbd85a5cf"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "custom_part_name.mscx",
-   "kind": "different",
-   "output": "midi.json",
-   "reason": "5.0 has no Part-level name field (upstream 8bba2d2823 Group naming); a 4.x custom part name that differs from the instrument long name is not preserved",
-   "sha256": {
-    "linux": "dc1ff2a13f969b794a64bda03ae0e07486d753595bc889ca37a1db72f2267b99",
-    "windows": "dc1ff2a13f969b794a64bda03ae0e07486d753595bc889ca37a1db72f2267b99"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "custom_part_name.mscx",
-   "kind": "different",
-   "output": "semantic-source.json",
-   "reason": "5.0 has no Part-level name field (upstream 8bba2d2823 Group naming); a 4.x custom part name that differs from the instrument long name is not preserved",
-   "sha256": {
-    "linux": "40789761ff02380d680a0b2e01a1520be2b40795c3fca4238552c78feee46bba",
-    "windows": "40789761ff02380d680a0b2e01a1520be2b40795c3fca4238552c78feee46bba"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "custom_part_name.mscx",
-   "kind": "different",
-   "output": "semantic.json",
-   "reason": "5.0 has no Part-level name field (upstream 8bba2d2823 Group naming); a 4.x custom part name that differs from the instrument long name is not preserved",
-   "sha256": {
-    "linux": "40789761ff02380d680a0b2e01a1520be2b40795c3fca4238552c78feee46bba",
-    "windows": "40789761ff02380d680a0b2e01a1520be2b40795c3fca4238552c78feee46bba"
-   },
-   "step": "A2"
-  },
-  {
+   "context": "engine-gate-archive",
    "fixture": "drums_import.musicxml",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 16 centroidEnvelope window(s) 28..43 (7.00-11.00 s) are the 5.0 reverb-tail class, first 3273.8 Hz -> 3120.6 Hz; 15 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 1.5e-06 (-116 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "1a6757f1c6b97d04263d0be97f097a49b9a7b96ad654bdfa84221d772eeaf426",
-    "windows": "230a305d0528076721483662d5d4b5a31d7847c22a2e7c433e7f82c557118e50"
+    "linux": "420bc4269b6f00391f73a3bc869e59b985dc154c5ac073a2be5c5d057ffa0c07",
+    "windows": "420bc4269b6f00391f73a3bc869e59b985dc154c5ac073a2be5c5d057ffa0c07"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "edit-set-pitches-coverage",
-   "kind": "different",
-   "output": "midi.json",
-   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d (Import explicit MusicXML sound jump attributes regardless of inferTextType) reads this fixture's explicit Fine and Da Capo al Fine as navigation, restoring the written repeat in export/playback.",
-   "sha256": {
-    "linux": "4b87d4876b0ff6112693ce8296a06b27e877dc1d2f76bbd7651fd0f8c5277693",
-    "windows": "4b87d4876b0ff6112693ce8296a06b27e877dc1d2f76bbd7651fd0f8c5277693"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "edit-set-pitches-coverage",
-   "kind": "different",
-   "output": "musicxml-semantic.json",
-   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d (Import explicit MusicXML sound jump attributes regardless of inferTextType) reads this fixture's explicit Fine and Da Capo al Fine as navigation, restoring the written repeat in export/playback.",
-   "sha256": {
-    "linux": "244204588746c44070d0161f590a0922c28731bfa2da92ba4702f687df77304e",
-    "windows": "244204588746c44070d0161f590a0922c28731bfa2da92ba4702f687df77304e"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "edit-set-pitches-coverage",
-   "kind": "different",
-   "output": "semantic.json",
-   "reason": "Upstream cfddbc801edd2e283a378082a1c848c0e460e78d imports the explicit MusicXML Fine and Da Capo sound attributes as navigation: StaffText becomes marker/jump and the playback order gains the written repeat.",
-   "sha256": {
-    "linux": "b7a99b89bc8730ca03280abe6071cd95e2683e85b7456f581ef3fa338a7c97d7",
-    "windows": "b7a99b89bc8730ca03280abe6071cd95e2683e85b7456f581ef3fa338a7c97d7"
-   },
-   "step": "A2"
-  },
-  {
+   "context": "engine-gate-archive",
    "fixture": "evening.musicxml",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Upstream cabd23667d6923faf5a5e951c7dd60ceee873915 removes default expression patterns and 362f33d08f7b2a3e09cd0bc30a2055fa785daacd handles empty dynamic maps. For 76 single-note-dynamics notes velocity changes to 64; the decisions accept this. Earlier executed profile restoration reproduced the 4.7.6 events and bit-identical audio. Frames stay equal; peak 0.315535 to 0.309523. Also 3 centroidEnvelope window(s) 180..182 (45.00-45.75 s) are the 5.0 reverb-tail class, first 977.4 Hz -> 961.3 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. This fixture also has the previously accepted velocity change described above; peak, rms, spectralCentroidHz and rmsEnvelope differ.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "a5371a9e9a1aac01b3e59026d29fdc0423edf7d1e92811671ced52998bee1b90",
-    "windows": "5b9d90fba803166482c9714fc621f994d7a1489c94595fd00ba1d1e46be91c21"
+    "linux": "46fd63272b296030a472050968fd24970ffe3e7485bd87316347f9f761fe7b4b",
+    "windows": "46fd63272b296030a472050968fd24970ffe3e7485bd87316347f9f761fe7b4b"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
+   "fixture": "ghost_note.mscx",
+   "kind": "different",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
+   "sha256": {
+    "linux": "00b2ad49580b317ba044bfcb2cbc3a994a7d36cac1e01018021d5a74c84a762e",
+    "windows": "00b2ad49580b317ba044bfcb2cbc3a994a7d36cac1e01018021d5a74c84a762e"
+   },
+   "step": "archive MSCX"
+  },
+  {
+   "context": "engine-gate-archive",
    "fixture": "hairpins_and_repeats.mscx",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 1 centroidEnvelope window(s) 43..43 (10.75-11.00 s) are the 5.0 reverb-tail class, first 1561.4 Hz -> 1814.5 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "d28db2cf1147075e662bdfa9a6c7d9c6fb414033ca5c210b9c05a83d605c0039",
-    "windows": "16339fae3048d07263c0de81c155aaf649c4b3b86aa0bd24e6a8314000df1f9c"
+    "linux": "e4c8af6db300e43e97e18a850a8dc001e5cc55b7d85303d2f13d9e0d8bb6527c",
+    "windows": "e4c8af6db300e43e97e18a850a8dc001e5cc55b7d85303d2f13d9e0d8bb6527c"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "layout_elements.mscx",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 restores the fermata tempo at the next segment rather than one MIDI tick early. The accepted shift yields 867226 to 867270 frames and 38 samples displacement after the fermata. Earlier executed fermata-removal control reduced the render difference to at most 9.6e-07; see notes/a2/audio-parity-roots.md. Also 6 centroidEnvelope window(s) 73..78 (18.25-19.75 s) are the 5.0 reverb-tail class, first 1005.0 Hz -> 1494.8 Hz; 2 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. This fixture also has the previously accepted fermata change described above; frames, peak, rms, spectralCentroidHz and rmsEnvelope differ.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "d47f80b5fa96ec2aabea2a01a5225bd687413c007d43e295fd536393f44a9012",
-    "windows": "5dc42ab010c8061d9ad3dcff10dd860755dba5bd5f7a01f42453f7e48bc294d7"
+    "linux": "d4da0c305de1c86badee3804cebb4502c49614fbcba172f0a91dbe6ba61bb9dc",
+    "windows": "d4da0c305de1c86badee3804cebb4502c49614fbcba172f0a91dbe6ba61bb9dc"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "layout_elements.mscx",
-   "kind": "different",
-   "output": "midi.json",
-   "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 moves the fermata tempo restore from tick 7679 to 7680, changing the 72-to-144 BPM transition by one MIDI tick; this timing change is accepted in the A2 decisions.",
-   "sha256": {
-    "linux": "b107280cc5ab5b1b656518b5a8f9a94e23372a9e00449474902915092c10ba86",
-    "windows": "b107280cc5ab5b1b656518b5a8f9a94e23372a9e00449474902915092c10ba86"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "kind": "different",
-   "output": "page-0.png.json",
-   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
-   "sha256": {
-    "linux": "f961a94babf2ab0c2108493aebf34ef62d81478f97b6fe1578146abf219857aa",
-    "windows": "88ac57e8d0477dc192435e89023b7209438908f28374efd6c04cb2a6eed68263"
-   },
-   "step": "A3"
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "kind": "different",
-   "output": "page-0.svg",
-   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
-   "sha256": {
-    "linux": "a8f2771064eea0584dc00cf9eb6d0e6f0a98bf233a5f0091e0309e4c61e37416",
-    "windows": "752afe824f8d5822b0f1f5e64ff9ee71bb7b286548c9cd314a133e9d8350d9e6"
-   },
-   "step": "A3"
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "kind": "different",
-   "output": "score.pdf.json",
-   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
-   "sha256": {
-    "linux": "3abc5704ac96fa7dbe5c715c35df39b14548ffe53adcf9777da37459cb1cdb40",
-    "windows": "da06e2a277ca8fd61098f494c8a21ce4912ea9d75ba85592b080c1f3b314107b"
-   },
-   "step": "A3"
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "kind": "different",
-   "output": "semantic-source.json",
-   "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 moves the fermata tempo restore from tick 7679 to 7680, changing the 72-to-144 BPM transition by one MIDI tick; this timing change is accepted in the A2 decisions.",
-   "sha256": {
-    "linux": "1914949f2ef0893d391c8bd33394bc68ec0bed5a89e5ebc4a6ff64ef410bb6ec",
-    "windows": "1914949f2ef0893d391c8bd33394bc68ec0bed5a89e5ebc4a6ff64ef410bb6ec"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "kind": "different",
-   "output": "semantic.json",
-   "reason": "Upstream fce4a34851778836ef85c1c53dd7a80f0e256101 moves the fermata tempo restore from tick 7679 to 7680, changing the 72-to-144 BPM transition by one MIDI tick; this timing change is accepted in the A2 decisions.",
-   "sha256": {
-    "linux": "1914949f2ef0893d391c8bd33394bc68ec0bed5a89e5ebc4a6ff64ef410bb6ec",
-    "windows": "1914949f2ef0893d391c8bd33394bc68ec0bed5a89e5ebc4a6ff64ef410bb6ec"
-   },
-   "step": "A2"
-  },
-  {
+   "context": "engine-gate-archive",
    "fixture": "linked_parts.mscx",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 1 centroidEnvelope window(s) 27..27 (6.75-7.00 s) are the 5.0 reverb-tail class, first 1136.1 Hz -> 1172.7 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "b82fd27fb133b1ca053df69284f2e725b0775ea17ba4be596d8a9e96a26000fa",
-    "windows": "80cda997d27601f03a8050d4484e613e1406b27317b447cb15084f8914d1f976"
+    "linux": "45547bf1cfd367d23c2162d5f68194de4166b8cd8f5b9439c72286882a5dfe28",
+    "windows": "45547bf1cfd367d23c2162d5f68194de4166b8cd8f5b9439c72286882a5dfe28"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "lyrics.mscx",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 2 centroidEnvelope window(s) 26..27 (6.50-7.00 s) are the 5.0 reverb-tail class, first 3976.4 Hz -> 1892.6 Hz; 1 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 9.4e-07 (-121 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "8aaf37862116196b263e15d4cfaf8dd0ea65cb8fc471dbaaeac71544edab769d",
-    "windows": "8afd0496ffdc114d4d24b5c54c6ba425f12f2205da0eada964e80de3e8111834"
+    "linux": "fd5d3563b20852ca84c6d228331590822005113b9d9ccd56901dabfe9bd575fd",
+    "windows": "fd5d3563b20852ca84c6d228331590822005113b9d9ccd56901dabfe9bd575fd"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "named_noteheads_perc.musicxml",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 3 centroidEnvelope window(s) 17..19 (4.25-5.00 s) are the 5.0 reverb-tail class, first 868.4 Hz -> 636.7 Hz; 2 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "8566f82488855da93b5821fdecc48e4b14822b80da450aa0d1ae275d0c5b44c5",
-    "windows": "5c9a0d4aae56e06c66d6670074f7366f6ebd8434dcd1d2a1a5c8573854f267c3"
+    "linux": "4abcc45bd35a6095af304bc8d1a4995f5155fba1fc540820c5f25e7c9d1e9f35",
+    "windows": "4abcc45bd35a6095af304bc8d1a4995f5155fba1fc540820c5f25e7c9d1e9f35"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "pedal.mscx",
    "kind": "different",
-   "output": "midi.json",
-   "reason": "Upstream 8bba2d2823f8a6b155b16fb78f40f1f31bcf3aee (Group naming) derives Part::partName from the instrument long name; for this fixture an empty part name becomes Piano.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "1a918a0083795fa128b7481c45d994c59524815ed709d44393c66029ec6a0980",
-    "windows": "1a918a0083795fa128b7481c45d994c59524815ed709d44393c66029ec6a0980"
+    "linux": "38affe664f00467a4c548a0f099d23e0153e31c90ca060418385a3bb3ed0fad0",
+    "windows": "38affe664f00467a4c548a0f099d23e0153e31c90ca060418385a3bb3ed0fad0"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "pedal.mscx",
-   "kind": "different",
-   "output": "page-0.png.json",
-   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
-   "sha256": {
-    "linux": "04aaed4bc553731610c46477f11465c17de537d3c18f435e7092107074b649dc",
-    "windows": "2545e10f0902517784fdfb2528e239471f6a839483a2de29657ac1d1e4712434"
-   },
-   "step": "A3"
-  },
-  {
-   "fixture": "pedal.mscx",
-   "kind": "different",
-   "output": "page-0.svg",
-   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
-   "sha256": {
-    "linux": "e2126c031c197309d0b82190ba39f7f5d5cab13b2e59145502b7b2f82f953cfe",
-    "windows": "2d45c256c02201f8de452fa6772812f0cb21f9d9355c5230508ba71433d067bf"
-   },
-   "step": "A3"
-  },
-  {
-   "fixture": "pedal.mscx",
-   "kind": "different",
-   "output": "score.pdf.json",
-   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
-   "sha256": {
-    "linux": "e8042d71a60842cb9d86c44bf1030cbd1962f9670c112b1e38f44e31c38e6265",
-    "windows": "62a203f991a81ef0b9c5051f5661cac3b9f67a76eae8c0539b53c1f0bcda728d"
-   },
-   "step": "A3"
-  },
-  {
-   "fixture": "pedal.mscx",
-   "kind": "different",
-   "output": "semantic-source.json",
-   "reason": "Upstream 8bba2d2823f8a6b155b16fb78f40f1f31bcf3aee (Group naming) derives Part::partName from the instrument long name; for this fixture an empty part name becomes Piano.",
-   "sha256": {
-    "linux": "e756deb069f59d2879373ba6f22312e15db7a4f9aab5a14309d1f61e4d2761ba",
-    "windows": "e756deb069f59d2879373ba6f22312e15db7a4f9aab5a14309d1f61e4d2761ba"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "pedal.mscx",
-   "kind": "different",
-   "output": "semantic.json",
-   "reason": "Upstream 8bba2d2823f8a6b155b16fb78f40f1f31bcf3aee (Group naming) derives Part::partName from the instrument long name; for this fixture an empty part name becomes Piano.",
-   "sha256": {
-    "linux": "e756deb069f59d2879373ba6f22312e15db7a4f9aab5a14309d1f61e4d2761ba",
-    "windows": "e756deb069f59d2879373ba6f22312e15db7a4f9aab5a14309d1f61e4d2761ba"
-   },
-   "step": "A2"
-  },
-  {
+   "context": "engine-gate-archive",
    "fixture": "perc_stem_dir.musicxml",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 3 centroidEnvelope window(s) 33..35 (8.25-9.00 s) are the 5.0 reverb-tail class, first 969.0 Hz -> 1334.7 Hz; 2 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "073a9db2c8cfa725351f64080c2db5f39776cd6c6472e31a282ae92c3bd74b23",
-    "windows": "0cd3953f51b9972b48a1d672d97a55ad21e94174ea49d6173bf307778d98fea8"
+    "linux": "b28b57c7c7c60dc172420b69b41c707faa2a1740e79f81e26df0b715258b666c",
+    "windows": "b28b57c7c7c60dc172420b69b41c707faa2a1740e79f81e26df0b715258b666c"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "repeat70.mscx",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 1 centroidEnvelope window(s) 26..26 (6.50-6.75 s) are the 5.0 reverb-tail class, first 1508.0 Hz -> 1079.8 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 6.7e-07 (-123 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "7790143ee433d11c8e2a2edcb764505ab8a6e6bd83ef1485464771fadeb32a93",
-    "windows": "a2081e8364825ce7fe45253025ffe67b609612824e97edf706cf5d81fcf32c08"
+    "linux": "1ab43428bc5ecde46529862bf0a4e9f04749462959b984239ee636d3f3395141",
+    "windows": "1ab43428bc5ecde46529862bf0a4e9f04749462959b984239ee636d3f3395141"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "repeat70.mscx",
-   "kind": "different",
-   "output": "midi.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6",
-    "windows": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "repeat70.mscx",
-   "kind": "different",
-   "output": "semantic-source.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3",
-    "windows": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "repeat70.mscx",
-   "kind": "different",
-   "output": "semantic.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3",
-    "windows": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3"
-   },
-   "step": "A2"
-  },
-  {
+   "context": "engine-gate-archive",
    "fixture": "repeat71.mscx",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 1 centroidEnvelope window(s) 26..26 (6.50-6.75 s) are the 5.0 reverb-tail class, first 1508.0 Hz -> 1079.8 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 6.7e-07 (-123 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "7790143ee433d11c8e2a2edcb764505ab8a6e6bd83ef1485464771fadeb32a93",
-    "windows": "a2081e8364825ce7fe45253025ffe67b609612824e97edf706cf5d81fcf32c08"
+    "linux": "c6c37dcbabde9b3993400c4727af2028cec3c5ea9ff15b3535c9351a3d9df067",
+    "windows": "c6c37dcbabde9b3993400c4727af2028cec3c5ea9ff15b3535c9351a3d9df067"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "repeat71.mscx",
-   "kind": "different",
-   "output": "midi.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6",
-    "windows": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "repeat71.mscx",
-   "kind": "different",
-   "output": "page-0.png.json",
-   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
-   "sha256": {
-    "linux": "3ce2f6018cf0711689f698df945f81a17ad8202b0c2546409dc126ecba7e11a9",
-    "windows": "5ee4415ff0029396d870c7c3dafe90965fb6f6cc8092d68247242bca8329c53c"
-   },
-   "step": "A3"
-  },
-  {
-   "fixture": "repeat71.mscx",
-   "kind": "different",
-   "output": "page-0.svg",
-   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
-   "sha256": {
-    "linux": "0793087e5338a18fb62e9ecc4b6af317bda20bf061a76e9ae885655558cc4f3a",
-    "windows": "24e6b74f74c16322a5f23120a3bb8b31025c5744c150a971d1d3fca73f5882c5"
-   },
-   "step": "A3"
-  },
-  {
-   "fixture": "repeat71.mscx",
-   "kind": "different",
-   "output": "score.pdf.json",
-   "reason": "Upstream d41f1ef92b \"Update Bravura to 1.482\" replaces the bundled Bravura font (fonts/bravura/Bravura.otf 512924 -> 889228 bytes, BravuraText.otf 1236512 -> 3056000 bytes) and its glyph metadata (bravura_metadata.json -> Bravura.json, fontVersion 1.392 -> 1.482), so the rendered notation glyph outlines in this fixture change the PNG/SVG/PDF bytes; page geometry is unchanged (PNG stays 1191x1684 and the PDF stays one page). Executed isolation on both hosts: re-running the golden lane with only fonts/bravura/{Bravura.otf,BravuraText.otf,metadata.json} taken from d41f1ef92b^ (everything else at the synced engine e9136ee340) reproduces the stored reference exactly (windows and linux: 317 identical, 46 allowed, 0 different, result PASS); with the 1.482 files staged the same run gives 308 identical, 46 allowed, 9 different, so no other change in 0ea613ff3426..2abc2de1de affects these outputs.",
-   "sha256": {
-    "linux": "fd0dd764b9af1b698f189ba4ea19e5e33ebb97076244901827ead74edf1b4d6c",
-    "windows": "e8f973e25ec5db519265b12df1c9c649be788c117ceaaee40f0c6ec7287fadb0"
-   },
-   "step": "A3"
-  },
-  {
-   "fixture": "repeat71.mscx",
-   "kind": "different",
-   "output": "semantic-source.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "119b068a9227f19c2720c164a839f27ab473f04f25d53e221808f21e1ea61233",
-    "windows": "119b068a9227f19c2720c164a839f27ab473f04f25d53e221808f21e1ea61233"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "repeat71.mscx",
-   "kind": "different",
-   "output": "semantic.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "119b068a9227f19c2720c164a839f27ab473f04f25d53e221808f21e1ea61233",
-    "windows": "119b068a9227f19c2720c164a839f27ab473f04f25d53e221808f21e1ea61233"
-   },
-   "step": "A2"
-  },
-  {
+   "context": "engine-gate-archive",
    "fixture": "repeat72.mscx",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 1 centroidEnvelope window(s) 26..26 (6.50-6.75 s) are the 5.0 reverb-tail class, first 1508.0 Hz -> 1079.8 Hz, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS) (measured 5.0 PCM in the tail: at most 6.7e-07 (-123 dBFS)). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "7790143ee433d11c8e2a2edcb764505ab8a6e6bd83ef1485464771fadeb32a93",
-    "windows": "a2081e8364825ce7fe45253025ffe67b609612824e97edf706cf5d81fcf32c08"
+    "linux": "610306aab2626b6160f4c66f79e730c1f549e0202adc479f03c2911ea9b3c61f",
+    "windows": "610306aab2626b6160f4c66f79e730c1f549e0202adc479f03c2911ea9b3c61f"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "repeat72.mscx",
-   "kind": "different",
-   "output": "midi.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6",
-    "windows": "f7cffb7d71ac488ed1e3d6b2c26d686ccbd8aaade493e51db88f8086506291f6"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "repeat72.mscx",
-   "kind": "different",
-   "output": "semantic-source.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3",
-    "windows": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "repeat72.mscx",
-   "kind": "different",
-   "output": "semantic.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3",
-    "windows": "f36c97058c6eb83c7f3754033d9e80b857e56bc4bb9b0eee6a89f16c4323a3e3"
-   },
-   "step": "A2"
-  },
-  {
+   "context": "engine-gate-archive",
    "fixture": "repeat_with_2_voltas.mscx",
    "kind": "different",
-   "output": "midi.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "a26f2d4826a44355732877ada99d6a66f220943f56b2fa51d41d5ca99a6c6f3b",
-    "windows": "a26f2d4826a44355732877ada99d6a66f220943f56b2fa51d41d5ca99a6c6f3b"
+    "linux": "489c1aac140558f81d5b873ece8e70e40d12ebf130f36504f4738ed44a6b6900",
+    "windows": "489c1aac140558f81d5b873ece8e70e40d12ebf130f36504f4738ed44a6b6900"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "kind": "different",
-   "output": "semantic-source.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "c5ca121ca4d0eec7e99055b5f512d8ff04be36adda34af115a8a073fbc8ec18d",
-    "windows": "c5ca121ca4d0eec7e99055b5f512d8ff04be36adda34af115a8a073fbc8ec18d"
-   },
-   "step": "A2"
-  },
-  {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "kind": "different",
-   "output": "semantic.json",
-   "reason": "Upstream 661d88cbabb331d1374c26e9f906d49ff72524f4 (Replace legacy TempoMap with TempoTimeline), with fce4a34851778836ef85c1c53dd7a80f0e256101 (Re-implement tempo parsing in ScoreAutomationController), changes the redundant end-of-repeat tempo boundary and corresponding MIDI tempo records; musical note events are unchanged in this fixture.",
-   "sha256": {
-    "linux": "c5ca121ca4d0eec7e99055b5f512d8ff04be36adda34af115a8a073fbc8ec18d",
-    "windows": "c5ca121ca4d0eec7e99055b5f512d8ff04be36adda34af115a8a073fbc8ec18d"
-   },
-   "step": "A2"
-  },
-  {
+   "context": "engine-gate-archive",
    "fixture": "slurs.mscz",
    "kind": "different",
-   "output": "audio.json",
-   "reason": "Also 2 centroidEnvelope window(s) 82..83 (20.50-21.00 s) are the 5.0 reverb-tail class, first 1461.7 Hz -> 1004.8 Hz; 1 of them are exactly silent in 4.7.6 (0 PCM samples) while 5.0 has a tail, and both stored window RMS are 0.0 (< 5e-6, -106 dBFS). Cause (A2 silence-gate parity): 4.7.6 truncated the reverb tail with Mixer's RealIsNull gate (peak <= 1e-6, 4.7.6 mixer.cpp:262,552-563; COMPARE_FLOAT_NULL in framework/global/realfn.h:32), while the 5.0 node graph keeps processing the aux chain until SignalNode::isSilent (peak > 0 exactly; upstream 7e9e6edd6e '[audio] added signal node', mixer.cpp:314-331 in framework subtree 7150f2b05e), so the same decay continues below -106 dBFS where 4.7.6 wrote exact zeros. Executed: in chordline_path, repeat70 and lyrics the two renders are sample-identical up to the 4096-frame block where 4.7.6's peak first falls below 1e-6 (chordline_path 5.294150 s), after which 4.7.6 is exactly zero and 5.0 continues the decay; in drums_import 8192 frames differ only in the frozen vs running aux state, both at most 1.5e-6. Peak, rms, spectralCentroidHz and every rmsEnvelope value of the fixtures are unchanged (delta 0.0).",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "c87e922e11eb68eb7f575af4ff3ab28a373ed3e471c2bccc5b485fdfb358613d",
-    "windows": "93764d72464cc0b1693505c9551a940890c695775ed5637bf57422a69d949dc5"
+    "linux": "65bf1f062a8dfa6b60a7677af9cdae398fc1d80d3c25a6b41cdc4d38d14adf7a",
+    "windows": "65bf1f062a8dfa6b60a7677af9cdae398fc1d80d3c25a6b41cdc4d38d14adf7a"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "tab_grace_prebend.mscx",
    "kind": "different",
-   "output": "musicxml-semantic.json",
-   "reason": "Upstream 82d2980cc47ebc037c0f89db5f45fbbcc4fab762 (use generic approach for alter values) exports the existing 50-cent offset as alter=0.5; 313ef5a2762849e83c8790ea5a7863626b48cf96 (do not write explicit accidental on tab staff) omits duplicated TAB accidentals.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "linux": "9c1f143d3e7400419d38f1d17890553747ba5d2aaefe2a13f507ba79874e8e47",
-    "windows": "9c1f143d3e7400419d38f1d17890553747ba5d2aaefe2a13f507ba79874e8e47"
+    "linux": "1ccd9b963ad3c785e0aa0578214cb85eab378bf6ea1a2e4e48f22965550bf573",
+    "windows": "1ccd9b963ad3c785e0aa0578214cb85eab378bf6ea1a2e4e48f22965550bf573"
    },
-   "step": "A2"
+   "step": "archive MSCX"
   },
   {
-   "fixture": "custom_part_name.mscx",
-   "output": "measurePositions.json",
+   "context": "engine-gate-archive",
+   "fixture": "graceArps.mnx",
    "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "windows": "fe22080c27621eeefdfedf9145926c2fd5c7450bb0ebd87c84e226bf8bad1950",
-    "linux": "fe22080c27621eeefdfedf9145926c2fd5c7450bb0ebd87c84e226bf8bad1950"
+    "linux": "34980b60f26cf47874ca89cf5dce3da54fbca4ceda714ac7c6f49f08877c2ec8",
+    "windows": "34980b60f26cf47874ca89cf5dce3da54fbca4ceda714ac7c6f49f08877c2ec8"
    },
-   "previous_sha256": {
-    "windows": "e56f8764b94298788de1e93eb1d7da15d59db3b8d2341486b19de5d883477b79"
-   }
+   "step": "archive MSCX"
   },
   {
-   "fixture": "custom_part_name.mscx",
-   "output": "metadata.json",
+   "context": "engine-gate-archive",
+   "fixture": "percussionKit.mnx",
    "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "windows": "f616012db343070d26e1e5672a4d94bc96962c2d52d76a0c4abc41d94e817dba",
-    "linux": "f616012db343070d26e1e5672a4d94bc96962c2d52d76a0c4abc41d94e817dba"
+    "linux": "01d94c73b148f231350f5421279172c78cb42bb30f5358ad7b8d82fdb58364d7",
+    "windows": "01d94c73b148f231350f5421279172c78cb42bb30f5358ad7b8d82fdb58364d7"
    },
-   "previous_sha256": {
-    "windows": "5d9cf221417aaaee7cb3862382a3caf929f9125cfab63e6eac78e7a9bc284c0f"
-   }
+   "step": "archive MSCX"
   },
   {
-   "fixture": "custom_part_name.mscx",
-   "output": "page-0.png.json",
+   "context": "engine-gate-archive",
+   "fixture": "tupletSimple.mnx",
    "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "windows": "b3bc2434a57cab1b8209e70062dbe0c3ea17f39d2bc18a12157d006d8846bc33",
-    "linux": "b3bc2434a57cab1b8209e70062dbe0c3ea17f39d2bc18a12157d006d8846bc33"
+    "linux": "62b5f035f1fe0b7727a924351a696167ef72d1261a0ceb3e2ce7d6c17a35f6a9",
+    "windows": "62b5f035f1fe0b7727a924351a696167ef72d1261a0ceb3e2ce7d6c17a35f6a9"
    },
-   "previous_sha256": {
-    "windows": "9c8949b2ec5b605ef5ad2f511ba2f2fa4a3acac5f94a7d096e2f292a51d53586"
-   }
+   "step": "archive MSCX"
   },
   {
-   "fixture": "custom_part_name.mscx",
-   "output": "page-0.svg",
+   "context": "engine-gate-archive",
+   "fixture": "two-notes.mnx",
    "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
+   "output": "score.mscx",
+   "reason": "Current MSCZ inner MSCX representation, preserved from the reviewed primary index",
    "sha256": {
-    "windows": "9725aaa882d5e6d6266e067e8902ccc9c82a6de87f17d5d30319afe24dc41ba2",
-    "linux": "34b47243576f78f22705482934d2f7b7e8d0f1969d496091c7ff94c7fd503296"
+    "linux": "c7e0385b6147351951a55fda0f49294c0e13d96fb32ca6bef2c48802993bb9a4",
+    "windows": "c7e0385b6147351951a55fda0f49294c0e13d96fb32ca6bef2c48802993bb9a4"
    },
-   "previous_sha256": {
-    "windows": "bc2b6018381318ad9103170aedd5f21b604e59313d28a7b2b44f806a36c72022"
-   }
-  },
-  {
-   "fixture": "custom_part_name.mscx",
-   "output": "score.pdf.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "dccb800f3ef7a518f0662162a68f5f09d5d81da146537cdd7bf72a3e1af73faf",
-    "linux": "e31d11ba30ef6c9594dc820b7edeb217dc79c1b896a230e5aaa4b05dc27da137"
-   },
-   "previous_sha256": {
-    "windows": "fe5de5d99917ec49c52094b68e2fc362f42e97ab39c4812db545e3da906d7d40"
-   }
-  },
-  {
-   "fixture": "custom_part_name.mscx",
-   "output": "segmentPositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "451afc871938299dc7b9eecc5bc605c2404bb5ff96e36fe012e5d3f866d20b97",
-    "linux": "451afc871938299dc7b9eecc5bc605c2404bb5ff96e36fe012e5d3f866d20b97"
-   },
-   "previous_sha256": {
-    "windows": "333377cfc1cbdd1a4987d72889829b90166efbf412cd2fbde08f341b60d6b357"
-   }
-  },
-  {
-   "fixture": "ghost_note.mscx",
-   "output": "measurePositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "086d2caf3419b8c05be66b20911c42e33c2efc2c70d2532c9ef1d1c40c61009a",
-    "linux": "086d2caf3419b8c05be66b20911c42e33c2efc2c70d2532c9ef1d1c40c61009a"
-   },
-   "previous_sha256": {
-    "windows": "7ef68e186d950a3b2613c3428e96299e93c3aee02e53a3644910390042ae3152"
-   }
-  },
-  {
-   "fixture": "ghost_note.mscx",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "3602d61789df64d98c71a8cc1cb8c4a9a704b49a3f4c364eb89de628090dba9a",
-    "linux": "3602d61789df64d98c71a8cc1cb8c4a9a704b49a3f4c364eb89de628090dba9a"
-   },
-   "previous_sha256": {
-    "windows": "99a7eb9e7ba445d35027f6b9d453bcbbc17051af3b2b54b1c4c39ced601a9642"
-   }
-  },
-  {
-   "fixture": "ghost_note.mscx",
-   "output": "page-0.svg",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "c450175e79b3fa0351d552153ba43ba4f9789e51838a880ad61bfaad264cce28",
-    "linux": "94b943efc87bf09984662f3b25aafc3e4774ed8f505367ec7446709d1711fe70"
-   },
-   "previous_sha256": {
-    "windows": "9b5191595d6081e64dbc088283655ced6f02395c218bfb48e6983917cd107990"
-   }
-  },
-  {
-   "fixture": "ghost_note.mscx",
-   "output": "score.pdf.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "f3b026e105c4b9466a2d52a4035d2db729b39b9f8d3f7ff36c3c255e2e3e0f6c",
-    "linux": "b5b997c5ce0f3956ba2475f49571455616566320464818f6d18e509d7cb50741"
-   },
-   "previous_sha256": {
-    "windows": "3db4c10206cd535347541a843d9e813f5cb37e554a15f53155c9ed0e989a698b"
-   }
-  },
-  {
-   "fixture": "ghost_note.mscx",
-   "output": "segmentPositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "c1d121bcfcb508af5ee43dc67b1258245fa53ec1c8e7ed6d1c969ea5b047f717",
-    "linux": "c1d121bcfcb508af5ee43dc67b1258245fa53ec1c8e7ed6d1c969ea5b047f717"
-   },
-   "previous_sha256": {
-    "windows": "0f18ededa40789bcf6a095cbb924d57dac028248344da1390e6b46b2919eb301"
-   }
-  },
-  {
-   "fixture": "hairpins_and_repeats.mscx",
-   "output": "measurePositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "fe22080c27621eeefdfedf9145926c2fd5c7450bb0ebd87c84e226bf8bad1950",
-    "linux": "fe22080c27621eeefdfedf9145926c2fd5c7450bb0ebd87c84e226bf8bad1950"
-   },
-   "previous_sha256": {
-    "windows": "e56f8764b94298788de1e93eb1d7da15d59db3b8d2341486b19de5d883477b79"
-   }
-  },
-  {
-   "fixture": "hairpins_and_repeats.mscx",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "f616012db343070d26e1e5672a4d94bc96962c2d52d76a0c4abc41d94e817dba",
-    "linux": "f616012db343070d26e1e5672a4d94bc96962c2d52d76a0c4abc41d94e817dba"
-   },
-   "previous_sha256": {
-    "windows": "9cf59da6f85f6312d1eaf6862f5106383581c7af50a55638d7401d8fbd85a5cf"
-   }
-  },
-  {
-   "fixture": "hairpins_and_repeats.mscx",
-   "output": "page-0.png.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "b3bc2434a57cab1b8209e70062dbe0c3ea17f39d2bc18a12157d006d8846bc33",
-    "linux": "b3bc2434a57cab1b8209e70062dbe0c3ea17f39d2bc18a12157d006d8846bc33"
-   },
-   "previous_sha256": {
-    "windows": "9c8949b2ec5b605ef5ad2f511ba2f2fa4a3acac5f94a7d096e2f292a51d53586"
-   }
-  },
-  {
-   "fixture": "hairpins_and_repeats.mscx",
-   "output": "page-0.svg",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "9725aaa882d5e6d6266e067e8902ccc9c82a6de87f17d5d30319afe24dc41ba2",
-    "linux": "34b47243576f78f22705482934d2f7b7e8d0f1969d496091c7ff94c7fd503296"
-   },
-   "previous_sha256": {
-    "windows": "bc2b6018381318ad9103170aedd5f21b604e59313d28a7b2b44f806a36c72022"
-   }
-  },
-  {
-   "fixture": "hairpins_and_repeats.mscx",
-   "output": "score.pdf.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "dccb800f3ef7a518f0662162a68f5f09d5d81da146537cdd7bf72a3e1af73faf",
-    "linux": "e31d11ba30ef6c9594dc820b7edeb217dc79c1b896a230e5aaa4b05dc27da137"
-   },
-   "previous_sha256": {
-    "windows": "fe5de5d99917ec49c52094b68e2fc362f42e97ab39c4812db545e3da906d7d40"
-   }
-  },
-  {
-   "fixture": "hairpins_and_repeats.mscx",
-   "output": "segmentPositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "451afc871938299dc7b9eecc5bc605c2404bb5ff96e36fe012e5d3f866d20b97",
-    "linux": "451afc871938299dc7b9eecc5bc605c2404bb5ff96e36fe012e5d3f866d20b97"
-   },
-   "previous_sha256": {
-    "windows": "333377cfc1cbdd1a4987d72889829b90166efbf412cd2fbde08f341b60d6b357"
-   }
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "output": "measurePositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "c5e301b2d6d6441e7e2a65b49663184177530b844f527d6fd1ac6cf323566158",
-    "linux": "c5e301b2d6d6441e7e2a65b49663184177530b844f527d6fd1ac6cf323566158"
-   },
-   "previous_sha256": {
-    "windows": "75ce774a621db56a64bdb7b88eea6d4843eb6e306ca2a1ac8b65730008c7f4dc"
-   }
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "85eec01bbe04ca0407a24414a17db393caac1f5c5373333128c4570e2e0b6f9e",
-    "linux": "85eec01bbe04ca0407a24414a17db393caac1f5c5373333128c4570e2e0b6f9e"
-   },
-   "previous_sha256": {
-    "windows": "a937cd5d36353d647609b2b941923c69e0d4f6cdf5613f89446247c6f81c97a4"
-   }
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "output": "musicxml-semantic.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "7fd97b34bcfc2c2d945091a897fd9533fb8a64d07ff2808e7b7fc6c69b0e91ed",
-    "linux": "7fd97b34bcfc2c2d945091a897fd9533fb8a64d07ff2808e7b7fc6c69b0e91ed"
-   },
-   "previous_sha256": {
-    "windows": "5e722d01d6ab048c33d91fa0655d9d0e9bffd46f52be7e4d49263671ee15e699"
-   }
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "output": "mxl.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "6115c111ea6bb81b97a3387a8ef0b16331193d35c7190be2153f70528f7649dc",
-    "linux": "6115c111ea6bb81b97a3387a8ef0b16331193d35c7190be2153f70528f7649dc"
-   },
-   "previous_sha256": {
-    "windows": "d193aa7934b3a4bc4b395c70b824b2ca84738a13d5be3181f5cc7376353ec6d7"
-   }
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "output": "page-0.png.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "32017dd00536bef3c102ec03cbf84eb2f3aea431d120f83ad27d25c7b15d63c4",
-    "linux": "044ecd2498093d783f9c7192a6760bbcc8e1416cf4c6fc87e35457b7bd049ec5"
-   },
-   "previous_sha256": {
-    "windows": "e2f1c4b2f1b3aa4ff7098f37cd8cd504f5481ec74defaf8236de2a0775e4af17"
-   }
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "output": "page-0.svg",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "dc52d8bc657935a349f7d8d36755cb36078e3175c09809a3e6d4e168be2db23f",
-    "linux": "8a5f97be0d19115f95935005448469a94568638652f71804616300893f2d8907"
-   },
-   "previous_sha256": {
-    "windows": "048ba668d533b76e4186652b5d22b2ed089b611efce9abdb9f00aed2dd2fdb46"
-   }
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "output": "score.musicxml",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "82a84db77179c43d4a96f3ba4aab09707fb6dd7452c0f10cd29b960d8599ea12",
-    "linux": "82a84db77179c43d4a96f3ba4aab09707fb6dd7452c0f10cd29b960d8599ea12"
-   },
-   "previous_sha256": {
-    "windows": "847254672035ac9e6d3b19e0289e161596b159b9fbfdd3524f38f6038021c46b"
-   }
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "output": "score.pdf.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "075ad3f9b3ba5b6fd24136a421875d5a92edd2c91064740d20a88d2947ba276b",
-    "linux": "f887aeb0bcfe6b1e957ab5b7bbd68abc89c7d39bc356a2bfd19e5f3e092a6b1e"
-   },
-   "previous_sha256": {
-    "windows": "c5011e9652a9e748d6b5725c5d9edaff4af0952dd01628404544f684ba43ad83"
-   }
-  },
-  {
-   "fixture": "layout_elements.mscx",
-   "output": "segmentPositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "a25e41736121dde4826b5c6e23cbc83ae24183142b498b74ab10eec6b9fa7030",
-    "linux": "a25e41736121dde4826b5c6e23cbc83ae24183142b498b74ab10eec6b9fa7030"
-   },
-   "previous_sha256": {
-    "windows": "1b747ace871125e6a3fc63388aaecf1f0d0e43abd446c8f4a8fe79843503375d"
-   }
-  },
-  {
-   "fixture": "lyrics.mscx",
-   "output": "measurePositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "cfd92895789e958e7e32573d63cd600bf8b9b251d90d7504fc5cb857beadd108",
-    "linux": "cfd92895789e958e7e32573d63cd600bf8b9b251d90d7504fc5cb857beadd108"
-   },
-   "previous_sha256": {
-    "windows": "5bfb659efe13fb9c14c383ddacee3b00e19d3f85d2071e10439ddcec10aac773"
-   }
-  },
-  {
-   "fixture": "lyrics.mscx",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "aef9e2e7621025f7d2d149064fa7dff8dafd67b7715385e20a2ac5797054bea4",
-    "linux": "aef9e2e7621025f7d2d149064fa7dff8dafd67b7715385e20a2ac5797054bea4"
-   },
-   "previous_sha256": {
-    "windows": "6396cc68a8327bf315de43b8289cfeb57d1981df7dd0f46d812a37749d99998e"
-   }
-  },
-  {
-   "fixture": "lyrics.mscx",
-   "output": "mxl.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "ccdb3288ffc36b454cb091cf94f1d20ab53e5af7478944a54c4301269923238a",
-    "linux": "ccdb3288ffc36b454cb091cf94f1d20ab53e5af7478944a54c4301269923238a"
-   },
-   "previous_sha256": {
-    "windows": "dcc79f1a8dd77f7fbdee2ff24d57ef9eb0d41b75a1faca4d93a311770b73323c"
-   }
-  },
-  {
-   "fixture": "lyrics.mscx",
-   "output": "page-0.svg",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "91dcedea152ae54e50647886a36f913bb92a7046b7de84d29f9a484524a579fe",
-    "linux": "a3de2828467dc7f2c4b594bf8e04c9060b8ed39db05cd01f8953503aa41c339f"
-   },
-   "previous_sha256": {
-    "windows": "1ecc7304f19121132d453d9fd09011a8d16de77a0854463ba198ce9f9d632b5e"
-   }
-  },
-  {
-   "fixture": "lyrics.mscx",
-   "output": "score.musicxml",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "fd9ce0fbec38aae131008c4e5c4af852bf7e10d56ae30e20b336a9d76896b98b",
-    "linux": "fd9ce0fbec38aae131008c4e5c4af852bf7e10d56ae30e20b336a9d76896b98b"
-   },
-   "previous_sha256": {
-    "windows": "5b4c58febe3016a8017085f1d82ca639b39bc7e4576640e8461bbbfa9dd9f12f"
-   }
-  },
-  {
-   "fixture": "lyrics.mscx",
-   "output": "score.pdf.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "5a7f6ec6aa1dfd689b789a935d8ff86efec0ae8c0d60a3a0080b98a5f4f25212",
-    "linux": "a7f5faf6d70ac6a2d309a98df51e60ba8b6d6b32dfd9534cdbfed95124076d52"
-   },
-   "previous_sha256": {
-    "windows": "a7ec1bcec88e9d33db95b031f319c4e72271a13ba3f2f85f631706a7179ffb82"
-   }
-  },
-  {
-   "fixture": "lyrics.mscx",
-   "output": "segmentPositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "9fb8556014bd4a84eda9abb749781b0e8b70e5eb115a775be5a54f5228eb8816",
-    "linux": "9fb8556014bd4a84eda9abb749781b0e8b70e5eb115a775be5a54f5228eb8816"
-   },
-   "previous_sha256": {
-    "windows": "ad3d448293f4fc63d1a7b1daa2b232e6d5f28a1e2fd27ceb0fca863fdcff50e3"
-   }
-  },
-  {
-   "fixture": "repeat70.mscx",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "0bcadb804fc988facfa2dc06845aae3f342f3db765317586a33488ce8900fa06",
-    "linux": "0bcadb804fc988facfa2dc06845aae3f342f3db765317586a33488ce8900fa06"
-   },
-   "previous_sha256": {
-    "windows": "909e22f8309cffff74f1d17bcd20bfdcd9bcd639b068733ea4a3ddce22af4242"
-   }
-  },
-  {
-   "fixture": "repeat71.mscx",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "f0c4a8940ad74d065cc93af4ba70d70814e2c9a433152d2300c320cb72867b53",
-    "linux": "f0c4a8940ad74d065cc93af4ba70d70814e2c9a433152d2300c320cb72867b53"
-   },
-   "previous_sha256": {
-    "windows": "7aaa7ee50eea7f28db4aec3b5a9d400b6238da3038f1281ef55e83d4d0bf508c"
-   }
-  },
-  {
-   "fixture": "repeat72.mscx",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "d4aa56e1b65e0e659dea5f466cd20dbc631a2bacc61d29435412a1d33acf075a",
-    "linux": "d4aa56e1b65e0e659dea5f466cd20dbc631a2bacc61d29435412a1d33acf075a"
-   },
-   "previous_sha256": {
-    "windows": "07ed0c6c4ee275be84137623a5731df56d4a2643a7cb94bee63a34e93b2961e5"
-   }
-  },
-  {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "output": "measurePositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "53204d833d9ff73fb8155d78d1112a112c315ac0979e39511f4d8debc7210c30",
-    "linux": "53204d833d9ff73fb8155d78d1112a112c315ac0979e39511f4d8debc7210c30"
-   },
-   "previous_sha256": {
-    "windows": "c76e481ae3b96b0184fbe8ada09e541d2e5f7e123d451a9a162d063379e3e7d4"
-   }
-  },
-  {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "4aff67f6a48b97159105194266bccb02a4772dbdf3f3cd3fb6098a6e800cd009",
-    "linux": "4aff67f6a48b97159105194266bccb02a4772dbdf3f3cd3fb6098a6e800cd009"
-   },
-   "previous_sha256": {
-    "windows": "be255c3ecde0687cede83553c84213da4942dee797d6a9555c499c5fae29d8c5"
-   }
-  },
-  {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "output": "mxl.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "3b1b1a7c994e67162a6247a9dd0f4d473c340befc2b842cdd5f2c311d67451c2",
-    "linux": "3b1b1a7c994e67162a6247a9dd0f4d473c340befc2b842cdd5f2c311d67451c2"
-   },
-   "previous_sha256": {
-    "windows": "765571bf51873928b6b49e0d589866b3b286a7e0bffc7fcafe80f53028ea977a"
-   }
-  },
-  {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "output": "page-0.png.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "fc95240eae36e86fb9d359ca4509ff1f495bc0909c08ae92af299a3efbd0854d",
-    "linux": "a1b79b52845993fc7e820e086f819aa87377f686ca12faeff243c992de7380c1"
-   },
-   "previous_sha256": {
-    "windows": "cb8103348b163936f3fb5fb70648111bb79bbf7c93d8fed19f0bf9beecc6c603"
-   }
-  },
-  {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "output": "page-0.svg",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "f2df6a44305b401a68114ecf4ddef6be5fdfe35c3d507707fa6dd67c747120e3",
-    "linux": "2bf835584b04b320e0f0caf442537787b6ce808baa36dfc5a98a69310f1cb8d2"
-   },
-   "previous_sha256": {
-    "windows": "79505f944f36637acd67c3c2d6459e0afee7859875e0881dfccc5885105dbcf5"
-   }
-  },
-  {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "output": "score.musicxml",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "9724cbf365bc8d239b17caea61e29a40b7b10edca336f9f66296498e8d94ca31",
-    "linux": "9724cbf365bc8d239b17caea61e29a40b7b10edca336f9f66296498e8d94ca31"
-   },
-   "previous_sha256": {
-    "windows": "89360bf11a8f6cfe9b3340120c1efb669ace2e778aa229a8c7e1b028fb459b47"
-   }
-  },
-  {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "output": "score.pdf.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "560ff4fbb685b594e50321d6d178c827a2ae18a93b9ce802260b722eadd3f310",
-    "linux": "0dc9b6b62d8d2898504bdbc1b693231c9873a763610f46b6a46fa4018850ae21"
-   },
-   "previous_sha256": {
-    "windows": "d2c6f65014e04a17db632e7712450478e15c47972f2c15bd1eb31447107db5b9"
-   }
-  },
-  {
-   "fixture": "repeat_with_2_voltas.mscx",
-   "output": "segmentPositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "e1210e1f21f143d3333050e768bc5b24da7363085c379b43eb80c242c284a79d",
-    "linux": "e1210e1f21f143d3333050e768bc5b24da7363085c379b43eb80c242c284a79d"
-   },
-   "previous_sha256": {
-    "windows": "5c6a681527c80cca0ecc2674dd4baf62911d3d8a594b055334b52aa01c060759"
-   }
-  },
-  {
-   "fixture": "slurs.mscz",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "ee4972f2396624195c10d10571fc3edfdac659c3eae44b5c005b90cec959c37a",
-    "linux": "ee4972f2396624195c10d10571fc3edfdac659c3eae44b5c005b90cec959c37a"
-   },
-   "previous_sha256": {
-    "windows": "2a9ca773b5dd853076defbbbb8e1cdd19287b0b5e7cdf774b415ecf41fc0fcfa"
-   }
-  },
-  {
-   "fixture": "tab_grace_prebend.mscx",
-   "output": "measurePositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "757249f8bc043f87a1cd60d9395c1caddb58b311013f7fe57201f94d97fa6d25",
-    "linux": "757249f8bc043f87a1cd60d9395c1caddb58b311013f7fe57201f94d97fa6d25"
-   },
-   "previous_sha256": {
-    "windows": "42f3fceb65cf99f8b5bed515514d4f55c895391577282a66713de1740164be50"
-   }
-  },
-  {
-   "fixture": "tab_grace_prebend.mscx",
-   "output": "metadata.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "54434151a35c72ed5989e41cbfe9e77bc47db41377eb3792d8f99461beba26b6",
-    "linux": "54434151a35c72ed5989e41cbfe9e77bc47db41377eb3792d8f99461beba26b6"
-   },
-   "previous_sha256": {
-    "windows": "c514bc0072eccdd165c791070acecc6dd140a97963653f7ff3a26aa4807f9063"
-   }
-  },
-  {
-   "fixture": "tab_grace_prebend.mscx",
-   "output": "mxl.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "e0068755719abf548d5f45c9e95db2fea0d127e1ec460ac1db3cb6393d35fbcd",
-    "linux": "e0068755719abf548d5f45c9e95db2fea0d127e1ec460ac1db3cb6393d35fbcd"
-   },
-   "previous_sha256": {
-    "windows": "6ed2b30faf548f9ac7e6f427aacae1e122303992548edfd95ee26e51410a9409"
-   }
-  },
-  {
-   "fixture": "tab_grace_prebend.mscx",
-   "output": "page-0.png.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "be769abd95e802fa10b119bec2b13359a92738132fc57c836485e217f427b2d3",
-    "linux": "be769abd95e802fa10b119bec2b13359a92738132fc57c836485e217f427b2d3"
-   },
-   "previous_sha256": {
-    "windows": "83b716c024bf4c477f17b67eb0f6ab12f4369176a80f25cecb4e729444c26f4d"
-   }
-  },
-  {
-   "fixture": "tab_grace_prebend.mscx",
-   "output": "page-0.svg",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "fb9796c4428605b467030383a9f7977ff3d000146ebf5abe510d8c412f691d86",
-    "linux": "7eae97f2ea930b7329a1d230e1b95760031210749b681abebb00b5c14244771e"
-   },
-   "previous_sha256": {
-    "windows": "d715bdd9f26c28db20722f1e019a212e2053989dccc1d9a4578c9a232a1ed502"
-   }
-  },
-  {
-   "fixture": "tab_grace_prebend.mscx",
-   "output": "score.musicxml",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "8e7cd68da2280791764f9e4bfb4c1532838720c5972e427953e8afae3774e5b4",
-    "linux": "8e7cd68da2280791764f9e4bfb4c1532838720c5972e427953e8afae3774e5b4"
-   },
-   "previous_sha256": {
-    "windows": "8f41089525e12f350b69f95a8e2341100ecf76485b86399c4b776721dadff44c"
-   }
-  },
-  {
-   "fixture": "tab_grace_prebend.mscx",
-   "output": "score.pdf.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "e9022c6b7dc2e407cd93eec77837976034ed3765a53fbefc99cc5ae1fe4fd5e8",
-    "linux": "2701d56df8fa23cd591e06f21ccdd5429983c95a40c05fe67d56b672bcf9ff56"
-   },
-   "previous_sha256": {
-    "windows": "e7498b36272b55dd99e564eb631ae4ece728367a38bd8237276cbfea9d44bee5"
-   }
-  },
-  {
-   "fixture": "tab_grace_prebend.mscx",
-   "output": "segmentPositions.json",
-   "kind": "different",
-   "step": "A4 drop-pre-4.6",
-   "reason": "One-time engrave-4 reserialization of the original pre-4.6 fixture with complete styles and excerpts preserved. Current-format reload changes writer metadata, serialized representation and layout rounding. Independently captured with the untouched baseline engine.",
-   "sha256": {
-    "windows": "8b3368bab79c7e197b80576e3b49f94ec3e693ecb6c3d5519cb1d1ddc8c15cd7",
-    "linux": "8b3368bab79c7e197b80576e3b49f94ec3e693ecb6c3d5519cb1d1ddc8c15cd7"
-   },
-   "previous_sha256": {
-    "windows": "0cc18ebe866e6241165c4864e22e52f5e9f6afc8a02e746263ed15013798754f"
-   }
+   "step": "archive MSCX"
   }
  ]
 }

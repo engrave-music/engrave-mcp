@@ -324,7 +324,8 @@ def main():
     run_compat_exports(run, compat, a.build_dir, a.assets, a.soundfont, a.output, suffix)
     counts = dict(identical=0, allowed=0, different=0, **{"missing-golden": 0})
     dual = dict(identical=0, allowed=0, different=0, **{"missing-golden": 0})
-    allow = g.load_allow(ROOT / "tests/data/golden/allow.json")
+    allow = g.load_allow(ROOT / "tests/data/golden/allow.json", context="engine-gate-archive")
+    matched_allow = set()
     for source in sources:
         raw = a.output / "raw" / source.name
         out = a.output / "actual" / source.name
@@ -383,6 +384,7 @@ def main():
             allow,
             platform,
             counts,
+            matched_allow,
         )
         if a.dual_capture:
             compare(a.dual_capture, source.name, out, names, [], platform, dual)
@@ -390,6 +392,9 @@ def main():
         "semantic-cross-check",
         [sys.executable, ROOT / "tests/support/check_semantic_dump.py", a.output / "actual"],
     )
+    # Entries are only expected to match on the platforms they pin.
+    if any(i not in matched_allow and platform in e["sha256"] for i, e in enumerate(allow)):
+        raise RuntimeError("unused engine archive allow entries")
     inputs = [a.soundfont, ROOT / "tests/data/golden/allow.json", *sources, *compat]
     provenance = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
     report = dict(

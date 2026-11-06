@@ -277,7 +277,7 @@ def git_revision(repo: Path) -> str:
 
 def audio_fixture_sources() -> dict[str, Path]:
     # The edit scenarios in golden.EDIT_SCENARIOS do not export audio.
-    sources = golden.fixture_files()
+    sources = golden.fixture_files() + golden.mnx_fixture_files()
     fixtures = {path.name: path for path in sources}
     assert sources and len(fixtures) == len(sources), "empty or duplicate golden fixture inventory"
     assert all(path.is_file() for path in golden.EXTRA_FIXTURES), "extra golden fixture missing"

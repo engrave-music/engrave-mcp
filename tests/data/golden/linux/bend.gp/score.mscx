@@ -5,6 +5,34 @@
   <Score>
     <eid>e1</eid>
     <Division>480</Division>
+    <Style>
+      <windsNameByGroup>0</windsNameByGroup>
+      <vocalsNameByGroup>0</vocalsNameByGroup>
+      <lyricsStackingOrder>0</lyricsStackingOrder>
+      <maskSlurs>0</maskSlurs>
+      <maskTies>0</maskTies>
+      <hopoShowOnStandardStaves>0</hopoShowOnStandardStaves>
+      <hopoShowAll>0</hopoShowAll>
+      <lhTappingSymbolNormalStave>circledT</lhTappingSymbolNormalStave>
+      <lhTappingSymbolTab>circledT</lhTappingSymbolTab>
+      <lhTappingShowItemsTab>2</lhTappingShowItemsTab>
+      <rhTappingSymbolNormalStave>T</rhTappingSymbolNormalStave>
+      <guitarDivesAboveStaff>1</guitarDivesAboveStaff>
+      <slurShowTabSimple>0</slurShowTabSimple>
+      <fermataShowTabSimple>0</fermataShowTabSimple>
+      <dynamicsShowTabSimple>0</dynamicsShowTabSimple>
+      <hairpinShowTabSimple>0</hairpinShowTabSimple>
+      <accentShowTabSimple>0</accentShowTabSimple>
+      <staccatoShowTabSimple>0</staccatoShowTabSimple>
+      <rasgueadoShowTabSimple>0</rasgueadoShowTabSimple>
+      <mordentShowTabSimple>0</mordentShowTabSimple>
+      <turnShowTabSimple>0</turnShowTabSimple>
+      <wahShowTabSimple>0</wahShowTabSimple>
+      <golpeShowTabSimple>0</golpeShowTabSimple>
+      <tabShowTiedFret>1</tabShowTiedFret>
+      <tabParenthesizeTiedFret>1</tabParenthesizeTiedFret>
+      <spatium>1.75</spatium>
+      </Style>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
     <showFrames>1</showFrames>

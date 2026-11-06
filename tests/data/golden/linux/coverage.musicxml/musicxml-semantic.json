@@ -317,7 +317,9 @@
       },
       {
        "placement": "above",
-       "staff": 1,
+       "sound": {
+        "fine": "yes"
+       },
        "tick": 3360,
        "words": [
         "Fine"
@@ -415,7 +417,9 @@
      "directions": [
       {
        "placement": "above",
-       "staff": 1,
+       "sound": {
+        "dacapo": true
+       },
        "tick": 4800,
        "words": [
         "D.C. al Fine"

@@ -703,23 +703,24 @@ def png_exceptions(payload):
 
 
 def accepted_svg_counts(name, digest):
-    """Existing platform render hashes can justify their recorded count changes."""
-    from support import golden as golden
-
-    fixture, output = name.split("/", 1)
+    """Return independently reviewed counts, never counts from the tested SVG."""
     platform = "windows" if sys.platform.startswith("win") else "linux"
-    allowances = golden.load_allow(ROOT / "tests/data/golden/allow.json")
-    return golden.allow_accept(allowances, fixture, output, "different", digest, platform)[1] is not None
+    path = Path(__file__).resolve().parents[1] / "data/golden/page_count_pins.json"
+    pins = json.loads(path.read_text(encoding="utf-8"))
+    entry = pins.get(platform, {}).get(name)
+    return entry["counts"] if entry and entry["svg_sha256"] == digest else None
 
 
-def restored_png_oracle(path, name, platform):
-    """Match decoded pixels to the already pinned direct-engine descriptor."""
+def current_png_oracle(path, name, platform):
+    """Match decoded pixels to the indexed current descriptor."""
     from support import golden as golden
 
     fixture, output = name.split("/", 1)
-    migrations = golden.read_v2_migrations(ROOT / "tests/data/golden" / platform)
-    pin = migrations.get((fixture, output + ".json"))
-    if not pin or pin.get("kind") not in ("snapshot", "snapshot-precision"):
+    root = ROOT / "tests/data/golden" / platform
+    index = json.loads((root / "index.json").read_text(encoding="utf-8"))
+    digest = index.get(fixture, {}).get(output + ".json")
+    baseline = root / fixture / (output + ".json")
+    if not digest or not baseline.is_file() or golden.sha256(baseline.read_bytes()) != digest:
         return False
     descriptor = (
         json.dumps(
@@ -731,7 +732,7 @@ def restored_png_oracle(path, name, platform):
         )
         + "\n"
     )
-    return hashlib.sha256(descriptor.encode()).hexdigest() == pin["direct_sha256"]
+    return hashlib.sha256(descriptor.encode()).hexdigest() == digest
 
 
 def png_stats(path):
@@ -993,8 +994,8 @@ def main():
             if exception:
                 digest = hashlib.sha256(data).hexdigest()
                 if digest != exception["svg_sha256"]:
-                    if accepted_svg_counts(name, digest):
-                        allowed_counts = {key: getattr(actual, key) for key in exception["counts"]}
+                    if counts := accepted_svg_counts(name, digest):
+                        allowed_counts = counts
                     else:
                         issues.append("count exception SVG SHA-256 does not match")
                 elif any(
@@ -1039,7 +1040,7 @@ def main():
                 issues = png_issues(actual, reference)
                 platform = "windows" if sys.platform.startswith("win") else "linux"
                 pin = png_pins.get((platform, name))
-                if pin and not issues and restored_png_oracle(actual_png[name], name, platform):
+                if pin and not issues and current_png_oracle(actual_png[name], name, platform):
                     detail = " (exact direct-render oracle restored)"
                 elif pin:
                     digest = hashlib.sha256(actual_png[name].read_bytes()).hexdigest()

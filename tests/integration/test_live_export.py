@@ -30,6 +30,7 @@ def main():
     p.add_argument("--binary", type=Path, required=True)
     p.add_argument("--resources", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--soundfont", type=Path, required=True)
     p.add_argument(
         "--direct-binary",
         type=Path,
@@ -81,16 +82,6 @@ def main():
             for name in left.namelist():
                 if left.read(name) != right.read(name):
                     raise RuntimeError(f"MSCZ content mismatch: {folder}/{name}")
-    if sys.platform == "win32":
-        subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "tests/integration/test_direct_export_baseline.py"),
-                "--output",
-                str(oracle),
-            ],
-            check=True,
-        )
     subprocess.run(
         [
             sys.executable,
@@ -127,6 +118,8 @@ def main():
             str(a.resources),
             "--output",
             str(a.output / "destination-errors"),
+            "--soundfont",
+            str(a.soundfont.resolve()),
         ],
         check=True,
     )

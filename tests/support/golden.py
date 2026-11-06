@@ -1,15 +1,16 @@
-"""V2 golden-output capture and comparison for the native MCP server.
+"""Golden-output capture and comparison for the native MCP server.
 
 Capture exports a fixed fixture set through the official Python MCP client,
 normalizes known-volatile fields, and stores one directory per fixture plus an
 ``index.json`` manifest of sha256 values. Compare re-captures the same tree and
 diffs it against the stored goldens, honoring an explicit allow-list.
 
-Allow entries match a fixture/output glob pair and only accept the expected
-``kind`` (``different``, ``missing`` or ``extra``). Differences and extras must
-also pin the actual file's normalized sha256 for the current platform, so an
-entry cannot silently cover future changes. ``pin`` prints skeleton entries for
-the un-allowed differences in an existing compare report.
+Allow entries name exact fixture/output pairs and platform SHA-256 pins for
+``different`` or ``extra`` artifacts. Missing artifacts cannot be waived.
+Every entry in the comparison context must be exercised; stale entries fail.
+Archive MSCX exceptions are restricted to the engine-gate context. ``pin``
+prints skeleton entries from an existing report for review; missing-artifact
+skeletons are diagnostic only and are rejected by the policy loader.
 
 Volatile fields normalized (observed by running twice):
   * Every MSCX/MSCZ inner ``<eid>`` and EID-reference value (``linkedTo``,
@@ -36,27 +37,21 @@ the PCM proves are exactly all-zero; a rounded-zero RMS envelope alone is not
 evidence of silence. A baseline without the field is rejected instead of
 falling back to a weaker rule.
 
-V1 metadata-file exports have no v2 equivalent and remain explicitly classified
-as v1-only, after index verification; v2 outline and audio-track assertions live
-in the facade and excerpt tests. A separate v2 index pins the four supplemental
-MNX directories and the v2-only artifacts, without changing the historical v1
-index or its files.
+All current MNX, edit and excerpt artifacts share the platform index.
 
 ``semantic.json`` (the exported MSCZ) and ``semantic-source.json`` (the fixture
 file) come from the ``semantic_dump`` dev tool next to the server binary. They
 record musical content read from the in-memory DOM, independent of the MSCX
 format version, and are the rebase oracle of roadmap-engrave A0/A2.
 
-EID normalization is always token mode, which preserves target identity. The
-4.7.6 blanked representation (``<eid/>``) is only readable with the explicit
-``--legacy-blank-eids`` migration flag, which a legacy baseline requires.
+EID normalization preserves target identity through stable tokens.
 
 Usage:
   golden.py capture --binary B --resources R --soundfont SF --golden DIR \\
-                    [--allow-errors] [--legacy-blank-eids]
+                    [--allow-errors]
   golden.py compare --binary B --resources R --soundfont SF --golden DIR \\
                     --allow tests/data/golden/allow.json --output OUTDIR \\
-                    [--platform windows|linux] [--legacy-blank-eids]
+                    [--platform windows|linux]
   golden.py pin --golden DIR --output OUTDIR [--platform windows|linux]
 """
 
@@ -72,7 +67,6 @@ import base64
 import difflib
 import hashlib
 import json
-import math
 import os
 import re
 import shutil
@@ -81,9 +75,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
-from fnmatch import fnmatch
 from fractions import Fraction
-from functools import partial
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -98,7 +90,7 @@ EXTRA_FIXTURES = (ROOT / "tests/data/inputs" / "evening.musicxml",)
 # Fixtures without stored excerpts whose part excerpts are generated (after the master
 # outputs are captured) to cover excerpt creation, e.g. ChordLine path copying.
 GENERATE_EXCERPTS = {"chordline_path.mscx"}
-SUPPLEMENTAL_MNX = (
+MNX_FIXTURES = (
     "engine/two-notes.mnx",
     "project_examples/tupletSimple.mnx",
     "project_examples/percussionKit.mnx",
@@ -115,9 +107,8 @@ AUDIO_EXACT = {"sampleRate", "channels", "frames"}
 # Per-window exact silence evidence (count of nonzero PCM samples per channel). It is
 # written by describe_audio, gates the centroid comparison and is not a tolerance.
 SILENCE_EVIDENCE = "nonzeroSamples"
-ALLOW_KINDS = ("different", "missing", "extra")
+ALLOW_KINDS = ("different", "extra")
 DEFAULT_PLATFORM = "windows" if sys.platform.startswith("win") else "linux"
-PRECISION_CENSUS = ROOT / "tests/data/golden/output-census.json"
 
 
 def sha256(data: bytes) -> str:
@@ -157,57 +148,20 @@ EID_TAGS = (
 )
 
 
-def uses_blanked_eids(golden_root: Path | None) -> bool:
-    """Detect whether a golden tree uses 4.7.6-style blanked EID tags (<eid/>)."""
-    if golden_root is None or not golden_root.exists():
-        return False
-    for path in golden_root.glob("*/score.mscx"):
-        try:
-            head = path.read_text(encoding="utf-8")[:4000]
-            if "<eid/>" in head:
-                return True
-            if "<eid>e" in head:
-                return False
-        except Exception:
-            continue
-    return False
+def normalize_mscx(text: str) -> str:
+    eid_map: dict[str, str] = {}
 
+    def replace_eid(match: re.Match) -> str:
+        tag = match.group(1)
+        val = match.group(2).strip()
+        if not val:
+            return f"<{tag}/>"
+        if val not in eid_map:
+            eid_map[val] = f"e{len(eid_map) + 1}"
+        return f"<{tag}>{eid_map[val]}</{tag}>"
 
-def require_eid_mode(golden_root: Path | None, legacy_blank_eids: bool) -> None:
-    """Reject a blanked-EID baseline unless the migration flag is explicit.
-
-    Token mode is the only automatic representation because blanking loses which measure
-    or element a ``startMeasure``/``sharedPart``/... reference targets; a tree that was
-    captured that way also captures the weak representation. Reading one is therefore an
-    explicit migration action, not a fallback golden.py may select on its own.
-    """
-    if not legacy_blank_eids and uses_blanked_eids(golden_root):
-        raise SystemExit(
-            f"golden tree {golden_root} stores blanked EIDs (<eid/>), which cannot detect a "
-            "changed reference target. Token mode is the only automatic EID representation: "
-            "recapture the baseline, or pass --legacy-blank-eids to read the legacy tree "
-            "explicitly."
-        )
-
-
-def normalize_mscx(text: str, legacy_blank_eids: bool = False) -> str:
-    if legacy_blank_eids:
-        for tag in EID_TAGS:
-            text = re.sub(rf"<{tag}>[^<]*</{tag}>", rf"<{tag}/>", text)
-    else:
-        eid_map: dict[str, str] = {}
-
-        def replace_eid(match: re.Match) -> str:
-            tag = match.group(1)
-            val = match.group(2).strip()
-            if not val:
-                return f"<{tag}/>"
-            if val not in eid_map:
-                eid_map[val] = f"e{len(eid_map) + 1}"
-            return f"<{tag}>{eid_map[val]}</{tag}>"
-
-        tag_pattern = rf"<({'|'.join(EID_TAGS)})>([^<]+)</\1>"
-        text = re.sub(tag_pattern, replace_eid, text)
+    tag_pattern = rf"<({'|'.join(EID_TAGS)})>([^<]+)</\1>"
+    text = re.sub(tag_pattern, replace_eid, text)
 
     for tag in ("programVersion", "programRevision"):
         text = re.sub(rf"(<{tag}>)[^<]*(</{tag}>)", r"\1\2", text)
@@ -343,7 +297,7 @@ def describe_audio(path: Path) -> dict:
     }
 
 
-def describe_mscz(path: Path, legacy_blank_eids: bool = False) -> dict:
+def describe_mscz(path: Path) -> dict:
     with zipfile.ZipFile(path) as archive:
         names = sorted(archive.namelist())
         entries, texts = [], {}
@@ -351,7 +305,7 @@ def describe_mscz(path: Path, legacy_blank_eids: bool = False) -> dict:
             data = archive.read(name)
             base = name.rsplit("/", 1)[-1].lower()
             if base.endswith(".mscx"):
-                normalized = normalize_mscx(data.decode("utf-8"), legacy_blank_eids=legacy_blank_eids)
+                normalized = normalize_mscx(data.decode("utf-8"))
                 entries.append({"name": name, "sha256": sha256(normalized.encode("utf-8"))})
             elif base in ("audiosettings.json", "viewsettings.json"):
                 entries.append({"name": name, "size": len(data)})
@@ -677,8 +631,8 @@ async def value_export(session, identity, fmt, raw, out_dir, name, transform, ro
     return value
 
 
-async def capture_master(session, identity, raw, out_dir, roots, legacy_blank_eids: bool = False):
-    normalized_mscx = partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids)
+async def capture_master(session, identity, raw, out_dir, roots):
+    normalized_mscx = normalize_mscx
     await text_export(
         session,
         identity,
@@ -706,7 +660,7 @@ async def capture_master(session, identity, raw, out_dir, roots, legacy_blank_ei
         raw / "score.mscz",
         out_dir,
         "mscz.json",
-        partial(describe_mscz, legacy_blank_eids=legacy_blank_eids),
+        describe_mscz,
         roots,
     )
     await value_export(
@@ -825,9 +779,9 @@ def semantic_dump(source: Path, dest: Path, roots, *extra: str) -> None:
     write_json(dest, json.loads(result.stdout.decode("utf-8")))
 
 
-async def capture_excerpts(session, identity, raw, out_dir, roots, legacy_blank_eids: bool = False):
+async def capture_excerpts(session, identity, raw, out_dir, roots):
     payload = await required(session, "score_outline", identity)
-    normalized_mscx = partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids)
+    normalized_mscx = normalize_mscx
     for index, excerpt in enumerate(payload["outline"]["excerpts"]):
         excerpt_id = excerpt["id"]
         folder = out_dir / f"excerpt-{index}"
@@ -885,7 +839,6 @@ async def capture_fixture(
     raw_root,
     out_dir,
     roots,
-    legacy_blank_eids: bool = False,
 ):
     raw = raw_root / fixture_id
     raw.mkdir(parents=True, exist_ok=True)
@@ -901,10 +854,10 @@ async def capture_fixture(
             *(["--generate-excerpts"] if fixture_id in GENERATE_EXCERPTS else []),
         )
     try:
-        await capture_master(session, identity, raw, out_dir, roots, legacy_blank_eids)
+        await capture_master(session, identity, raw, out_dir, roots)
         if fixture_id in GENERATE_EXCERPTS:
             await generate_excerpts(session, identity)
-        await capture_excerpts(session, identity, raw, out_dir, roots, legacy_blank_eids)
+        await capture_excerpts(session, identity, raw, out_dir, roots)
     finally:
         await call_tool(session, "score_close", identity)
 
@@ -945,7 +898,7 @@ EDIT_SCENARIOS = {
 }
 
 
-async def capture_edit(session, name, scenario, raw_root, out_dir, roots, legacy_blank_eids: bool = False):
+async def capture_edit(session, name, scenario, raw_root, out_dir, roots):
     raw = raw_root / name
     raw.mkdir(parents=True, exist_ok=True)
     source = FIXTURE_DIR / scenario["source"]
@@ -960,7 +913,7 @@ async def capture_edit(session, name, scenario, raw_root, out_dir, roots, legacy
             raw / "score.mscx",
             out_dir,
             "score.mscx",
-            partial(normalize_mscx, legacy_blank_eids=legacy_blank_eids),
+            normalize_mscx,
             roots,
         )
         await text_export(
@@ -993,7 +946,7 @@ async def capture_edit(session, name, scenario, raw_root, out_dir, roots, legacy
 
 
 async def apply_edit_scenario(session, identity, name, scenario, raw):
-    """Apply the same fixed edits as the legacy oracle, via v2 operations."""
+    """Apply the pinned edit scenario through score_apply operations."""
     if scenario.get("generate"):
         await generate_excerpts(session, identity)
     outline = await required(session, "score_outline", identity)
@@ -1126,14 +1079,14 @@ def fixture_files() -> list[Path]:
     return files + [path for path in EXTRA_FIXTURES if path.is_file()]
 
 
-def supplemental_mnx_files() -> list[Path]:
-    """The engine-gate MNX fixtures have baseline files but no index entries."""
+def mnx_fixture_files() -> list[Path]:
+    """Engine-owned MNX inputs covered by the platform baseline."""
     engine = Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor/engrave"))
     data = engine / "src/importexport/mnx/tests/data"
-    files = [data / name for name in SUPPLEMENTAL_MNX]
+    files = [data / name for name in MNX_FIXTURES]
     missing = [str(path) for path in files if not path.is_file()]
     if missing:
-        raise FileNotFoundError(f"missing supplemental MNX fixtures: {missing}")
+        raise FileNotFoundError(f"missing MNX fixtures: {missing}")
     return files
 
 
@@ -1165,11 +1118,7 @@ async def capture_tree(
     soundfont,
     target,
     log_path,
-    golden_root: Path | None = None,
-    legacy_blank_eids: bool = False,
-    raw_png_hashes: dict | None = None,
 ):
-    require_eid_mode(golden_root, legacy_blank_eids)
     dump = binary.parent / ("semantic_dump.exe" if sys.platform.startswith("win") else "semantic_dump")
     if not dump.is_file():
         raise SystemExit(f"semantic_dump not found next to the server binary: {dump}")
@@ -1187,7 +1136,7 @@ async def capture_tree(
             async with stdio_client(params, errlog=log) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    for source in fixture_files() + supplemental_mnx_files():
+                    for source in fixture_files() + mnx_fixture_files():
                         try:
                             await capture_fixture(
                                 session,
@@ -1196,11 +1145,7 @@ async def capture_tree(
                                 raw_root,
                                 target / source.name,
                                 [raw_root, target],
-                                legacy_blank_eids,
                             )
-                            raw_png = raw_root / source.name / "page-0.png"
-                            if raw_png_hashes is not None and raw_png.is_file():
-                                raw_png_hashes[source.name] = sha256(raw_png.read_bytes())
                         except Exception as exc:  # noqa: BLE001 - keep other fixtures going
                             write_text(
                                 target / source.name / "capture.error.txt",
@@ -1215,7 +1160,6 @@ async def capture_tree(
                                 raw_root,
                                 target / name,
                                 [raw_root, target],
-                                legacy_blank_eids,
                             )
                         except Exception as exc:  # noqa: BLE001
                             write_text(
@@ -1225,7 +1169,7 @@ async def capture_tree(
     return build_index(target)
 
 
-def load_allow(path: Path) -> list[dict]:
+def load_allow(path: Path, context: str = "host") -> list[dict]:
     if not path.is_file():
         return []
     entries = json.loads(read_text(path)).get("entries", [])
@@ -1235,7 +1179,21 @@ def load_allow(path: Path) -> list[dict]:
             raise ValueError(f"allow entry {entry!r} is missing {', '.join(missing)}")
         if entry.setdefault("kind", "different") not in ALLOW_KINDS:
             raise ValueError(f"allow entry has invalid kind: {entry['kind']!r}")
-    return entries
+        for key in ("fixture", "output", "step", "reason"):
+            if not isinstance(entry[key], str) or not entry[key].strip():
+                raise ValueError(f"invalid allow {key}")
+        if any(c in entry[key] for key in ("fixture", "output") for c in "*?["):
+            raise ValueError("allow entries must name exact artifacts")
+        if entry.get("context") not in ("host", "engine-gate-archive"):
+            raise ValueError("allow entries require an explicit context: host or engine-gate-archive")
+        pins = entry.get("sha256")
+        if (
+            not isinstance(pins, dict)
+            or not pins
+            or any(p not in ("windows", "linux") or not re.fullmatch(r"[0-9a-f]{64}", str(h)) for p, h in pins.items())
+        ):
+            raise ValueError("allow entries require explicit platform SHA-256 pins")
+    return [e for e in entries if e["context"] == context]
 
 
 def allow_accept(entries, fixture, output, kind, actual_sha, platform):
@@ -1243,15 +1201,15 @@ def allow_accept(entries, fixture, output, kind, actual_sha, platform):
     matches = [
         (position, entry)
         for position, entry in enumerate(entries)
-        if fnmatch(fixture, entry["fixture"]) and fnmatch(output, entry["output"])
+        if fixture == entry["fixture"] and output == entry["output"]
     ]
     problems = []
     for position, entry in matches:
         if entry["kind"] != kind:
             problems.append(f"entry {position}: kind {entry['kind']} != {kind}")
             continue
-        if kind == "missing":
-            return position, entry, None
+        if kind not in ALLOW_KINDS:
+            continue
         pinned = entry.get("sha256")
         pinned = pinned.get(platform) if isinstance(pinned, dict) else None
         if not pinned:
@@ -1276,300 +1234,6 @@ def verify_golden_index(root: Path, index: dict) -> list[str]:
             if actual != index[name][entry]:
                 issues.append(f"indexed file hash mismatch {name}/{entry}: expected {index[name][entry]}, got {actual}")
     return issues
-
-
-def read_v2_index(golden_root: Path) -> tuple[Path | None, dict, dict]:
-    """Load the independent v2 MNX index; every entry still pins actual bytes."""
-    overlay = golden_root.parent / "supplemental" / golden_root.name
-    path = overlay / "index.json"
-    if not path.is_file():
-        return None, {}, {}
-    data = json.loads(read_text(path))
-    if (
-        data.get("schema") != 1
-        or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
-        or not isinstance(data.get("legacy"), dict)
-        or not isinstance(data.get("additions"), dict)
-    ):
-        raise ValueError("invalid v2 index header")
-    if data["additions"] and any(
-        not re.fullmatch(r"[0-9a-f]{40}", str(data.get(field, ""))) for field in ("engine_gate_commit", "engine_tree")
-    ):
-        raise ValueError("v2 additions lack the gate commit or source-tree provenance")
-    legacy = data["legacy"]
-    expected = {Path(name).name for name in SUPPLEMENTAL_MNX}
-    if set(legacy) != expected or not set(data["additions"]).issubset(expected):
-        raise ValueError("v2 index must explicitly list the four supplemental MNX fixtures")
-    additions = {}
-    sources = {source.name: source for source in supplemental_mnx_files()}
-    for fixture, entries in legacy.items():
-        if not isinstance(entries, dict) or not entries:
-            raise ValueError(f"empty legacy index for {fixture}")
-        for name, digest in entries.items():
-            if not isinstance(name, str) or not re.fullmatch(r"[0-9a-f]{64}", str(digest)):
-                raise ValueError(f"invalid legacy index entry for {fixture}/{name}")
-    for fixture, entries in data["additions"].items():
-        if not isinstance(entries, dict) or not entries:
-            raise ValueError(f"empty v2 additions index for {fixture}")
-        additions[fixture] = {}
-        for name, entry in entries.items():
-            if (
-                not isinstance(entry, dict)
-                or not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("sha256", "")))
-                or entry.get("fixture_sha256") != sha256(sources[fixture].read_bytes())
-                or not isinstance(entry.get("oracle"), str)
-                or not entry["oracle"].strip()
-            ):
-                raise ValueError(f"invalid v2 addition or fixture provenance for {fixture}/{name}")
-            if name in legacy[fixture]:
-                raise ValueError(f"v2 addition shadows legacy file {fixture}/{name}")
-            additions[fixture][name] = entry["sha256"]
-    return overlay, legacy, additions
-
-
-def read_precision_census(data: dict, platform: str) -> dict[tuple[str, str], dict]:
-    """Load only individually accepted, measured writer-precision artifacts."""
-    census = json.loads(read_text(PRECISION_CENSUS))
-    if (
-        not isinstance(census, dict)
-        or census.get("schema") != 1
-        or census.get("platform") != platform
-        or any(census.get(field) != data.get(field) for field in ("engine_commit", "engine_gate_commit", "engine_tree"))
-        or not isinstance(census.get("entries"), list)
-        or not isinstance(census.get("counts"), dict)
-    ):
-        raise ValueError("invalid writer-precision census header")
-    entries = {}
-    for item in census["entries"]:
-        if not isinstance(item, dict):
-            raise ValueError("invalid writer-precision census entry")
-        if item.get("bucket") != "c":
-            if item.get("acceptance") == "writer_precision":
-                raise ValueError("writer-precision acceptance outside bucket c")
-            continue
-        fixture, output = item.get("fixture"), item.get("output")
-        key = (fixture, output)
-        measurement = item.get("measurement")
-        if (
-            item.get("acceptance") != "writer_precision"
-            or not isinstance(fixture, str)
-            or not isinstance(output, str)
-            or key in entries
-            or any(char in fixture + output for char in "*?[]")
-            or any(
-                not re.fullmatch(r"[0-9a-f]{64}", str(item.get(field, "")))
-                for field in (
-                    "baseline_sha256",
-                    "direct_engine_sha256",
-                    "host_sha256",
-                    "reopened_engine_sha256",
-                )
-            )
-            or item["host_sha256"] != item["reopened_engine_sha256"]
-            or not isinstance(item.get("evidence"), str)
-            or not item["evidence"].strip()
-            or not isinstance(measurement, dict)
-            or measurement.get("within") is not False
-        ):
-            raise ValueError(f"invalid writer-precision evidence for {fixture}/{output}")
-        if output.endswith(".png.json"):
-            delta = measurement.get("size_delta")
-            pixels, limit = (
-                measurement.get("pixel_diff"),
-                measurement.get("pixel_limit"),
-            )
-            if (
-                not isinstance(delta, list)
-                or len(delta) != 2
-                or any(type(n) is not int for n in delta)
-                or type(pixels) is not int
-                or type(limit) is not int
-                or pixels < 0
-                or limit <= 0
-                or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("raw_host_png_sha256", "")))
-            ):
-                raise ValueError(f"invalid writer-precision PNG measurement: {fixture}/{output}")
-        elif output.endswith(".svg") or output == "score.pdf.json":
-            delta, structural = (
-                measurement.get("max_delta"),
-                measurement.get("structural"),
-            )
-            if (
-                type(delta) not in (int, float)
-                or not math.isfinite(delta)
-                or delta < 0
-                or not isinstance(structural, list)
-                or any(not isinstance(s, str) for s in structural)
-            ):
-                raise ValueError(f"invalid writer-precision vector measurement: {fixture}/{output}")
-        else:
-            raise ValueError(f"invalid writer-precision output: {fixture}/{output}")
-        entries[key] = item
-    if census.get("counts", {}).get("c") != len(entries) or not entries:
-        raise ValueError("writer-precision census inventory differs")
-    return entries
-
-
-def read_v2_migrations(golden_root: Path) -> dict[tuple[str, str], dict]:
-    """Load exact v1-to-v2 output migrations, including their oracle provenance."""
-    path = golden_root.parent / "supplemental" / golden_root.name / "migrations.json"
-    if not path.is_file():
-        return {}
-    data = json.loads(read_text(path))
-    if (
-        data.get("schema") != 1
-        or not re.fullmatch(r"[0-9a-f]{40}", data.get("engine_commit", ""))
-        or not isinstance(data.get("entries"), list)
-        or any(
-            not re.fullmatch(r"[0-9a-f]{40}", str(data.get(field, "")))
-            for field in ("engine_gate_commit", "engine_tree")
-        )
-    ):
-        raise ValueError("invalid v2 migration header")
-    sources = {source.name: source for source in fixture_files() + supplemental_mnx_files()}
-    sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})
-    census_path = data.get("precision_census")
-    if census_path is not None and census_path != "tests/data/golden/output-census.json":
-        raise ValueError("invalid writer-precision census path")
-    precision = read_precision_census(data, golden_root.name) if census_path else {}
-    precision_keys = set()
-    result = {}
-    for entry in data["entries"]:
-        if not isinstance(entry, dict):
-            raise ValueError("invalid v2 migration entry")
-        fixture, output = entry.get("fixture"), entry.get("output")
-        key = (fixture, output)
-        if (
-            not isinstance(fixture, str)
-            or not isinstance(output, str)
-            or fixture not in sources
-            or key in result
-            or any(char in fixture + output for char in "*?[]")
-            or any(
-                not re.fullmatch(r"[0-9a-f]{64}", str(entry.get(field, "")))
-                for field in (
-                    "baseline_sha256",
-                    "actual_sha256",
-                    "oracle_sha256",
-                    "fixture_sha256",
-                )
-            )
-            or entry["fixture_sha256"] != sha256(sources[fixture].read_bytes())
-            or entry["actual_sha256"] != entry["oracle_sha256"]
-            or any(not isinstance(entry.get(field), str) or not entry[field].strip() for field in ("oracle", "reason"))
-        ):
-            raise ValueError(f"invalid v2 migration provenance for {fixture}/{output}")
-        if fixture in EDIT_SCENARIOS:
-            scenario = json.dumps(
-                EDIT_SCENARIOS[fixture],
-                sort_keys=True,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ).encode("utf-8")
-            if entry.get("scenario_sha256") != sha256(scenario):
-                raise ValueError(f"edit scenario changed: {fixture}")
-        if sources[fixture].name == "created.json":
-            xml = composition_musicxml(json.loads(read_text(sources[fixture]))).encode("utf-8")
-            if entry.get("input_sha256") != sha256(xml) or entry.get("converter_sha256") != sha256(
-                (ROOT / "tests/support/composition_fixture.py").read_bytes()
-            ):
-                raise ValueError(f"created input or converter changed: {fixture}")
-        kind = entry.get("kind", "standalone")
-        if kind in ("snapshot", "snapshot-precision"):
-            direct, measurement = entry.get("direct_sha256"), entry.get("measurement")
-            if not re.fullmatch(r"[0-9a-f]{64}", str(direct)) or not isinstance(measurement, dict):
-                raise ValueError(f"invalid snapshot evidence for {fixture}/{output}")
-            if direct != entry["baseline_sha256"]:
-                prior = load_allow(golden_root.parent / "allow.json")
-                _, accepted, _ = allow_accept(prior, fixture, output, "different", direct, golden_root.name)
-                if accepted is None:
-                    raise ValueError(f"direct snapshot oracle has no existing baseline allowance: {fixture}/{output}")
-            if kind == "snapshot-precision":
-                evidence = precision.get(key)
-                if (
-                    evidence is None
-                    or entry["baseline_sha256"] != evidence["baseline_sha256"]
-                    or direct != evidence["direct_engine_sha256"]
-                    or entry["actual_sha256"] != evidence["host_sha256"]
-                    or entry["oracle_sha256"] != evidence["reopened_engine_sha256"]
-                    or measurement != evidence["measurement"]
-                    or (output.endswith(".png.json") and entry.get("raw_png_sha256") != evidence["raw_host_png_sha256"])
-                ):
-                    raise ValueError(f"writer-precision census mismatch: {fixture}/{output}")
-                precision_keys.add(key)
-            elif output.endswith(".svg") or output == "score.pdf.json":
-                delta = measurement.get("max_delta")
-                if (
-                    type(delta) not in (int, float)
-                    or not math.isfinite(delta)
-                    or not 0 <= delta <= 0.02
-                    or measurement.get("structural") != []
-                    or measurement.get("within") is not True
-                ):
-                    raise ValueError(f"snapshot vector exceeds 0.02 pt: {fixture}/{output}")
-            elif output.endswith(".png.json"):
-                dimensions = measurement.get("compared_dimensions")
-                delta = measurement.get("size_delta")
-                pixels, limit = (
-                    measurement.get("pixel_diff"),
-                    measurement.get("pixel_limit"),
-                )
-                if (
-                    not isinstance(dimensions, list)
-                    or len(dimensions) != 2
-                    or any(type(n) is not int or n <= 0 for n in dimensions)
-                    or not isinstance(delta, list)
-                    or len(delta) != 2
-                    or any(type(n) is not int or abs(n) > 1 for n in delta)
-                    or type(pixels) is not int
-                    or type(limit) is not int
-                    or limit != max(100, dimensions[0] * dimensions[1] // 20000)
-                    or not 0 <= pixels <= limit
-                    or measurement.get("blank_extra_border") is not True
-                    or measurement.get("within") is not True
-                ):
-                    raise ValueError(f"snapshot PNG exceeds pixel or size tolerance: {fixture}/{output}")
-            else:
-                raise ValueError(f"invalid snapshot output: {fixture}/{output}")
-        elif kind != "standalone":
-            raise ValueError(f"invalid v2 migration kind: {kind}")
-        result[key] = entry
-    if precision_keys != set(precision):
-        raise ValueError("writer-precision migrations do not match the census inventory")
-    return result
-
-
-def v2_migration_accept(
-    entries: dict,
-    fixture: str,
-    output: str,
-    baseline_sha: str | None,
-    actual_sha: str | None,
-) -> dict | None:
-    entry = entries.get((fixture, output))
-    if entry and baseline_sha == entry["baseline_sha256"] and actual_sha == entry["actual_sha256"]:
-        return entry
-    return None
-
-
-def snapshot_pin_mismatch(entry: dict | None, baseline_sha: str | None, actual_sha: str | None) -> bool:
-    """Require an exact recorded snapshot or restored direct-render oracle."""
-    return bool(
-        entry
-        and entry.get("kind") in ("snapshot", "snapshot-precision")
-        and (
-            baseline_sha != entry["baseline_sha256"]
-            or actual_sha not in (entry["actual_sha256"], entry["direct_sha256"])
-        )
-    )
-
-
-def precision_png_accept(entry: dict, actual_raw_sha: str | None) -> bool:
-    """Require the exact encoded PNG as well as its indexed RGBA descriptor."""
-    if entry.get("kind") != "snapshot-precision" or not entry["output"].endswith(".png.json"):
-        return True
-    expected = entry.get("raw_png_sha256")
-    return bool(expected) and actual_raw_sha == expected
 
 
 def silence_windows(audio: dict) -> list[bool]:
@@ -1663,13 +1327,42 @@ def write_diff(root: Path, fixture: str, output: str, golden: Path, actual: Path
     )
 
 
+def verify_input_provenance() -> list[str]:
+    """Check current inputs against main's reviewed migration pins."""
+    try:
+        pins = json.loads(read_text(ROOT / "tests/data/golden/inputs.json"))["fixtures"]
+        sources = {source.name: source for source in fixture_files() + mnx_fixture_files()}
+        sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})
+        if set(pins) != set(sources):
+            return ["input fixture inventory differs from reviewed pins"]
+        issues = []
+        for name, source in sources.items():
+            entry = pins[name]
+            if entry["fixture_sha256"] != sha256(source.read_bytes()):
+                issues.append(f"input fixture changed: {name}")
+            if name in EDIT_SCENARIOS:
+                scenario = json.dumps(
+                    EDIT_SCENARIOS[name], sort_keys=True, ensure_ascii=False, separators=(",", ":")
+                ).encode("utf-8")
+                if entry.get("scenario_sha256") != sha256(scenario):
+                    issues.append(f"edit scenario changed: {name}")
+            if source.name == "created.json":
+                xml = composition_musicxml(json.loads(read_text(source))).encode("utf-8")
+                if entry.get("input_sha256") != sha256(xml) or entry.get("converter_sha256") != sha256(
+                    (ROOT / "tests/support/composition_fixture.py").read_bytes()
+                ):
+                    issues.append(f"created input or converter changed: {name}")
+        return issues
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return [f"invalid input provenance: {exc}"]
+
+
 def compare_trees(
     golden_root: Path,
     actual_root: Path,
     allow: list[dict],
     output: Path,
     platform: str,
-    raw_png_hashes: dict | None = None,
 ) -> int:
     golden_index = json.loads(read_text(golden_root / "index.json"))
     counts = {
@@ -1683,7 +1376,6 @@ def compare_trees(
             "goldenError",
             "extraFixture",
             "index",
-            "legacyOnly",
         )
     }
     report = {
@@ -1701,26 +1393,8 @@ def compare_trees(
     if diff_root.exists():
         shutil.rmtree(diff_root)
 
-    try:
-        overlay, supplemental, additions = read_v2_index(golden_root)
-        if overlay is not None and golden_root.name != platform:
-            raise ValueError(f"v2 index is for {golden_root.name}, not {platform}")
-        if set(golden_index) & set(supplemental):
-            raise ValueError("v2 supplemental fixtures overlap the historical index")
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-        overlay, supplemental, additions = None, {}, {}
-        report["indexIssues"].append(f"invalid v2 index: {exc}")
-    try:
-        migrations = read_v2_migrations(golden_root)
-        if migrations and golden_root.name != platform:
-            raise ValueError(f"v2 migrations are for {golden_root.name}, not {platform}")
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-        migrations = {}
-        report["indexIssues"].append(f"invalid v2 migrations: {exc}")
-    golden_index = {**golden_index, **supplemental}
     report["indexIssues"].extend(verify_golden_index(golden_root, golden_index))
-    if overlay is not None:
-        report["indexIssues"].extend(f"v2: {issue}" for issue in verify_golden_index(overlay, additions))
+    report["indexIssues"].extend(verify_input_provenance())
     counts["index"] = len(report["indexIssues"])
     for issue in report["indexIssues"]:
         print(f"index    {issue}")
@@ -1731,7 +1405,7 @@ def compare_trees(
         print(f"extra fixture  {fixture}")
 
     for fixture in sorted(golden_index):
-        expected = {**golden_index[fixture], **additions.get(fixture, {})}
+        expected = golden_index[fixture]
         golden_dir, actual_dir = golden_root / fixture, actual_root / fixture
         actual_files = (
             {path.relative_to(actual_dir).as_posix() for path in actual_dir.rglob("*") if path.is_file()}
@@ -1740,22 +1414,10 @@ def compare_trees(
         )
         results = report["fixtures"].setdefault(fixture, {})
         for name in sorted(set(expected) | actual_files):
-            golden_file = (overlay / fixture / name) if name in additions.get(fixture, {}) else (golden_dir / name)
+            golden_file = golden_dir / name
             actual_file = actual_dir / name
             golden_sha = sha256(golden_file.read_bytes()) if golden_file.is_file() else None
             actual_sha = sha256(actual_file.read_bytes()) if actual_file.is_file() else None
-            if name.rsplit("/", 1)[-1] == "metadata.json" and name in expected and actual_sha is None:
-                # V2 has no metadata file format. Live outline and audio-track
-                # assertions belong to the v2 facade and excerpt tests; retain
-                # and index-verify the historical byte baseline separately.
-                counts["legacyOnly"] += 1
-                results[name] = {
-                    "status": "v1-only",
-                    "goldenSha256": golden_sha,
-                    "replacement": "score_outline and score_query audio_tracks",
-                }
-                print(f"v1-only  {fixture}/{name} (replacement: outline/audio_tracks)")
-                continue
             golden_error = golden_sha is not None and name.endswith(".error.txt")
             golden_format = None
             if actual_sha is None:
@@ -1772,19 +1434,6 @@ def compare_trees(
                     # allow entry may cover: it must be recaptured.
                     same, golden_format = False, str(exc)
                 kind = None if same and not golden_error else "different"
-            pin = migrations.get((fixture, name))
-            if snapshot_pin_mismatch(pin, golden_sha, actual_sha):
-                failure_kind = "missing" if actual_sha is None else "different"
-                counts[failure_kind] += 1
-                results[name] = {
-                    "status": failure_kind,
-                    "kind": failure_kind,
-                    "goldenSha256": golden_sha,
-                    "actualSha256": actual_sha,
-                    "error": "snapshot baseline or host hash changed",
-                }
-                print(f"{failure_kind} {fixture}/{name}: snapshot baseline or host hash changed")
-                continue
             if kind is None:
                 counts["identical"] += 1
                 results[name] = {"status": "identical", "sha256": actual_sha}
@@ -1799,39 +1448,6 @@ def compare_trees(
                     "error": golden_format,
                 }
                 print(f"golden-format {fixture}/{name}: {golden_format}")
-                continue
-
-            migration = (
-                v2_migration_accept(migrations, fixture, name, golden_sha, actual_sha)
-                if kind == "different" and not golden_error
-                else None
-            )
-            if migration and not precision_png_accept(migration, (raw_png_hashes or {}).get(fixture)):
-                counts["different"] += 1
-                results[name] = {
-                    "status": "different",
-                    "kind": kind,
-                    "goldenSha256": golden_sha,
-                    "actualSha256": actual_sha,
-                    "error": "snapshot-precision raw PNG hash missing or changed",
-                }
-                print(f"different {fixture}/{name}: snapshot-precision raw PNG hash missing or changed")
-                continue
-            if migration:
-                counts["allowed"] += 1
-                status = {
-                    "snapshot": "v2-snapshot",
-                    "snapshot-precision": "v2-snapshot-precision",
-                }.get(migration.get("kind"), "v2-migrated")
-                results[name] = {
-                    "status": status,
-                    "kind": kind,
-                    "reason": migration["reason"],
-                    "oracle": migration["oracle"],
-                    "actualSha256": actual_sha,
-                    "goldenSha256": golden_sha,
-                }
-                print(f"{status} {fixture}/{name} (public-API oracle; exact hashes)")
                 continue
 
             position, entry, problem = allow_accept(allow, fixture, name, kind, actual_sha, platform)
@@ -1863,7 +1479,8 @@ def compare_trees(
                 write_diff(diff_root, fixture, name, golden_file, actual_file)
 
     for position, entry in enumerate(allow):
-        if position not in matched_allow:
+        # An entry is only expected to match on the platforms it pins.
+        if position not in matched_allow and platform in entry["sha256"]:
             report["stale"].append(entry)
             print(
                 f"stale    allow entry fixture={entry['fixture']} output={entry['output']} "
@@ -1881,6 +1498,7 @@ def compare_trees(
             "index",
         )
     )
+    failing += len(report["stale"])
     report["status"] = "pass" if failing == 0 else "fail"
     write_json(output / "report.json", report, indent=2)
     total = sum(
@@ -1903,7 +1521,6 @@ def compare_trees(
 
 def command_capture(args) -> int:
     args.golden.mkdir(parents=True, exist_ok=True)
-    require_eid_mode(args.golden, args.legacy_blank_eids)
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
         index = asyncio.run(
             asyncio.wait_for(
@@ -1913,8 +1530,6 @@ def command_capture(args) -> int:
                     args.soundfont,
                     args.golden,
                     Path(temporary) / "server-stderr.log",
-                    golden_root=args.golden,
-                    legacy_blank_eids=args.legacy_blank_eids,
                 ),
                 timeout=1800,
             )
@@ -1934,9 +1549,7 @@ def command_capture(args) -> int:
 def command_compare(args) -> int:
     allow = load_allow(args.allow)
     args.output.mkdir(parents=True, exist_ok=True)
-    require_eid_mode(args.golden, args.legacy_blank_eids)
     actual = args.output / "actual"
-    raw_png_hashes = {}
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
         asyncio.run(
             asyncio.wait_for(
@@ -1946,17 +1559,13 @@ def command_compare(args) -> int:
                     args.soundfont,
                     actual,
                     Path(temporary) / "server-stderr.log",
-                    golden_root=args.golden,
-                    legacy_blank_eids=args.legacy_blank_eids,
-                    raw_png_hashes=raw_png_hashes,
                 ),
                 timeout=1800,
             )
         )
         # Keep a copy of the server log for debugging (outside the compared tree).
         shutil.copyfile(Path(temporary) / "server-stderr.log", args.output / "server-stderr.log")
-    write_json(args.output / "raw-png-sha256.json", raw_png_hashes, indent=2)
-    return compare_trees(args.golden, actual, allow, args.output, args.platform, raw_png_hashes)
+    return compare_trees(args.golden, actual, allow, args.output, args.platform)
 
 
 def command_pin(args) -> int:
@@ -2007,13 +1616,6 @@ def main() -> int:
             sub.add_argument("--allow", type=Path, required=True)
             sub.add_argument("--output", type=Path, required=True)
             sub.add_argument("--platform", choices=("windows", "linux"), default=DEFAULT_PLATFORM)
-        sub.add_argument(
-            "--legacy-blank-eids",
-            action="store_true",
-            help="read/write the 4.7.6 blanked-EID representation instead of "
-            "token EIDs (explicit migration only; it cannot detect a "
-            "changed reference target)",
-        )
     pin = subparsers.add_parser("pin")
     pin.add_argument("--golden", type=Path, required=True)
     pin.add_argument("--output", type=Path, required=True)

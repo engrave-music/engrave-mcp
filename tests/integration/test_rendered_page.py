@@ -301,21 +301,54 @@ class TestRenderedPageControls(unittest.TestCase):
                 self.assertEqual(page.main(), 1)
             self.assertIn("outside viewBox", output.getvalue())
 
-    def test_existing_svg_allowance_is_exact_and_platform_specific(self):
-        from support import golden as golden
-
+    def test_reviewed_svg_hash_is_exact_and_platform_specific(self):
         name = "layout_elements.mscx/page-0.svg"
-        entries = golden.load_allow(page.ROOT / "tests/data/golden/allow.json")
-        pin = next(
-            e
-            for e in entries
-            if e["fixture"] == "layout_elements.mscx" and e["output"] == "page-0.svg" and "linux" in e.get("sha256", {})
-        )
-        digest = pin["sha256"]["linux"]
+        index = json.loads((page.ROOT / "tests/data/golden/linux/index.json").read_text(encoding="utf-8"))
+        digest = index["layout_elements.mscx"]["page-0.svg"]
         with mock.patch.object(page.sys, "platform", "linux"):
             self.assertTrue(page.accepted_svg_counts(name, digest))
             self.assertFalse(page.accepted_svg_counts(name, "0" * 64))
             self.assertFalse(page.accepted_svg_counts("unknown.mscx/page-0.svg", digest))
+        with mock.patch.object(page.sys, "platform", "win32"):
+            self.assertFalse(page.accepted_svg_counts(name, digest))
+
+    def test_removed_glyph_with_updated_index_fails(self):
+        name = "layout_elements.mscx/page-0.svg"
+        platform = "windows" if sys.platform.startswith("win") else "linux"
+        source = page.ROOT / "tests/data/golden" / platform / name
+        payload = json.loads((page.ROOT / "tests/data/golden/page_reference.json").read_text())
+        payload["pages"] = {name: payload["pages"][name]}
+        payload["pages"][name]["png"] = None
+        payload["png_exceptions"] = []
+        payload["count_exceptions"] = [e for e in payload["count_exceptions"] if e["page"] == name]
+        with tempfile.TemporaryDirectory() as temporary:
+            temp = Path(temporary)
+            target = temp / "capture" / name
+            target.parent.mkdir(parents=True)
+            target.write_bytes(source.read_bytes())
+            reference = temp / "reference.json"
+            reference.write_text(json.dumps(payload))
+            args = ["checker", "--golden", str(temp / "capture"), "--reference", str(reference)]
+            with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(page.main(), 0)
+            tree = ET.fromstring(target.read_text())
+            use = next(tree.iter(page.SVG + "use"))
+            parents = {child: parent for parent in tree.iter() for child in parent}
+            parents[use].remove(use)
+            target.write_text(ET.tostring(tree, encoding="unicode"))
+            fake = temp / "repo"
+            baseline = fake / "tests/data/golden" / platform / name
+            baseline.parent.mkdir(parents=True)
+            baseline.write_bytes(target.read_bytes())
+            (baseline.parent.parent / "index.json").write_text(
+                json.dumps({"layout_elements.mscx": {"page-0.svg": hashlib.sha256(target.read_bytes()).hexdigest()}})
+            )
+            with (
+                mock.patch.object(page, "ROOT", fake),
+                mock.patch.object(sys, "argv", args),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(page.main(), 1)
 
     def test_count_exception_requires_exact_changed_counts_and_svg_hash(self):
         use = next(self.root.iter(page.SVG + "use"))
@@ -538,18 +571,6 @@ class TestPngInkControls(unittest.TestCase):
         with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(output):
             self.assertEqual(page.main(), 1)
         self.assertIn("precision exception diagnostics do not match", output.getvalue())
-
-    def test_checked_in_png_exception_matches_the_census(self):
-        payload = json.loads(REFERENCE.read_text(encoding="utf-8"))
-        pin = page.png_exceptions(payload)[("windows", "drums_import.musicxml/page-0.png")]
-        census = json.loads((ROOT / "tests/data/golden/output-census.json").read_text(encoding="utf-8"))
-        item = next(
-            item
-            for item in census["entries"]
-            if item["fixture"] == "drums_import.musicxml" and item["output"] == "page-0.png.json"
-        )
-        self.assertEqual(pin["png_sha256"], item["raw_reopened_png_sha256"])
-        self.assertEqual(pin["issues"], item["rendered_page_diagnostic"]["issues"])
 
 
 if __name__ == "__main__":

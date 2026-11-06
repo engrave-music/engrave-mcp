@@ -2,7 +2,7 @@
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/engrave` (shallow, pinned by commit SHA).
-The current pin is `ae3d7193e1`.
+The current pin is `42c6b2550a`.
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
 terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
@@ -24,7 +24,7 @@ Since A4 the fork carries the engine's standalone Qt-free xmake build, and since
 - `xmake/engrave.lua` — the engine targets (`muse_global`, `muse_draw`, `muse_mpe`, `engraving`, `iex_musicxml`, `iex_mnx`, `iex_guitarpro`, `iex_midi`, `native_fluidsynth`, `muse_audio_engine`, and `engrave`), generated version metadata (`engrave_version.h`), and pinned package requirements. Targets compile via folder globs.
 - `xmake/tests.lua` — opt-in test targets (`--engrave_tests=y`) and the `c0_gate` phony target that builds the public-API, import, playback and adapter regression suites. `tests/engine_gate.py` builds and executes the gate and artifact comparisons; it also runs `diagnostics_test`, `io_boundary_test`, the installer tests and manifest verification (DEFECT-ENGRAVE-010 is resolved).
 - `xmake/packages/` — the pinned third-party recipes (`freetype`, `harfbuzz`, `flac`, `lame`, `opus`, `opusenc`, `fdk-aac`, `pugixml`, `utfcpp`, `picojson`, `mnx-json-schema`, `mnxdom`, plus `zlib` for standalone builds).
-- `engrave/assets.json` & `tools/install_assets.py` — the versioned SHA256/size asset manifest (345 pinned files including fonts, instruments, templates, MPE profiles, and licenses) and standalone asset installer replacing legacy `.qrc` lists.
+- `engrave/assets.json` & `tools/install_assets.py` — the versioned SHA256/size asset manifest (349 pinned files including fonts, instruments, templates, MPE profiles, and licenses) and standalone asset installer replacing legacy `.qrc` lists.
 
 ## Rules (Hard-Fork Governance)
 
@@ -34,7 +34,7 @@ Following the final upstream sync (`upstream-final` at `cbffaa078d`, upstream `3
 - **Branch hygiene**: feature branches (`feat/...`, `fix/...`) are merged to `main` and then deleted. Only `main` persists; see [branching.md](branching.md).
 - **Pins and provenance**: Every engine state pinned by `vendor/engrave` in the superproject is a commit on `main` with a ledger row recording that commit, delta summary, and validation evidence on both Windows and Linux (`linux-host`). Pins are not tagged; tags are reserved for real version releases. The `engrave-<n>` pin tags were deleted on 2026-11-06; earlier ledger rows keep those names as labels. The final synced upstream (`32f0a26e5b`) and framework (`da3885cb`) SHAs remain ancestral provenance.
 - **Frozen upstream reference branches**: `upstream/musescore` and `upstream/muse-framework` are frozen reference branches. There are no scheduled upstream merges, forced updates, subtree-equality checks, or "tool-made merge commits only" restrictions. Specific upstream commits may be fetched and cherry-picked/adapted on demand with their upstream SHA, framework origin (if applicable), rationale, and focused test evidence.
-- **Historical sync & trim artifacts**: `tools/sync-upstream.py` and its synthetic recovery suite (`tools/test_sync_upstream.py`) are archived in Git history at `upstream-final`..`engrave-13` and removed from the active tree in C8. `TRIM` is retained as historical deletion provenance for A3 batches 1–8 and C1 `drop-3x`, not an active path-denial list for new code.
+- **Historical sync & trim artifacts**: `tools/sync-upstream.py` and its synthetic recovery suite (`tools/test_sync_upstream.py`) are archived in Git history at `upstream-final`..`engrave-13` and removed from the active tree in C8. `TRIM` was removed during the engine hygiene cleanup; historical deletion provenance remains in Git history.
 - **Asset & license provenance**: Runtime assets and third-party font/engine licenses are pinned by SHA256 and byte size in `engrave/assets.json` and installed/verified via `tools/install_assets.py`. GPL-3.0 notices and third-party license files are preserved.
 - **Validation**: Every pin requires green `tests/engine_gate.py` validation across supported input corpora (5.00 MSCZ/MSCX, MusicXML/MXL, MIDI, Guitar Pro/PowerTab, MNX) and render/audio goldens on both native Windows and physical Linux (`linux-host`).
 - **Practicalities**:
