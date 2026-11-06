@@ -21,7 +21,10 @@ fork is a hard fork (one last upstream sync, then cherry-picks only).
   `xmake.lua`, which includes the engine build from `vendor/engrave`; validate Windows
   and Linux.
   Work natively on Windows (PowerShell, `.pixi/envs/native/python.exe`). Linux means the
-  physical host `ssh <linux-host>` (a separate checkout); never use WSL for this project.
+  physical host `ssh <linux-host>` (checkout `~/OSS/engrave-mcp`); never use WSL for this project.
+  Both repositories are on GitHub (host: private `Locietta/engrave-mcp`); move commits
+  between machines by pushing and fetching branches, never git bundles or copied
+  worktrees (`docs/dev/branching.md`).
   Current design and rationale: `docs/dev/design.md`; open issues: `docs/dev/defects.md`;
   project history: `docs/dev/history.md`; branch and tag policy: `docs/dev/branching.md`.
   Keep only `main` as a long-lived branch: merge topic branches and delete them; tag

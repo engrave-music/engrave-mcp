@@ -14,8 +14,24 @@ Two repositories matter: the host (`engrave-mcp`) and the engine checkout
   - `checkpoint/YYYY-MM-DD` — a consolidated state worth returning to.
   - `v<version>` — a real release, once there is one.
 - Do not create a tag for every merge; the history already records those.
-- No remote is configured today. When one is added, push `main` and the
-  checkpoint tags; do not push topic branches.
+- `origin` is the private GitHub repository
+  `https://github.com/Locietta/engrave-mcp` (published 2026-11-06); `main`
+  tracks `origin/main`. Push `main` and checkpoint tags as they are made.
+
+## Moving work between machines
+
+Windows and linux-host exchange commits only through GitHub; git bundles and copied
+worktrees are retired.
+
+- A topic branch that linux-host must build or validate is pushed to `origin`, fetched
+  on linux-host, and deleted on GitHub once merged or abandoned. Work done on linux-host is
+  pushed the same way.
+- Push the engine commit and its `engrave-<n>` tag before pushing a host commit
+  that pins it, so the submodule pin always resolves.
+- linux-host's checkout is `~/OSS/engrave-mcp`. Port 22 to GitHub is blocked there;
+  its `~/.ssh/config` routes `github.com` through `ssh.github.com:443`. The host
+  remote is `git@github.com:Locietta/engrave-mcp.git`; the engine fetches over
+  HTTPS and pushes over SSH.
 
 ## Engine repository (`vendor/engrave`)
 
