@@ -86,7 +86,10 @@ only.
 
 The gate builds the fork's `c0_gate` target and runs the API, import, playback
 and adapter suites, plus `diagnostics_test`, `io_boundary_test`, the engine
-installer's unit tests and verification of the supplied asset directory. It
+installer's unit tests and verification of the supplied asset directory. The
+`mnx_schema` step validates the MNX files that `engrave_mnx_import_test`
+exports against the vendored W3C MNX schema with a draft 2020-12 validator
+(`scripts/check_mnx_schema.py`; mnxdom's own validator implements draft 7). It
 compares outputs against the pinned goldens with `golden.py`'s comparators and
 the per-platform hash allow-list. At `engrave-31` the gate was green on Windows
 (213 identical / 38 allowed / 0 different / 0 missing) and on linux-host

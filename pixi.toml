@@ -17,6 +17,7 @@ prettier = "==3.9.10"
 taplo = "==0.10.0"
 
 [tasks]
+build = "xmake build -y"
 setup-hooks = "python scripts/setup_hooks.py"
 format = "python scripts/format.py"
 format-check = "python scripts/format.py --check ."
