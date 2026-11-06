@@ -1,77 +1,34 @@
 # Defects and known limitations
 
-This is the current defect ledger for the engine fork and the host. It records
-open issues, accepted limitations and a compact index of resolved ones. Full
-investigations and per-phase evidence live in Git history (the curated docs
-snapshot is commit `704295d`); `notes/` is ignored scratch space and is cited
-only as provenance.
+This document records active defects and known limitations for the engine and host.
 
-Evidence levels: **SOURCE-REVIEWED** (inspected in tracked source),
-**EXECUTED** (compiled/run and observed), **REPORTED** (recorded in a prior
-investigation).
+## Open and carried issues
 
-## Open and carried
+| ID  | Issue                                             | Status               | Details                                                                                                                                                               |
+| --- | ------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 001 | LeakSanitizer findings                            | Open                 | The long-lived host is not proven leak-clean across repeated document lifecycles. Address-only ASan checks pass; LSan findings remain open.                           |
+| 003 | Subnormal reverb-tail float divergence            | Carried              | Linux reverb tails can experience performance slowdowns without FTZ/DAZ flags. Bit-exact synthesis is preserved.                                                      |
+| 004 | Batch rollback may move layout                    | Documented contract  | A failed edit batch reloads a score snapshot or undoes an engine command when unwind cannot be verified in-place, which can move layout elements.                     |
+| 013 | Pitch edit can leave a mismatched tie             | Open                 | An exported mismatched tie may fail to survive MusicXML reimport; no diagnostic is currently emitted.                                                                 |
+| 016 | Writer numeric precision in save/reopen           | Open                 | Serialized floating-point layout dimensions can lose precision across export/reopen cycles and alter visual placement.                                                |
+| 018 | MIDI and workspace-estimate bounds                | Partially bounded    | Score capture and position JSON are bounded by byte limits; MIDI export and workspace estimation do not establish a hard process memory bound.                        |
+| 024 | 4.70 cannot represent part EIDs                   | Format limitation    | Shared-part downgrades preserve numeric part IDs but cannot write part element IDs (EIDs); representable element EIDs are preserved.                                  |
+| 025 | 4.70 refuses scores with generated accidentals    | Bounded contract gap | Accidental conversion is not implemented in the 4.70 writer. Scores requiring generated accidentals are refused with `B470_UNSUPPORTED_FEATURE` rather than degraded. |
+| 026 | Standalone MSCX drops style blocks and reflows    | Open                 | Standalone MSCX export omits default page margins and style blocks, causing layout reflow upon reopening; the same scores round-trip cleanly as MSCZ archives.        |
+| 027 | Dynamic placement edit can be ignored             | Open                 | Applying an edit batch that updates dynamic placement to `above` can report success while leaving placement as `below` in memory and on disk.                         |
+| 028 | Default-valued text-frame overrides               | Open                 | The score writer omits unstyled properties matching current defaults, meaning an explicit no-frame or zero-rounding override can reopen as styled.                    |
+| 029 | Windows dense-audio cancellation timing assertion | Open limitation      | The dense-audio cancellation p95 assertion intermittently exceeds 30 ms on Windows under system load and thread scheduling jitter.                                    |
+| 030 | Windows MAX_PATH length on long output roots      | Open limitation      | Destination paths and private staging folders exceeding 260 characters on Windows can trigger filesystem IO errors; short temporary directory roots are required.     |
 
-| ID  | Issue                                                              | Status                                          | Evidence                  | Impact                                                                                                                                                                                                                                                                       |
-| --- | ------------------------------------------------------------------ | ----------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 001 | LeakSanitizer findings at `engrave-14`                             | Open                                            | EXECUTED, SOURCE-REVIEWED | The long-lived host is not proven leak-clean across repeated document lifecycles. Address-only ASan runs pass; LSan findings remain documented, not fixed.                                                                                                                   |
-| 003 | Subnormal reverb-tail float divergence                             | Carried, not adopted                            | SOURCE-REVIEWED           | Linux reverb tails can be slower without FTZ/DAZ. Bit-exactness is preserved; no fix adopted.                                                                                                                                                                                |
-| 004 | Batch rollback may move layout                                     | Accepted contract                               | SOURCE-REVIEWED, REPORTED | A failed batch reloads a snapshot (or undoes a command) when the unwind is not trusted, which can move elements. Documented, not promised bit-exact.                                                                                                                         |
-| 013 | Pitch edit can leave a mismatched tie                              | Open                                            | SOURCE-REVIEWED, EXECUTED | An exported mismatched tie may not survive MusicXML reimport; no diagnostic is emitted.                                                                                                                                                                                      |
-| 016 | Writer numeric precision in save/reopen                            | Open                                            | SOURCE-REVIEWED, EXECUTED | Serialized dimensions can lose precision and alter later output.                                                                                                                                                                                                             |
-| 018 | MIDI and workspace-estimate capture gaps                           | Partially resolved                              | SOURCE-REVIEWED, EXECUTED | Live score capture and position JSON are bounded; MIDI capture and the workspace estimate are not a hard memory bound.                                                                                                                                                       |
-| 024 | 4.70 cannot represent part EIDs                                    | Accepted format limitation                      | EXECUTED, SOURCE-REVIEWED | Shared-part downgrades keep numeric part IDs but cannot write part EIDs; representable element EIDs are preserved.                                                                                                                                                           |
-| 025 | 4.70 refuses scores with generated accidentals                     | Open, bounded-contract gap                      | EXECUTED                  | Accidental conversion is not implemented. A score that needs generated accidentals is refused with `B470_UNSUPPORTED_FEATURE` rather than degraded.                                                                                                                          |
-| 026 | Standalone MSCX drops style blocks and reflows on reopen           | Open                                            | EXECUTED                  | MSCX round trips can shift a segment by up to 25.26 pt and change 23,909 pixels; the same scores round-trip exactly as MSCZ. Page margins and default style blocks are not written.                                                                                          |
-| 027 | Dynamic placement edit can be ignored                              | Open; unrelated to the upstream grouping change | EXECUTED                  | On Windows at `engrave-33`, a batch setting an imported dynamic's `VELOCITY` to 73 and `placement` to `above` reports success, but placement remains `below` immediately and after MSCX reopen. Repairing this existing editing behavior is outside the grouping adaptation. |
-| 028 | Default-valued text-frame overrides may lose their override status | Open; outside the grouping adaptation           | SOURCE-REVIEWED           | The native writer omits unstyled properties that equal the current default. An explicit no-frame or zero-rounding override can reopen as styled and follow a later style change. This is a general serialization behavior present at `engrave-33`.                           |
+## Current limitations
 
-## Accepted limitations (not defects to chase)
-
-- **012 / 015 — snapshot rendering.** Historical A5 export jobs rendered MSCZ
-  snapshots, which was not bit-identical to a direct render. M4 renders the live
-  document, so this no longer affects exports; save/reopen layout differences
-  remain and are why live export exists.
-- **Audio latency variance.** M4 accepts warm WAV latency as an unresolved
-  variance limit. Full replays produced passing and failing runs at the same
-  binary under host contention. Functional parity, byte-identical audio and
-  cancellation pass; the p95 is an observation, not a guarantee.
-- **Filesystem corners.** Complex DACLs, SMB semantics, device namespaces and
-  multi-file transactions are explicit non-goals; see [scope.md](scope.md).
-- **No isolation mode.** A render/audio/writer crash ends the session. Use one
-  disposable server per untrusted file operationally.
-- **Complex MusicXML dynamics.** Exact round trips for arbitrary mixtures of
-  conflicting dynamics, literal pseudo-markup and unsupported vendor glyphs are
-  outside the compatibility target. Source review of candidate `8eb0c25a52`
-  found that a container with `ff`, `pp`, textual `sf`, and `p` can change the
-  resulting dynamic type when exported and reimported. An executed Linux probe
-  at `8eb0c25a52` observed `SF` become `SFP` with identical displayed text.
-  This is separate from the chosen initial grouping playback change.
-
-## Resolved (index)
-
-| ID  | Resolution                                                                                                 |
-| --- | ---------------------------------------------------------------------------------------------------------- |
-| 002 | Corrected the historical A4 "ASan clean" claim: it was address-only with `detect_leaks=0`, not leak-clean. |
-| 005 | Host asset staging moved to the engine installer (`b53ff3b`), 345 files / 28,380,646 bytes verified.       |
-| 006 | Phase C accepted 2026-11-01 by Astra with no must-fix items.                                               |
-| 007 | Parked public API work adopted by M4 (positions and excerpt selection).                                    |
-| 008 | Encoder finalization reports codec failure at `engrave-16`.                                                |
-| 009 | Audio storage failures return public `ErrorCode::Io` at `engrave-16`.                                      |
-| 010 | Engine gate runs diagnostics, IO-boundary, installer and manifest checks (`1fb47a7`).                      |
-| 011 | Host adapter ported to the C5–C8 engine API; built and smoke-tested on both hosts.                         |
-| 014 | Live rendering keeps the source version for a clean score; save/reopen reports the writer version.         |
-| 017 | Successful-response schemas no longer inherit request bounds.                                              |
-| 019 | Audio cache and staged copy each receive half the export budget (`engrave-17`).                            |
-| 020 | Snapshot pins take precedence over older direct-engine allowances.                                         |
-| 021 | Worker cache monitor retired with the worker path; engine/sink quotas remain.                              |
-| 022 | Host duration projection removed; repeat-expanded projection is not used.                                  |
-| 023 | Stave-sharing labels survive 5.00 ingest/export at `engrave-21`.                                           |
+- **Layout reflow across file round trips**: Live in-memory exports preserve exact visual placement. Saving to disk and reopening can reflow elements slightly due to XML serialization and margin defaults.
+- **Audio synthesis latency and cancellation variance**: Audio synthesis latency varies with system load and CPU scheduling. The Windows dense-audio cancellation timing assertion is subject to intermittent timing failures above 30 ms.
+- **Windows path length limitations**: Paths approaching or exceeding Windows `MAX_PATH` require short output directories or short temporary roots to prevent staging and atomic move failures.
+- **Filesystem scope**: Complex DACLs, SMB authentication, and multi-file transaction guarantees are explicit non-goals (see [scope.md](scope.md)).
+- **No in-process isolation**: Engine faults in rendering or synthesis terminate the server process. Operational isolation requires running disposable server processes per file or task.
+- **Complex MusicXML dynamics round trips**: Combinations of conflicting dynamic markings and pseudo-markup may be normalized to standardized dynamic types upon import and export.
 
 ## Reporting a new issue
 
-A reviewer may report anything; the orchestrator triages it against
-[scope.md](scope.md). Ordinary single-user local export regressions are fixed.
-Out-of-scope findings are recorded as non-goals, not reopened as defects. New
-entries need an ID, the observed behavior, the evidence level, and the affected
-pin or commit.
+New issues require a unique identifier, an observed reproduction, and triage against [scope.md](scope.md). Findings outside the defined single-user local filesystem scope are documented as non-goals rather than tracked defects.
