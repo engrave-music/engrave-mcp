@@ -10,7 +10,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from engine_style import engine_files
+from engine_style import ENGINE_ROOT, engine_files
 
 FORMATTERS = {
     "clang-format": {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"},
@@ -78,6 +78,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="report files that require formatting without modifying them",
     )
+    parser.add_argument("--engine-root", type=Path, default=ENGINE_ROOT, help="engine checkout (with --engine)")
     parser.add_argument("--engine", action="store_true", help="format tracked owned engine C++ files")
     return parser.parse_args()
 
@@ -189,12 +190,15 @@ def run_formatter(formatter: str, files: list[Path], language: str | None, check
 def main() -> int:
     args = parse_args()
     try:
-        paths = engine_files(args.paths) if args.engine else project_files(args.paths)
-    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        paths = engine_files(args.paths, args.engine_root) if args.engine else project_files(args.paths)
+    except (ValueError, FileNotFoundError, subprocess.CalledProcessError) as error:
         print(f"format: {error}", file=sys.stderr)
         return 1
 
     if not paths:
+        if args.engine:
+            print("format: no owned engine C++ files selected", file=sys.stderr)
+            return 1
         print("No project files found in the provided paths.")
         return 0
 

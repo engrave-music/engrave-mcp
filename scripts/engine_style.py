@@ -7,8 +7,13 @@ CPP_EXTENSIONS = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"}
 ENGINE_ROOT = Path(__file__).resolve().parents[1] / "vendor" / "engrave"
 
 
-def engine_files(paths):
-    root = ENGINE_ROOT.resolve()
+def engine_files(paths, engine_root=ENGINE_ROOT):
+    root = Path(engine_root).resolve()
+    top = Path(
+        subprocess.check_output(["git", "-C", str(root), "rev-parse", "--show-toplevel"], text=True).strip()
+    ).resolve()
+    if top != root:
+        raise ValueError(f"not an initialized engine checkout: {root}")
     selections = [path.resolve() for path in paths]
     for path in selections:
         if not path.exists():

@@ -5,6 +5,7 @@ Usage:
     pixi run setup-hooks
 """
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -13,6 +14,16 @@ import sys
 
 def main():
     repo_root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--engine-root", default=os.path.join(repo_root, "vendor", "engrave"))
+    engine = os.path.realpath(parser.parse_args().engine_root)
+    top = subprocess.check_output(["git", "-C", engine, "rev-parse", "--show-toplevel"], text=True).strip()
+    if os.path.normcase(os.path.realpath(top)) != os.path.normcase(engine) or os.path.normcase(
+        engine
+    ) == os.path.normcase(os.path.realpath(repo_root)):
+        print(f"error: not an initialized engine checkout: {engine}", file=sys.stderr)
+        return 1
 
     src_dir = os.path.join(repo_root, "hooks")
     dst_dir = subprocess.check_output(
@@ -48,7 +59,6 @@ def main():
             shutil.copy2(src, dst)
             print(f"  {name} -> {dst} (copied)")
 
-    engine = os.path.join(repo_root, "vendor", "engrave")
     engine_hooks = subprocess.check_output(
         ["git", "-C", engine, "rev-parse", "--path-format=absolute", "--git-path", "hooks"], text=True
     ).strip()
@@ -56,7 +66,10 @@ def main():
     target = os.path.join(engine_hooks, "pre-commit")
     if os.path.lexists(target):
         os.remove(target)
-    shutil.copy2(os.path.join(src_dir, "engine-pre-commit"), target)
+    with open(os.path.join(src_dir, "engine-pre-commit"), encoding="utf-8") as source:
+        content = source.read().replace("host = engine.parents[1]", "host = Path(" + repr(repo_root) + ")")
+    with open(target, "w", encoding="utf-8", newline="\n") as destination:
+        destination.write(content)
     os.chmod(target, 0o755)
     print(f"Installed engine pre-commit: {target}")
     print(f"\nInstalled {len(hooks)} host hook(s).")

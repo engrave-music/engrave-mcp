@@ -174,3 +174,11 @@ or empty selections. Generate the database with `xmake project -k compile_comman
 after configuring `--engrave_tests=y`. The full engine lint is an acceptance step
 for engine changes. The installed engine pre-commit hook format-checks staged
 blobs; naming is checked at acceptance.
+
+For a build using `--engine_source=DIR`, pass `--engine-root DIR` to engine
+lint, format and setup-hooks. Supply DIR as a selection path as well when it is
+outside the current directory. Hook setup validates an initialized engine
+checkout before changing hooks. Rerun setup-hooks after updating hook code.
+Engine lint intentionally rejects `--fix`, since parallel TUs share headers.
+For a scoped format check, use `pixi run format -- --check --engine PATH`;
+the format-check task includes `.` and checks the full selected engine.

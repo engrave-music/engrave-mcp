@@ -43,6 +43,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="automatically apply lint fixes where available",
     )
+    parser.add_argument("--engine-root", type=Path, default=ENGINE_ROOT, help="engine checkout (with --engine)")
     parser.add_argument("--engine", action="store_true", help="check compiled owned engine translation units")
     parser.add_argument("-j", "--jobs", type=int, default=min(12, os.cpu_count() or 1))
     return parser.parse_args()
@@ -81,7 +82,10 @@ def ensure_compile_commands(repo_root: Path) -> None:
 
 
 def lint_engine(args, repo_root):
-    files = {path.resolve() for path in engine_files(args.paths)}
+    if args.fix:
+        raise ValueError("--fix is unsupported with --engine; shared headers require coordinated fixes")
+    engine_root = args.engine_root.resolve()
+    files = {path.resolve() for path in engine_files(args.paths, engine_root)}
     ensure_compile_commands(repo_root)
     database = json.loads((repo_root / "compile_commands.json").read_text())
     units = set()
@@ -94,12 +98,12 @@ def lint_engine(args, repo_root):
     if not units:
         print("lint: no compiled engine translation units selected", file=sys.stderr)
         return 1
-    root_pattern = re.escape(ENGINE_ROOT.resolve().as_posix()).replace("/", r"[\\/]")
+    root_pattern = re.escape(engine_root.as_posix()).replace("/", r"[\\/]")
     command = [
         "clang-tidy",
         "-p",
         str(repo_root),
-        "--config-file=" + str(ENGINE_ROOT / ".clang-tidy"),
+        "--config-file=" + str(engine_root / ".clang-tidy"),
         "--header-filter=^" + root_pattern + r"[\\/](engrave|src|muse)[\\/]",
         "--warnings-as-errors=readability-identifier-naming",
     ]
@@ -131,7 +135,7 @@ def main() -> int:
         if args.engine:
             return lint_engine(args, repo_root)
         files = project_files(args.paths)
-    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+    except (ValueError, FileNotFoundError, subprocess.CalledProcessError) as error:
         print(f"lint: {error}", file=sys.stderr)
         return 1
 
