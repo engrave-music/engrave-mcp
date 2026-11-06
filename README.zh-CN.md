@@ -43,7 +43,7 @@ $env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
 $env:ENGRAVE_MCP_BINARY   = "$PWD/build/xmake-windows/engrave-mcp.exe"
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
-pixi run -e native python scripts/mcp_smoke.py
+pixi run -e native python tests/integration/test_mcp_smoke.py
 ```
 
 手动启动服务时显式传入资源目录；`--soundfont` 可选：

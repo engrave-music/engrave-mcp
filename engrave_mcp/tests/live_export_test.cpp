@@ -21,9 +21,10 @@ std::vector<std::byte> read(const fs::path &p) {
 
 int main(int argc, char **argv) {
     try {
-        if (argc != 4 || std::string(argv[1]) != "--partial-write") {
-            throw std::runtime_error("partial: no content comparison; use scripts/test_live_export.py --direct-binary BINARY (file-writing "
-                                     "mode: live_export_test --partial-write RESOURCES OUTPUT)");
+        if (argc != 5 || std::string(argv[1]) != "--partial-write") {
+            throw std::runtime_error(
+                "partial: no content comparison; use tests/integration/test_live_export.py --direct-binary BINARY (file-writing "
+                "mode: live_export_test --partial-write RESOURCES OUTPUT DATA_ROOT)");
         }
         engrave::EngineOptions options;
         options.resources = fs::absolute(fs::u8path(argv[2]));
@@ -31,10 +32,11 @@ int main(int argc, char **argv) {
         auto engine = value(engrave::Engine::create(options));
         auto root = fs::absolute(fs::u8path(argv[3]));
         fs::create_directories(root);
+        const auto data_root = fs::absolute(fs::u8path(argv[4]));
         std::vector<fs::directory_entry> fixtures;
-        for (const auto &entry : fs::directory_iterator("fixtures/golden")) fixtures.push_back(entry);
-        fixtures.emplace_back("fixtures/evening.musicxml");
-        fixtures.emplace_back("tests/live_export/created.musicxml");
+        for (const auto &entry : fs::directory_iterator(data_root / "inputs/golden")) fixtures.push_back(entry);
+        fixtures.emplace_back(data_root / "inputs/evening.musicxml");
+        fixtures.emplace_back(data_root / "live_export/created.musicxml");
         for (const char *name : {"engine/two-notes.mnx", "project_examples/tupletSimple.mnx", "project_examples/percussionKit.mnx",
                                  "project_examples/graceArps.mnx"}) {
             fixtures.emplace_back(fs::path("vendor/engrave/src/importexport/mnx/tests/data") / name);
@@ -43,8 +45,8 @@ int main(int argc, char **argv) {
             auto ext = fixture.path().extension().string();
             if (ext != ".mscx" && ext != ".mscz" && ext != ".musicxml" && ext != ".mid" && ext != ".gp" && ext != ".mnx") continue;
             auto doc = value(engine->open(fs::absolute(fixture.path())));
-            const auto out = root / (fixture.path() == fs::path("tests/live_export/created.musicxml") ? fs::path("created.json") :
-                                                                                                        fixture.path().filename());
+            const auto out = root / (fixture.path() == fs::path(data_root / "live_export/created.musicxml") ? fs::path("created.json") :
+                                                                                                              fixture.path().filename());
             fs::create_directories(out);
             for (const char *fmt : {"svg", "pdf", "png", "mscx", "mscz"}) {
                 const bool svg = std::string(fmt) == "svg" || std::string(fmt) == "png", pdf = std::string(fmt) == "pdf";
@@ -90,7 +92,7 @@ int main(int argc, char **argv) {
                 }
             }
         }
-        std::cout << "partial: no content comparison for PDF/MSCZ; run scripts/test_live_export.py\n";
+        std::cout << "partial: no content comparison for PDF/MSCZ; run tests/integration/test_live_export.py\n";
         return 3;
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';

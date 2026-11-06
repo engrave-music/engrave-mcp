@@ -60,7 +60,7 @@ target("registry_check")
         if not os.isfile(python) then
             python = is_host("windows") and "python" or "python3"
         end
-        os.execv(python, {path.join(project_root, "scripts", "test_tool_schema.py"),
+        os.execv(python, {path.join(project_root, "tests", "integration", "test_tool_schema.py"),
             "--dump", target:dep("registry_dump"):targetfile(),
             "--registry-test", target:dep("registry_test"):targetfile()})
     end)

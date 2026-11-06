@@ -147,8 +147,8 @@ whatever the generated `manifest.json` records; do not hardcode them.
 Run the smoke test first:
 
 ```powershell
-pixi run -e native python scripts/mcp_smoke.py
-pixi run -e native python scripts/test_transport.py build/xmake-windows/engrave-mcp.exe
+pixi run -e native python tests/integration/test_mcp_smoke.py
+pixi run -e native python tests/integration/test_transport.py build/xmake-windows/engrave-mcp.exe
 ```
 
 The acceptance runner and its lane list are documented in

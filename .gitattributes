@@ -1,7 +1,7 @@
 * text=auto eol=lf
 *.patch -whitespace
-fixtures/**/*.mid binary
-fixtures/**/*.gp binary
-fixtures/**/*.mscz binary
+tests/data/**/*.mid binary
+tests/data/**/*.gp binary
+tests/data/**/*.mscz binary
 *.sf2 binary
 licenses/FluidR3Mono_License.md -text

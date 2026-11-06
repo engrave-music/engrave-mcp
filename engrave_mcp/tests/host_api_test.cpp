@@ -92,11 +92,11 @@ Json error(HostApi &host, const std::string &tool, const Json &arg, const std::s
 
 int main(int argc, char **argv) {
     try {
-        require(argc == 4, "usage: host_api_test ASSETS SOUNDFONT REPLACEMENT_SOUNDFONT");
+        require(argc == 5, "usage: host_api_test ASSETS SOUNDFONT REPLACEMENT_SOUNDFONT DATA_ROOT");
         const auto assets = fs::absolute(fs::u8path(argv[1]));
         const auto original_sf = fs::absolute(fs::u8path(argv[2]));
         const auto replacement_sf = fs::absolute(fs::u8path(argv[3]));
-        const auto root = fs::absolute("fixtures/golden");
+        const auto root = fs::absolute(fs::u8path(argv[4])) / "inputs/golden";
         const auto input = root / "linked_parts.mscx";
         const auto scratch =
             fs::temp_directory_path() / ("host-api-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
