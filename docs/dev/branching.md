@@ -13,7 +13,7 @@ Two repositories are involved in development: the host (`engrave-mcp`) and the e
 
 Windows and physical Linux (`linux-host`) environments exchange commits through GitHub:
 
-- Topic branches needing cross-platform validation are pushed to `origin`, fetched on the other machine, and deleted on GitHub once merged or abandoned.
+- Topic branches needing cross-platform validation are pushed to `origin`, fetched on the other machine, and deleted on GitHub once merged. Before deleting a remote branch, verify that its commits are fully contained in `main` (for example, GitHub compare reports `ahead_by: 0`). Preserve unmerged work, and preserve the frozen `mcp/*` and `upstream/*` reference branches regardless of merge state.
 - When an engine change is required, push the engine commit to fork `main` before pushing the host commit that pins it, ensuring submodule references resolve on GitHub.
 - Linux (`linux-host`) checkout path is `~/OSS/engrave-mcp`. The host remote uses `git@github.com:Locietta/engrave-mcp.git`.
 
