@@ -65,16 +65,16 @@ import argparse
 import asyncio
 import base64
 import difflib
-import hashlib
+
+# The fork owns the shared artifact representations and comparison policy.
+import importlib.util
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
-import zipfile
 from fractions import Fraction
 from pathlib import Path
 
@@ -83,9 +83,6 @@ from mcp.client.stdio import stdio_client
 from support.composition_fixture import composition_musicxml
 from support.musicxml_semantic import musicxml_semantic
 from support.paths import REPO_ROOT
-
-# The fork owns the shared artifact representations and comparison policy.
-import importlib.util
 
 _engine_golden_path = REPO_ROOT / "vendor/engrave/tests/support/golden.py"
 _engine_spec = importlib.util.spec_from_file_location("engrave_golden", _engine_golden_path)
