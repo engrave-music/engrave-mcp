@@ -708,7 +708,12 @@ def accepted_svg_counts(name, digest):
 
     fixture, output = name.split("/", 1)
     platform = "windows" if sys.platform.startswith("win") else "linux"
-    allowances = golden.load_allow(ROOT / "tests/data/golden/allow.json")
+    root = ROOT / "tests/data/golden" / platform
+    index = json.loads((root / "index.json").read_text(encoding="utf-8"))
+    baseline = root / fixture / output
+    if index.get(fixture, {}).get(output) == digest and baseline.is_file():
+        return golden.sha256(baseline.read_bytes()) == digest
+    allowances = golden.load_allow(root.parent / "allow.json")
     return golden.allow_accept(allowances, fixture, output, "different", digest, platform)[1] is not None
 
 
