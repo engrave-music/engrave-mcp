@@ -1326,6 +1326,36 @@ def write_diff(root: Path, fixture: str, output: str, golden: Path, actual: Path
     )
 
 
+def verify_input_provenance() -> list[str]:
+    """Check current inputs against main's reviewed migration pins."""
+    try:
+        pins = json.loads(read_text(ROOT / "tests/data/golden/inputs.json"))["fixtures"]
+        sources = {source.name: source for source in fixture_files() + mnx_fixture_files()}
+        sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})
+        if set(pins) != set(sources):
+            return ["input fixture inventory differs from reviewed pins"]
+        issues = []
+        for name, source in sources.items():
+            entry = pins[name]
+            if entry["fixture_sha256"] != sha256(source.read_bytes()):
+                issues.append(f"input fixture changed: {name}")
+            if name in EDIT_SCENARIOS:
+                scenario = json.dumps(
+                    EDIT_SCENARIOS[name], sort_keys=True, ensure_ascii=False, separators=(",", ":")
+                ).encode("utf-8")
+                if entry.get("scenario_sha256") != sha256(scenario):
+                    issues.append(f"edit scenario changed: {name}")
+            if source.name == "created.json":
+                xml = composition_musicxml(json.loads(read_text(source))).encode("utf-8")
+                if entry.get("input_sha256") != sha256(xml) or entry.get("converter_sha256") != sha256(
+                    (ROOT / "tests/support/composition_fixture.py").read_bytes()
+                ):
+                    issues.append(f"created input or converter changed: {name}")
+        return issues
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return [f"invalid input provenance: {exc}"]
+
+
 def compare_trees(
     golden_root: Path,
     actual_root: Path,
@@ -1363,6 +1393,7 @@ def compare_trees(
         shutil.rmtree(diff_root)
 
     report["indexIssues"].extend(verify_golden_index(golden_root, golden_index))
+    report["indexIssues"].extend(verify_input_provenance())
     counts["index"] = len(report["indexIssues"])
     for issue in report["indexIssues"]:
         print(f"index    {issue}")

@@ -34,6 +34,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from support.paths import REPO_ROOT
 
@@ -148,6 +149,33 @@ class TestCurrentGoldenInventory(unittest.TestCase):
                 self.assertEqual(golden.compare_trees(baseline, actual, [entry], root / "report", "windows"), 0)
                 golden.write_text(actual / "score/page-0.svg", "<svg>unapproved</svg>")
                 self.assertEqual(golden.compare_trees(baseline, actual, [entry], root / "report", "windows"), 1)
+
+    def test_input_and_scenario_changes_fail_comparison(self):
+        self.assertEqual(golden.verify_input_provenance(), [])
+        for mutation in ("fixture-whitespace", "scenario-query"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                for tree in (root / "golden", root / "actual"):
+                    golden.write_text(tree / "score/page-0.svg", "<svg/>")
+                    golden.build_index(tree)
+                with contextlib.ExitStack() as stack:
+                    if mutation == "fixture-whitespace":
+                        source = next(p for p in golden.fixture_files() if p.name == "evening.musicxml")
+                        changed = root / source.name
+                        changed.write_bytes(source.read_bytes() + b"\n")
+                        stack.enter_context(mock.patch.object(golden, "EXTRA_FIXTURES", (changed,)))
+                    else:
+                        scenarios = copy.deepcopy(golden.EDIT_SCENARIOS)
+                        scenario = scenarios["edit-set-pitches-coverage"]
+                        # Mutate the actual query definition without changing its source input.
+                        scenario["measures"] = 3
+                        stack.enter_context(mock.patch.object(golden, "EDIT_SCENARIOS", scenarios))
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(
+                            golden.compare_trees(root / "golden", root / "actual", [], root / "report", "windows"), 1
+                        )
+                    report = json.loads((root / "report/report.json").read_text())
+                    self.assertTrue(any("changed:" in issue for issue in report["indexIssues"]))
 
     def test_unused_and_altered_unused_allowance_fail(self):
         with tempfile.TemporaryDirectory() as temporary:
