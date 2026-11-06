@@ -58,7 +58,7 @@ def main():
             "--partial-write",
             str(a.resources.resolve()),
             str(oracle),
-            str(ROOT / "tests/data"),
+            str(ROOT / "vendor/engrave/tests/data"),
         ],
         capture_output=True,
         text=True,

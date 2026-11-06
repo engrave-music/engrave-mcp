@@ -986,7 +986,7 @@ def main() -> None:
     testcwd = output / "cwd"
     (testcwd / "vendor").mkdir(parents=True, exist_ok=True)
     (testcwd / "tests").mkdir(exist_ok=True)
-    setup_link(repo_root / "tests/data", testcwd / "tests/data")
+    setup_link(repo_root / "vendor/engrave/tests/data", testcwd / "vendor/engrave/tests/data")
     setup_link(repo_root / "vendor/engrave/tests/data/inputs", testcwd / "fixtures")
     setup_link(engine_source, testcwd / "vendor/engrave")
 
