@@ -110,7 +110,7 @@ The gate builds the fork's `engine_tests` target and executes the API, import, p
 
 ## Known timing and platform limitations
 
-- **Windows dense-audio cancellation variance**: The dense-audio cancellation p95 assertion (tested in `AudioInternal.DenseScoreCancellationLatencyAndRecovery` and `test_live_dense_cancel.py`) is known to fail intermittently on Windows above the 30 ms threshold due to OS thread scheduling and timer resolution under load. An intermittent failure must not be reported as a clean pass.
+- **Windows dense-audio cancellation variance**: The dense-audio cancellation assertion can fail intermittently on Windows. The engine test (`AudioInternal.DenseScoreCancellationLatencyAndRecovery`) uses a 30 ms p95 threshold; the host integration test (`tests/integration/test_live_dense_cancel.py:188`) asserts a 50 ms p95 and 100 ms maximum. The cause of the timing variation is not established. An intermittent failure must not be reported as a clean pass.
 - **Windows path length limitations**: On Windows, long output paths approaching or exceeding standard path limits require short temporary roots to avoid filesystem IO failures during staging and atomic publication.
 
 ## Benchmarks
