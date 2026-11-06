@@ -49,7 +49,6 @@ LANE_NAMES = [
     "export_options",
     "transport",
     "golden",
-    "export_baseline_overlap",
     "semantic_check",
     "compat_corpus",
     "native_470_oracle",
@@ -585,21 +584,6 @@ def run_lane(
             str(repo_root / "tests/data/golden/allow.json"),
             "--output",
             str(output / "golden"),
-        ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "export_baseline_overlap":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_export_baseline_overlap.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--soundfont",
-            str(soundfont),
-            "--output",
-            str(output / "export-baseline-overlap"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 

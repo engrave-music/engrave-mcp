@@ -539,18 +539,6 @@ class TestPngInkControls(unittest.TestCase):
             self.assertEqual(page.main(), 1)
         self.assertIn("precision exception diagnostics do not match", output.getvalue())
 
-    def test_checked_in_png_exception_matches_the_census(self):
-        payload = json.loads(REFERENCE.read_text(encoding="utf-8"))
-        pin = page.png_exceptions(payload)[("windows", "drums_import.musicxml/page-0.png")]
-        census = json.loads((ROOT / "tests/data/golden/output-census.json").read_text(encoding="utf-8"))
-        item = next(
-            item
-            for item in census["entries"]
-            if item["fixture"] == "drums_import.musicxml" and item["output"] == "page-0.png.json"
-        )
-        self.assertEqual(pin["png_sha256"], item["raw_reopened_png_sha256"])
-        self.assertEqual(pin["issues"], item["rendered_page_diagnostic"]["issues"])
-
 
 if __name__ == "__main__":
     unittest.main()

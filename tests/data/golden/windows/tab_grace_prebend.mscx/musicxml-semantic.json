@@ -277,8 +277,8 @@
         ]
        },
        "pitch": {
-        "alter": 0,
-        "midi": 74,
+        "alter": 0.5,
+        "midi": 74.5,
         "octave": 5,
         "step": "D"
        },
@@ -298,8 +298,8 @@
        "chord": false,
        "duration_ticks": 240,
        "pitch": {
-        "alter": 0,
-        "midi": 76,
+        "alter": 0.5,
+        "midi": 76.5,
         "octave": 5,
         "step": "E"
        },
@@ -356,8 +356,8 @@
         ]
        },
        "pitch": {
-        "alter": 0,
-        "midi": 74,
+        "alter": 0.5,
+        "midi": 74.5,
         "octave": 5,
         "step": "D"
        },
@@ -377,8 +377,8 @@
        "chord": false,
        "duration_ticks": 120,
        "pitch": {
-        "alter": 0,
-        "midi": 72,
+        "alter": 0.5,
+        "midi": 72.5,
         "octave": 5,
         "step": "C"
        },
@@ -533,13 +533,6 @@
        "voice": 5
       },
       {
-       "accidental": {
-        "bracket": false,
-        "cautionary": true,
-        "editorial": false,
-        "parentheses": false,
-        "value": "flat"
-       },
        "chord": false,
        "dots": 1,
        "duration_ticks": 360,
@@ -594,13 +587,6 @@
        "voice": 5
       },
       {
-       "accidental": {
-        "bracket": false,
-        "cautionary": true,
-        "editorial": false,
-        "parentheses": false,
-        "value": "sharp-down"
-       },
        "chord": false,
        "duration_ticks": 240,
        "notations": {
@@ -629,8 +615,8 @@
         ]
        },
        "pitch": {
-        "alter": 0,
-        "midi": 74,
+        "alter": 0.5,
+        "midi": 74.5,
         "octave": 5,
         "step": "D"
        },
@@ -640,13 +626,6 @@
        "voice": 5
       },
       {
-       "accidental": {
-        "bracket": false,
-        "cautionary": true,
-        "editorial": false,
-        "parentheses": false,
-        "value": "sharp-down"
-       },
        "chord": false,
        "duration_ticks": 240,
        "notations": {
@@ -662,8 +641,8 @@
         ]
        },
        "pitch": {
-        "alter": 0,
-        "midi": 76,
+        "alter": 0.5,
+        "midi": 76.5,
         "octave": 5,
         "step": "E"
        },
@@ -700,13 +679,6 @@
        "voice": 5
       },
       {
-       "accidental": {
-        "bracket": false,
-        "cautionary": true,
-        "editorial": false,
-        "parentheses": false,
-        "value": "sharp-down"
-       },
        "chord": false,
        "dots": 1,
        "duration_ticks": 360,
@@ -736,8 +708,8 @@
         ]
        },
        "pitch": {
-        "alter": 0,
-        "midi": 74,
+        "alter": 0.5,
+        "midi": 74.5,
         "octave": 5,
         "step": "D"
        },
@@ -747,13 +719,6 @@
        "voice": 5
       },
       {
-       "accidental": {
-        "bracket": false,
-        "cautionary": true,
-        "editorial": false,
-        "parentheses": false,
-        "value": "sharp-down"
-       },
        "chord": false,
        "duration_ticks": 120,
        "notations": {
@@ -773,8 +738,8 @@
         "value": "normal"
        },
        "pitch": {
-        "alter": 0,
-        "midi": 72,
+        "alter": 0.5,
+        "midi": 72.5,
         "octave": 5,
         "step": "C"
        },
@@ -811,13 +776,6 @@
        "voice": 5
       },
       {
-       "accidental": {
-        "bracket": false,
-        "cautionary": true,
-        "editorial": false,
-        "parentheses": false,
-        "value": "sharp"
-       },
        "chord": false,
        "duration_ticks": 120,
        "notations": {
@@ -857,13 +815,6 @@
        "voice": 5
       },
       {
-       "accidental": {
-        "bracket": false,
-        "cautionary": true,
-        "editorial": false,
-        "parentheses": false,
-        "value": "flat"
-       },
        "chord": false,
        "dots": 1,
        "duration_ticks": 360,

@@ -5,6 +5,12 @@
   <Score>
     <eid>e1</eid>
     <Division>480</Division>
+    <Style>
+      <showMeasureNumberOne>1</showMeasureNumberOne>
+      <measureNumberInterval>1</measureNumberInterval>
+      <measureNumberSystem>0</measureNumberSystem>
+      <spatium>1.76389</spatium>
+      </Style>
     <showInvisible>1</showInvisible>
     <showUnprintable>1</showUnprintable>
     <showFrames>1</showFrames>

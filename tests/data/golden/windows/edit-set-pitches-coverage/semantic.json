@@ -5,20 +5,6 @@
    "tick": 480,
    "track": 0,
    "type": "Dynamic"
-  },
-  {
-   "subtype": "Staff",
-   "text": "Fine",
-   "tick": 3360,
-   "track": 0,
-   "type": "StaffText"
-  },
-  {
-   "subtype": "Staff",
-   "text": "D.C. al Fine",
-   "tick": 4800,
-   "track": 0,
-   "type": "StaffText"
   }
  ],
  "events": [
@@ -298,6 +284,15 @@
    "timesig": "3/4"
   },
   {
+   "elements": [
+    {
+     "subtype": "Fine",
+     "text": "Fine",
+     "tick": 1920,
+     "track": 0,
+     "type": "Marker"
+    }
+   ],
    "endRepeat": 0,
    "startRepeat": false,
    "tick": 1920,
@@ -305,6 +300,15 @@
    "timesig": "3/4"
   },
   {
+   "elements": [
+    {
+     "subtype": "Da Capo al Fine",
+     "text": "D.C. al Fine",
+     "tick": 3360,
+     "track": 0,
+     "type": "Jump"
+    }
+   ],
    "endRepeat": 0,
    "startRepeat": false,
    "tick": 3360,
@@ -357,6 +361,11 @@
    0,
    4800,
    0
+  ],
+  [
+   0,
+   3360,
+   4800
   ]
  ],
  "schema": 1,

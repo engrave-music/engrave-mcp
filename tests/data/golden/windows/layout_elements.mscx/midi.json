@@ -647,18 +647,18 @@
    [
     7679,
     {
-     "data": "065b9b",
-     "metaType": 81,
-     "type": "meta"
-    }
-   ],
-   [
-    7679,
-    {
      "ch": 2,
      "pitch": 67,
      "type": "note_off",
      "vel": 0
+    }
+   ],
+   [
+    7680,
+    {
+     "data": "065b9b",
+     "metaType": 81,
+     "type": "meta"
     }
    ],
    [

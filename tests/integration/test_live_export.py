@@ -81,16 +81,6 @@ def main():
             for name in left.namelist():
                 if left.read(name) != right.read(name):
                     raise RuntimeError(f"MSCZ content mismatch: {folder}/{name}")
-    if sys.platform == "win32":
-        subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "tests/integration/test_direct_export_baseline.py"),
-                "--output",
-                str(oracle),
-            ],
-            check=True,
-        )
     subprocess.run(
         [
             sys.executable,

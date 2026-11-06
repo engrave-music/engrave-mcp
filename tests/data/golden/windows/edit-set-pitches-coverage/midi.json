@@ -456,7 +456,310 @@
     }
    ],
    [
-    4320,
+    4800,
+    {
+     "data": "01021808",
+     "metaType": 88,
+     "type": "meta"
+    }
+   ],
+   [
+    4800,
+    {
+     "data": "ff00",
+     "metaType": 89,
+     "type": "meta"
+    }
+   ],
+   [
+    4800,
+    {
+     "ch": 0,
+     "pitch": 74,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    4800,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    5039,
+    {
+     "ch": 0,
+     "pitch": 74,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    5040,
+    {
+     "ch": 0,
+     "pitch": 76,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    5279,
+    {
+     "ch": 0,
+     "pitch": 76,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    5280,
+    {
+     "data": "03021808",
+     "metaType": 88,
+     "type": "meta"
+    }
+   ],
+   [
+    5280,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    5280,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    5280,
+    {
+     "ch": 0,
+     "pitch": 76,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    5280,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    5439,
+    {
+     "ch": 0,
+     "pitch": 76,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    5440,
+    {
+     "ch": 0,
+     "pitch": 78,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    5440,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    5599,
+    {
+     "ch": 0,
+     "pitch": 78,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    5600,
+    {
+     "ch": 0,
+     "pitch": 77,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    5600,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    5759,
+    {
+     "ch": 0,
+     "pitch": 77,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    5760,
+    {
+     "ch": 0,
+     "pitch": 79,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    5760,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    6239,
+    {
+     "ch": 0,
+     "pitch": 79,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    6240,
+    {
+     "ch": 0,
+     "pitch": 81,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    6240,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    6719,
+    {
+     "ch": 0,
+     "pitch": 81,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    6720,
+    {
+     "ch": 0,
+     "pitch": 81,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    6720,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    7199,
+    {
+     "ch": 0,
+     "pitch": 81,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    7200,
+    {
+     "ch": 0,
+     "pitch": 82,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    7200,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    7679,
+    {
+     "ch": 0,
+     "pitch": 82,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    7680,
+    {
+     "ch": 0,
+     "pitch": 84,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    7680,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    8159,
+    {
+     "ch": 0,
+     "pitch": 84,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    8160,
     {
      "data": "",
      "metaType": 47,
@@ -572,6 +875,68 @@
    ],
    [
     4800,
+    {
+     "data": "ff00",
+     "metaType": 89,
+     "type": "meta"
+    }
+   ],
+   [
+    5280,
+    {
+     "ch": 0,
+     "pitch": 55,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    5280,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    6719,
+    {
+     "ch": 0,
+     "pitch": 55,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    6720,
+    {
+     "ch": 0,
+     "pitch": 69,
+     "type": "note_on",
+     "vel": 80
+    }
+   ],
+   [
+    6720,
+    {
+     "ch": 0,
+     "num": 2,
+     "type": "cc",
+     "val": 80
+    }
+   ],
+   [
+    8159,
+    {
+     "ch": 0,
+     "pitch": 69,
+     "type": "note_off",
+     "vel": 0
+    }
+   ],
+   [
+    8160,
     {
      "data": "",
      "metaType": 47,
