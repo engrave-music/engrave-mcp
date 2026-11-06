@@ -10,7 +10,7 @@ the current design only; the history of how it got here is in
 MCP client
    │  stdio JSON-RPC (one request per line, max 4 MiB)
    ▼
-Host layer (native/)
+Host layer (engrave_mcp/)
    ├─ transport: reader thread, bounded admission, writer thread, cancellation
    ├─ registry + JSON codecs: the nine-tool v2 contract
    ├─ live export: render/encode on the document, staging, publication

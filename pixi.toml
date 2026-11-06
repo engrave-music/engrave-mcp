@@ -27,6 +27,8 @@ lint-fix = "python scripts/lint.py --fix"
 [target.linux-64.dependencies]
 c-compiler = "*"
 cxx-compiler = "*"
+# clang-tidy needs the matching compiler's builtin headers on Linux.
+clang-23 = "==23.1.4"
 patchelf = "*"
 
 [environments]
@@ -39,3 +41,4 @@ numpy = "==2.5.4"
 soundfile = "==0.14.0"
 pillow = ">=13.0.0, <14"
 pymupdf = ">=2.0, <3"
+psutil = ">=7, <8"

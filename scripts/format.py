@@ -44,8 +44,7 @@ LANGUAGES = {
 IGNORED_PREFIXES = (
     "vendor/",
     ".upstream/",
-    "tests/",
-    "fixtures/",
+    "tests/data/",
     ".pixi/",
     ".xmake/",
     "build/",

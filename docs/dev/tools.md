@@ -1,7 +1,7 @@
 # Tool contract (v2)
 
 The server exposes nine tools. This page is the human-readable contract; the
-generated [native/tools.json](../../native/tools.json) is the machine-readable
+generated [engrave_mcp/tools.json](../../engrave_mcp/tools.json) is the machine-readable
 one and is checked by the `tool_schema` lane.
 
 ## Envelope and revisions

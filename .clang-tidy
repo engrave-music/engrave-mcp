@@ -1,7 +1,7 @@
 # NOTE: Some checks are defaultly enabled by clang-tidy, checks listed here are
 #       additional checks that are not enabled by default.
 Checks: "-*,readability-identifier-naming,modernize-use-nullptr,modernize-use-override,readability-braces-around-statements"
-HeaderFilterRegex: 'native/.*'
+HeaderFilterRegex: 'engrave_mcp/.*'
 
 CheckOptions:
   - key: readability-braces-around-statements.ShortStatementLines

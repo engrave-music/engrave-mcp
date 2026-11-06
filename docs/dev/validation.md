@@ -30,7 +30,7 @@ Engine test binaries used by some lanes (`score_edit_test`, `score_audio_test`,
 
 ```powershell
 $env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
-.pixi\envs\native\python.exe scripts/run_lanes.py `
+.pixi\envs\native\python.exe tests/run_lanes.py `
   --build-dir build/xmake-windows `
   --engine-source vendor/engrave `
   --assets .runtime/assets `
@@ -44,28 +44,28 @@ per-lane log plus a summary.
 
 ## Lanes
 
-There are 37 lanes; 36 run by default. `phase_b_oracle` is opt-in and needs the
+There are 37 lanes; 36 run by default. `native_470_oracle` is opt-in and needs the
 pinned 4.7.6 oracle archive, executable and assets.
 
-| Area                        | Lanes                                                                                               |
-| --------------------------- | --------------------------------------------------------------------------------------------------- |
-| Protocol and session        | `host_api`, `transport`, `async_session`, `tool_schema`                                             |
-| Live export and publication | `live_export`, `export_options`, `positions`                                                        |
-| Audio                       | `live_audio`, `audio_budget`, `score_audio`, `audio_facade`, `engine_audio`                         |
-| Notation and edits          | `score_edit`, `native_edit`, `linked_tie`, `xml_text`, `repeats`                                    |
-| Documents and formats       | `score_positions`, `excerpts`, `open_data`, `imports_midi`, `imports_gp`, `archives`, `roundtrip`   |
-| Golden and semantics        | `golden`, `v2_golden_overlap`, `semantic_check`, `compat_corpus`, `rendered_page`, `oracle_harness` |
-| Assets and engine           | `runtime_assets`, `assets`, `noqt_probe`, `upstream_gtest`, `version_info`                          |
-| Smoke                       | `mcp_smoke`                                                                                         |
-| Opt-in                      | `phase_b_oracle` (4.70 writer, pinned oracle)                                                       |
+| Area                        | Lanes                                                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Protocol and session        | `host_api`, `transport`, `async_session`, `tool_schema`                                                   |
+| Live export and publication | `live_export`, `export_options`, `positions`                                                              |
+| Audio                       | `live_audio`, `audio_budget`, `score_audio`, `audio_facade`, `engine_audio`                               |
+| Notation and edits          | `score_edit`, `native_edit`, `linked_tie`, `xml_text`, `repeats`                                          |
+| Documents and formats       | `score_positions`, `excerpts`, `open_data`, `imports_midi`, `imports_gp`, `archives`, `roundtrip`         |
+| Golden and semantics        | `golden`, `export_baseline_overlap`, `semantic_check`, `compat_corpus`, `rendered_page`, `oracle_harness` |
+| Assets and engine           | `runtime_assets`, `assets`, `noqt_probe`, `upstream_gtest`, `version_info`                                |
+| Smoke                       | `mcp_smoke`                                                                                               |
+| Opt-in                      | `native_470_oracle` (4.70 writer, pinned oracle)                                                          |
 
 The `live_export` lane also runs the focused publication checks
 (`test_live_publication_cancel.py`, `test_live_publication_limits.py`,
 `test_live_path_utf8.py`, `test_live_report_delivery.py`). The
-`test_output_schema_boundaries.py`, `test_phase_b_cancellation.py`,
-`test_write470_interruption.py`, `test_live_queued_cancel.py`,
+`test_output_schema_boundaries.py`, `test_native_470_conversion_cancel.py`,
+`test_native_470_serialization_cancel.py`, `test_live_queued_cancel.py`,
 `test_live_dense_cancel.py`, `test_transport_wakeup.py` and
-`test_native_version.py` checks are documented focused tests, not default lanes;
+`test_native_export_versions.py` checks are documented focused tests, not default lanes;
 run them explicitly when touching those areas.
 
 ## Engine gate
@@ -73,7 +73,7 @@ run them explicitly when touching those areas.
 The engine's public-boundary gate is separate from the host lanes:
 
 ```powershell
-python scripts/engine_gate.py --engine-source FORK --build-dir FORK/build/c0 `
+python tests/engine_gate.py --engine-source FORK --build-dir FORK/build/c0 `
   --assets ASSETS --soundfont SF3 --output OUTPUT --cairo-prefix PREFIX
 ```
 
@@ -89,7 +89,7 @@ and adapter suites, plus `diagnostics_test`, `io_boundary_test`, the engine
 installer's unit tests and verification of the supplied asset directory. The
 `mnx_schema` step validates the MNX files that `engrave_mnx_import_test`
 exports against the vendored W3C MNX schema with a draft 2020-12 validator
-(`scripts/check_mnx_schema.py`; mnxdom's own validator implements draft 7). It
+(`tests/support/check_mnx_schema.py`; mnxdom's own validator implements draft 7). It
 compares outputs against the pinned goldens with `golden.py`'s comparators and
 the per-platform hash allow-list. At `engrave-31` the gate was green on Windows
 (213 identical / 38 allowed / 0 different / 0 missing) and on linux-host
@@ -109,7 +109,7 @@ files for those cases were byte-identical.
 At `engrave-34` (`8eb0c25a52`), 17 focused MusicXML dynamics tests, the host
 native-edit test and the host golden comparison passed on both platforms. The
 golden counts were 307 identical/83 allowed on Windows and 265/125 on linux-host,
-with zero unexpected outputs using `tests/golden/allow.json` SHA-256
+with zero unexpected outputs using `tests/data/golden/allow.json` SHA-256
 `a19f8f905e182ccd9e3f25a3eaad726300366ba2993e858ba01586ec70e8979d`.
 The full Linux engine gate passed at the exact commit (186 identical/65 allowed/
 0 different/0 missing). Twelve before/after playback probes on each platform
@@ -164,14 +164,14 @@ under `docs/dev/`.
 
 ## Benchmarks
 
-- `scripts/bench_export_latency.py` — warm/cold render and score-export latency,
+- `tests/benchmarks/bench_export_latency.py` — warm/cold render and score-export latency,
   phase breakdown, optional high-priority mode
   (`ENGRAVE_MCP_BENCH_HIGH_PRIORITY=1`).
-- `scripts/bench_live_audio.py` — warm/cold audio latency and RSS.
-- `scripts/bench_open_cold_drift.py` — open, cold-to-PDF and long-run drift.
-- `scripts/bench_export_rss.py` — RSS sampling around exports.
-- `scripts/test_live_dense_cancel.py` — cancellation on a 49,152-note score.
-- `scripts/test_xmake_incremental.py` — incremental-build behaviour.
+- `tests/benchmarks/bench_live_audio.py` — warm/cold audio latency and RSS.
+- `tests/benchmarks/bench_document_lifetime.py` — open, cold-to-PDF and long-run drift.
+- `tests/benchmarks/bench_export_rss.py` — RSS sampling around exports.
+- `tests/integration/test_live_dense_cancel.py` — cancellation on a 49,152-note score.
+- `tests/integration/test_xmake_incremental.py` — incremental-build behaviour.
 
 Keep raw samples, phase timings and host conditions with any reported number.
 A timing claim without its host, build, priority and sample count is not

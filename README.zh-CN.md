@@ -43,7 +43,7 @@ $env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
 $env:ENGRAVE_MCP_BINARY   = "$PWD/build/xmake-windows/engrave-mcp.exe"
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
-pixi run -e native python scripts/mcp_smoke.py
+pixi run -e native python tests/integration/test_mcp_smoke.py
 ```
 
 手动启动服务时显式传入资源目录；`--soundfont` 可选：
@@ -72,7 +72,7 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 
 成功结果带 `ok: true`；失败结果带 `ok: false` 与
 `error: {code, message, ...}`，并设置 MCP 的 `isError` 标志。完整契约见
-[工具文档](docs/dev/tools.md)，生成的 schema 见 [native/tools.json](native/tools.json)。
+[工具文档](docs/dev/tools.md)，生成的 schema 见 [engrave_mcp/tools.json](engrave_mcp/tools.json)。
 
 下面是调用参数与返回 `structuredContent` 的示意，不是完整的线上报文：真实会话先
 发送 `initialize`，每次调用都包在带 id 的 JSON-RPC 2.0 请求/响应中。
@@ -138,11 +138,11 @@ DACL 与 ACL 合并、SMB 认证、设备命名空间与超长路径、跨卷或
 ## 仓库结构
 
 ```
-native/            MCP 传输、注册表、JSON 编解码、实时导出、发布
+engrave_mcp/            MCP 传输、注册表、JSON 编解码、实时导出、发布
 vendor/engrave   固定的 engrave 引擎（子模块，按提交固定）
 xmake.lua          宿主构建；从 vendor/engrave 引入引擎构建
-scripts/           引导、构建、打包、测试道、基准
-tests/             fixture、golden 基线、音频语料
+scripts/           引导、构建、打包
+tests/             测试道、集成测试、支持、基准、测试数据
 docs/dev/          设计、工具契约、构建、验证、fork 台账、历史
 ```
 

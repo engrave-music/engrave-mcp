@@ -1,0 +1,179 @@
+"""Native JSON-RPC latency benchmark; raw samples and server phases are retained.
+
+Engine call includes encoding (the public API returns encoded bytes). Report
+preflight is its own phase; response includes the synchronous report callback's
+transport serialization/write and session resume; client total adds client-side
+transport.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import argparse
+import json
+import time
+from pathlib import Path
+
+from support.paths import REPO_ROOT
+
+ROOT = REPO_ROOT
+
+
+from support.process_client import Client, export_args, rss_bytes, summary
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--binary", type=Path, required=True)
+    p.add_argument("--resources", type=Path, required=True)
+    p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--warm", type=int, default=100)
+    p.add_argument("--cold", type=int, default=30)
+    a = p.parse_args()
+    assert a.warm >= 50 and a.cold >= 10
+    a.output = a.output.resolve()
+    report = {
+        "warm": [],
+        "cold": [],
+        "phase_semantics": "engine_call includes encoding; encode_write is host staging; report_preflight is report-bound calculation; response includes synchronous report serialization/write and session resume; client total adds client transport",
+    }
+    for mode in ("live",):
+        for fixture in ("repeat70.mscx", "lyrics.mscx"):
+            out = a.output / mode / fixture
+            c = Client(a.binary, a.resources, out, mode)
+            doc = c.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden" / fixture)})["document"]
+            for fmt, pages in (
+                ("svg", False),
+                ("pdf", False),
+                ("mscz", False),
+                ("pdf-matched", False),
+                ("pdf", True),
+            ):
+                if fmt == "pdf-matched":
+                    measure = c.tool("score_outline", {"document": doc})["outline"]["measures"][0]["id"]
+                    c.tool(
+                        "score_edit",
+                        {
+                            "document": doc,
+                            "ops": [
+                                {
+                                    "op": "set_layout_break",
+                                    "measure": {"kind": "id", "id": measure},
+                                    "kind": "page",
+                                    "on": True,
+                                }
+                            ],
+                        },
+                    )
+                path = out / (fmt + ("-all" if pages else ""))
+                if fmt == "svg":
+                    path.mkdir(exist_ok=True)
+                args = export_args(doc, "pdf" if fmt == "pdf-matched" else fmt, path, pages)
+                c.tool("score_export", args)  # warmup excluded
+                samples = []
+                rss = []
+                for _ in range(a.warm):
+                    start = time.perf_counter()
+                    c.tool("score_export", args)
+                    samples.append((time.perf_counter() - start) * 1000)
+                    rss.append(rss_bytes(c.p.pid))
+                report["warm"].append(
+                    dict(
+                        mode=mode,
+                        fixture=fixture,
+                        format=fmt,
+                        all_pages=pages,
+                        total_ms=summary(samples),
+                        samples_ms=samples,
+                        rss_bytes=rss,
+                    )
+                )
+            from support.golden import describe_pdf
+
+            page_count = describe_pdf(out / "pdf-all")["pages"]
+            assert page_count >= 2
+            matched, full = report["warm"][-2:]
+            full["pages"] = page_count
+            full["per_page_marginal_ms"] = (full["total_ms"]["median"] - matched["total_ms"]["median"]) / (
+                page_count - 1
+            )
+            # Reapply a real edit before each render; export timing excludes the edit's layout.
+            post = []
+            for _ in range(a.warm):
+                c.tool(
+                    "score_edit",
+                    {
+                        "document": doc,
+                        "ops": [
+                            {
+                                "op": "set_layout_break",
+                                "measure": {"kind": "id", "id": measure},
+                                "kind": "page",
+                                "on": bool(_ % 2),
+                            }
+                        ],
+                    },
+                )
+                start = time.perf_counter()
+                c.tool("score_export", export_args(doc, "pdf", out / "post-edit.pdf"))
+                post.append((time.perf_counter() - start) * 1000)
+            report["warm"].append(
+                dict(
+                    mode=mode,
+                    fixture=fixture,
+                    format="post-edit.pdf",
+                    all_pages=False,
+                    total_ms=summary(post),
+                    samples_ms=post,
+                )
+            )
+            phases = c.close()
+            for row in report["warm"]:
+                if row["mode"] == mode and row["fixture"] == fixture:
+                    key = str((out / (row["format"] + ("-all" if row["all_pages"] else ""))).resolve()).replace(
+                        "\\", "/"
+                    )
+                    matches = [x for x in phases if x["destination"] == key and x["mode"] == mode]
+                    # Each non-edit row has one excluded warmup. Pair samples
+                    # by request order.
+                    if row["format"] != "post-edit.pdf":
+                        matches = matches[1:]
+                    assert len(matches) == len(row["samples_ms"]), (row, len(matches))
+                    row["server_samples"] = matches
+                    server = []
+                    for event in matches:
+                        event_phases = event["phases_ms"]
+                        names = event_phases.keys()
+                        server.append(sum(event_phases.get(name, 0) for name in names))
+                    row["server_ms"] = summary(server)
+                    row["residual_samples_ms"] = [client - engine for client, engine in zip(row["samples_ms"], server)]
+                    row["residual_ms"] = summary(row["residual_samples_ms"])
+            samples = []
+            cold_phases = []
+            for i in range(a.cold):
+                start = time.perf_counter()
+                c = Client(a.binary, a.resources, out / ("cold-" + str(i)), mode)
+                doc = c.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden" / fixture)})["document"]
+                c.tool(
+                    "score_export",
+                    export_args(doc, "pdf", out / ("cold-" + str(i) + ".pdf")),
+                )
+                samples.append((time.perf_counter() - start) * 1000)
+                cold_phases.extend(c.close())
+            report["cold"].append(
+                dict(
+                    mode=mode,
+                    fixture=fixture,
+                    total_ms=summary(samples),
+                    samples_ms=samples,
+                    server_samples=cold_phases,
+                )
+            )
+    (a.output / "results.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    for row in report["warm"] + report["cold"]:
+        print(json.dumps({k: v for k, v in row.items() if k not in ("samples_ms", "server_samples")}))
+
+
+if __name__ == "__main__":
+    main()
