@@ -26,8 +26,8 @@ worktrees are retired.
 - A topic branch that linux-host must build or validate is pushed to `origin`, fetched
   on linux-host, and deleted on GitHub once merged or abandoned. Work done on linux-host is
   pushed the same way.
-- Push the engine commit and its `engrave-<n>` tag before pushing a host commit
-  that pins it, so the submodule pin always resolves.
+- Push the engine commit to `main` before pushing a host commit that pins it, so
+  the submodule pin always resolves.
 - linux-host's checkout is `~/OSS/engrave-mcp`. The host remote is
   `git@github.com:Locietta/engrave-mcp.git`; the engine fetches over HTTPS and
   pushes over SSH.
@@ -39,8 +39,10 @@ worktrees are retired.
 - The checkout has `origin` configured
   (`https://github.com/Locietta/engrave.git`); `main` tracks `origin/main`.
   Pull remote `main` instead of creating a local line.
-- Every state the host pins carries an `engrave-<n>` tag. The host pins only
-  tagged SHAs; the tag ledger is in [fork.md](fork.md).
+- The host pins commits on `main` by SHA; each pin has a ledger row in
+  [fork.md](fork.md). Pins are not tagged: tags are for real version releases.
+  The former `engrave-<n>` pin tags (41, all on `main`) were deleted on
+  2026-11-06. The `mcp-4.7.*` tags on the frozen `mcp/v4.7.*` branches remain.
 - Feature branches (`feat/...`, `fix/...`) are merged to `main` and then
   deleted. Abandoned work is not kept as a branch.
 - Upstream fixes are cherry-picked onto `main` with provenance. The frozen
@@ -56,7 +58,6 @@ needed.
 
 | Tag                     | Meaning                                                      |
 | ----------------------- | ------------------------------------------------------------ |
-| `engrave-35`            | Engine pin used by the host.                                 |
 | `m4-accepted`           | Host M4 acceptance (2026-11-03).                             |
 | `checkpoint/2026-11-03` | Post-M4 cleanup: docs, Qt6 removal, submodule rename.        |
 | `archive/engrave-a5`    | Superseded 2026-10-31 v2 registry work, kept for provenance. |

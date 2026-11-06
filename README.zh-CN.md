@@ -139,7 +139,7 @@ DACL 与 ACL 合并、SMB 认证、设备命名空间与超长路径、跨卷或
 
 ```
 native/            MCP 传输、注册表、JSON 编解码、实时导出、发布
-vendor/engrave   固定的 engrave 引擎（子模块，tag engrave-31）
+vendor/engrave   固定的 engrave 引擎（子模块，按提交固定）
 xmake.lua          宿主构建；从 vendor/engrave 引入引擎构建
 scripts/           引导、构建、打包、测试道、基准
 tests/             fixture、golden 基线、音频语料

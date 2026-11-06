@@ -155,7 +155,7 @@ publication, and interactive/streaming playback. See
 
 ```
 native/            MCP transport, registry, JSON codecs, live export, publication
-vendor/engrave   pinned engrave engine (submodule, tag engrave-31)
+vendor/engrave   pinned engrave engine (submodule, pinned by commit)
 xmake.lua          host build; includes the engine build from vendor/engrave
 scripts/           bootstrap, build, packaging, lane runner, benchmarks
 tests/             fixtures, golden baselines, audio corpora

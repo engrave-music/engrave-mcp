@@ -1,8 +1,8 @@
 # engrave engine fork
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
-submodule `vendor/engrave` (shallow, pinned by SHA with an `engrave-<n>` tag per pin).
-The current pin is `engrave-40` (`e2f2018b8a`).
+submodule `vendor/engrave` (shallow, pinned by commit SHA).
+The current pin is `e2f2018b8a` (historical label `engrave-40`).
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
 terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
@@ -31,8 +31,8 @@ Since A4 the fork carries the engine's standalone Qt-free xmake build, and since
 Following the final upstream sync (`upstream-final` at `cbffaa078d`, upstream `32f0a26e5b`, framework `da3885cb`), `engrave` operates as a self-contained hard fork:
 
 - **Forward-only history**: `main` moves forward strictly via normal reviewed feature merges and commits. Force-pushes and rebases of published history are prohibited.
-- **Branch hygiene**: feature branches (`feat/...`, `fix/...`) are merged to `main` and then deleted. Only `main` and the `engrave-<n>` tags persist; see [branching.md](branching.md).
-- **Pins and provenance**: Every engine state pinned by `vendor/engrave` in the superproject carries an `engrave-<n>` tag on `main` and a ledger row recording its commit, delta summary, and validation evidence on both Windows and Linux (`linux-host`). The final synced upstream (`32f0a26e5b`) and framework (`da3885cb`) SHAs remain ancestral provenance.
+- **Branch hygiene**: feature branches (`feat/...`, `fix/...`) are merged to `main` and then deleted. Only `main` persists; see [branching.md](branching.md).
+- **Pins and provenance**: Every engine state pinned by `vendor/engrave` in the superproject is a commit on `main` with a ledger row recording that commit, delta summary, and validation evidence on both Windows and Linux (`linux-host`). Pins are not tagged; tags are reserved for real version releases. The `engrave-<n>` pin tags were deleted on 2026-11-06; earlier ledger rows keep those names as labels. The final synced upstream (`32f0a26e5b`) and framework (`da3885cb`) SHAs remain ancestral provenance.
 - **Frozen upstream reference branches**: `upstream/musescore` and `upstream/muse-framework` are frozen reference branches. There are no scheduled upstream merges, forced updates, subtree-equality checks, or "tool-made merge commits only" restrictions. Specific upstream commits may be fetched and cherry-picked/adapted on demand with their upstream SHA, framework origin (if applicable), rationale, and focused test evidence.
 - **Historical sync & trim artifacts**: `tools/sync-upstream.py` and its synthetic recovery suite (`tools/test_sync_upstream.py`) are archived in Git history at `upstream-final`..`engrave-13` and removed from the active tree in C8. `TRIM` is retained as historical deletion provenance for A3 batches 1–8 and C1 `drop-3x`, not an active path-denial list for new code.
 - **Asset & license provenance**: Runtime assets and third-party font/engine licenses are pinned by SHA256 and byte size in `engrave/assets.json` and installed/verified via `tools/install_assets.py`. GPL-3.0 notices and third-party license files are preserved.
@@ -44,7 +44,7 @@ Following the final upstream sync (`upstream-final` at `cbffaa078d`, upstream `3
 
 ## Ledger: main
 
-Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`).
+Foundation commits and pinned states on `main`. Pins start at A2 (`engrave-1`). Labels up to `engrave-40` name former tags; later rows are identified by commit.
 
 | Pin / Milestone        | Commit       | Upstream SHA | Framework SHA | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ---------------------- | ------------ | ------------ | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
