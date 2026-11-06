@@ -149,6 +149,65 @@ class TestCurrentGoldenInventory(unittest.TestCase):
                 golden.write_text(actual / "score/page-0.svg", "<svg>unapproved</svg>")
                 self.assertEqual(golden.compare_trees(baseline, actual, [entry], root / "report", "windows"), 1)
 
+    def test_unused_and_altered_unused_allowance_fail(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for tree in (root / "golden", root / "actual"):
+                golden.write_text(tree / "score/page-0.svg", "<svg/>")
+                golden.build_index(tree)
+            for digest in ("a" * 64, "b" * 64):
+                entry = dict(
+                    fixture="score",
+                    output="page-0.svg",
+                    kind="different",
+                    step="test",
+                    reason="unused",
+                    sha256={"windows": digest},
+                )
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(
+                        golden.compare_trees(root / "golden", root / "actual", [entry], root / "report", "windows"), 1
+                    )
+
+    def test_missing_and_wildcard_policy_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "allow.json"
+            for mutation in ("missing", "wildcard", "hashless"):
+                entry = dict(
+                    fixture="score",
+                    output="page-0.svg",
+                    kind="different",
+                    step="test",
+                    reason="control",
+                    sha256={"windows": "a" * 64},
+                )
+                if mutation == "missing":
+                    entry["kind"] = "missing"
+                    del entry["sha256"]
+                elif mutation == "wildcard":
+                    entry["fixture"] = "*"
+                else:
+                    del entry["sha256"]
+                golden.write_json(path, {"entries": [entry]})
+                with self.assertRaises(ValueError):
+                    golden.load_allow(path)
+
+    def test_archive_form_is_not_accepted_for_host(self):
+        path = ROOT / "tests/data/golden/allow.json"
+        self.assertEqual(golden.load_allow(path), [])
+        entries = golden.load_allow(path, context="engine-gate-archive")
+        self.assertEqual(len(entries), 25)
+        entry = entries[0]
+        digest = entry["sha256"]["linux"]
+        self.assertIsNone(
+            golden.allow_accept(
+                golden.load_allow(path), entry["fixture"], entry["output"], "different", digest, "linux"
+            )[1]
+        )
+        self.assertIsNotNone(
+            golden.allow_accept(entries, entry["fixture"], entry["output"], "different", digest, "linux")[1]
+        )
+
 
 class TestSemanticCheckerMutations(unittest.TestCase):
     def setUp(self):

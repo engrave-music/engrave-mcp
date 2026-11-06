@@ -74,7 +74,6 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
-from fnmatch import fnmatch
 from fractions import Fraction
 from pathlib import Path
 
@@ -107,7 +106,7 @@ AUDIO_EXACT = {"sampleRate", "channels", "frames"}
 # Per-window exact silence evidence (count of nonzero PCM samples per channel). It is
 # written by describe_audio, gates the centroid comparison and is not a tolerance.
 SILENCE_EVIDENCE = "nonzeroSamples"
-ALLOW_KINDS = ("different", "missing", "extra")
+ALLOW_KINDS = ("different", "extra")
 DEFAULT_PLATFORM = "windows" if sys.platform.startswith("win") else "linux"
 
 
@@ -1169,7 +1168,7 @@ async def capture_tree(
     return build_index(target)
 
 
-def load_allow(path: Path) -> list[dict]:
+def load_allow(path: Path, context: str = "host") -> list[dict]:
     if not path.is_file():
         return []
     entries = json.loads(read_text(path)).get("entries", [])
@@ -1179,7 +1178,21 @@ def load_allow(path: Path) -> list[dict]:
             raise ValueError(f"allow entry {entry!r} is missing {', '.join(missing)}")
         if entry.setdefault("kind", "different") not in ALLOW_KINDS:
             raise ValueError(f"allow entry has invalid kind: {entry['kind']!r}")
-    return entries
+        for key in ("fixture", "output", "step", "reason"):
+            if not isinstance(entry[key], str) or not entry[key].strip():
+                raise ValueError(f"invalid allow {key}")
+        if any(c in entry[key] for key in ("fixture", "output") for c in "*?["):
+            raise ValueError("allow entries must name exact artifacts")
+        if entry.get("context", "host") not in ("host", "engine-gate-archive"):
+            raise ValueError("invalid allow context")
+        pins = entry.get("sha256")
+        if (
+            not isinstance(pins, dict)
+            or not pins
+            or any(p not in ("windows", "linux") or not re.fullmatch(r"[0-9a-f]{64}", str(h)) for p, h in pins.items())
+        ):
+            raise ValueError("allow entries require explicit platform SHA-256 pins")
+    return [e for e in entries if e.get("context", "host") == context]
 
 
 def allow_accept(entries, fixture, output, kind, actual_sha, platform):
@@ -1187,15 +1200,15 @@ def allow_accept(entries, fixture, output, kind, actual_sha, platform):
     matches = [
         (position, entry)
         for position, entry in enumerate(entries)
-        if fnmatch(fixture, entry["fixture"]) and fnmatch(output, entry["output"])
+        if fixture == entry["fixture"] and output == entry["output"]
     ]
     problems = []
     for position, entry in matches:
         if entry["kind"] != kind:
             problems.append(f"entry {position}: kind {entry['kind']} != {kind}")
             continue
-        if kind == "missing":
-            return position, entry, None
+        if kind not in ALLOW_KINDS:
+            continue
         pinned = entry.get("sha256")
         pinned = pinned.get(platform) if isinstance(pinned, dict) else None
         if not pinned:
@@ -1452,6 +1465,7 @@ def compare_trees(
             "index",
         )
     )
+    failing += len(report["stale"])
     report["status"] = "pass" if failing == 0 else "fail"
     write_json(output / "report.json", report, indent=2)
     total = sum(

@@ -1,6 +1,7 @@
 {
  "entries": [
   {
+   "context": "engine-gate-archive",
    "fixture": "bend.gp",
    "kind": "different",
    "output": "score.mscx",
@@ -12,6 +13,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "bends.mid",
    "kind": "different",
    "output": "score.mscx",
@@ -23,6 +25,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "chordline_path.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -34,6 +37,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "coverage.musicxml",
    "kind": "different",
    "output": "score.mscx",
@@ -45,6 +49,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "custom_part_name.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -56,6 +61,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "drums_import.musicxml",
    "kind": "different",
    "output": "score.mscx",
@@ -67,6 +73,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "evening.musicxml",
    "kind": "different",
    "output": "score.mscx",
@@ -78,6 +85,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "ghost_note.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -89,6 +97,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "hairpins_and_repeats.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -100,6 +109,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "layout_elements.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -111,6 +121,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "linked_parts.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -122,6 +133,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "lyrics.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -133,6 +145,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "named_noteheads_perc.musicxml",
    "kind": "different",
    "output": "score.mscx",
@@ -144,6 +157,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "pedal.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -155,6 +169,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "perc_stem_dir.musicxml",
    "kind": "different",
    "output": "score.mscx",
@@ -166,6 +181,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "repeat70.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -177,6 +193,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "repeat71.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -188,6 +205,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "repeat72.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -199,6 +217,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "repeat_with_2_voltas.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -210,6 +229,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "slurs.mscz",
    "kind": "different",
    "output": "score.mscx",
@@ -221,6 +241,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "tab_grace_prebend.mscx",
    "kind": "different",
    "output": "score.mscx",
@@ -232,6 +253,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "graceArps.mnx",
    "kind": "different",
    "output": "score.mscx",
@@ -243,6 +265,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "percussionKit.mnx",
    "kind": "different",
    "output": "score.mscx",
@@ -254,6 +277,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "tupletSimple.mnx",
    "kind": "different",
    "output": "score.mscx",
@@ -265,6 +289,7 @@
    "step": "archive MSCX"
   },
   {
+   "context": "engine-gate-archive",
    "fixture": "two-notes.mnx",
    "kind": "different",
    "output": "score.mscx",

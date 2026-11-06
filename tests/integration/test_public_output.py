@@ -116,6 +116,7 @@ def compare(
     allow: list[dict],
     platform: str,
     counts: dict,
+    matched_allow: set | None = None,
 ) -> None:
     for name in names:
         golden_file, actual_file = golden_root / fixture / name, out / name
@@ -130,6 +131,8 @@ def compare(
             continue
         position, entry, problem = allow_accept(allow, fixture, name, "different", actual_sha, platform)
         if entry:
+            if matched_allow is not None:
+                matched_allow.add(position)
             counts["allowed"] += 1
             print(f"allowed      {fixture}/{name} ({entry['step']})")
             continue
