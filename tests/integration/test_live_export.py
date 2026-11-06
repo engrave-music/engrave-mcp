@@ -30,6 +30,7 @@ def main():
     p.add_argument("--binary", type=Path, required=True)
     p.add_argument("--resources", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--soundfont", type=Path, required=True)
     p.add_argument(
         "--direct-binary",
         type=Path,
@@ -117,6 +118,8 @@ def main():
             str(a.resources),
             "--output",
             str(a.output / "destination-errors"),
+            "--soundfont",
+            str(a.soundfont.resolve()),
         ],
         check=True,
     )

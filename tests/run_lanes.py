@@ -256,7 +256,7 @@ def run_lane(
             str(output / lane),
         ]
         if lane == "live_export":
-            cmd += ["--direct-binary", str(build_dir / f"live_export_test{exe_suffix}")]
+            cmd += ["--direct-binary", str(build_dir / f"live_export_test{exe_suffix}"), "--soundfont", str(soundfont)]
         else:
             cmd += [
                 "--test-binary",
