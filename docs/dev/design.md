@@ -85,7 +85,7 @@ The 16 KiB diagnostic limit (`k_diagnostic_limit` in `api_output.cpp`, and UTF-8
 
 ## 7. Performance characteristics and limitations
 
-- Vector rendering (PDF, SVG) runs in single-digit milliseconds for standard scores once fonts are loaded.
+- Under measured test conditions, vector rendering (PDF, SVG) for standard scores once fonts are loaded has been observed in single-digit milliseconds (an observation under measured conditions, not an architectural guarantee).
 - Audio synthesis latency scales with score duration, voice count, and SoundFont complexity.
 - Audio synthesis cancellation contains cooperative polling, but thread scheduling variance on Windows can cause cancellation latency to exceed 30 ms under high system load.
 - Memory usage: logical file quotas are enforced, but process virtual memory is not capped by an OS sandbox.
