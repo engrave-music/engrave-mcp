@@ -1,7 +1,7 @@
 # engrave-mcp
 
 Native C++ MCP host for the engrave engine, a pinned, trimmed fork of MuseScore
-core. This is a separate project from `C:/path/to/llm-music`, which holds baseline
+core. This is a separate project from the separate llm-music project, which holds baseline
 experiments.
 
 Goal: give LLM agents a tool to compose music, with enough MuseScore interop that
