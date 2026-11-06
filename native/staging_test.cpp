@@ -14,9 +14,9 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <windows.h>
 #include <aclapi.h>
 #include <sddl.h>
-#include <windows.h>
 #pragma comment(lib, "advapi32.lib")
 #else
 #include <sys/stat.h>

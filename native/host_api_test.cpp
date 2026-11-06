@@ -1,11 +1,11 @@
+#include "host_api.h"
+
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
-
-#include "host_api.h"
 
 namespace fs = std::filesystem;
 using music::v2::HostApi;

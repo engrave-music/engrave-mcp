@@ -1,14 +1,16 @@
 #pragma once
 
-#include "schema_defs.h"
-#include <engrave/engrave.h>
-#include <expected>
 #include <array>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <engrave/engrave.h>
+
+#include "schema_defs.h"
 
 namespace music::v2 {
 

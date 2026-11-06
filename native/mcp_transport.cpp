@@ -45,11 +45,12 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <windows.h>
 #include <fcntl.h>
 #include <io.h>
-#include <windows.h>
 #else
 #include <csignal>
+
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
