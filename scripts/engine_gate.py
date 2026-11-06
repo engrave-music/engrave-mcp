@@ -153,7 +153,7 @@ def main():
         "engrave_ops_test": [asset, corpus],
         "engrave_op_policy_test": [],
         "engrave_gp_import_test": [asset],
-        "engrave_mnx_import_test": [asset],
+        "engrave_mnx_import_test": [asset, "--mnx-out=" + str(a.output / "mnx-export")],
         "engrave_output_test": [
             asset,
             corpus,
@@ -168,6 +168,15 @@ def main():
         cwd = a.output / name
         cwd.mkdir(exist_ok=True)
         run(name, [a.build_dir / (name + suffix), *args], cwd)
+    run(
+        "mnx_schema",
+        [
+            sys.executable,
+            ROOT / "scripts/check_mnx_schema.py",
+            a.output / "mnx-export",
+            a.engine_source / "src/importexport/mnx/tests/data/schema/mnx-schema.json",
+        ],
+    )
     run(
         "playback",
         [

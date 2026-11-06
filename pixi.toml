@@ -33,6 +33,7 @@ native = { features = [] }
 
 [pypi-dependencies]
 mcp = "==2.3.0"
+jsonschema = "==4.26.0"
 numpy = "==2.5.4"
 soundfile = "==0.14.0"
 pillow = ">=13.0.0, <14"
