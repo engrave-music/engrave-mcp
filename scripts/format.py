@@ -10,6 +10,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from engine_style import engine_files
+
 FORMATTERS = {
     "clang-format": {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"},
     "ruff": {".py", ".pyi"},
@@ -76,6 +78,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="report files that require formatting without modifying them",
     )
+    parser.add_argument("--engine", action="store_true", help="format tracked owned engine C++ files")
     return parser.parse_args()
 
 
@@ -168,6 +171,9 @@ def run_formatter(formatter: str, files: list[Path], language: str | None, check
                 file.write_bytes(result.stdout)
         return 0
 
+    if len(files) > 40:
+        return max(run_formatter(formatter, files[i : i + 40], language, check) for i in range(0, len(files), 40))
+
     command = [
         executable,
         *COMMANDS[formatter][1:],
@@ -183,7 +189,7 @@ def run_formatter(formatter: str, files: list[Path], language: str | None, check
 def main() -> int:
     args = parse_args()
     try:
-        paths = project_files(args.paths)
+        paths = engine_files(args.paths) if args.engine else project_files(args.paths)
     except (FileNotFoundError, subprocess.CalledProcessError) as error:
         print(f"format: {error}", file=sys.stderr)
         return 1

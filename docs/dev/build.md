@@ -148,3 +148,29 @@ Windows build, not the repository's `build/` directory.
   `registry_check`; regenerate it instead of editing it by hand.
 - `build/`, `.pixi/`, `.xmake/`, `.runtime/`, `.upstream/`, `artifacts/` and
   `notes/` are ignored.
+
+## Style checks
+
+Engine naming follows `.clang-tidy`: CamelCase types, snake_case functions,
+variables and members, and UPPER_CASE enum constants. Members may retain a
+trailing `_`. Use `struct` for custom types. clang-format enforces own-header,
+standard, external and project include groups using the engine configuration.
+
+```powershell
+pixi run format -- .
+pixi run format-check
+pixi run lint
+pixi run format -- --engine vendor/engrave
+pixi run format-check -- --engine
+pixi run lint -- --engine
+pixi run setup-hooks
+```
+
+Engine commands accept file or directory arguments relative to the current
+working directory and exclude thirdparty directories. `format-check -- --engine`
+checks all owned engine C++ files. `lint -- --engine` checks compiled owned TUs
+from the root `compile_commands.json` in parallel and fails on naming diagnostics
+or empty selections. Generate the database with `xmake project -k compile_commands`
+after configuring `--engrave_tests=y`. The full engine lint is an acceptance step
+for engine changes. The installed engine pre-commit hook format-checks staged
+blobs; naming is checked at acceptance.
