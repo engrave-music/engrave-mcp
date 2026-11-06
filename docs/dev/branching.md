@@ -51,8 +51,7 @@ The engine submodule is intentionally shallow, so a fresh checkout can show
 only its pinned commit in `git log` even though the remote branch has earlier
 history. To inspect more history without moving the checkout or changing the
 pin, run `git -C vendor/engrave fetch --deepen=256 origin main`; repeat as
-needed. If the full work clone exists at `.upstream/engrave`, its `main` also
-provides the complete local history.
+needed.
 
 ## Checkpoints
 
@@ -75,9 +74,10 @@ provides the complete local history.
   plus four frozen branches: `mcp/v4.7.5`, `mcp/v4.7.6`, `upstream/musescore`,
   `upstream/muse-framework`. The 37 engine tags are unchanged.
 - The separate `.upstream/engrave` work clone was not included in that local
-  cleanup. It still has topic refs and worktree records, including four branch
-  tips not merged into `main`: `a3/old-main`, `a5/api-gaps`, `scratch/base`,
-  and `t/main`. Review those tips before removing them.
+  cleanup. It was deleted on 2026-11-06 after review: its four tips not merged
+  into `main` were superseded (`a3/old-main` by the redone A3 trim in
+  `engrave-2`, `a5/api-gaps` by `a5/api-gaps-14` in `engrave-15`, and
+  `scratch/base`/`t/main` were sync-tool scratch).
 
 Remote cleanup rule: only delete a branch whose commits are fully contained in
 `main` (`compare` reports `ahead_by: 0`). Keep unmerged work, and keep the

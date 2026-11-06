@@ -40,7 +40,7 @@ Following the final upstream sync (`upstream-final` at `cbffaa078d`, upstream `3
 - **Practicalities**:
   - Push over SSH (`git@github.com:Locietta/engrave.git`). Pushing large histories over HTTPS fails in this environment with HTTP 408.
   - Line endings on Windows: work clones require `core.eol=lf` and `core.autocrlf=false` because `.gitattributes` declares `* text=auto`.
-  - The orchestrator's local work clone is `.upstream/engrave` (with per-task worktrees under `.upstream/engrave-wt/`).
+  - Engine work happens in the `vendor/engrave` checkout (`origin` = the fork). Topic branches go to GitHub for cross-machine validation and are deleted after merge; the separate `.upstream/engrave` work clone was retired on 2026-11-06.
 
 ## Ledger: main
 
