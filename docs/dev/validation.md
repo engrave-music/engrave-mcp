@@ -44,20 +44,20 @@ per-lane log plus a summary.
 
 ## Lanes
 
-There are 37 lanes; 36 run by default. `phase_b_oracle` is opt-in and needs the
+There are 37 lanes; 36 run by default. `native_470_oracle` is opt-in and needs the
 pinned 4.7.6 oracle archive, executable and assets.
 
-| Area                        | Lanes                                                                                               |
-| --------------------------- | --------------------------------------------------------------------------------------------------- |
-| Protocol and session        | `host_api`, `transport`, `async_session`, `tool_schema`                                             |
-| Live export and publication | `live_export`, `export_options`, `positions`                                                        |
-| Audio                       | `live_audio`, `audio_budget`, `score_audio`, `audio_facade`, `engine_audio`                         |
-| Notation and edits          | `score_edit`, `native_edit`, `linked_tie`, `xml_text`, `repeats`                                    |
-| Documents and formats       | `score_positions`, `excerpts`, `open_data`, `imports_midi`, `imports_gp`, `archives`, `roundtrip`   |
-| Golden and semantics        | `golden`, `v2_golden_overlap`, `semantic_check`, `compat_corpus`, `rendered_page`, `oracle_harness` |
-| Assets and engine           | `runtime_assets`, `assets`, `noqt_probe`, `upstream_gtest`, `version_info`                          |
-| Smoke                       | `mcp_smoke`                                                                                         |
-| Opt-in                      | `phase_b_oracle` (4.70 writer, pinned oracle)                                                       |
+| Area                        | Lanes                                                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Protocol and session        | `host_api`, `transport`, `async_session`, `tool_schema`                                                   |
+| Live export and publication | `live_export`, `export_options`, `positions`                                                              |
+| Audio                       | `live_audio`, `audio_budget`, `score_audio`, `audio_facade`, `engine_audio`                               |
+| Notation and edits          | `score_edit`, `native_edit`, `linked_tie`, `xml_text`, `repeats`                                          |
+| Documents and formats       | `score_positions`, `excerpts`, `open_data`, `imports_midi`, `imports_gp`, `archives`, `roundtrip`         |
+| Golden and semantics        | `golden`, `export_baseline_overlap`, `semantic_check`, `compat_corpus`, `rendered_page`, `oracle_harness` |
+| Assets and engine           | `runtime_assets`, `assets`, `noqt_probe`, `upstream_gtest`, `version_info`                                |
+| Smoke                       | `mcp_smoke`                                                                                               |
+| Opt-in                      | `native_470_oracle` (4.70 writer, pinned oracle)                                                          |
 
 The `live_export` lane also runs the focused publication checks
 (`test_live_publication_cancel.py`, `test_live_publication_limits.py`,

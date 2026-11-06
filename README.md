@@ -157,8 +157,8 @@ publication, and interactive/streaming playback. See
 engrave_mcp/            MCP transport, registry, JSON codecs, live export, publication
 vendor/engrave   pinned engrave engine (submodule, pinned by commit)
 xmake.lua          host build; includes the engine build from vendor/engrave
-scripts/           bootstrap, build, packaging, lane runner, benchmarks
-tests/             fixtures, golden baselines, audio corpora
+scripts/           bootstrap, build, packaging
+tests/             lane runner, integration tests, support, benchmarks, data
 docs/dev/          design, tool contract, build, validation, fork ledger, history
 ```
 
