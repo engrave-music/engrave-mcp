@@ -143,4 +143,14 @@ pixi run lint -- --engine
 pixi run setup-hooks
 ```
 
-Formatting and linting rules follow `vendor/engrave/.clang-tidy` and `.clang-format`. The pre-commit hook installed by `setup-hooks` verifies staged changes prior to commit.
+Formatting and linting rules follow `vendor/engrave/.clang-tidy` and `.clang-format`.
+
+Full engine naming lint is required for all engine changes. Because the engine lint tool only selects translation units present in `compile_commands.json`, the compilation database must be regenerated after enabling engine tests (`--engrave_tests=y`), otherwise test and adapter translation units are omitted from linting:
+
+```powershell
+xmake f --engrave_tests=y
+xmake project -k compile_commands
+pixi run lint -- --engine
+```
+
+Engine lint runs in parallel across compiled translation units and fails on naming diagnostics or empty selections. The installed pre-commit hook verifies staged changes prior to commit; full naming lint is verified at acceptance.
