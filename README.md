@@ -11,9 +11,10 @@ WebAssembly or desktop MuseScore dependency at runtime.
 
 The goal is interop, not legacy compatibility: an agent-made score must open and remain
 editable in MuseScore, and a MuseScore score must open and remain editable by
-the agent. Only scores from MuseScore 4.6 onward open. The default MSCZ writer emits
-5.00 format; a bounded 4.70 writer is available for MuseScore 4.x interop where the
-score stays inside its documented subset.
+the agent. The reader accepts MuseScore format 4.60 up to 5.00 and rejects versions
+above 5.00 or prior to 4.60. MSCZ and MusicXML inputs with embedded images are rejected.
+The default MSCZ writer emits 5.00 format; a bounded 4.70 writer targeting MuseScore 4.7.0–4.7.6
+is available for MuseScore 4.x interop where the score stays inside its documented subset.
 
 ## What it can do
 

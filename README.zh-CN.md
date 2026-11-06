@@ -9,8 +9,9 @@ stdio JSON-RPC 创建、查询、编辑、排版并导出乐谱。
 也不需要安装桌面版 MuseScore。
 
 目标是互操作，而不是历史兼容：Agent 制作的乐谱要能在 MuseScore 中打开并继续编辑，
-MuseScore 的乐谱也要能被 Agent 打开并继续编辑。只打开 MuseScore 4.6 及以后版本的乐谱。
-默认 MSCZ 写入 5.00 格式；需要与 MuseScore 4.x 互通时，可在文档规定的子集内使用有界的 4.70 写入器。
+MuseScore 的乐谱也要能被 Agent 打开并继续编辑。读取器接受 MuseScore 4.60 至 5.00 格式的乐谱，
+高于 5.00 或低于 4.60 的版本均会被拒绝。包含内嵌图像的 MSCZ 与 MusicXML 输入会被拒绝。
+默认 MSCZ 写入 5.00 格式；需要与 MuseScore 4.x 互通时，可在文档规定的子集内使用面向 MuseScore 4.7.0–4.7.6 的有界 4.70 写入器。
 
 ## 能力
 
