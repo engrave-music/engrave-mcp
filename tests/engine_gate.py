@@ -20,7 +20,8 @@ from pathlib import Path
 
 from integration.test_public_output import compare, describe_audio_file, describe_render, probe_command
 from support import golden as g
-from support.paths import REPO_ROOT
+from run_lanes import setup_link
+from support.paths import INPUT_ROOT, REPO_ROOT
 
 ROOT = REPO_ROOT
 
@@ -197,6 +198,12 @@ def main():
             a.output / "gtest",
         ],
     )
+    # These pinned engine tests still read cwd-relative fixtures and engine data.
+    # Keep that compatibility contract inside the capture, beside generated output.
+    engine_cwd = a.output / "engine-cwd"
+    (engine_cwd / "vendor").mkdir(parents=True, exist_ok=True)
+    setup_link(INPUT_ROOT, engine_cwd / "fixtures")
+    setup_link(a.engine_source, engine_cwd / "vendor/engrave")
     for name in ("score_edit_test", "score_audio_test", "score_positions_test"):
         run(
             name,
@@ -205,6 +212,7 @@ def main():
                 a.assets,
                 *([a.engine_source] if name == "score_audio_test" else []),
             ],
+            cwd=engine_cwd,
         )
     run(
         "excerpts",
