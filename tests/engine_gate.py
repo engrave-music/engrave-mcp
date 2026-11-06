@@ -392,7 +392,8 @@ def main():
         "semantic-cross-check",
         [sys.executable, ROOT / "tests/support/check_semantic_dump.py", a.output / "actual"],
     )
-    if len(matched_allow) != len(allow):
+    # Entries are only expected to match on the platforms they pin.
+    if any(i not in matched_allow and platform in e["sha256"] for i, e in enumerate(allow)):
         raise RuntimeError("unused engine archive allow entries")
     inputs = [a.soundfont, ROOT / "tests/data/golden/allow.json", *sources, *compat]
     provenance = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}

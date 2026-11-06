@@ -201,25 +201,54 @@ class TestCurrentGoldenInventory(unittest.TestCase):
     def test_missing_and_wildcard_policy_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "allow.json"
-            for mutation in ("missing", "wildcard", "hashless"):
-                entry = dict(
-                    fixture="score",
-                    output="page-0.svg",
-                    kind="different",
-                    step="test",
-                    reason="control",
-                    sha256={"windows": "a" * 64},
-                )
+            control = dict(
+                fixture="score",
+                output="page-0.svg",
+                kind="different",
+                step="test",
+                reason="control",
+                context="host",
+                sha256={"windows": "a" * 64},
+            )
+            golden.write_json(path, {"entries": [control]})
+            self.assertEqual(len(golden.load_allow(path)), 1)
+            for mutation in ("missing", "wildcard", "hashless", "contextless"):
+                entry = dict(control)
                 if mutation == "missing":
                     entry["kind"] = "missing"
                     del entry["sha256"]
                 elif mutation == "wildcard":
                     entry["fixture"] = "*"
-                else:
+                elif mutation == "hashless":
                     del entry["sha256"]
+                else:
+                    del entry["context"]
                 golden.write_json(path, {"entries": [entry]})
-                with self.assertRaises(ValueError):
+                with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                     golden.load_allow(path)
+
+    def test_allowance_pinned_for_other_platform_is_not_stale(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for tree in (root / "golden", root / "actual"):
+                golden.write_text(tree / "score/page-0.svg", "<svg/>")
+                golden.build_index(tree)
+            entry = dict(
+                fixture="score",
+                output="page-0.svg",
+                kind="different",
+                step="test",
+                reason="windows-only",
+                context="host",
+                sha256={"windows": "a" * 64},
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    golden.compare_trees(root / "golden", root / "actual", [entry], root / "report", "linux"), 0
+                )
+                self.assertEqual(
+                    golden.compare_trees(root / "golden", root / "actual", [entry], root / "report", "windows"), 1
+                )
 
     def test_host_comparator_rejects_reviewed_archive_bytes(self):
         fixture = "slurs.mscz"

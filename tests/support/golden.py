@@ -1184,8 +1184,8 @@ def load_allow(path: Path, context: str = "host") -> list[dict]:
                 raise ValueError(f"invalid allow {key}")
         if any(c in entry[key] for key in ("fixture", "output") for c in "*?["):
             raise ValueError("allow entries must name exact artifacts")
-        if entry.get("context", "host") not in ("host", "engine-gate-archive"):
-            raise ValueError("invalid allow context")
+        if entry.get("context") not in ("host", "engine-gate-archive"):
+            raise ValueError("allow entries require an explicit context: host or engine-gate-archive")
         pins = entry.get("sha256")
         if (
             not isinstance(pins, dict)
@@ -1193,7 +1193,7 @@ def load_allow(path: Path, context: str = "host") -> list[dict]:
             or any(p not in ("windows", "linux") or not re.fullmatch(r"[0-9a-f]{64}", str(h)) for p, h in pins.items())
         ):
             raise ValueError("allow entries require explicit platform SHA-256 pins")
-    return [e for e in entries if e.get("context", "host") == context]
+    return [e for e in entries if e["context"] == context]
 
 
 def allow_accept(entries, fixture, output, kind, actual_sha, platform):
@@ -1479,7 +1479,8 @@ def compare_trees(
                 write_diff(diff_root, fixture, name, golden_file, actual_file)
 
     for position, entry in enumerate(allow):
-        if position not in matched_allow:
+        # An entry is only expected to match on the platforms it pins.
+        if position not in matched_allow and platform in entry["sha256"]:
             report["stale"].append(entry)
             print(
                 f"stale    allow entry fixture={entry['fixture']} output={entry['output']} "
