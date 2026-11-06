@@ -1,7 +1,8 @@
 # Branching and tags
 
 Two repositories matter: the host (`engrave-mcp`) and the engine checkout
-(`vendor/engrave`). Both use one long-lived branch and tags for checkpoints.
+(`vendor/engrave`). Both use one long-lived branch. Tags are reserved for real
+version releases; checkpoints and pins are referred to by commit SHA.
 
 ## Host repository
 
@@ -9,14 +10,11 @@ Two repositories matter: the host (`engrave-mcp`) and the engine checkout
 - Work happens on short-lived topic branches (`m4/...`, `cleanup/...`). Merge to
   `main` when the step is verified, then delete the branch. A phase or step
   branch is not kept after merge; its commits are reachable from `main`.
-- Accepted checkpoints are annotated tags, not branches:
-  - `m4-accepted` — the M4 acceptance record.
-  - `checkpoint/YYYY-MM-DD` — a consolidated state worth returning to.
-  - `v<version>` — a real release, once there is one.
-- Do not create a tag for every merge; the history already records those.
+- The only tags are `v<version>` for real releases, once there is one. Notable
+  checkpoints are listed by commit SHA under [Checkpoints](#checkpoints).
 - `origin` is the private GitHub repository
   `https://github.com/Locietta/engrave-mcp` (published 2026-11-06); `main`
-  tracks `origin/main`. Push `main` and checkpoint tags as they are made.
+  tracks `origin/main`. Push `main` as it moves.
 
 ## Moving work between machines
 
@@ -57,18 +55,26 @@ needed.
 
 ## Checkpoints
 
-| Tag                     | Meaning                                                      |
-| ----------------------- | ------------------------------------------------------------ |
-| `m4-accepted`           | Host M4 acceptance (2026-11-03).                             |
-| `checkpoint/2026-11-03` | Post-M4 cleanup: docs, Qt6 removal, submodule rename.        |
-| `archive/engrave-a5`    | Superseded 2026-10-31 v2 registry work, kept for provenance. |
-| `pre-fork-baseline`     | Last executable pre-fork host state.                         |
+Host commits on `main` worth returning to:
+
+| Commit    | Meaning                                               |
+| --------- | ----------------------------------------------------- |
+| `d07e624` | Host M4 acceptance (2026-11-03).                      |
+| `e439e9a` | Post-M4 cleanup: docs, Qt6 removal, submodule rename. |
+| `f8e7d26` | Last executable pre-fork host state.                  |
+
+These were the tags `m4-accepted`, `checkpoint/2026-11-03` and
+`pre-fork-baseline` until 2026-11-06, when all host tags were deleted. The
+fourth, `archive/engrave-a5` (`dd1b7de`), kept three unmerged 2026-10-31
+commits: a first v2 registry draft and the worker-process export-job design
+later dropped for live export (see [history.md](history.md)). Main redid that
+work, so the tag and its commits were dropped.
 
 ## Cleanup performed (2026-11-03)
 
 - Host: 44 local branches reduced to `main`; every deleted branch was an
-  ancestor of `main` except `engrave/a5`, whose tip is the
-  `archive/engrave-a5` tag.
+  ancestor of `main` except `engrave/a5`, whose tip was kept as the
+  `archive/engrave-a5` tag (dropped 2026-11-06).
 - Engine submodule checkout: `main` tracks `origin/main` at `engrave-31`; two
   merged local feature branches and 56 stale `origin/*` remote-tracking refs
   removed. On GitHub, 50 merged remote branches were deleted, leaving `main`
