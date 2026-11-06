@@ -705,7 +705,7 @@ def png_exceptions(payload):
 def accepted_svg_counts(name, digest):
     """Return independently reviewed counts, never counts from the tested SVG."""
     platform = "windows" if sys.platform.startswith("win") else "linux"
-    path = ROOT / "vendor/engrave/tests/data/golden/page_count_pins.json"
+    path = Path(__file__).resolve().parents[2] / "vendor/engrave/tests/data/golden/page_count_pins.json"
     pins = json.loads(path.read_text(encoding="utf-8"))
     entry = pins.get(platform, {}).get(name)
     return entry["counts"] if entry and entry["svg_sha256"] == digest else None
