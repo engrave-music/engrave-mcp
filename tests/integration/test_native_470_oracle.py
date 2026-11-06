@@ -482,7 +482,7 @@ def mutation_tests(root: Path, case_dir: Path, binary: Path, assets: Path, oracl
     else:
         raise GateError("comparator accepted mutation: swapped_id_association")
 
-    corpus = ROOT / "tests/data/compat-corpus/engrave-19"
+    corpus = ROOT / "vendor/engrave/tests/data/compat-corpus/engrave-19"
     source, reference = (
         corpus / "created.json.mscz",
         corpus / "created.json.semantic.json",

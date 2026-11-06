@@ -33,7 +33,7 @@ def main() -> int:
             args.resources,
             args.soundfont,
             args.replacement_soundfont,
-            root / "tests/data",
+            root / "vendor/engrave/tests/data",
         )
     ]
     result = subprocess.run(

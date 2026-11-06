@@ -324,9 +324,9 @@ async def run(args):
         )
         await client.tool("score_close", {"document": doc})
 
-        mix_doc = (await client.tool("score_open", {"path": str(ROOT / "tests/data/inputs/audio/mix.mscz")}))[
-            "document"
-        ]
+        mix_doc = (
+            await client.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/audio/mix.mscz")})
+        )["document"]
         mix_tracks = (await tracks(mix_doc))["tracks"]
         assert len(mix_tracks) == 3
         cello = next(t for t in mix_tracks if t["part_name"] == "Cello")
@@ -352,9 +352,11 @@ async def run(args):
             close_ratio(muted["rms"], default["rms"])
         await client.tool("score_close", {"document": mix_doc})
 
-        parts_doc = (await client.tool("score_open", {"path": str(ROOT / "tests/data/inputs/audio/mix_parts.mscz")}))[
-            "document"
-        ]
+        parts_doc = (
+            await client.tool(
+                "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/audio/mix_parts.mscz")}
+            )
+        )["document"]
         saved_excerpts = {e["name"]: e["id"] for e in (await outline(parts_doc))["outline"]["excerpts"]}
         for name, expected_mute in (("Violin", False), ("Cello", True)):
             selected = (await tracks(parts_doc, saved_excerpts[name]))["tracks"]

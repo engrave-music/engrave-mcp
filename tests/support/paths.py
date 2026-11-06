@@ -3,7 +3,7 @@
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = REPO_ROOT / "tests/data"
+DATA_ROOT = REPO_ROOT / "vendor/engrave/tests/data"
 INPUT_ROOT = DATA_ROOT / "inputs"
 GOLDEN_ROOT = DATA_ROOT / "golden"
 WINDOWS_GOLDEN_ROOT = GOLDEN_ROOT / "windows"

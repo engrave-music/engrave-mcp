@@ -6,7 +6,7 @@ Tests both probe-level engine capabilities and MCP server integration:
    - Captures the current host and compares it to the other host's A2 capture,
      using explicit per-feature tolerances (frames/sample rate/channels exact)
 2. Pure sine wave SoundFont generation and pitch/onset/level accuracy:
-   - Renders known scores with tests/data/engine_audio/sine.sf2
+   - Renders known scores with vendor/engrave/tests/data/engine_audio/sine.sf2
    - Asserts onset errors are at most 86 frames at 44.1 kHz (1.950113379 ms)
    - Asserts fundamental frequencies are within 0.80 cent of equal temperament (A4 = 440 Hz)
    - Asserts the explicit mf dynamic (velocity 80) produces an RMS within 2% of
@@ -14,7 +14,7 @@ Tests both probe-level engine capabilities and MCP server integration:
 3. MIDI event oracle (4.7.6 reference plus accepted 5.0 differences):
    - Captures handleEvent MIDI events (NoteOn/Off, CC, PitchBend) via --midi-events,
      including each event's render-frame offset
-   - tests/data/engine_audio/midi/<fixture>.json are the exact 4.7.6 reference streams
+   - vendor/engrave/tests/data/engine_audio/midi/<fixture>.json are the exact 4.7.6 reference streams
      (commit 9a74eb1), not 5.0 re-baselines. The 5.0 stream must equal the reference
      after applying ONLY the two accepted upstream differences documented in
      MIDI_ACCEPTED_RULES (deduplicated/out-of-band CC11 and the SND velocity
@@ -231,7 +231,7 @@ SINE_ONSET_MAX_FRAMES = 86
 SINE_ONSET_REFERENCE_RATE = 44100
 SINE_PITCH_MAX_CENTS = 0.80
 
-# Sine SoundFont level check: explicit mf in tests/data/engine_audio/level_test.musicxml.
+# Sine SoundFont level check: explicit mf in vendor/engrave/tests/data/engine_audio/level_test.musicxml.
 # The MusicXML importer maps mf (with <sound dynamics="80"/>) to note velocity 80
 # for this instrument; the measured steady-state RMS is the reference below.
 SINE_LEVEL_VELOCITY = 80
@@ -283,7 +283,9 @@ def audio_fixture_sources() -> dict[str, Path]:
     assert all(path.is_file() for path in golden.EXTRA_FIXTURES), "extra golden fixture missing"
     edits = set(golden.EDIT_SCENARIOS)
     assert not edits.intersection(fixtures), "fixture and edit scenario names overlap"
-    indexed = set(json.loads((ROOT / "tests/data/golden" / "windows" / "index.json").read_text(encoding="utf-8")))
+    indexed = set(
+        json.loads((ROOT / "vendor/engrave/tests/data/golden" / "windows" / "index.json").read_text(encoding="utf-8"))
+    )
     expected = set(fixtures) | edits
     assert expected == indexed, (
         f"golden source inventory differs: missing {sorted(indexed - expected)}, unindexed {sorted(expected - indexed)}"
@@ -422,9 +424,9 @@ def write_capture_manifest(
 
 def capture_destination(capture_root: Path, platform: str) -> Path:
     root = capture_root.resolve()
-    golden_root = (ROOT / "tests/data/golden").resolve()
+    golden_root = (ROOT / "vendor/engrave/tests/data/golden").resolve()
     assert root != golden_root and golden_root not in root.parents, (
-        "capture directory must not be inside tests/data/golden"
+        "capture directory must not be inside vendor/engrave/tests/data/golden"
     )
     destination = root / platform
     assert not destination.is_symlink(), f"capture destination is a symlink: {destination}"
@@ -668,7 +670,7 @@ def test_audio_check_reporting() -> None:
     source_commit, engine_commit, soundfont_sha = "a" * 40, "b" * 40, "c" * 64
     with tempfile.TemporaryDirectory(prefix="musescore-audio-check-") as temp_dir:
         captures = Path(temp_dir)
-        for forbidden in (ROOT / "tests/data/golden", captures / "unrelated"):
+        for forbidden in (ROOT / "vendor/engrave/tests/data/golden", captures / "unrelated"):
             if forbidden == captures / "unrelated":
                 (forbidden / "windows").mkdir(parents=True)
             try:
@@ -760,7 +762,7 @@ def test_audio_check_reporting() -> None:
         for platform in ("windows", "linux"):
             for name in fixtures:
                 shutil.copyfile(
-                    ROOT / "tests/data/golden" / "windows" / name / "audio.json",
+                    ROOT / "vendor/engrave/tests/data/golden" / "windows" / name / "audio.json",
                     captures / platform / name / "audio.json",
                 )
             write_capture_manifest(
@@ -850,11 +852,11 @@ def test_pitch_onset_and_level(
     evidence: dict[str, Any],
 ) -> None:
     print("[2/6] Testing pitch, onset and sine SoundFont output level...")
-    sine_sf2 = ROOT / "tests/data/engine_audio" / "sine.sf2"
+    sine_sf2 = ROOT / "vendor/engrave/tests/data/engine_audio" / "sine.sf2"
     if not sine_sf2.is_file():
         generate_sine_soundfont(sine_sf2)
 
-    score_path = ROOT / "tests/data/engine_audio" / "pitch_test.musicxml"
+    score_path = ROOT / "vendor/engrave/tests/data/engine_audio" / "pitch_test.musicxml"
     if not score_path.is_file():
         raise FileNotFoundError(f"Missing pitch test score: {score_path}")
 
@@ -932,7 +934,7 @@ def test_pitch_onset_and_level(
 
     # Output level: one explicit mf note at C4. The captured events must show
     # the documented dynamic mapping, then the steady-state RMS must match.
-    level_score = ROOT / "tests/data/engine_audio" / "level_test.musicxml"
+    level_score = ROOT / "vendor/engrave/tests/data/engine_audio" / "level_test.musicxml"
     assert level_score.is_file(), f"Missing level test score: {level_score}"
     level_wav = out_dir / "level_test.wav"
     if level_wav.exists():
@@ -986,14 +988,14 @@ def test_pitch_onset_and_level(
 
 def midi_fixtures() -> list[tuple[str, Path]]:
     return [
-        ("evening", ROOT / "tests/data/inputs" / "evening.musicxml"),
+        ("evening", ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml"),
         (
             "hairpins_and_repeats",
-            ROOT / "tests/data/inputs" / "golden" / "hairpins_and_repeats.mscx",
+            ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "hairpins_and_repeats.mscx",
         ),
-        ("pedal", ROOT / "tests/data/inputs" / "golden" / "pedal.mscx"),
-        ("bend.gp", ROOT / "tests/data/inputs" / "golden" / "bend.gp"),
-        ("repeat70", ROOT / "tests/data/inputs" / "golden" / "repeat70.mscx"),
+        ("pedal", ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "pedal.mscx"),
+        ("bend.gp", ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "bend.gp"),
+        ("repeat70", ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "repeat70.mscx"),
     ]
 
 
@@ -1047,7 +1049,7 @@ def write_midi_goldens(
 
 # --- MIDI event oracle: the 4.7.6 reference plus the accepted 5.0 differences ----
 #
-# tests/data/engine_audio/midi/<fixture>.json are the exact 4.7.6 event streams (restored
+# vendor/engrave/tests/data/engine_audio/midi/<fixture>.json are the exact 4.7.6 event streams (restored
 # from 9a74eb1, byte-identical to codex/xmake-parity). A0/A2 requires the step-5 MIDI
 # oracle to stay exact, so those files are NOT re-baselined on 5.0 playback. Only the
 # two upstream 5.0 changes below are accepted (notes/a2/decisions.md 2026-10-29 and
@@ -1397,7 +1399,7 @@ def test_midi_event_goldens(
 ) -> None:
     print("[3/6] Testing the 4.7.6 MIDI event reference plus the accepted 5.0 differences...")
     fixtures = midi_fixtures()
-    golden_dir = ROOT / "tests/data/engine_audio" / "midi"
+    golden_dir = ROOT / "vendor/engrave/tests/data/engine_audio" / "midi"
     golden_results = {}
 
     for name, fix_path in fixtures:
@@ -1484,7 +1486,7 @@ def test_determinism_and_decoding(
     evidence: dict[str, Any],
 ) -> None:
     print("[4/6] Testing determinism, decoded durations and non-ASCII paths across wav, flac, ogg, mp3, aac...")
-    score_path = ROOT / "tests/data/inputs" / "golden" / "hairpins_and_repeats.mscx"
+    score_path = ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "hairpins_and_repeats.mscx"
     formats = ["wav", "flac", "ogg", "mp3", "aac"]
     det_results = {}
 
@@ -1546,13 +1548,13 @@ def test_determinism_and_decoding(
         det_results[fmt] = dec_info
 
     # Non-ASCII SoundFont copy and output paths for every audio format.
-    sine_sf2 = ROOT / "tests/data/engine_audio" / "sine.sf2"
+    sine_sf2 = ROOT / "vendor/engrave/tests/data/engine_audio" / "sine.sf2"
     if not sine_sf2.is_file():
         generate_sine_soundfont(sine_sf2)
     nonascii_sf = out_dir / "非ASCII 音色" / "正弦 音色.sf2"
     nonascii_sf.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(sine_sf2, nonascii_sf)
-    pitch_score = ROOT / "tests/data/engine_audio" / "pitch_test.musicxml"
+    pitch_score = ROOT / "vendor/engrave/tests/data/engine_audio" / "pitch_test.musicxml"
     nonascii_dir = out_dir / "输出 音频"
     nonascii_dir.mkdir(parents=True, exist_ok=True)
     nonascii_results = {}
@@ -1700,7 +1702,7 @@ def test_excerpt_rendering_parity(
     evidence: dict[str, Any],
 ) -> None:
     print("[6/6] Testing excerpt render identity against master with other parts muted...")
-    score_path = ROOT / "tests/data/inputs" / "evening.musicxml"
+    score_path = ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml"
     out_exc = out_dir / "evening_excerpt0.wav"
     out_muted = out_dir / "evening_master_muted12.wav"
 
@@ -1782,7 +1784,7 @@ async def test_mcp_level_integration(
         doc = (
             await client.tool(
                 "score_open",
-                {"path": str((ROOT / "tests/data/inputs/evening.musicxml").resolve())},
+                {"path": str((ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").resolve())},
             )
         )["document"]
         info = await client.tool("score_query", {"document": doc, "mode": "audio_tracks"})
@@ -1851,7 +1853,9 @@ async def test_mcp_level_integration(
 
         midi = await export(doc, "midi", out_dir / "mcp_evening.mid")
         expected = json.loads(
-            (ROOT / "tests/data/golden" / golden_platform() / "evening.musicxml/midi.json").read_text(encoding="utf-8")
+            (ROOT / "vendor/engrave/tests/data/golden" / golden_platform() / "evening.musicxml/midi.json").read_text(
+                encoding="utf-8"
+            )
         )
         assert describe_midi(midi.read_bytes()) == expected
         await client.tool("score_close", {"document": doc})
@@ -1895,12 +1899,12 @@ def main() -> int:
     parser.add_argument(
         "--write-midi-goldens",
         action="store_true",
-        help="Regenerate tests/data/engine_audio/midi goldens from the current probe",
+        help="Regenerate vendor/engrave/tests/data/engine_audio/midi goldens from the current probe",
     )
     parser.add_argument(
         "--midi-golden-dir",
         type=Path,
-        default=ROOT / "tests/data/engine_audio" / "midi",
+        default=ROOT / "vendor/engrave/tests/data/engine_audio" / "midi",
         help="Directory for --write-midi-goldens",
     )
     parser.add_argument(

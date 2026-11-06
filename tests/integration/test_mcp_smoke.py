@@ -84,7 +84,9 @@ async def main():
 
                 info = await call("runtime_info", {})
                 assert info["tool_revision"] == "2" and info["limits"]["transport_request_bytes"] == 4194304
-                opened = await call("score_open", {"path": str(ROOT / "tests/data/inputs/evening.musicxml")})
+                opened = await call(
+                    "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")}
+                )
                 doc, revision = opened["document"], opened["revision"]
                 outline = await call("score_outline", {"document": doc})
                 assert outline["outline"]["measure_count"] > 0 and outline["revision"] == revision

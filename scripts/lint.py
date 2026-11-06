@@ -128,6 +128,8 @@ def lint_engine(args, repo_root):
 
 def main() -> int:
     args = parse_args()
+    if args.engine:
+        return subprocess.call([sys.executable, str(args.engine_root / "tools/lint.py"), *sys.argv[1:]])
     repo_root = Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
 
     try:

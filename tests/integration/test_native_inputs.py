@@ -21,7 +21,7 @@ OUT = ROOT / "artifacts/native-input-errors"
 
 async def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    fixture = (ROOT / "tests/data/inputs/evening.musicxml").read_text(encoding="utf-8")
+    fixture = (ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").read_text(encoding="utf-8")
     cases = {
         "oversized-root": (
             "<container><rootfiles><rootfile full-path='score.xml'/></rootfiles></container>",
@@ -62,7 +62,7 @@ async def main():
                 )
                 assert response.is_error
                 valid = await session.call_tool(
-                    "score_open", {"path": str(ROOT / "tests/data/inputs/evening.musicxml")}
+                    "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")}
                 )
                 assert not valid.is_error
                 closed = await session.call_tool("score_close", {"document": valid.structured_content["document"]})

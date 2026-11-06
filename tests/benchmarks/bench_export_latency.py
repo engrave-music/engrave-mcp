@@ -42,7 +42,9 @@ def main():
         for fixture in ("repeat70.mscx", "lyrics.mscx"):
             out = a.output / mode / fixture
             c = Client(a.binary, a.resources, out, mode)
-            doc = c.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden" / fixture)})["document"]
+            doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden" / fixture)})[
+                "document"
+            ]
             for fmt, pages in (
                 ("svg", False),
                 ("pdf", False),
@@ -154,7 +156,9 @@ def main():
             for i in range(a.cold):
                 start = time.perf_counter()
                 c = Client(a.binary, a.resources, out / ("cold-" + str(i)), mode)
-                doc = c.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden" / fixture)})["document"]
+                doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden" / fixture)})[
+                    "document"
+                ]
                 c.tool(
                     "score_export",
                     export_args(doc, "pdf", out / ("cold-" + str(i) + ".pdf")),

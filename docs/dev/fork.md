@@ -2,7 +2,7 @@
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/engrave` (shallow, pinned by commit SHA).
-The current pin is `42c6b2550a`.
+The candidate pin on cleanup/engine-tests is `f94105dc60`. It is pending acceptance on fork main.
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
 terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
@@ -22,7 +22,7 @@ Since A4 the fork carries the engine's standalone Qt-free xmake build, and since
 
 - `xmake.lua` — the standalone project: `xmake f -m release --cairo_prefix=PREFIX && xmake build` builds the production engine targets (`engrave` and its module libraries) in a bare checkout.
 - `xmake/engrave.lua` — the engine targets (`muse_global`, `muse_draw`, `muse_mpe`, `engraving`, `iex_musicxml`, `iex_mnx`, `iex_guitarpro`, `iex_midi`, `native_fluidsynth`, `muse_audio_engine`, and `engrave`), generated version metadata (`engrave_version.h`), and pinned package requirements. Targets compile via folder globs.
-- `xmake/tests.lua` — opt-in test targets (`--engrave_tests=y`) and the `c0_gate` phony target that builds the public-API, import, playback and adapter regression suites. `tests/engine_gate.py` builds and executes the gate and artifact comparisons; it also runs `diagnostics_test`, `io_boundary_test`, the installer tests and manifest verification (DEFECT-ENGRAVE-010 is resolved).
+- `xmake/tests.lua` — opt-in test targets (`--engrave_tests=y`) and the `engine_tests` phony target that builds the public-API, import, playback and adapter regression suites. `tests/engine_gate.py` builds and executes the gate and artifact comparisons; it also runs `diagnostics_test`, `io_boundary_test`, the installer tests and manifest verification (DEFECT-ENGRAVE-010 is resolved).
 - `xmake/packages/` — the pinned third-party recipes (`freetype`, `harfbuzz`, `flac`, `lame`, `opus`, `opusenc`, `fdk-aac`, `pugixml`, `utfcpp`, `picojson`, `mnx-json-schema`, `mnxdom`, plus `zlib` for standalone builds).
 - `engrave/assets.json` & `tools/install_assets.py` — the versioned SHA256/size asset manifest (349 pinned files including fonts, instruments, templates, MPE profiles, and licenses) and standalone asset installer replacing legacy `.qrc` lists.
 

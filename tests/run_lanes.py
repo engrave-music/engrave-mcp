@@ -238,7 +238,7 @@ def run_lane(
             "--soundfont",
             str(soundfont),
             "--replacement-soundfont",
-            str(repo_root / "tests/data/engine_audio/sine.sf2"),
+            str(repo_root / "vendor/engrave/tests/data/engine_audio/sine.sf2"),
             "--output",
             str(output / "host-api"),
         ]
@@ -331,7 +331,7 @@ def run_lane(
             "--assets",
             str(assets),
             "--input",
-            str(repo_root / "tests/data/inputs/evening.musicxml"),
+            str(repo_root / "vendor/engrave/tests/data/inputs/evening.musicxml"),
             "--output",
             str(output / "noqt-probe"),
         ]
@@ -567,7 +567,11 @@ def run_lane(
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "golden":
-        golden_dir = repo_root / ("tests/data/golden/windows" if sys.platform == "win32" else "tests/data/golden/linux")
+        golden_dir = repo_root / (
+            "vendor/engrave/tests/data/golden/windows"
+            if sys.platform == "win32"
+            else "vendor/engrave/tests/data/golden/linux"
+        )
         cmd = [
             py,
             str(repo_root / "tests/support/golden.py"),
@@ -581,7 +585,7 @@ def run_lane(
             "--golden",
             str(golden_dir),
             "--allow",
-            str(repo_root / "tests/data/golden/allow.json"),
+            str(repo_root / "vendor/engrave/tests/data/golden/allow.json"),
             "--output",
             str(output / "golden"),
         ]
@@ -589,7 +593,11 @@ def run_lane(
 
     if lane == "semantic_check":
         actual_dir = output / "golden/actual"
-        golden_dir = repo_root / ("tests/data/golden/windows" if sys.platform == "win32" else "tests/data/golden/linux")
+        golden_dir = repo_root / (
+            "vendor/engrave/tests/data/golden/windows"
+            if sys.platform == "win32"
+            else "vendor/engrave/tests/data/golden/linux"
+        )
         check_cmd = [
             py,
             str(repo_root / "tests/support/check_semantic_dump.py"),
@@ -978,8 +986,8 @@ def main() -> None:
     testcwd = output / "cwd"
     (testcwd / "vendor").mkdir(parents=True, exist_ok=True)
     (testcwd / "tests").mkdir(exist_ok=True)
-    setup_link(repo_root / "tests/data", testcwd / "tests/data")
-    setup_link(repo_root / "tests/data/inputs", testcwd / "fixtures")
+    setup_link(repo_root / "vendor/engrave/tests/data", testcwd / "vendor/engrave/tests/data")
+    setup_link(repo_root / "vendor/engrave/tests/data/inputs", testcwd / "fixtures")
     setup_link(engine_source, testcwd / "vendor/engrave")
 
     base_env = os.environ.copy()

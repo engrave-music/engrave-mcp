@@ -705,7 +705,7 @@ def png_exceptions(payload):
 def accepted_svg_counts(name, digest):
     """Return independently reviewed counts, never counts from the tested SVG."""
     platform = "windows" if sys.platform.startswith("win") else "linux"
-    path = Path(__file__).resolve().parents[1] / "data/golden/page_count_pins.json"
+    path = Path(__file__).resolve().parents[2] / "vendor/engrave/tests/data/golden/page_count_pins.json"
     pins = json.loads(path.read_text(encoding="utf-8"))
     entry = pins.get(platform, {}).get(name)
     return entry["counts"] if entry and entry["svg_sha256"] == digest else None
@@ -716,7 +716,7 @@ def current_png_oracle(path, name, platform):
     from support import golden as golden
 
     fixture, output = name.split("/", 1)
-    root = ROOT / "tests/data/golden" / platform
+    root = ROOT / "vendor/engrave/tests/data/golden" / platform
     index = json.loads((root / "index.json").read_text(encoding="utf-8"))
     digest = index.get(fixture, {}).get(output + ".json")
     baseline = root / fixture / (output + ".json")
@@ -903,13 +903,13 @@ def main():
     parser.add_argument(
         "--golden",
         type=Path,
-        default=ROOT / "tests/data/golden/windows",
+        default=ROOT / "vendor/engrave/tests/data/golden/windows",
         help="directory of already captured SVG and PNG pages to check",
     )
     parser.add_argument(
         "--reference",
         type=Path,
-        default=ROOT / "tests/data/golden/page_reference.json",
+        default=ROOT / "vendor/engrave/tests/data/golden/page_reference.json",
         help="checked-in 4.7.6 statistics",
     )
     parser.add_argument(
