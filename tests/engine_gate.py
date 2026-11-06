@@ -19,8 +19,8 @@ import zipfile
 from pathlib import Path
 
 from integration.test_public_output import compare, describe_audio_file, describe_render, probe_command
-from support import golden as g
 from run_lanes import setup_link
+from support import golden as g
 from support.paths import INPUT_ROOT, REPO_ROOT
 
 ROOT = REPO_ROOT
