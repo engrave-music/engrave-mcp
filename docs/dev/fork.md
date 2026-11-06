@@ -2,7 +2,7 @@
 
 The engine is consumed from the fork https://github.com/Locietta/engrave as the
 submodule `vendor/engrave` (shallow, pinned by SHA with an `engrave-<n>` tag per pin).
-The current pin is `engrave-39` (`baedb23bef`).
+The current pin is `engrave-40` (`e2f2018b8a`).
 
 The fork operates as a forward-only hard fork. Its ancestral upstream provenance
 terminates at `upstream-final` (`cbffaa078d`, syncing upstream MuseScore `32f0a26e5b` and
@@ -109,5 +109,17 @@ Foundation commits and pinned releases on `main`. Pins start at A2 (`engrave-1`)
 | `engrave-37` | `a6d4a4ab18` | `32f0a26e5b` | `da3885cb` | Mechanical identifier naming across non-thirdparty engine sources, tests and host callers: CamelCase types, snake_case functions/data, UPPER_CASE enum constants; existing member trailing underscores preserved without imposing new ones. Commits `b5b146cf8f` preserve 2,055 explicit style XML tags, `9c5fff7f0b` applies naming and macro/platform/interface repairs with `.clang-tidy`, and `a6d4a4ab18` updates the property-table generator parser without changing its output. All 647 in-scope compilation-database TUs compiled and passed the final naming check; official Windows native and standalone engine builds passed. Correctness gate matches baseline exactly: 213 identical/38 allowed/0 different/0 missing; all functional suites and the six requested host lanes (golden, semantic_check, host_api, live_export, score_edit, native_edit) passed. Timing assertions and budget lanes deliberately excluded by owner; Linux execution deferred. Retained MNX export/configuration/test sources outside xmake were renamed, with four exporter syntax passes and remaining retired-infrastructure limitations source-reviewed. Terra findings repaired; final Astra source review found no must-fix items. Report `notes/cleanup/naming/REPORT.md`. |
 | `engrave-38` | `93a9040439` | `32f0a26e5b` | `da3885cb` | Style cleanup: custom types use struct with prior default access preserved; clang-format groups own header, standard, external/system and project headers, with Winsock/Windows SDK dependency priorities. Commits `52d773afc3` convert 887 definitions and 2,373 forward/friend declarations; `48f2d825a8` applies include grouping; `93a9040439` repairs three Terra include-grouping findings. Windows host/engine/test builds passed with MSVC C4099 promoted to error and no mismatches. The complete standalone correctness gate at `48f2d825a8` passed with 213 identical/38 allowed/0 different/0 missing, all functional suites passed, and all six host lanes passed (host_api, live_export, score_edit, native_edit, golden, semantic_check). Subsequent include-only review repairs were compiled and all 1,426 files passed the formatter check; the suites were not repeated. No code-token changes in the engine review repairs. Timing/latency/budget checks explicitly excluded by owner; Linux deferred. Report `notes/cleanup/struct/REPORT.md`. |
 | `engrave-39` | `baedb23bef` | `32f0a26e5b` | `da3885cb` | Linux completion of the engrave-37/38 cleanup (tree equals engrave-38 plus three portability repairs). `8435269103` adds the `<typeinfo>` include that `rtti.h` needs for `typeid`, and confines `muse::String`'s `#undef NULL` to the `Char::NULL` declaration so C headers that follow (GCC `mm_malloc.h`, reached through the SSE2 reverb types) still see the macro. `baedb23bef` finishes the `IODevice::WRITE_ONLY` rename in `io_boundary_test`'s `#ifndef _WIN32` case. Windows host/engine/test builds pass. Full engine gate green on physical linux-host at this commit (186 identical/65 allowed/0 different/0 missing), and the six host lanes passed there (host_api, live_export, score_edit, native_edit, golden, semantic_check) with host golden 265 identical/125 allowed/0 different/0 missing and semantic 29/29. Timing/latency/budget checks excluded by owner. Report `notes/cleanup/linux/REPORT.md`. |
+| `engrave-40` | `e2f2018b8a` | `32f0a26e5b` | `da3885cb` | Style follow-up: restore original audio facade states/order/comments and stringification, remove OGG facade handling, rename Char::NUL and remove NULL macro workaround; layout-independent naming filter. Windows and linux-host tests-enabled builds, output/audio suites and live_export/live_audio/audio_facade passed; golden comparisons passed with zero unexpected differences. Windows full naming lint: 632 TUs; engine format check: 1394 files. Host adds durable engine lint/format and staged format hooks. One Terra source review; four tooling findings repaired. Timing/latency/budget and full gate excluded by owner scope. Evidence: notes/cleanup/followup/. |
 
 The superproject's `.gitmodules` now tracks `branch = main`.
+
+### Style cleanup follow-up
+
+The engrave-36..39 phase also includes `8174d9093c` (m_xxx member-prefix
+rename) and `567bc8fee0` (facade enums/struct). The latter introduced an
+out-of-scope OGG facade value. The follow-up restores the original audio enum
+order and comments with uppercase names (WAV, FLAC, OPUS, MP3, AAC), removes
+OGG facade handling, and preserves OPUS's internal Ogg/Opus encoder mapping
+and original stringification. `Char::NUL` replaces the macro-colliding NULL
+spelling. Engine format hooks and the full acceptance naming lint are documented
+in [build.md](build.md#style-checks).
