@@ -132,7 +132,6 @@ engrave::RenderFormat render_format(const std::string &s) {
 engrave::AudioFormat audio_format(const std::string &s) {
     if (s == "wav") return engrave::AudioFormat::WAV;
     if (s == "flac") return engrave::AudioFormat::FLAC;
-    if (s == "ogg") return engrave::AudioFormat::OGG;
     if (s == "opus") return engrave::AudioFormat::OPUS;
     if (s == "mp3") return engrave::AudioFormat::MP3;
     if (s == "aac") return engrave::AudioFormat::AAC;
@@ -567,7 +566,6 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             const char *mime = "audio/wav";
             switch (options.format) {
                 case engrave::AudioFormat::FLAC: mime = "audio/flac"; break;
-                case engrave::AudioFormat::OGG:
                 case engrave::AudioFormat::OPUS: mime = "audio/ogg"; break;
                 case engrave::AudioFormat::MP3: mime = "audio/mpeg"; break;
                 case engrave::AudioFormat::AAC: mime = "audio/aac"; break;

@@ -544,7 +544,6 @@ Json encode(const engrave::Capabilities &c) {
         switch (f) {
             case engrave::AudioFormat::WAV: return "wav";
             case engrave::AudioFormat::FLAC: return "flac";
-            case engrave::AudioFormat::OGG: return "ogg";
             case engrave::AudioFormat::OPUS: return "opus";
             case engrave::AudioFormat::MP3: return "mp3";
             case engrave::AudioFormat::AAC: return "aac";
