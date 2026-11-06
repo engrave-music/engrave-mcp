@@ -167,28 +167,28 @@ Json mix(const engrave::AudioMix &m) { return {{"volume_db", m.volume_db}, {"bal
 
 const char *kind(engrave::ValueKind k) {
     switch (k) {
-        case engrave::ValueKind::Bool: return "bool";
-        case engrave::ValueKind::Int: return "int";
-        case engrave::ValueKind::Real: return "real";
-        case engrave::ValueKind::String: return "string";
-        case engrave::ValueKind::Point: return "point";
-        case engrave::ValueKind::Size: return "size";
-        case engrave::ValueKind::Color: return "color";
-        case engrave::ValueKind::Fraction: return "fraction";
-        case engrave::ValueKind::Enum: return "enum";
-        case engrave::ValueKind::IntList: return "int_list";
-        case engrave::ValueKind::Opaque: return "opaque";
+        case engrave::ValueKind::BOOL: return "bool";
+        case engrave::ValueKind::INT: return "int";
+        case engrave::ValueKind::REAL: return "real";
+        case engrave::ValueKind::STRING: return "string";
+        case engrave::ValueKind::POINT: return "point";
+        case engrave::ValueKind::SIZE: return "size";
+        case engrave::ValueKind::COLOR: return "color";
+        case engrave::ValueKind::FRACTION: return "fraction";
+        case engrave::ValueKind::ENUM: return "enum";
+        case engrave::ValueKind::INT_LIST: return "int_list";
+        case engrave::ValueKind::OPAQUE: return "opaque";
     }
     throw std::logic_error("unknown ValueKind");
 }
 
 const char *unit(engrave::Unit u) {
     switch (u) {
-        case engrave::Unit::None: return "none";
-        case engrave::Unit::Spatium: return "spatium";
-        case engrave::Unit::Absolute: return "absolute";
-        case engrave::Unit::Millimetre: return "millimetre";
-        case engrave::Unit::Degree: return "degree";
+        case engrave::Unit::NONE: return "none";
+        case engrave::Unit::SPATIUM: return "spatium";
+        case engrave::Unit::ABSOLUTE: return "absolute";
+        case engrave::Unit::MILLIMETRE: return "millimetre";
+        case engrave::Unit::DEGREE: return "degree";
     }
     throw std::logic_error("unknown Unit");
 }

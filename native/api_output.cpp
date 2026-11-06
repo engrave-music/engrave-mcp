@@ -433,8 +433,8 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             if (test_path.find(".test-470-") != std::string::npos && !conversion_entered) {
                 const bool converting = test_path.find("converting") != std::string::npos;
                 const auto progress = engrave::testing::write470_progress();
-                if (progress.stage == (converting ? engrave::testing::Write470Progress::Stage::Converting :
-                                                    engrave::testing::Write470Progress::Stage::Serializing) &&
+                if (progress.stage == (converting ? engrave::testing::Write470Progress::Stage::CONVERTING :
+                                                    engrave::testing::Write470Progress::Stage::SERIALIZING) &&
                     progress.units >= 2) {
                     conversion_entered = true;
                     std::fprintf(stderr, "WRITE470_%s units=%llu\n", converting ? "CONVERTING" : "SERIALIZING",
