@@ -25,7 +25,9 @@ def wait_log(c, marker):
 
 
 def prepare(c):
-    doc = c.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden/repeat70.mscx")})["document"]
+    doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
+        "document"
+    ]
     measure = c.tool("score_outline", {"document": doc})["outline"]["measures"][0]["id"]
     c.tool(
         "score_edit",

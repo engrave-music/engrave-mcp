@@ -59,7 +59,7 @@ class Host:
             "tools/call",
             dict(
                 name="score_open",
-                arguments=dict(path=str(ROOT / "tests/data/inputs/golden/repeat70.mscx")),
+                arguments=dict(path=str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")),
             ),
             2,
         )

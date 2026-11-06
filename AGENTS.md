@@ -30,7 +30,7 @@ fork is a hard fork (one last upstream sync, then cherry-picks only).
   Keep only `main` as a long-lived branch: merge topic branches and delete them; tag
   accepted checkpoints instead of keeping phase branches.
 - Avoid rewriting music algorithms; preserve an executable baseline for each later refactor.
-  Compare every engine change against `tests/data/golden` (`tests/support/golden.py`) with an explicit,
+  Compare every engine change against `vendor/engrave/tests/data/golden` (`tests/support/golden.py`) with an explicit,
   hash-pinned allow-list.
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.

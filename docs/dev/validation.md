@@ -70,7 +70,8 @@ run them explicitly when touching those areas.
 
 ## Engine gate
 
-The engine's public-boundary gate is separate from the host lanes:
+The engine owns its standalone public-boundary gate in `vendor/engrave/tests/gate.py`.
+The host compatibility entry point is separate from the host lanes:
 
 ```powershell
 python tests/engine_gate.py --engine-source FORK --build-dir FORK/build/c0 `
@@ -84,7 +85,7 @@ lock. On Linux the Cairo prefix is the Pixi environment root; put its `bin` on
 run; the runner rejects existing captures. `--skip-build` is for diagnostics
 only.
 
-The gate builds the fork's `c0_gate` target and runs the API, import, playback
+The gate builds the fork's `engine_tests` target and runs the API, import, playback
 and adapter suites, plus `diagnostics_test`, `io_boundary_test`, the engine
 installer's unit tests and verification of the supplied asset directory. The
 `mnx_schema` step validates the MNX files that `engrave_mnx_import_test`
@@ -109,7 +110,7 @@ files for those cases were byte-identical.
 At `engrave-34` (`8eb0c25a52`), 17 focused MusicXML dynamics tests, the host
 native-edit test and the host golden comparison passed on both platforms. The
 golden counts were 307 identical/83 allowed on Windows and 265/125 on linux-host,
-with zero unexpected outputs using `tests/data/golden/allow.json` SHA-256
+with zero unexpected outputs using `vendor/engrave/tests/data/golden/allow.json` SHA-256
 `a19f8f905e182ccd9e3f25a3eaad726300366ba2993e858ba01586ec70e8979d`.
 The full Linux engine gate passed at the exact commit (186 identical/65 allowed/
 0 different/0 missing). Twelve before/after playback probes on each platform

@@ -34,7 +34,9 @@ def main():
         )
 
     def opened(c):
-        return c.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden/repeat70.mscx")})["document"]
+        return c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
+            "document"
+        ]
 
     def args(doc, kind, fmt, path, overrides=None):
         return dict(

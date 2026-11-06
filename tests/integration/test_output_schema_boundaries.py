@@ -19,7 +19,7 @@ ROOT = REPO_ROOT
 
 async def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
-    source = (ROOT / "tests/data/inputs/version/header.mscx").read_text(encoding="utf-8")
+    source = (ROOT / "vendor/engrave/tests/data/inputs/version/header.mscx").read_text(encoding="utf-8")
     title, part_name, lyric = "T" * 5000, "P" * 5000, "L" * 66000
     source = source.replace("Version header fixture", title)
     source = source.replace("<longName>Piano</longName>", f"<longName>{part_name}</longName>")

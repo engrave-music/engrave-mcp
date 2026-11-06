@@ -153,7 +153,9 @@ def main():
     for mode in (None,):
         out = a.output / (mode or "default")
         c = Client(a.binary, a.resources, out, mode)
-        doc = c.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden/repeat70.mscx")})["document"]
+        doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
+            "document"
+        ]
         for fmt, dest in [
             ("pdf", out / "missing-parent" / "out.pdf"),
             ("svg", out / "missing-directory"),
@@ -256,7 +258,9 @@ def main():
                 c = Client(a.binary, a.resources, a.output / (mode + "-" + seam), mode)
             finally:
                 del os.environ[key]
-            doc = c.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden/repeat70.mscx")})["document"]
+            doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
+                "document"
+            ]
             dest = a.output / (mode + "-" + seam) / "old.pdf"
             for existing in (False, True):
                 if existing:

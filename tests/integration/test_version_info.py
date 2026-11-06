@@ -198,7 +198,7 @@ async def run(args):
 
         # The fixture records programVersion 4.5.0. The owner retains that
         # source version, but exports render a newly written MSCZ snapshot.
-        fixture_mscx_path = ROOT / "tests/data/inputs/version/header.mscx"
+        fixture_mscx_path = ROOT / "vendor/engrave/tests/data/inputs/version/header.mscx"
         if expected_version != "4.7.6":
             fixture_content = fixture_mscx_path.read_text(encoding="utf-8")
             fixture_content = fixture_content.replace(

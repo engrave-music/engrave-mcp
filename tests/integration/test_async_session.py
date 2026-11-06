@@ -180,9 +180,11 @@ async def run(args):
             "cancellation": "cooperative",
             "transport_request_bytes": 4194304,
         }, info["limits"]
-        doc = (await client.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden/linked_parts.mscx")}))[
-            "document"
-        ]
+        doc = (
+            await client.tool(
+                "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx")}
+            )
+        )["document"]
         outline = await client.tool("score_outline", {"document": doc})
         base = outline["revision"]
         notes = await client.tool(
@@ -255,7 +257,9 @@ async def run(args):
         # A failed second page publication must retain its first published path
         # in the synchronous export error.
         partial_doc = (
-            await client.tool("score_open", {"path": str(ROOT / "tests/data/inputs/golden/linked_parts.mscx")})
+            await client.tool(
+                "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx")}
+            )
         )["document"]
         measure = (await client.tool("score_outline", {"document": partial_doc}))["outline"]["measures"][0]["id"]
         await client.tool(

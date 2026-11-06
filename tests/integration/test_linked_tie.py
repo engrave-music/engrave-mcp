@@ -34,7 +34,7 @@ async def run(args):
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     args.soundfont = None
-    fixture = ROOT / "tests/data/inputs/golden/linked_parts.mscx"
+    fixture = ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx"
     observed = {}
     async with Client(args, out) as client:
         for label, both in [("partial", False), ("complete", True)]:

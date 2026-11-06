@@ -482,7 +482,7 @@ async def run_single_iteration(run_id: str) -> dict:
 
             for item in FIXTURES:
                 name = item["name"]
-                fix_path = ROOT / item.get("folder", "tests/data/inputs/golden") / name
+                fix_path = ROOT / item.get("folder", "vendor/engrave/tests/data/inputs/golden") / name
                 fix_dir = run_dir / name
                 fix_dir.mkdir(parents=True, exist_ok=True)
 
@@ -603,8 +603,8 @@ if __name__ == "__main__":
             ["git", "-C", "vendor/engrave", "rev-parse", "HEAD"], text=True
         ).strip(),
         "sources": {
-            str(Path(f.get("folder", "tests/data/inputs/golden")) / f["name"]): sha256_bytes(
-                (ROOT / f.get("folder", "tests/data/inputs/golden") / f["name"]).read_bytes()
+            str(Path(f.get("folder", "vendor/engrave/tests/data/inputs/golden")) / f["name"]): sha256_bytes(
+                (ROOT / f.get("folder", "vendor/engrave/tests/data/inputs/golden") / f["name"]).read_bytes()
             )
             for f in FIXTURES
         },

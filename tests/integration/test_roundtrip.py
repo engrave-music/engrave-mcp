@@ -1603,10 +1603,10 @@ async def run_suite(
                         await runner.call("score_close", {"document": doc_create})
 
                 # Case 2: import all golden fixtures except created.json / README.md, + evening.musicxml
-                golden_dir = ROOT / "tests/data/inputs/golden"
+                golden_dir = ROOT / "vendor/engrave/tests/data/inputs/golden"
                 import_files = sorted(
                     [p for p in golden_dir.glob("*") if p.is_file() and p.name not in ("created.json", "README.md")]
-                    + [ROOT / "tests/data/inputs/evening.musicxml"]
+                    + [ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"]
                 )
                 for path in import_files:
                     cid = f"import_{path.stem}"

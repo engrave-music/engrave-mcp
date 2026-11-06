@@ -188,6 +188,8 @@ def run_formatter(formatter: str, files: list[Path], language: str | None, check
 
 def main() -> int:
     args = parse_args()
+    if args.engine:
+        return subprocess.call([sys.executable, str(args.engine_root / "tools/format.py"), *sys.argv[1:]])
     try:
         paths = engine_files(args.paths, args.engine_root) if args.engine else project_files(args.paths)
     except (ValueError, FileNotFoundError, subprocess.CalledProcessError) as error:

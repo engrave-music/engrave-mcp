@@ -66,8 +66,8 @@ def main():
     target = os.path.join(engine_hooks, "pre-commit")
     if os.path.lexists(target):
         os.remove(target)
-    with open(os.path.join(src_dir, "engine-pre-commit"), encoding="utf-8") as source:
-        content = source.read().replace("host = engine.parents[1]", "host = Path(" + repr(repo_root) + ")")
+    with open(os.path.join(engine, "tools", "pre-commit"), encoding="utf-8") as source:
+        content = source.read()
     with open(target, "w", encoding="utf-8", newline="\n") as destination:
         destination.write(content)
     os.chmod(target, 0o755)

@@ -46,7 +46,7 @@ def main():
         return reply, (time.perf_counter() - start) * 1000
 
     for fixture in () if a.soak_only else ("repeat70.mscx", "lyrics.mscx"):
-        path = str(ROOT / "tests/data/inputs/golden" / fixture)
+        path = str(ROOT / "vendor/engrave/tests/data/inputs/golden" / fixture)
         c = Client(a.binary, a.resources, a.output / fixture, "live", a.soundfont)
         samples, rss = [], []
         try:
@@ -90,7 +90,7 @@ def main():
         c = Client(a.binary, a.resources, a.output / "soak", "live", a.soundfont)
         try:
             docs = [
-                c.tool("score_open", dict(path=str(ROOT / "tests/data/inputs/golden" / f)))["document"]
+                c.tool("score_open", dict(path=str(ROOT / "vendor/engrave/tests/data/inputs/golden" / f)))["document"]
                 for f in ("repeat70.mscx", "lyrics.mscx")
             ]
             measures = [c.tool("score_outline", dict(document=d))["outline"]["measures"][0]["id"] for d in docs]

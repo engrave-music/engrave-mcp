@@ -1,6 +1,6 @@
 """In-memory score_open input: base64 data parity with path and rejection cases.
 
-The lane exports MSCZ, MXL and MIDI references from tests/data/inputs/evening.musicxml,
+The lane exports MSCZ, MXL and MIDI references from vendor/engrave/tests/data/inputs/evening.musicxml,
 then opens each file once via `path` and once via `data` (standard base64) and
 requires identical outlines and MusicXML exports. Pinned Guitar Pro and MNX fixtures
 is checked the same way; malformed argument combinations are rejected; and a
@@ -152,7 +152,7 @@ async def run(args):
                     info["musicxml"] = target.read_text(encoding="utf-8")
                     return info
 
-                source = ROOT / "tests/data/inputs/evening.musicxml"
+                source = ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"
                 reference = await open_path(client, source)
                 reference_id = reference["document"]
                 exports = {}

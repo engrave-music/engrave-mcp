@@ -167,7 +167,7 @@ Windows build, not the repository's `build/` directory.
 
 ## Style checks
 
-Engine naming follows `.clang-tidy`: CamelCase types, snake_case functions,
+Engine naming follows `vendor/engrave/.clang-tidy`: CamelCase types, snake_case functions,
 variables and members, and UPPER_CASE enum constants. Members may retain a
 trailing `_`. Use `struct` for custom types. clang-format enforces own-header,
 standard, external and project include groups using the engine configuration.
@@ -198,3 +198,6 @@ checkout before changing hooks. Rerun setup-hooks after updating hook code.
 Engine lint intentionally rejects `--fix`, since parallel TUs share headers.
 For a scoped format check, use `pixi run format -- --check --engine PATH`;
 the format-check task includes `.` and checks the full selected engine.
+
+Engine format/lint commands delegate to the fork tools. Standalone invocation and
+tool versions are documented in `vendor/engrave/README.md`.

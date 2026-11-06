@@ -24,10 +24,10 @@ from support import check_rendered_page as page
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-PEDAL = ROOT / "tests/data/golden/windows/pedal.mscx/page-0.svg"
-BEND = ROOT / "tests/data/golden/windows/bend.gp/page-0.svg"
-LAYOUT = ROOT / "tests/data/golden/windows/layout_elements.mscx/page-0.svg"
-REFERENCE = ROOT / "tests/data/golden/page_reference.json"
+PEDAL = ROOT / "vendor/engrave/tests/data/golden/windows/pedal.mscx/page-0.svg"
+BEND = ROOT / "vendor/engrave/tests/data/golden/windows/bend.gp/page-0.svg"
+LAYOUT = ROOT / "vendor/engrave/tests/data/golden/windows/layout_elements.mscx/page-0.svg"
+REFERENCE = ROOT / "vendor/engrave/tests/data/golden/page_reference.json"
 
 
 class TestSvgGeometry(unittest.TestCase):
@@ -303,7 +303,9 @@ class TestRenderedPageControls(unittest.TestCase):
 
     def test_reviewed_svg_hash_is_exact_and_platform_specific(self):
         name = "layout_elements.mscx/page-0.svg"
-        index = json.loads((page.ROOT / "tests/data/golden/linux/index.json").read_text(encoding="utf-8"))
+        index = json.loads(
+            (page.ROOT / "vendor/engrave/tests/data/golden/linux/index.json").read_text(encoding="utf-8")
+        )
         digest = index["layout_elements.mscx"]["page-0.svg"]
         with mock.patch.object(page.sys, "platform", "linux"):
             self.assertTrue(page.accepted_svg_counts(name, digest))
@@ -315,8 +317,8 @@ class TestRenderedPageControls(unittest.TestCase):
     def test_removed_glyph_with_updated_index_fails(self):
         name = "layout_elements.mscx/page-0.svg"
         platform = "windows" if sys.platform.startswith("win") else "linux"
-        source = page.ROOT / "tests/data/golden" / platform / name
-        payload = json.loads((page.ROOT / "tests/data/golden/page_reference.json").read_text())
+        source = page.ROOT / "vendor/engrave/tests/data/golden" / platform / name
+        payload = json.loads((page.ROOT / "vendor/engrave/tests/data/golden/page_reference.json").read_text())
         payload["pages"] = {name: payload["pages"][name]}
         payload["pages"][name]["png"] = None
         payload["png_exceptions"] = []
@@ -337,7 +339,7 @@ class TestRenderedPageControls(unittest.TestCase):
             parents[use].remove(use)
             target.write_text(ET.tostring(tree, encoding="unicode"))
             fake = temp / "repo"
-            baseline = fake / "tests/data/golden" / platform / name
+            baseline = fake / "vendor/engrave/tests/data/golden" / platform / name
             baseline.parent.mkdir(parents=True)
             baseline.write_bytes(target.read_bytes())
             (baseline.parent.parent / "index.json").write_text(

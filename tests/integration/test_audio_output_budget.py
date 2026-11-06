@@ -22,7 +22,9 @@ from support.mcp_client import ROOT, Client
 
 async def open_source(args):
     async with Client(args, args.output) as client:
-        doc = (await client.tool("score_open", {"path": str(ROOT / "tests/data/inputs/evening.musicxml")}))["document"]
+        doc = (
+            await client.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")})
+        )["document"]
         duration = (await client.tool("score_outline", {"document": doc}))["outline"]["duration"]
         path = (args.output / "source.mscz").resolve()
         await client.tool(

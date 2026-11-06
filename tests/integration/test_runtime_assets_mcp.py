@@ -29,9 +29,9 @@ async def run(args):
         out / "mutable-soundfont.sf2",
     )
     shutil.copyfile(font_source, font_input)
-    shutil.copyfile(ROOT / "tests/data/engine_audio/sine.sf2", soundfont_input)
+    shutil.copyfile(ROOT / "vendor/engrave/tests/data/engine_audio/sine.sf2", soundfont_input)
 
-    score = (ROOT / "tests/data/inputs/golden/linked_parts.mscx").read_text(encoding="utf-8")
+    score = (ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx").read_text(encoding="utf-8")
     marker = "<height>10</height>"
     assert marker in score
     score = score.replace(
@@ -98,9 +98,9 @@ async def run(args):
         assert (await client.tool("score_outline", {"document": doc}))["revision"] == revision
         await client.tool("score_close", {"document": doc})
 
-        audio_doc = (await client.tool("score_open", {"path": str(ROOT / "tests/data/inputs/evening.musicxml")}))[
-            "document"
-        ]
+        audio_doc = (
+            await client.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")})
+        )["document"]
         revision = (await client.tool("score_outline", {"document": audio_doc}))["revision"]
         fluid, captured_path, sine, again_path = (
             out / p

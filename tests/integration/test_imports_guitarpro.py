@@ -462,7 +462,7 @@ async def main():
                 finally:
                     await _close(session, recovered_id)
 
-                musicxml_fixture = ROOT / "tests/data/inputs/evening.musicxml"
+                musicxml_fixture = ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"
                 if musicxml_fixture.is_file():
                     musicxml_id = await _open(session, musicxml_fixture)
                     await _close(session, musicxml_id)

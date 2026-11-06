@@ -50,7 +50,7 @@ Usage:
   golden.py capture --binary B --resources R --soundfont SF --golden DIR \\
                     [--allow-errors]
   golden.py compare --binary B --resources R --soundfont SF --golden DIR \\
-                    --allow tests/data/golden/allow.json --output OUTDIR \\
+                    --allow vendor/engrave/tests/data/golden/allow.json --output OUTDIR \\
                     [--platform windows|linux]
   golden.py pin --golden DIR --output OUTDIR [--platform windows|linux]
 """
@@ -85,8 +85,8 @@ from support.musicxml_semantic import musicxml_semantic
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-FIXTURE_DIR = ROOT / "tests/data/inputs" / "golden"
-EXTRA_FIXTURES = (ROOT / "tests/data/inputs" / "evening.musicxml",)
+FIXTURE_DIR = ROOT / "vendor/engrave/tests/data/inputs" / "golden"
+EXTRA_FIXTURES = (ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml",)
 # Fixtures without stored excerpts whose part excerpts are generated (after the master
 # outputs are captured) to cover excerpt creation, e.g. ChordLine path copying.
 GENERATE_EXCERPTS = {"chordline_path.mscx"}
@@ -1330,7 +1330,7 @@ def write_diff(root: Path, fixture: str, output: str, golden: Path, actual: Path
 def verify_input_provenance() -> list[str]:
     """Check current inputs against main's reviewed migration pins."""
     try:
-        pins = json.loads(read_text(ROOT / "tests/data/golden/inputs.json"))["fixtures"]
+        pins = json.loads(read_text(ROOT / "vendor/engrave/tests/data/golden/inputs.json"))["fixtures"]
         sources = {source.name: source for source in fixture_files() + mnx_fixture_files()}
         sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})
         if set(pins) != set(sources):
@@ -1349,7 +1349,7 @@ def verify_input_provenance() -> list[str]:
             if source.name == "created.json":
                 xml = composition_musicxml(json.loads(read_text(source))).encode("utf-8")
                 if entry.get("input_sha256") != sha256(xml) or entry.get("converter_sha256") != sha256(
-                    (ROOT / "tests/support/composition_fixture.py").read_bytes()
+                    (ROOT / "vendor/engrave/tests/support/composition_fixture.py").read_bytes()
                 ):
                     issues.append(f"created input or converter changed: {name}")
         return issues
