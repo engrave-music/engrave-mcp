@@ -28,10 +28,9 @@ worktrees are retired.
   pushed the same way.
 - Push the engine commit and its `engrave-<n>` tag before pushing a host commit
   that pins it, so the submodule pin always resolves.
-- linux-host's checkout is `~/OSS/engrave-mcp`. Port 22 to GitHub is blocked there;
-  its `~/.ssh/config` routes `github.com` through `ssh.github.com:443`. The host
-  remote is `git@github.com:Locietta/engrave-mcp.git`; the engine fetches over
-  HTTPS and pushes over SSH.
+- linux-host's checkout is `~/OSS/engrave-mcp`. The host remote is
+  `git@github.com:Locietta/engrave-mcp.git`; the engine fetches over HTTPS and
+  pushes over SSH.
 
 ## Engine repository (`vendor/engrave`)
 
