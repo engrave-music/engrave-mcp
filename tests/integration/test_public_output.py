@@ -19,7 +19,7 @@ pins the actual file's sha256 for this platform, i.e. under the same rule the
 golden lane uses.
 
 Usage:
-  test_a4_output.py --probe P --assets A --soundfont SF --golden DIR --allow FILE \\\\
+  test_public_output.py --probe P --assets A --soundfont SF --golden DIR --allow FILE \\\\
                     --output DIR [--render-fixtures f1,f2] [--audio-fixtures f1,f2]
 """
 

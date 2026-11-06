@@ -62,10 +62,10 @@ pinned 4.7.6 oracle archive, executable and assets.
 The `live_export` lane also runs the focused publication checks
 (`test_live_publication_cancel.py`, `test_live_publication_limits.py`,
 `test_live_path_utf8.py`, `test_live_report_delivery.py`). The
-`test_output_schema_boundaries.py`, `test_phase_b_cancellation.py`,
-`test_write470_interruption.py`, `test_live_queued_cancel.py`,
+`test_output_schema_boundaries.py`, `test_native_470_conversion_cancel.py`,
+`test_native_470_serialization_cancel.py`, `test_live_queued_cancel.py`,
 `test_live_dense_cancel.py`, `test_transport_wakeup.py` and
-`test_native_version.py` checks are documented focused tests, not default lanes;
+`test_native_export_versions.py` checks are documented focused tests, not default lanes;
 run them explicitly when touching those areas.
 
 ## Engine gate
