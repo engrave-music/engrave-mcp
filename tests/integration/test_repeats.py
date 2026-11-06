@@ -74,7 +74,7 @@ def extract_measure_numbers(mscx_path: Path) -> list[int]:
 def parse_repeat_tests(cpp_path: Path, data_dir: Path) -> list[dict[str, Any]]:
     """Extract repeat tests and expected sequences from repeat_tests.cpp."""
     text = cpp_path.read_text(encoding="utf-8")
-    matches = re.findall(r"TEST_F\s*\(\s*Engraving_RepeatTests\s*,\s*(\w+)\s*\)\s*\{([^}]+)\}", text)
+    matches = re.findall(r"TEST_F\s*\(\s*EngravingRepeatTests\s*,\s*(\w+)\s*\)\s*\{([^}]+)\}", text)
     tests: list[dict[str, Any]] = []
 
     for name, body in matches:
@@ -129,6 +129,9 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
         return 1
 
     tests = parse_repeat_tests(cpp_path, data_dir)
+    if len(tests) != EXPECTED_TOTAL or any(not test.get("mappable") for test in tests):
+        print(f"ERROR: expected {EXPECTED_TOTAL} executable repeat cases, selected {len(tests)}", file=sys.stderr)
+        return 1
     env = dict(os.environ)
     native_lib = ROOT / ".pixi/envs/native/Library/bin"
     if os.name == "nt" and native_lib.exists():
@@ -269,7 +272,7 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
     }
     (output_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"\nRepeat test suite finished in {elapsed}s: {passed}/{total} passed, {failed} failed, {skipped} skipped.")
-    return 1 if failed > 0 else 0
+    return 0 if passed == EXPECTED_TOTAL and failed == 0 and skipped == 0 else 1
 
 
 def main() -> None:
