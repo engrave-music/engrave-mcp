@@ -161,7 +161,7 @@ def main() -> int:
     report: dict = {
         "golden": str(args.golden),
         "probe": str(args.probe),
-        "tests/data/inputs": {},
+        "fixtures": {},
     }
 
     fixtures = [] if args.skip_render else [name for name in args.render_fixtures.split(",") if name]
@@ -177,7 +177,7 @@ def main() -> int:
             return fail(f"{fixture}: render failed: {error}")
         names = describe_render(raw, out)
         compare(args.golden, fixture, out, names, allow, args.platform, counts)
-        report["tests/data/inputs"].setdefault(fixture, {})["render"] = names
+        report["fixtures"].setdefault(fixture, {})["render"] = names
 
     fixtures = [] if args.skip_audio else [name for name in args.audio_fixtures.split(",") if name]
     for fixture in fixtures:
@@ -201,7 +201,7 @@ def main() -> int:
             return fail(f"{fixture}: audio failed: {error}")
         names = describe_audio_file(raw / "score.wav", out)
         compare(args.golden, fixture, out, names, allow, args.platform, counts)
-        report["tests/data/inputs"].setdefault(fixture, {})["audio"] = names
+        report["fixtures"].setdefault(fixture, {})["audio"] = names
 
     report["counts"] = counts
     report["status"] = "pass" if counts["different"] == 0 and counts["missing-golden"] == 0 else "fail"

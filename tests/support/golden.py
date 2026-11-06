@@ -1689,7 +1689,7 @@ def compare_trees(
     report = {
         "golden": str(golden_root),
         "actual": str(actual_root),
-        "tests/data/inputs": {},
+        "fixtures": {},
         "stale": [],
         "extraFixtures": [],
         "indexIssues": [],
@@ -1738,7 +1738,7 @@ def compare_trees(
             if actual_dir.is_dir()
             else set()
         )
-        results = report["tests/data/inputs"].setdefault(fixture, {})
+        results = report["fixtures"].setdefault(fixture, {})
         for name in sorted(set(expected) | actual_files):
             golden_file = (overlay / fixture / name) if name in additions.get(fixture, {}) else (golden_dir / name)
             actual_file = actual_dir / name
@@ -1964,8 +1964,10 @@ def command_pin(args) -> int:
     if not report_path.is_file():
         raise SystemExit(f"report does not exist: {report_path}")
     report = json.loads(read_text(report_path))
+    if not isinstance(report.get("fixtures"), dict):
+        raise SystemExit("invalid golden report: expected fixtures mapping")
     entries = []
-    for fixture, results in sorted(report.get("tests/data/inputs", {}).items()):
+    for fixture, results in sorted(report["fixtures"].items()):
         for name, result in sorted(results.items()):
             if result.get("status") not in (
                 "different",
@@ -1987,7 +1989,7 @@ def command_pin(args) -> int:
                 }
             )
     print(json.dumps(entries, indent=1, sort_keys=True))
-    return 0
+    return int(bool(entries))
 
 
 def main() -> int:

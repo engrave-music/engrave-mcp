@@ -606,7 +606,7 @@ def test_cross_platform_audio_features(
             assert delta <= tolerance, f"{name}: {key} differs by {delta:.6g} (tolerance {tolerance})"
     evidence["cross_platform_audio"] = {
         "status": "passed",
-        "tests/data/inputs": len(windows),
+        "fixtures": len(windows),
         "superproject_commit": source_commit,
         "engine_commit": engine_commit,
         "captures": {platform: str(capture_root / platform) for platform in captures},
@@ -797,7 +797,7 @@ def test_audio_check_reporting() -> None:
         prepare("linux")
         code, evidence = run()
         assert code == 0 and evidence["checks"]["cross_platform"]["status"] == "passed", evidence
-        assert evidence["cross_platform_audio"]["tests/data/inputs"] == len(fixtures), evidence
+        assert evidence["cross_platform_audio"]["fixtures"] == len(fixtures), evidence
         assert len(calls) == 8, calls
     print(
         f"  Audio capture regressions PASSED: missing, incomplete, missing source, 4.7.6, tampered, "
@@ -1452,7 +1452,7 @@ def test_midi_event_goldens(
             "natural-level CC11 on tracks without a dynamics curve removed (a2)",
             "SND NoteOn velocity fallback 64 (b)",
         ],
-        "tests/data/inputs": golden_results,
+        "fixtures": golden_results,
     }
     reference_total = sum(item["reference_event_total"] for item in golden_results.values())
     total = sum(item["event_total"] for item in golden_results.values())

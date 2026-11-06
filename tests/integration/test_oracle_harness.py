@@ -35,6 +35,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from support.paths import REPO_ROOT
@@ -80,6 +81,31 @@ class TestRoundTripXmlControls(unittest.TestCase):
 
 
 class TestV2GoldenInventory(unittest.TestCase):
+    def test_previous_report_differences_cannot_disappear(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            report = {
+                "fixtures": {
+                    "score": {
+                        "page-0.svg": {
+                            "status": "different",
+                            "actualSha256": "a" * 64,
+                        }
+                    }
+                }
+            }
+            golden.write_json(output / "report.json", report)
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(golden.command_pin(SimpleNamespace(output=output, platform="windows")), 1)
+            entries = json.loads(stdout.getvalue())
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]["fixture"], "score")
+            self.assertEqual(entries[0]["sha256"], {"windows": "a" * 64})
+            golden.write_json(output / "report.json", {"unknown": {}})
+            with self.assertRaisesRegex(SystemExit, "expected fixtures"):
+                golden.command_pin(SimpleNamespace(output=output, platform="windows"))
+
     def test_restored_direct_pin_matches_existing_pedal_allowances(self):
         migrations = golden.read_v2_migrations(ROOT / "tests/data/golden/windows")
         allowances = golden.load_allow(ROOT / "tests/data/golden/allow.json")
@@ -146,7 +172,7 @@ class TestV2GoldenInventory(unittest.TestCase):
                             0,
                         )
                         result = json.loads((report / "report.json").read_text(encoding="utf-8"))
-                        self.assertEqual(result["tests/data/inputs"][fixture][name]["status"], "allowed")
+                        self.assertEqual(result["fixtures"][fixture][name]["status"], "allowed")
                         target.write_bytes(b"host")
                         self.assertEqual(
                             golden.compare_trees(baseline, actual, allowances, report, "windows"),
@@ -413,7 +439,7 @@ class TestV2GoldenInventory(unittest.TestCase):
             code, report = compare()
             self.assertEqual(code, 0)
             self.assertEqual(report["counts"]["legacyOnly"], 1)
-            self.assertEqual(report["tests/data/inputs"]["score"]["metadata.json"]["status"], "v1-only")
+            self.assertEqual(report["fixtures"]["score"]["metadata.json"]["status"], "v1-only")
             (actual / "score/score.mscx").unlink()
             code, report = compare()
             self.assertEqual(code, 1)
