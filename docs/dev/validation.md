@@ -17,7 +17,7 @@ Lanes require both host test targets and opt-in engine test targets. Configure w
 # Configure with engine tests enabled
 xmake f --engrave_tests=y
 
-# Build engine test suite (engine_testsphony target pulls in semantic_dump, score_edit_test,
+# Build engine test suite (the engine_tests phony target pulls in semantic_dump, score_edit_test,
 # score_audio_test, score_positions_test, excerpts_test, archive_test, assets_test, diagnostics_test,
 # io_boundary_test, engraving_playback_tests, etc.) plus the noqt_probe runtime probe
 xmake build engine_tests noqt_probe
