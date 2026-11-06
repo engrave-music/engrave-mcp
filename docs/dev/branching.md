@@ -41,7 +41,9 @@ worktrees are retired.
   Pull remote `main` instead of creating a local line.
 - The host pins commits on `main` by SHA; each pin has a ledger row in
   [fork.md](fork.md). Pins are not tagged: tags are for real version releases.
-  The former `engrave-<n>` pin tags (40) and `upstream-final` (`cbffaa078d`),\n all on `main`, were deleted on 2026-11-06. The `mcp-4.7.*` tags on the frozen `mcp/v4.7.*` branches remain.
+  The former `engrave-<n>` pin tags (40) and `upstream-final` (`cbffaa078d`),
+  all on `main`, were deleted on 2026-11-06. The `mcp-4.7.*` tags on the frozen
+  `mcp/v4.7.*` branches remain.
 - Feature branches (`feat/...`, `fix/...`) are merged to `main` and then
   deleted. Abandoned work is not kept as a branch.
 - Upstream fixes are cherry-picked onto `main` with provenance. The frozen
