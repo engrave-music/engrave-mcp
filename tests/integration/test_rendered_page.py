@@ -301,21 +301,16 @@ class TestRenderedPageControls(unittest.TestCase):
                 self.assertEqual(page.main(), 1)
             self.assertIn("outside viewBox", output.getvalue())
 
-    def test_existing_svg_allowance_is_exact_and_platform_specific(self):
-        from support import golden as golden
-
+    def test_indexed_svg_hash_is_exact_and_platform_specific(self):
         name = "layout_elements.mscx/page-0.svg"
-        entries = golden.load_allow(page.ROOT / "tests/data/golden/allow.json")
-        pin = next(
-            e
-            for e in entries
-            if e["fixture"] == "layout_elements.mscx" and e["output"] == "page-0.svg" and "linux" in e.get("sha256", {})
-        )
-        digest = pin["sha256"]["linux"]
+        index = json.loads((page.ROOT / "tests/data/golden/linux/index.json").read_text(encoding="utf-8"))
+        digest = index["layout_elements.mscx"]["page-0.svg"]
         with mock.patch.object(page.sys, "platform", "linux"):
             self.assertTrue(page.accepted_svg_counts(name, digest))
             self.assertFalse(page.accepted_svg_counts(name, "0" * 64))
             self.assertFalse(page.accepted_svg_counts("unknown.mscx/page-0.svg", digest))
+        with mock.patch.object(page.sys, "platform", "win32"):
+            self.assertFalse(page.accepted_svg_counts(name, digest))
 
     def test_count_exception_requires_exact_changed_counts_and_svg_hash(self):
         use = next(self.root.iter(page.SVG + "use"))
