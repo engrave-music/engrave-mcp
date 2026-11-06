@@ -63,22 +63,25 @@ If a cancelled live export remains blocked on the owner thread, a watchdog timer
 
 ## 6. Runtime quotas and bounds
 
-| Bound                    | Value                 | Enforcement point    |
-| ------------------------ | --------------------- | -------------------- |
-| Transport request line   | 4 MiB                 | `runtime_limits.h`   |
-| Pending input queue      | 64 lines / 32 MiB     | Transport reader     |
-| In-flight tool calls     | 64                    | Transport admission  |
-| Response payload         | 16 MiB                | Transport writer     |
-| Output message queue     | 48 MiB / 256 messages | Transport writer     |
-| Open documents           | 16 concurrent         | `host_api.cpp`       |
-| Decoded score input      | 8 MiB                 | Engine input check   |
-| Edit batch size          | 1,024 operations      | Tool registry        |
-| Export output budget     | 1 GiB                 | `ExportLimits`       |
-| Advisory export deadline | 120 seconds           | `ExportLimits`       |
-| Diagnostic text length   | 16 KiB                | Report serialization |
-| Query result items       | 4,096 elements        | Engine query handler |
+| Bound                        | Value                    | Enforcement point                                  |
+| ---------------------------- | ------------------------ | -------------------------------------------------- |
+| Transport request line       | 4 MiB                    | `runtime_limits.h`                                 |
+| Pending input queue          | 64 lines / 32 MiB        | Transport reader                                   |
+| In-flight tool calls         | 64                       | Transport admission                                |
+| Response payload             | 16 MiB                   | Transport writer                                   |
+| Output message queue         | 48 MiB / 256 messages    | Transport writer                                   |
+| Open documents               | 16 concurrent            | `host_api.cpp`                                     |
+| Decoded score input          | 8 MiB                    | Engine input check                                 |
+| Edit batch size              | 1,024 operations         | Tool registry                                      |
+| Export output budget         | 1 GiB (`output_bytes`)   | `ExportLimits` (`runtime_limits.h`)                |
+| Advisory export deadline     | 120 seconds (`deadline`) | `ExportLimits` (`runtime_limits.h`)                |
+| Export/report preflight text | 16 KiB (UTF-8 safe)      | Export reports and transport-generated diagnostics |
+| Engine/tool message text     | Up to 16 MiB             | Not separately bounded (16 MiB response cap)       |
+| Query result items           | 4,096 elements           | Engine query handler (`max_query_results`)         |
 
-The export budget is enforced during rendering and staging before publication; it is a file size quota rather than a hard limit on process virtual memory. Audio exports allocate half the budget to the encoder intermediate file and half to the staged artifact.
+The export budget (1 GiB, `ExportLimits::output_bytes`) is enforced during rendering and staging before publication. It represents the cumulative total output size across all files in a multi-file export (`api_output.cpp:406`), not a per-file quota or a hard limit on process virtual memory. Audio exports allocate half the budget (512 MiB) to the encoder intermediate file and half to the staged artifact, plus up to 1 MiB for header-rewrite traffic.
+
+The 16 KiB diagnostic limit (`k_diagnostic_limit` in `api_output.cpp`, and UTF-8 safe truncation in `mcp_transport.cpp`) applies only to export reports and transport-generated diagnostics, not to arbitrary engine or tool messages. Other messages (such as `runtime_info` error details) are not separately bounded and are subject only to the 16 MiB response cap.
 
 ## 7. Performance characteristics and limitations
 
