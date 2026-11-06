@@ -1,12 +1,12 @@
 {
   "version": 3,
-  "description": "4.7.6 SVG page statistics computed by tests/support/check_rendered_page.py from the source in each entry; SVG hashes are of normalized exports.",
+  "description": "4.7.6 SVG page statistics computed by scripts/check_rendered_page.py from the source in each entry; SVG hashes are of normalized exports.",
   "pages": {
     "bend.gp/page-0.svg": {
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/bend.gp/page-0.svg",
+        "path": "tests/golden/windows/bend.gp/page-0.svg",
         "svg_sha256": "fa586a96af72c008dfb3b310fd0c6dc5586cdd006aa3913062887bf6dbb06f4d"
       },
       "stats": {
@@ -43,7 +43,7 @@
           "rgba_sha256": "485ce04f0fbe73ffad8b2887b7ff913cbbbce2f4db600889969e49eb4f375237",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/bend.gp/page-0.png.json",
+            "path": "tests/golden/windows/bend.gp/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -148,7 +148,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/bends.mid/page-0.svg",
+        "path": "tests/golden/windows/bends.mid/page-0.svg",
         "svg_sha256": "e342f5f962e72b6485eb9377806fb7ca06953a1c07901156451d83bd2028e8c8"
       },
       "stats": {
@@ -185,7 +185,7 @@
           "rgba_sha256": "1b5292ab436c995ee0611371747151caff70c54a1ffcbb619475a7ff6e43b275",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/bends.mid/page-0.png.json",
+            "path": "tests/golden/windows/bends.mid/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -290,7 +290,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/chordline_path.mscx/excerpt-0/page-0.svg",
+        "path": "tests/golden/windows/chordline_path.mscx/excerpt-0/page-0.svg",
         "svg_sha256": "d9fe1b2fb461dc487093ec03df78cc07d497e28d7366d1edd734ecc661bfc57a"
       },
       "stats": {
@@ -327,7 +327,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/chordline_path.mscx/excerpt-1/page-0.svg",
+        "path": "tests/golden/windows/chordline_path.mscx/excerpt-1/page-0.svg",
         "svg_sha256": "382a7aca581fc3f3d125830e726aada11e07a5e70b47993c05b93bd852b1792a"
       },
       "stats": {
@@ -364,7 +364,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/chordline_path.mscx/page-0.svg",
+        "path": "tests/golden/windows/chordline_path.mscx/page-0.svg",
         "svg_sha256": "f2f8099bf32fa77513c05ac19dd32098a5b40ad53f565877ac0eed89b001ae16"
       },
       "stats": {
@@ -401,7 +401,7 @@
           "rgba_sha256": "f44fc62be0c8e488a091e1aee050856702a7cb73db1ab8d5a63828762d48c682",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/chordline_path.mscx/page-0.png.json",
+            "path": "tests/golden/windows/chordline_path.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -506,7 +506,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/coverage.musicxml/page-0.svg",
+        "path": "tests/golden/windows/coverage.musicxml/page-0.svg",
         "svg_sha256": "9e03dded51741bb15c31d23e7f8b603ce570feaed86570fd6d1cc8448109f645"
       },
       "stats": {
@@ -543,7 +543,7 @@
           "rgba_sha256": "196a81287d7d2127bbb27eeb788359ae3c50afe2b1a0da482617f03451b089fb",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/coverage.musicxml/page-0.png.json",
+            "path": "tests/golden/windows/coverage.musicxml/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -648,7 +648,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/created.json/page-0.svg",
+        "path": "tests/golden/windows/created.json/page-0.svg",
         "svg_sha256": "a46c6db3287c357cfc5ac0ef0a7e3dc0a81e00473bc04cf5d05873054d1099ab"
       },
       "stats": {
@@ -685,7 +685,7 @@
           "rgba_sha256": "c55c47d9b6144dc10fff16228910831461f5511372842393534dd73eeb9d9810",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/created.json/page-0.png.json",
+            "path": "tests/golden/windows/created.json/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -792,12 +792,12 @@
         "version": "4.7.6",
         "binary": "C:/path/to/musescore-mcp/build/xmake-windows/musescore-mcp.exe",
         "binary_sha256": "3572536b01d5879359ade8cecc4f7f0b9a4a8f22c3ff99ab49a5ee16ee81e411",
-        "fixture": "tests/data/inputs/golden/custom_part_name.mscx",
+        "fixture": "fixtures/golden/custom_part_name.mscx",
         "fixture_sha256": "6ebc303484a6fcbec818d7587fb68e5f707c7c9ad89a9b89a0b3b719372968bb",
         "assets": "C:/path/to/musescore-mcp/.runtime/assets",
         "assets_manifest_sha256": "cc3e58e8994032da78ed047d454f7e5fcd911d9b2200f113bb2b7d7160cb8e4a",
         "soundfont_sha256": "cfcd66d89e8386823400eca64934b14fbea7bf48ba1f00d21189af1262794ec2",
-        "capture": "MCP score_open and score_export SVG page 0, normalized by tests/support/golden.py",
+        "capture": "MCP score_open and score_export SVG page 0, normalized by scripts/golden.py",
         "svg_sha256": "8494a15eb07ba28b28e0d8772e4c63d9c604bb9a370e490595cae3f946b2e1e1"
       },
       "stats": {
@@ -935,7 +935,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/drums_import.musicxml/page-0.svg",
+        "path": "tests/golden/windows/drums_import.musicxml/page-0.svg",
         "svg_sha256": "3a88bf789300d2acab8e6bc2d9352dc9c8417c380f7a57f73c1f707dce1143ab"
       },
       "stats": {
@@ -972,7 +972,7 @@
           "rgba_sha256": "250769e56849466bd09b566942983269719ef93f23bb5e5a12bdd6607ff144a3",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/drums_import.musicxml/page-0.png.json",
+            "path": "tests/golden/windows/drums_import.musicxml/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -1077,7 +1077,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/evening.musicxml/page-0.svg",
+        "path": "tests/golden/windows/evening.musicxml/page-0.svg",
         "svg_sha256": "d70e868eaca04d87e4dda6ed3ad11f0a0d702c5b3323d1e57dbfed910a899cac"
       },
       "stats": {
@@ -1114,7 +1114,7 @@
           "rgba_sha256": "2861f6574161f49563d5e6ed73275dcee9531a0a9466ea714bee1af49e3e1992",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/evening.musicxml/page-0.png.json",
+            "path": "tests/golden/windows/evening.musicxml/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -1219,7 +1219,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/ghost_note.mscx/page-0.svg",
+        "path": "tests/golden/windows/ghost_note.mscx/page-0.svg",
         "svg_sha256": "6a1f89a16deddd94d204351ae16bbb49aa791dfde061b0cfa41692b23c8abffb"
       },
       "stats": {
@@ -1256,7 +1256,7 @@
           "rgba_sha256": "df81c57d8e66a44c57f18e12f457f9181bfbb24cea9f7cd396c9e5363ce9e27d",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/ghost_note.mscx/page-0.png.json",
+            "path": "tests/golden/windows/ghost_note.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -1361,7 +1361,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/hairpins_and_repeats.mscx/page-0.svg",
+        "path": "tests/golden/windows/hairpins_and_repeats.mscx/page-0.svg",
         "svg_sha256": "8494a15eb07ba28b28e0d8772e4c63d9c604bb9a370e490595cae3f946b2e1e1"
       },
       "stats": {
@@ -1398,7 +1398,7 @@
           "rgba_sha256": "d3aefb7ede7605195da2c011a0afc8efd4c1316204727817dac0ab7860f55a3a",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/hairpins_and_repeats.mscx/page-0.png.json",
+            "path": "tests/golden/windows/hairpins_and_repeats.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -1503,7 +1503,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/layout_elements.mscx/page-0.svg",
+        "path": "tests/golden/windows/layout_elements.mscx/page-0.svg",
         "svg_sha256": "283f3114e08e6e0034a0328701a25611a9f1d7c3ca76cc4ab216502445393788"
       },
       "stats": {
@@ -1540,7 +1540,7 @@
           "rgba_sha256": "ecc67b50b843b5f04abf988441bf98d43d9f3825a76e4004a050cf0180ac1565",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/layout_elements.mscx/page-0.png.json",
+            "path": "tests/golden/windows/layout_elements.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -1645,7 +1645,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/linked_parts.mscx/excerpt-0/page-0.svg",
+        "path": "tests/golden/windows/linked_parts.mscx/excerpt-0/page-0.svg",
         "svg_sha256": "2e35c92307ffdf009c4192e8ff1bede71f07a58064624bba7c53cefb6f7e07b3"
       },
       "stats": {
@@ -1682,7 +1682,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/linked_parts.mscx/page-0.svg",
+        "path": "tests/golden/windows/linked_parts.mscx/page-0.svg",
         "svg_sha256": "06ceba4860c4f6504dd362eb0868ddd6bd418086041df7411ad3476598538957"
       },
       "stats": {
@@ -1719,7 +1719,7 @@
           "rgba_sha256": "648239f9ebecad530074b95b304c404529dd8c96e3c35c482d995cf151c81e80",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/linked_parts.mscx/page-0.png.json",
+            "path": "tests/golden/windows/linked_parts.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -1824,7 +1824,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/lyrics.mscx/page-0.svg",
+        "path": "tests/golden/windows/lyrics.mscx/page-0.svg",
         "svg_sha256": "1fff95ee7203a3ecc79f9e16708d5c45fb64ea4795805bf5522339cdc21011a7"
       },
       "stats": {
@@ -1856,7 +1856,7 @@
           "rgba_sha256": "022299d5346125effe85541b26b95670de7b6ca51e46adf44299796895fd4a1d",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/lyrics.mscx/page-0.png.json",
+            "path": "tests/golden/windows/lyrics.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -1961,7 +1961,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/named_noteheads_perc.musicxml/page-0.svg",
+        "path": "tests/golden/windows/named_noteheads_perc.musicxml/page-0.svg",
         "svg_sha256": "9a59925b67686f1e5a961c503b1892bde66fed8bbe2c80e2a2b7bd09a19faac7"
       },
       "stats": {
@@ -1998,7 +1998,7 @@
           "rgba_sha256": "16046be556b88cdc9ea219e0aa6c8d8b1188b7b0515c3e5ce12e3b4d2166c425",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/named_noteheads_perc.musicxml/page-0.png.json",
+            "path": "tests/golden/windows/named_noteheads_perc.musicxml/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -2103,7 +2103,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/pedal.mscx/page-0.svg",
+        "path": "tests/golden/windows/pedal.mscx/page-0.svg",
         "svg_sha256": "2e51fb55fc994be1c681bd882de93f6e3087634bda352e4a98e1dfd47b346da9"
       },
       "stats": {
@@ -2140,7 +2140,7 @@
           "rgba_sha256": "dd970b9478b7553c5821eff3da4987856b071ce948b2f40cbb7f09fec3655cce",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/pedal.mscx/page-0.png.json",
+            "path": "tests/golden/windows/pedal.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -2245,7 +2245,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/perc_stem_dir.musicxml/page-0.svg",
+        "path": "tests/golden/windows/perc_stem_dir.musicxml/page-0.svg",
         "svg_sha256": "36675fb51375917adc3674627ef29b08f4672027f1f48696d1a3a4f0420160c6"
       },
       "stats": {
@@ -2282,7 +2282,7 @@
           "rgba_sha256": "956400f5b9b2bb24ae5c8fe17cc552471912b6fd4b9cf7b072d2dd2c33a3c02e",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/perc_stem_dir.musicxml/page-0.png.json",
+            "path": "tests/golden/windows/perc_stem_dir.musicxml/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -2387,7 +2387,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/repeat70.mscx/page-0.svg",
+        "path": "tests/golden/windows/repeat70.mscx/page-0.svg",
         "svg_sha256": "5c2dd088de256b029f8da5552a814a703c37b76c1923004a0380c0163d67bcdb"
       },
       "stats": {
@@ -2424,7 +2424,7 @@
           "rgba_sha256": "f947b03fed049be41905c39021dfa33018eaac59ba83a2deb8a8be01ea367009",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/repeat70.mscx/page-0.png.json",
+            "path": "tests/golden/windows/repeat70.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -2529,7 +2529,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/repeat71.mscx/page-0.svg",
+        "path": "tests/golden/windows/repeat71.mscx/page-0.svg",
         "svg_sha256": "6d7b39a8eeee40fd172daa96c9cb1c9648ad1246d1a07da2106d280afc52753a"
       },
       "stats": {
@@ -2566,7 +2566,7 @@
           "rgba_sha256": "0fef217d5d94c32f4da5b2d138e42dbbf0eb1f3c3864e6db36b763ce5e123674",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/repeat71.mscx/page-0.png.json",
+            "path": "tests/golden/windows/repeat71.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -2671,7 +2671,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/repeat72.mscx/page-0.svg",
+        "path": "tests/golden/windows/repeat72.mscx/page-0.svg",
         "svg_sha256": "f7e8016c85ddc72245266ab6bde84b411d964d73f573e8260a12ababa30cc625"
       },
       "stats": {
@@ -2708,7 +2708,7 @@
           "rgba_sha256": "7f01c315a04ed2ace61e6fe2b8c124b2aac8e34b8b64089862c8e49ea820c624",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/repeat72.mscx/page-0.png.json",
+            "path": "tests/golden/windows/repeat72.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -2813,7 +2813,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/repeat_with_2_voltas.mscx/page-0.svg",
+        "path": "tests/golden/windows/repeat_with_2_voltas.mscx/page-0.svg",
         "svg_sha256": "b5c90687a188dbf462ef9fe75b1d4259699dbdf8f5efbc3314974b727feffd57"
       },
       "stats": {
@@ -2850,7 +2850,7 @@
           "rgba_sha256": "58a6d4ff79c34ac944ac573e584e845a467984a256c0d0577e0bc40b0e37ccde",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/repeat_with_2_voltas.mscx/page-0.png.json",
+            "path": "tests/golden/windows/repeat_with_2_voltas.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -2955,7 +2955,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/slurs.mscz/page-0.svg",
+        "path": "tests/golden/windows/slurs.mscz/page-0.svg",
         "svg_sha256": "113e1d8aaaa0914bb1801cf4cbb657d0fa5cf8d8e12d603f0594a2fab896f651"
       },
       "stats": {
@@ -2992,7 +2992,7 @@
           "rgba_sha256": "a4f6e23b7b9bcc06b97ab309530889ba596e6336409ab128d3bb5fbf0187fd03",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/slurs.mscz/page-0.png.json",
+            "path": "tests/golden/windows/slurs.mscz/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -3097,7 +3097,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/slurs.mscz/page-1.svg",
+        "path": "tests/golden/windows/slurs.mscz/page-1.svg",
         "svg_sha256": "42d6f93f7eb00d28b558abce7835f80d47ede8a2acd715d81f665d494f04fc27"
       },
       "stats": {
@@ -3134,7 +3134,7 @@
       "source": {
         "kind": "git_commit",
         "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-        "path": "tests/data/golden/windows/tab_grace_prebend.mscx/page-0.svg",
+        "path": "tests/golden/windows/tab_grace_prebend.mscx/page-0.svg",
         "svg_sha256": "89275251a6778b422a40124eb54fa6a6483e568baf07a59b765c85e97f4aea59"
       },
       "stats": {
@@ -3171,7 +3171,7 @@
           "rgba_sha256": "14194ec9576a8ae3782f42fef861e30ae86510ce29feaaedfe955fe382debc45",
           "verification": {
             "commit": "7b6dc2a8877c759e10cbec391c01d4790bfddd45",
-            "path": "tests/data/golden/windows/tab_grace_prebend.mscx/page-0.png.json",
+            "path": "tests/golden/windows/tab_grace_prebend.mscx/page-0.png.json",
             "field": "sha256"
           }
         },
@@ -3292,7 +3292,7 @@
     "assets_manifest": "C:/path/to/musescore-mcp/.runtime/assets-manifest.json",
     "assets_manifest_sha256": "cc3e58e8994032da78ed047d454f7e5fcd911d9b2200f113bb2b7d7160cb8e4a",
     "soundfont_sha256": "cfcd66d89e8386823400eca64934b14fbea7bf48ba1f00d21189af1262794ec2",
-    "procedure": "MCP score_open/score_create and score_export PNG master page 0; see tests/support/check_rendered_page.py --capture-only.",
+    "procedure": "MCP score_open/score_create and score_export PNG master page 0; see scripts/check_rendered_page.py --capture-only.",
     "ink_measure": "RGBA composited over white; pixel has ink if any RGB channel is below 250. Bounding box uses exclusive right/bottom. Grid cells store ink fraction in an 8x8 page grid.",
     "coverage": "The golden harness exports a PNG only for master page 0; the three excerpts and slurs master page 1 are SVG-only."
   },
@@ -3306,7 +3306,7 @@
       "page": "drums_import.musicxml/page-0.png",
       "platform": "windows",
       "png_sha256": "13e77384dd6cd4cdb900068ad60905986697367f626f280db3f6117a1f8b6eeb",
-      "reason": "Individually pinned writer-precision snapshot drift; see tests/data/golden/output-census.json and DEFECT-ENGRAVE-015."
+      "reason": "Individually pinned writer-precision snapshot drift; see tests/golden/output-census.json and DEFECT-ENGRAVE-015."
     }
   ]
 }
