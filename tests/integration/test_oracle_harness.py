@@ -32,6 +32,7 @@ import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -219,6 +220,34 @@ class TestCurrentGoldenInventory(unittest.TestCase):
                 golden.write_json(path, {"entries": [entry]})
                 with self.assertRaises(ValueError):
                     golden.load_allow(path)
+
+    def test_host_comparator_rejects_reviewed_archive_bytes(self):
+        fixture = "slurs.mscz"
+        with zipfile.ZipFile(golden.FIXTURE_DIR / fixture) as archive:
+            member = next(n for n in archive.namelist() if n.endswith(".mscx") and "/" not in n)
+            archive_xml = golden.normalize_mscx(archive.read(member).decode("utf-8"))
+        policy = ROOT / "tests/data/golden/allow.json"
+        archive_entries = golden.load_allow(policy, context="engine-gate-archive")
+        entry = next(e for e in archive_entries if e["fixture"] == fixture)
+        self.assertEqual(golden.sha256(archive_xml.encode("utf-8")), entry["sha256"]["windows"])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            golden.write_text(
+                root / "golden" / fixture / "score.mscx",
+                golden.read_text(ROOT / "tests/data/golden/windows" / fixture / "score.mscx"),
+            )
+            golden.build_index(root / "golden")
+            golden.write_text(root / "actual" / fixture / "score.mscx", archive_xml)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    golden.compare_trees(
+                        root / "golden", root / "actual", golden.load_allow(policy), root / "report", "windows"
+                    ),
+                    1,
+                )
+            report = json.loads((root / "report/report.json").read_text())
+            self.assertEqual(report["counts"]["different"], 1)
+            self.assertEqual(report["counts"]["allowed"], 0)
 
     def test_archive_form_is_not_accepted_for_host(self):
         path = ROOT / "tests/data/golden/allow.json"
