@@ -35,6 +35,22 @@ base SoundFont. `prepare.py` verifies the submodule pin and installs the engine'
 hash-pinned asset manifest (345 files, 28,380,646 bytes) into `.runtime/assets`;
 it refuses to run before the submodule exists.
 
+## Development builds
+
+Once a build directory is configured (by the wrapper below or `xmake f`), iterate
+with:
+
+```powershell
+pixi run build                       # default targets
+pixi run build engrave_mnx_import_test  # specific targets
+```
+
+This runs `xmake build -y` directly, with no pin or clean-tree checks, so an
+uncommitted engine change builds as is. xmake finds MSVC itself; no developer
+shell is needed. The wrappers below are for first, packaging and acceptance
+builds: they refuse to build unless `vendor/engrave` is clean and at the
+recorded pin.
+
 ## Windows build
 
 ```powershell

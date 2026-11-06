@@ -17,6 +17,7 @@ prettier = "==3.9.10"
 taplo = "==0.10.0"
 
 [tasks]
+build = "xmake build -y"
 setup-hooks = "python scripts/setup_hooks.py"
 format = "python scripts/format.py"
 format-check = "python scripts/format.py --check ."
@@ -33,6 +34,7 @@ native = { features = [] }
 
 [pypi-dependencies]
 mcp = "==2.3.0"
+jsonschema = "==4.26.0"
 numpy = "==2.5.4"
 soundfile = "==0.14.0"
 pillow = ">=13.0.0, <14"
