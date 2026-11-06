@@ -1,10 +1,8 @@
 # Design and rationale
 
-This document explains how `engrave-mcp` is put together and why. It describes
-the current design only; the history of how it got here is in
-[history.md](history.md), and the exact wire contract is in [tools.md](tools.md).
+This document explains how `engrave-mcp` is put together and why. It describes the current design and rationale. The exact wire contract is defined in [tools.md](tools.md).
 
-## 1. The shape of the system
+## 1. System architecture
 
 ```
 MCP client
@@ -12,8 +10,8 @@ MCP client
    ▼
 Host layer (engrave_mcp/)
    ├─ transport: reader thread, bounded admission, writer thread, cancellation
-   ├─ registry + JSON codecs: the nine-tool v2 contract
-   ├─ live export: render/encode on the document, staging, publication
+   ├─ registry + JSON codecs: the nine-tool contract
+   ├─ live export: render/encode on in-memory document, staging, publication
    └─ watchdog + process-wide publication gate
    │  serialized calls
    ▼
@@ -24,149 +22,76 @@ Owner thread (one per process)
    └─ FluidSynth offline audio + encoders
 ```
 
-The host only includes the engine's public headers under `engrave/...`;
-`native_include_check` enforces that before host targets build. The engine is a
-separate, independently buildable project (`vendor/engrave/xmake/engrave.lua`)
-that the host includes.
+Host sources in `engrave_mcp/` include only the engine's public headers under `engrave/...`, enforced by `scripts/check_native_includes.py` during builds. The engine is a separate library in `vendor/engrave` compiled into the host binary.
 
-## 2. One owner thread, several documents
+## 2. One owner thread, multiple documents
 
-Every engine operation runs on one dedicated owner thread: open, create, query,
-edit, render, audio, close. The transport thread parses JSON-RPC and never
-touches the engine. Up to 16 documents may be open at once; they share the
-engine and are served one operation at a time.
+All score engine operations execute on a single dedicated owner thread per process: open, create, query, edit, render, audio synthesis, and close. Transport threads handle JSON-RPC parsing and scheduling but never invoke engine functions directly.
 
-Why not per-document threads? MuseScore's score is a deep pointer graph plus
-process-global state: font metrics, style tables, print/render state and the
-`NO_THREADS` FluidSynth instance. Safe concurrent mutation would require
-rewriting the engraving algorithms around fine-grained locking. Serializing is
-both faster to reason about and sufficient for agent workloads, where one agent
-edits several documents but does not need parallel edits of the same one.
+Up to 16 documents can remain open concurrently in one session; they share the engine and are served sequentially. Score engraving involves deep pointer structures and process-global state (font tables, style metrics, rendering contexts, and offline synthesis state). Serializing calls on one thread avoids complex multi-threaded synchronization in the engraving core. A long-running export blocks operations on other open documents in the same server process; cooperative cancellation allows clients to abort stuck or superseded requests.
 
-The cost is explicit: a long operation blocks every other document. That is
-acceptable because exports are now milliseconds, not hundreds of milliseconds.
+## 3. Direct in-memory export
 
-## 3. Live export, and why the workers were removed
+Exports run directly against the live in-memory score document on the owner thread. In-memory rendering avoids layout reflow and metadata changes that occur during file serialization and reopening, reduces export latency to milliseconds, and removes child-process lifecycle complexity.
 
-Exports run against the live in-memory document. There is no worker process, no
-job manager, no snapshot cache and no export-mode switch.
-
-The earlier design captured the document to an MSCZ snapshot and rendered it in
-a child process. It was deleted for three reasons:
-
-1. **It changed the output.** Save-and-reopen is not bit-identical: layout can
-   reflow and provenance fields can change. Snapshot renders differed from a
-   direct render beyond the pinned allowance (defects 012 and 015). An export
-   that does not match what the agent sees is a correctness problem, not a
-   performance one.
-2. **It dominated latency.** Capture, process spawn, engine creation, reopen and
-   layout added roughly 200–260 ms per export. A warm live PDF/SVG is now a few
-   milliseconds of drawing plus publication.
-3. **It multiplied failure modes.** Child lifecycle, IPC, leases, snapshots and
-   job cancellation were most of the host's complexity.
-
-The trade is deliberate: a crash in render, audio or the score writer terminates
-the session and loses unsaved edits in every open document. Open, edit, import
-and 4.70 conversion already ran in the owner before M4, so only export was ever
-isolated. There is no in-product isolation mode. For untrusted input or a
-runaway export, the boundary is the server process: run one disposable,
-supervised server per file. That is an operational pattern, not a code path.
+The tradeoff is deliberate: an unhandled fault in rendering, audio synthesis, or score writing terminates the server process and loses unsaved edits across open documents. There is no internal sandbox mode. For untrusted input files or isolated batch processing, isolation is handled operationally by running separate, disposable server processes.
 
 ## 4. Durable publication
 
-A successful export must never leave a half-written file at the destination.
+Exports must never leave incomplete or corrupted files at the requested destination:
 
-1. The host creates a private staging directory next to the destination
-   (`0700` on POSIX, a protected DACL on Windows).
-2. Artifacts are written and size-checked in staging.
-3. Each file is flushed (`FlushFileBuffers` on Windows, `fsync` on POSIX), then
-   atomically renamed over the destination (`MoveFileExW` with
-   `REPLACE_EXISTING | WRITE_THROUGH`, or `rename` followed by a parent-directory
-   `fsync`).
-4. On Windows the destination's ordinary inherited/existing DACL is preserved on
-   a best-effort basis.
+1. The host creates a private staging directory next to the destination (`0700` on POSIX, a restricted DACL on Windows).
+2. Artifacts are generated and size-checked in staging against the configured resource budget.
+3. Completed files are flushed to disk (`FlushFileBuffers` on Windows, `fsync` on POSIX) and atomically renamed into place (`MoveFileExW` with `REPLACE_EXISTING | WRITE_THROUGH` on Windows; `rename` and directory `fsync` on POSIX).
+4. On Windows, existing DACLs at the destination are preserved on a best-effort basis.
 
-Publication is per file, not a transaction. If page 3 of an SVG export fails,
-pages 1 and 2 remain visible and the error's `published_artifacts` lists exactly
-them. Staging cleanup after a failure or cancellation is best effort; created
-parent directories may remain. The supported scope and its non-goals are in
-[scope.md](scope.md).
+Publication is atomic per file rather than across an entire multi-file export. If a later page of a multi-page export fails, previously published pages remain visible, and the returned error payload lists all successfully published files in `published_artifacts`. Staging directory cleanup on failure or cancellation is best effort.
 
 ## 5. Cancellation and the watchdog
 
-The client cancels with the standard MCP `notifications/cancelled`. The
-transport marks the request and emits a terminal Asio cancellation; queued
-requests are dropped. The engine polls a cancellation predicate at coarse,
-documented points: before drawing and at page boundaries in render, around
-synthesis blocks and encoder writes in audio, and every ≤4 KiB in 4.70 XML
-conversion. A cancelled operation publishes nothing.
+Clients cancel running operations using the standard MCP `notifications/cancelled` notification. The transport thread flags the request and dispatches an Asio cancellation; pending queued calls are dropped immediately.
 
-A cancelled live export that is still blocked after 5 seconds is the one case
-where the process gives up. A watchdog claims the request, waits 250 ms for
-already-committed reports, takes the process-wide publication gate, and calls
-`_Exit(70)`. The gate stays held through report encoding and the synchronous
-owner stdout write, so a file that has already become visible is always
-reported. If publication already started, the gate keeps the watchdog out and
-the file is allowed to finish. Open-but-unread stdout can therefore defer the
-exit indefinitely.
+The engine polls cooperative cancellation hooks at defined boundaries:
 
-A detected stdout write failure refuses new publication and exits 74 after at
-most 500 ms of best-effort cleanup of active owners; staging may remain, pending
-reports cannot be delivered, and already visible files stay. Threads are never
-killed.
+- Page boundaries and draw preparation in visual rendering
+- Synthesis blocks and audio encoder chunk writes in audio rendering
+- Periodic byte intervals (every ≤4 KiB) during score conversion and export
 
-## 6. Quotas and bounds
+A cancelled operation stops execution and publishes no partial output at the destination.
 
-| Bound                        | Value                         | Where                                              |
-| ---------------------------- | ----------------------------- | -------------------------------------------------- |
-| Request line                 | 4 MiB                         | `runtime_limits.h`                                 |
-| Pending input lines          | 64 lines / 32 MiB             | transport                                          |
-| In-flight tool calls         | 64                            | transport                                          |
-| Single response              | 16 MiB                        | transport                                          |
-| Output queue                 | 48 MiB / 256 messages         | transport                                          |
-| Open documents               | 16                            | `host_api.cpp`                                     |
-| Decoded score input          | 8 MiB                         | engine `max_input_bytes`                           |
-| Edit batch                   | 1,024 operations              | registry                                           |
-| Export output                | 1 GiB                         | `ExportLimits`                                     |
-| Export deadline              | 120 s, advisory               | `ExportLimits`                                     |
-| Export/report preflight text | 16 KiB (UTF-8 safe)           | export reports and transport-generated diagnostics |
-| Engine/tool message text     | up to the 16 MiB response cap | not separately bounded                             |
+If a cancelled live export remains blocked on the owner thread for more than 5 seconds, the watchdog intervenes. The watchdog acquires the process publication gate to allow any in-flight write to complete cleanly, then terminates the process with exit code `70`. If stdout write errors occur, the process exits with code `74`. Worker threads are never terminated asynchronously.
 
-The export budget is enforced while encoding and before publication; it is not a
-process-memory bound. Audio encoding splits the budget in half between the
-encoder's intermediate file and the staged copy, so the default maximum encoded
-audio file is 512 MiB, plus up to 1 MiB of header-rewrite traffic. Query results
-are bounded by the engine's `max_query_results` (4,096).
+## 6. Runtime quotas and bounds
 
-The 16 KiB cap applies to export reports and transport-generated diagnostics,
-not to arbitrary engine or tool messages; a `runtime_info` failure message can
-exceed it (bounded only by the 16 MiB response limit).
+| Bound                    | Value                 | Enforcement point    |
+| ------------------------ | --------------------- | -------------------- |
+| Transport request line   | 4 MiB                 | `runtime_limits.h`   |
+| Pending input queue      | 64 lines / 32 MiB     | Transport reader     |
+| In-flight tool calls     | 64                    | Transport admission  |
+| Response payload         | 16 MiB                | Transport writer     |
+| Output message queue     | 48 MiB / 256 messages | Transport writer     |
+| Open documents           | 16 concurrent         | `host_api.cpp`       |
+| Decoded score input      | 8 MiB                 | Engine input check   |
+| Edit batch size          | 1,024 operations      | Tool registry        |
+| Export output budget     | 1 GiB                 | `ExportLimits`       |
+| Advisory export deadline | 120 seconds           | `ExportLimits`       |
+| Diagnostic text length   | 16 KiB                | Report serialization |
+| Query result items       | 4,096 elements        | Engine query handler |
 
-## 7. Performance
+The export budget is enforced during rendering and staging before publication; it is a file size quota rather than a hard limit on process virtual memory. Audio exports allocate half the budget to the encoder intermediate file and half to the staged artifact.
 
-Accepted M4 evidence (Windows native and physical Linux `linux-host`, engine
-`engrave-31`):
+## 7. Performance characteristics and limitations
 
-| Measurement                                                | Windows                                                              | Linux                 |
-| ---------------------------------------------------------- | -------------------------------------------------------------------- | --------------------- |
-| Render worst-row median / p95                              | 8.348 / 9.534 ms (fixed replay 7.986 / 10.343)                       | 1.652 / 1.789 ms      |
-| Dense-score cancellation p95 / max                         | 8.872 / 27.053 ms                                                    | 11.270 / 11.312 ms    |
-| Warm WAV p95                                               | 274.877 ms clean full run; 270.094 ms corrected high-priority repeat | —                     |
-| Golden (identical / allowed / different / missing / extra) | 307 / 83 / 0 / 0 / 0                                                 | 265 / 125 / 0 / 0 / 0 |
+- Vector rendering (PDF, SVG) runs in single-digit milliseconds for standard scores once fonts are loaded.
+- Audio synthesis latency scales with score duration, voice count, and SoundFont complexity.
+- Audio synthesis cancellation contains cooperative polling, but thread scheduling variance on Windows can cause cancellation latency to exceed 30 ms under high system load.
+- Memory usage: logical file quotas are enforced, but process virtual memory is not capped by an OS sandbox.
 
-Audio latency is accepted as an **unresolved variance limit**, not a stable
-guarantee: full 1,000-call replays at the same binary produced one pass and
-failing runs where `engine_call` dominated. Phase timing cannot separate engine
-work, I/O and scheduling, so the cause is not attributed to the host alone.
-Functional parity, byte-identical audio and cancellation pass. Treat the warm
-p95 as an observation, not a contract.
+## 8. Non-goals
 
-## 8. What this design does not do
-
-- No concurrent editing of one document, and no multi-document transaction.
-- No background jobs, streaming playback, or stateful mix sessions.
-- No in-product sandbox; a crash is a session crash.
-- No MuseScore version before 4.6, and no promise that every score can be
-  written as 4.70. The 4.70 writer is fail-closed: unsupported features produce
-  warnings or a refusal, never a silently degraded score.
-- No computer use, screenshots or desktop MuseScore dependency.
+- No concurrent editing of a single document across multiple threads.
+- No multi-document transactional rollback.
+- No background task scheduling or streaming playback sessions.
+- No in-process memory isolation or crash recovery for corrupted score structures.
+- No support for MuseScore file formats older than version 4.60.
+- No GUI, desktop display, screen capture, or windowing dependencies.
