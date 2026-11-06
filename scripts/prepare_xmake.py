@@ -4,7 +4,7 @@
 The file intentionally does not invoke CMake, Ninja or xmake.  It checks that
 the engine checkout has the MuseScore 5.0 layout the build expects, that the
 engine carries its own xmake build (``xmake/engrave.lua`` and the pinned package
-recipes), that the local native package environment provides what native/ needs,
+recipes), that the local native package environment provides what engrave_mcp/ needs,
 and that the host's own package recipe is present.
 
 Usage:
@@ -51,7 +51,7 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
     required_files = {
         "MuseScore submodule": source_root / "version.cmake",
         "engine xmake build": source_root / "xmake" / "engrave.lua",
-        "tool schema source": project_root / "native" / "tools.json",
+        "tool schema source": project_root / "engrave_mcp" / "tools.json",
         "host asio recipe": project_root / "xmake" / "packages" / "asio.lua",
         "native env cairo header": native_root / "include" / "cairo" / "cairo.h",
         "native env zlib header": native_root / "include" / "zlib.h",

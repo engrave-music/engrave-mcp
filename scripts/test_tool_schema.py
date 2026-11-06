@@ -371,7 +371,7 @@ def check_cases(tools):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--schema", type=Path, default=ROOT / "native/tools.json")
+    parser.add_argument("--schema", type=Path, default=ROOT / "engrave_mcp/tools.json")
     parser.add_argument("--dump", type=Path, default=BUILD / f"registry_dump{SUFFIX}")
     parser.add_argument("--registry-test", type=Path, default=BUILD / f"registry_test{SUFFIX}")
     args = parser.parse_args()

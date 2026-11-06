@@ -28,7 +28,7 @@ def dump_registry(executable: Path) -> bytes:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dump", type=Path, required=True, help="Standalone registry_dump executable")
-    parser.add_argument("--schema", type=Path, default=ROOT / "native/tools.json")
+    parser.add_argument("--schema", type=Path, default=ROOT / "engrave_mcp/tools.json")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="Fail if schema bytes differ")
     mode.add_argument("--write", action="store_true", help="Update schema only when bytes differ")

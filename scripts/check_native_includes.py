@@ -197,7 +197,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine-source", type=Path, default=ROOT / "vendor/engrave")
     args = parser.parse_args()
-    native = ROOT / "native"
+    native = ROOT / "engrave_mcp"
     public = args.engine_source / "engrave/include"
     if not public.is_dir():
         parser.error(f"engine public include directory does not exist: {public}")

@@ -9,7 +9,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLS = {x["name"]: x for x in json.loads((ROOT / "native/tools.json").read_text(encoding="utf-8"))}
+TOOLS = {x["name"]: x for x in json.loads((ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))}
 VALIDATORS = {name: Draft202012Validator(tool["outputSchema"]) for name, tool in TOOLS.items()}
 
 

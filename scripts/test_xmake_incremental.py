@@ -19,7 +19,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     binary = args.binary.resolve()
     dump = binary.parent / ("registry_dump.exe" if os.name == "nt" else "registry_dump")
-    source = ROOT / "native/schema_defs.cpp"
+    source = ROOT / "engrave_mcp/schema_defs.cpp"
     original = source.read_bytes()
     description = "Open a score; decoded cap 8 MiB, subject to lower transport line budget."
     marker_unit = "xmake schema regeneration 乐谱 "
@@ -57,7 +57,7 @@ def main():
     def build(name):
         return run(name, ["xmake", "build", "-y", "-j", "4", "registry_dump", "engrave_mcp"])
 
-    schema = ROOT / "native/tools.json"
+    schema = ROOT / "engrave_mcp/tools.json"
     generator = [
         sys.executable,
         str(ROOT / "scripts/generate_tool_schema.py"),

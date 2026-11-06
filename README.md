@@ -79,7 +79,7 @@ and Linux build, test and packaging details are in [docs/dev/build.md](docs/dev/
 Every successful result carries `ok: true`. Failures carry
 `ok: false` and `error: {code, message, ...}` and set the MCP `isError` flag.
 The full contract is in [docs/dev/tools.md](docs/dev/tools.md) and the generated
-schema in [native/tools.json](native/tools.json).
+schema in [engrave_mcp/tools.json](engrave_mcp/tools.json).
 
 Schematic of the arguments and the `structuredContent` each call returns. This is
 not a wire transcript: a real session starts with `initialize` and wraps each
@@ -154,7 +154,7 @@ publication, and interactive/streaming playback. See
 ## Repository layout
 
 ```
-native/            MCP transport, registry, JSON codecs, live export, publication
+engrave_mcp/            MCP transport, registry, JSON codecs, live export, publication
 vendor/engrave   pinned engrave engine (submodule, pinned by commit)
 xmake.lua          host build; includes the engine build from vendor/engrave
 scripts/           bootstrap, build, packaging, lane runner, benchmarks
