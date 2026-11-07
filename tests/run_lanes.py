@@ -668,8 +668,12 @@ def run_lane(
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "oracle_harness":
-        cmd = [py, str(repo_root / "tests/integration/test_oracle_harness.py")]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        for test in ("test_oracle_harness.py", "test_cleanup_regressions.py"):
+            cmd = [py, str(repo_root / "tests/integration" / test)]
+            result = subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
+            if result.returncode:
+                return result.returncode
+        return 0
 
     if lane == "rendered_page":
         cmd1 = [py, str(repo_root / "tests/integration/test_rendered_page.py")]

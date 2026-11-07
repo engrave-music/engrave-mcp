@@ -67,10 +67,11 @@ class CleanupRegressions(unittest.TestCase):
             manifest = root / "tests/data/golden/inputs.json"
             manifest.parent.mkdir(parents=True)
             shutil.copyfile(REPO_ROOT / "vendor/engrave/tests/data/golden/inputs.json", manifest)
-            fixture = root / "mutated.mscx"
-            fixture.write_text("changed fixture")
+            original = golden.fixture_files()[0]
+            fixture = root / original.name
+            fixture.write_bytes(original.read_bytes() + b"\n")
             pins = json.loads(manifest.read_text())
-            name = next(iter(pins["fixtures"]))
+            name = original.name
             pins["fixtures"][name]["fixture_sha256"] = hashlib.sha256(fixture.read_bytes()).hexdigest()
             manifest.write_text(json.dumps(pins))
             self.assertEqual(
