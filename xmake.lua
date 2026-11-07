@@ -139,7 +139,7 @@ if is_plat("windows") then
     add_cxflags("/utf-8", "/Zc:__cplusplus", {tools = {"cl", "clang_cl"}})
     add_cflags("/utf-8", {tools = {"cl", "clang_cl"}})
 else
-    add_cxflags("-pthread")
+    add_cxflags("-fPIC", "-pthread")
     add_ldflags("-pthread")
 end
 
