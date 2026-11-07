@@ -240,6 +240,11 @@ def run_lane(
         elif lane not in ("native_includes", "native_inputs"):
             test_binary = "engrave-mcp-test" if lane.startswith("native_470_") else "engrave-mcp"
             cmd += ["--binary", str(build_dir / f"{test_binary}{exe_suffix}"), "--output", str(output / lane)]
+            if lane == "native_470_conversion_cancel":
+                cmd += [
+                    "--host-sha256",
+                    hashlib.sha256((build_dir / f"{test_binary}{exe_suffix}").read_bytes()).hexdigest(),
+                ]
             if lane != "xmake_incremental":
                 cmd += ["--resources", str(assets)]
             if lane in ("live_dense_cancel", "live_queued_cancel", "output_schema_boundaries"):
