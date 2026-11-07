@@ -16,6 +16,8 @@ import sys
 import time
 from pathlib import Path
 
+from engrave_testing.paths import pixi_env
+
 from engrave_mcp_testing.paths import REPO_ROOT
 
 FOCUSED_DEFAULT_LANES = ["native_includes", "native_inputs"]
@@ -397,7 +399,7 @@ def run_lane(
         font = (
             Path("C:/Windows/Fonts/arial.ttf")
             if sys.platform == "win32"
-            else (repo_root / ".pixi/envs/native/fonts/DejaVuSans.ttf")
+            else (pixi_env(repo_root) / "fonts/DejaVuSans.ttf")
         )
         cmd = [
             py,
@@ -1034,7 +1036,7 @@ def main() -> None:
     base_env["ENGRAVING_TESTS_DATA_ROOT"] = str(engine_source / "src/engraving/tests")
     base_env["PYTHONDONTWRITEBYTECODE"] = "1"
 
-    native_env = repo_root / ".pixi/envs/native"
+    native_env = pixi_env(repo_root)
     for extra in (native_env / "Library/bin", native_env / "bin"):
         if extra.is_dir():
             base_env["PATH"] = str(extra.resolve()) + os.pathsep + base_env.get("PATH", "")

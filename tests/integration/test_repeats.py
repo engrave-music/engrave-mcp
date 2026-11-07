@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_testing.paths import pixi_env
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -127,7 +128,7 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
         print(f"ERROR: expected {EXPECTED_TOTAL} executable repeat cases, selected {len(tests)}", file=sys.stderr)
         return 1
     env = dict(os.environ)
-    native_lib = REPO_ROOT / ".pixi/envs/native/Library/bin"
+    native_lib = pixi_env(REPO_ROOT) / "Library/bin"
     if os.name == "nt" and native_lib.exists():
         env["PATH"] = str(native_lib) + os.pathsep + env.get("PATH", "")
 

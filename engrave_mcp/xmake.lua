@@ -1,5 +1,5 @@
 local project_root = os.projectdir()
-local native_env = path.join(project_root, ".pixi", "envs", "native")
+local pixi_python = ENGRAVE_PIXI_PYTHON
 local source_root = ENGRAVE_SOURCE_ROOT
 
 local host_dir = path.join(project_root, "engrave_mcp")
@@ -9,9 +9,9 @@ target("native_include_check")
     set_kind("phony")
     set_default(false)
     on_build(function ()
-        local python = path.join(native_env, is_host("windows") and "python.exe" or "bin/python")
+        local python = pixi_python
         if not os.isfile(python) then
-            python = is_host("windows") and "python" or "python3"
+            raise("Pixi environment interpreter is missing; run `pixi install`")
         end
         os.execv(python, {path.join(project_root, "scripts", "check_native_includes.py"),
             "--engine-source", source_root})
@@ -56,9 +56,9 @@ target("registry_check")
     set_default(false)
     add_deps("registry_dump", "registry_test")
     on_build(function (target)
-        local python = path.join(native_env, is_host("windows") and "python.exe" or "bin/python")
+        local python = pixi_python
         if not os.isfile(python) then
-            python = is_host("windows") and "python" or "python3"
+            raise("Pixi environment interpreter is missing; run `pixi install`")
         end
         os.execv(python, {path.join(project_root, "tests", "integration", "test_tool_schema.py"),
             "--dump", target:dep("registry_dump"):targetfile(),

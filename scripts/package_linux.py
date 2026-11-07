@@ -17,8 +17,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from engrave_testing.paths import pixi_env
+
 ROOT = Path(__file__).resolve().parents[1]
-NATIVE_ENV = ROOT / ".pixi/envs/native"
+NATIVE_ENV = pixi_env(ROOT)
 SOUNDFONT = ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
 CODEC_NOTICES = (
     ("fdk-aac", "codecs/fdk-aac/NOTICE"),

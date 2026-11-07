@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_testing.paths import pixi_env
 
 
 def main():
@@ -35,7 +36,7 @@ def main():
         raise RuntimeError("registry description to mutate is missing or ambiguous")
     changed_source = original.replace(old, replacement, 1)
     environment = dict(os.environ)
-    prefix = REPO_ROOT / ".pixi/envs/native"
+    prefix = pixi_env(REPO_ROOT)
     if os.name == "nt":
         environment["PATH"] = str(prefix / "Library/bin") + os.pathsep + environment.get("PATH", "")
 

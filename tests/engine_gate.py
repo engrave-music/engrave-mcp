@@ -14,5 +14,7 @@ if __name__ == "__main__":
     parser.add_argument("--engine-source", type=Path, default=root)
     parsed, _ = parser.parse_known_args(args)
     root = parsed.engine_source.resolve()
-    os.environ["PYTHONPATH"] = os.pathsep.join((str(root / "tests"), str(root / "tools")))
+    os.environ["PYTHONPATH"] = os.pathsep.join(
+        (str(root / "tests"), str(root / "tools"), os.environ.get("PYTHONPATH", ""))
+    )
     sys.exit(subprocess.call([sys.executable, str(root / "tests/gate.py"), *args]))

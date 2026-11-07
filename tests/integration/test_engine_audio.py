@@ -82,6 +82,7 @@ from engrave_mcp_testing.make_dense_score import generate_dense_score
 from engrave_mcp_testing.mcp_client import Client
 from engrave_mcp_testing.paths import REPO_ROOT
 from engrave_testing.make_sine_soundfont import generate_sine_soundfont
+from engrave_testing.paths import pixi_env
 
 COMPOSITION_FIXTURE = REPO_ROOT / "vendor/engrave/tests/engrave_testing/composition_fixture.py"
 
@@ -113,7 +114,7 @@ def find_probe_binary(bin_dir: Path | None) -> Path:
 
 def probe_env() -> dict[str, str]:
     env = os.environ.copy()
-    native_env = REPO_ROOT / ".pixi" / "envs" / "native"
+    native_env = pixi_env(REPO_ROOT)
     for extra in (native_env / "Library" / "bin", native_env / "bin"):
         if extra.is_dir():
             env["PATH"] = str(extra.resolve()) + os.pathsep + env.get("PATH", "")

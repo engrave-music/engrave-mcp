@@ -31,9 +31,6 @@ cxx-compiler = "*"
 clang-23 = "==23.1.4"
 patchelf = "*"
 
-[environments]
-native = { features = [] }
-
 [pypi-dependencies]
 mcp = "==2.3.0"
 jsonschema = "==4.26.0"

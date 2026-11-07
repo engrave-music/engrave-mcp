@@ -35,9 +35,9 @@ Prerequisites: Git, [Pixi](https://pixi.sh/), and the Visual Studio C++ x64
 toolchain (MSVC 14.51+).
 
 ```powershell
-pixi install -e native --locked
-pixi run -e native python scripts/bootstrap.py --soundfont
-pixi run -e native python scripts/prepare.py
+pixi install --locked
+pixi run python scripts/bootstrap.py --soundfont
+pixi run python scripts/prepare.py
 pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 ```
 
@@ -45,12 +45,12 @@ Run the protocol smoke test against the build:
 
 ```powershell
 # The dev build links the Pixi native libraries; put them on PATH first.
-$env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
+$env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
 
 $env:ENGRAVE_MCP_BINARY   = "$PWD/build/xmake-windows/engrave-mcp.exe"
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
-pixi run -e native python tests/integration/test_mcp_smoke.py
+pixi run python tests/integration/test_mcp_smoke.py
 ```
 
 To run the server manually, pass resources explicitly; `--soundfont` is optional:

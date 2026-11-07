@@ -21,9 +21,9 @@ Linux (validated on Linux x86_64, GCC 15.3, C++23):
 ## Initial checkout and setup
 
 ```powershell
-pixi install -e native --locked
-pixi run -e native python scripts/bootstrap.py --soundfont
-pixi run -e native python scripts/prepare.py
+pixi install --locked
+pixi run python scripts/bootstrap.py --soundfont
+pixi run python scripts/prepare.py
 ```
 
 `bootstrap.py` initializes the `vendor/engrave` submodule and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies the submodule pin and stages the engine's hash-pinned asset manifest (348 files, 28,404,538 bytes) into `.runtime/assets`.
@@ -63,7 +63,7 @@ xmake build live_export_test staging_test
 Development builds link against Pixi DLLs, which must be on `PATH`:
 
 ```powershell
-$env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
+$env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
 build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
@@ -71,7 +71,7 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 ## Linux build
 
 ```bash
-bash scripts/build-native.sh 8 build/xmake-linux "$PWD/.pixi/envs/native"
+bash scripts/build-native.sh 8 build/xmake-linux "$PWD/.pixi/envs/default"
 ```
 
 The third argument specifies the Cairo prefix (`<prefix>/include/cairo`, `<prefix>/lib`). The output binary is `build/xmake-linux/engrave-mcp`.
@@ -100,14 +100,14 @@ xmake build semantic_dump
 Windows:
 
 ```powershell
-pixi run -e native python scripts/package_windows.py --no-qt `
+pixi run python scripts/package_windows.py --no-qt `
   --binary build/xmake-windows/engrave-mcp.exe --output artifacts/windows-next
 ```
 
 Linux:
 
 ```bash
-pixi run --locked -e native python scripts/package_linux.py \
+pixi run --locked python scripts/package_linux.py \
   --binary build/xmake-linux/engrave-mcp --output artifacts/linux-next
 ```
 
@@ -119,8 +119,8 @@ Run the smoke and transport tests against the compiled binary (pointing `ENGRAVE
 
 ```powershell
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
-pixi run -e native python tests/integration/test_mcp_smoke.py
-pixi run -e native python tests/integration/test_transport.py build/xmake-windows/engrave-mcp.exe
+pixi run python tests/integration/test_mcp_smoke.py
+pixi run python tests/integration/test_transport.py build/xmake-windows/engrave-mcp.exe
 ```
 
 The acceptance runner and lane catalog are detailed in [validation.md](validation.md). Pass `--build-dir build/xmake-windows` (or the corresponding Linux build directory) when executing lanes.
