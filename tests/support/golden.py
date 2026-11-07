@@ -401,6 +401,7 @@ def verify_input_provenance(*, root=None, sources=None, fixture_dir=None) -> lis
         root=ROOT / "vendor/engrave" if root is None else root,
         sources=fixture_files() + mnx_fixture_files() if sources is None else sources,
         fixture_dir=FIXTURE_DIR if fixture_dir is None else fixture_dir,
+        scenarios=EDIT_SCENARIOS,
     )
 
 
