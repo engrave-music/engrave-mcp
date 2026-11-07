@@ -46,9 +46,7 @@ class TestSvgGeometry(unittest.TestCase):
                     if issue.startswith("PNG ink share ratio "):
                         ratio = float(issue.split()[4])
                         with mock.patch.object(page, "png_metrics", return_value=(ratio, 0, 0)):
-                            self.assertEqual(
-                                page.png_issues({"size": [1, 1]}, {"size": [1, 1]}), [issue]
-                            )
+                            self.assertEqual(page.png_issues({"size": [1, 1]}, {"size": [1, 1]}), [issue])
 
     def test_relative_commands_implicit_lines_and_close(self):
         self.assertBoxAlmostEqual(page.path_bounds("M10 10 l10 0 0 10 h-10 z m2 3 v4"), (10, 10, 20, 20))
