@@ -1,4 +1,4 @@
-"""M1 routing, revisions, cancellation, atomic publication, multi-page exports.
+"""Live routing, revisions, cancellation, atomic publication, multi-page exports.
 
 Use --binary engrave-mcp-test for the deterministic owner-queue cancellation seam.
 This is the complete entry point: --direct-binary is required. The native

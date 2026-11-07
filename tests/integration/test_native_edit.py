@@ -207,8 +207,7 @@ async def run(args):
                 assert item[field] == old[identity][field], (identity, field)
         assert int(revision) == int(opened["revision"]) + 4
 
-        # Unlike v1's operation-ID replay and disjoint rebase, v2 serializes
-        # edits and rejects every stale expected_revision, even for disjoint notes.
+        # The session serializes edits and rejects every stale expected_revision, even for disjoint notes.
         requests = [
             {
                 "document": doc,

@@ -1,4 +1,4 @@
-"""B3 live v2 native-version/warning contract; retains actual oracle input artifacts.
+"""Live native-version/warning contract; retains actual oracle input artifacts.
 
 This checks the pinned restricted writer, not full Phase B acceptance.
 """

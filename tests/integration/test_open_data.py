@@ -335,7 +335,7 @@ async def run(args):
                     )
                     report["rejections"].append(label)
 
-                # The v2 engine can identify an MSCZ byte stream without an explicit format.
+                # The engine can identify an MSCZ byte stream without an explicit format.
                 detected = await call(client, "score_open", {"data": valid})
                 detected_info = await read_document(detected["document"], out / "detected.musicxml")
                 assert summary(detected_info) == mscz_summary
