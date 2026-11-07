@@ -25,10 +25,7 @@ import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
 
-import numpy as np
-import soundfile as sf
 from integration.test_native_edit import fixture
-from PIL import Image
 from support.mcp_client import Client
 
 # Tiny 2-measure MusicXML repeat fixture:
@@ -162,6 +159,7 @@ def read_png_dimensions(data_or_path: bytes | Path) -> tuple[int, int]:
 
 
 def inspect_png_alpha(data_or_path: bytes | Path) -> dict:
+    from PIL import Image
 
     data = data_or_path.read_bytes() if isinstance(data_or_path, Path) else data_or_path
     with Image.open(io.BytesIO(data)) as image:
@@ -371,6 +369,8 @@ def extract_rpn_controllers(midi_info: dict) -> list[dict]:
 
 
 def inspect_wav_audio(path: Path) -> dict:
+    import numpy as np
+    import soundfile as sf
 
     audio, rate = sf.read(path, always_2d=True)
     assert rate == 44100 and audio.shape[1] == 2 and len(audio) > 0
@@ -386,6 +386,7 @@ def inspect_wav_audio(path: Path) -> dict:
 
 
 async def main() -> None:
+    from PIL import Image
 
     parser = argparse.ArgumentParser(description="V2 score, render and audio export options")
     parser.add_argument("--binary", type=Path, required=True)
