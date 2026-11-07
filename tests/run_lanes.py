@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Unified acceptance test lane runner for engrave-mcp.
 
-Replaces notes/a2/verify/run_all_a2.ps1 (Windows) and
-notes/a2/linux/run_all_a2_linux.sh (Linux).
+Builds an isolated working directory and runs the current acceptance lanes.
 """
 
 from __future__ import annotations
@@ -162,8 +161,15 @@ def check_preflight_eol(repo_root: Path) -> None:
         sys.exit(2)
 
 
-def setup_link(target: Path, link: Path) -> None:
+def setup_link(target: Path, link: Path, output: Path) -> None:
     target = target.resolve()
+    # Resolve the parent, never the leaf: unlinking a link must not touch its target.
+    boundary = output.resolve()
+    if not link.parent.resolve().is_relative_to(boundary):
+        raise ValueError(f"link parent escapes output directory: {link}")
+    if link.exists() and not (link.is_symlink() or link.is_junction()):
+        if not link.resolve().is_relative_to(boundary):
+            raise ValueError(f"link replacement escapes output directory: {link}")
     link.parent.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
         import _winapi
@@ -686,7 +692,7 @@ def run_lane(
 
     if lane == "engine_audio":
         audio_args = []
-        if os.environ.get("MUSESCORE_A2_DEFER_DENSE_PERFORMANCE") == "1":
+        if os.environ.get("ENGRAVE_DEFER_DENSE_PERFORMANCE") == "1":
             audio_args.append("--defer-dense-performance")
         cmd = [
             py,
@@ -898,7 +904,7 @@ def main() -> None:
         args.host_sha256,
     )
     if "native_470_oracle" not in selected_lanes and any(native_470_requested):
-        parser.error("phase B options require selecting --only native_470_oracle")
+        parser.error("native oracle options require selecting --only native_470_oracle")
     if "native_470_oracle" in selected_lanes:
         if not all(
             (
@@ -986,9 +992,8 @@ def main() -> None:
     testcwd = output / "cwd"
     (testcwd / "vendor").mkdir(parents=True, exist_ok=True)
     (testcwd / "tests").mkdir(exist_ok=True)
-    setup_link(repo_root / "vendor/engrave/tests/data", testcwd / "vendor/engrave/tests/data")
-    setup_link(repo_root / "vendor/engrave/tests/data/inputs", testcwd / "fixtures")
-    setup_link(engine_source, testcwd / "vendor/engrave")
+    setup_link(repo_root / "vendor/engrave/tests/data/inputs", testcwd / "fixtures", output)
+    setup_link(engine_source, testcwd / "vendor/engrave", output)
 
     base_env = os.environ.copy()
     base_env["TEMP"] = str(output / "tmp")
@@ -1017,7 +1022,7 @@ def main() -> None:
     if args.only is None:
         notice = (
             "native_470_oracle NOT SELECTED: run it explicitly on physical Linux "
-            "with the preserved oracle; phase B is not verified by this run"
+            "with the preserved oracle; native 4.70 interoperability is not verified by this run"
         )
         print(notice, flush=True)
         summary_lines.append(notice)

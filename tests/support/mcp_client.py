@@ -1,4 +1,4 @@
-"""Shared raw stdio client and schema validators for the v2 test lanes."""
+"""Shared raw stdio client and schema validators for the acceptance test lanes."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class Client:
             {
                 "protocolVersion": "2025-11-25",
                 "capabilities": {},
-                "clientInfo": {"name": "v2-async-test", "version": "1"},
+                "clientInfo": {"name": "async-test", "version": "1"},
             },
         )
         assert result["result"]["serverInfo"]["name"] == "engrave-mcp", result

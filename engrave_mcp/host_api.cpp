@@ -10,7 +10,7 @@
 
 #include "api_json_internal.h"
 
-namespace music::v2 {
+namespace music::api {
 
 namespace {
 namespace fs = std::filesystem;
@@ -504,4 +504,4 @@ Result<engrave::EngineOptions> HostApi::runtime_options() const {
         return std::unexpected(HostError{"EngineFailure", e.what()});
     }
 }
-} // namespace music::v2
+} // namespace music::api

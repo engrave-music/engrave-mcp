@@ -20,7 +20,7 @@ using Json = nlohmann::json;
 
 // Structured, transport-independent failure raised by AsyncSession (or any
 // tool implementation) when a call has a stable machine-readable code. The
-// transport serialises it as a v2 error envelope and a bounded text item.
+// transport serialises it as an error envelope and a bounded text item.
 struct ToolCallError : std::runtime_error {
     ToolCallError(std::string code, std::string message);
 

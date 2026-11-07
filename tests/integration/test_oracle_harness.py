@@ -1,4 +1,4 @@
-"""Unit tests for oracle harness improvements (A2 review findings).
+"""Unit tests for oracle harness improvements (oracle review findings).
 
 Tests:
   1. Semantic checker mutations:

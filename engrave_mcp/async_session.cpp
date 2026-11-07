@@ -31,7 +31,7 @@
 namespace music {
 
 namespace {
-using namespace v2;
+using namespace api;
 
 struct HandlerContext {
     HostApi *host = nullptr;

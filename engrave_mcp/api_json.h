@@ -12,7 +12,7 @@
 
 #include "schema_defs.h"
 
-namespace music::v2 {
+namespace music::api {
 
 // Decimal codecs must enforce int64/uint64 bounds after schema validation.
 // EIDs use element_id_from_string, never split JSON numbers. Unknown keys and
@@ -94,4 +94,4 @@ constexpr auto op_names(std::index_sequence<I...>) {
 
 inline constexpr auto operation_names = op_names(std::make_index_sequence<std::variant_size_v<engrave::Op>>{});
 
-} // namespace music::v2
+} // namespace music::api

@@ -11,7 +11,7 @@
 #include "api_json_internal.h"
 #include "registry.h"
 
-namespace music::v2 {
+namespace music::api {
 
 namespace {
 using detail::invalid;
@@ -584,4 +584,4 @@ Json error_envelope(const HostError &e) {
     if (!e.export_warnings.empty()) err["export_warnings"] = encode(e.export_warnings);
     return {{"ok", false}, {"error", err}};
 }
-} // namespace music::v2
+} // namespace music::api

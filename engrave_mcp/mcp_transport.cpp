@@ -76,7 +76,7 @@ ToolCallError::ToolCallError(std::string error_code, std::string message)
 
 namespace {
 
-constexpr std::size_t k_max_line_bytes = v2::transport_request_limit;
+constexpr std::size_t k_max_line_bytes = api::transport_request_limit;
 constexpr std::size_t k_max_pending_lines = 64u;
 constexpr std::size_t k_max_pending_bytes = 32u * 1024u * 1024u;
 

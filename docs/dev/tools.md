@@ -1,4 +1,4 @@
-# Tool contract (v2)
+# Tool contract
 
 The server exposes nine tools. This page is the human-readable contract; the
 generated [engrave_mcp/tools.json](../../engrave_mcp/tools.json) is the machine-readable

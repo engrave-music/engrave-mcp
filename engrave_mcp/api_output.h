@@ -5,7 +5,7 @@
 #include "api_json.h"
 #include "runtime_limits.h"
 
-namespace music::v2 {
+namespace music::api {
 
 struct ExportTiming;
 enum class ExportKind { SCORE, RENDER, AUDIO, POSITIONS };
@@ -44,4 +44,4 @@ Result<Json> live_export(engrave::Document &, const ExportRequest &, const Expor
                          std::chrono::steady_clock::time_point submitted, ExportTiming &, const engrave::EngineOptions &runtime = {},
                          const std::function<bool()> &begin_publication = {}, std::vector<std::string> *visible_paths = nullptr);
 
-} // namespace music::v2
+} // namespace music::api

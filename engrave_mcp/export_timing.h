@@ -7,7 +7,7 @@
 
 #include "api_json.h"
 
-namespace music::v2 {
+namespace music::api {
 
 // Engine render returns encoded bytes: engine_call includes draw + encode.
 // response runs through the synchronous report callback (including transport
@@ -36,4 +36,4 @@ struct ExportTiming {
     }
 };
 
-} // namespace music::v2
+} // namespace music::api

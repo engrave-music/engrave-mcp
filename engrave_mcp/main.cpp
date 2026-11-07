@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
         music::AsyncSession session(std::move(options));
         return music::serve_stdio_async(
             [] {
-                auto tools = music::v2::tools_json();
+                auto tools = music::api::tools_json();
 #ifdef MUSIC_ASYNC_TEST_HOOKS
                 tools.push_back({{"name", "test_owner_state"},
                                  {"description", "Test-only owner-thread state"},
@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
                 return tools;
             },
             [](std::string_view name) {
-                if (music::v2::find_tool(name)) return true;
+                if (music::api::find_tool(name)) return true;
 #ifdef MUSIC_ASYNC_TEST_HOOKS
                 return name == "test_owner_state" || name == "test_owner_sleep";
 #else

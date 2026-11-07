@@ -2,10 +2,10 @@
 
 #include <nlohmann/json.hpp>
 
-namespace music::v2 {
+namespace music::api {
 
 using Json = nlohmann::json;
 
 Json declared_tools();
 
-} // namespace music::v2
+} // namespace music::api

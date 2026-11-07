@@ -1760,7 +1760,7 @@ async def test_mcp_level_integration(
 
     from support.mcp_client import Client
 
-    print("[MCP] Running v2 MCP-level audio integration tests...")
+    print("[MCP] Running MCP-level audio integration tests...")
     args = SimpleNamespace(binary=binary, resources=resources, soundfont=soundfont)
     async with Client(args, out_dir) as client:
 

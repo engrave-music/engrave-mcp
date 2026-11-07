@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace music::v2 {
+namespace music::api {
 
 // The engine retains its completed cache file throughout the sink callback.
 // Reserve equal halves for that file and the staged copy, so their combined
@@ -18,4 +18,4 @@ inline constexpr std::uint64_t audio_write_budget(std::uint64_t file_budget) noe
     return file_budget > maximum - rewrite_slack ? maximum : file_budget + rewrite_slack;
 }
 
-} // namespace music::v2
+} // namespace music::api

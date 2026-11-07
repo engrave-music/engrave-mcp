@@ -1,6 +1,6 @@
 #include "api_json_internal.h"
 
-namespace music::v2 {
+namespace music::api {
 
 Result<engrave::Batch> decode_batch(const Json &ops) {
     if (!ops.is_array() || ops.size() > 1024) {
@@ -96,4 +96,4 @@ Result<engrave::Batch> decode_batch(const Json &ops) {
     return batch;
 }
 
-} // namespace music::v2
+} // namespace music::api

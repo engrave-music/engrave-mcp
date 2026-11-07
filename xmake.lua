@@ -8,9 +8,9 @@
 -- vendor/engrave by default, or from the checkout named by
 -- --engine_source - and keeps what is the host's:
 --
---   v2_registry, registry_dump       standalone v2 schema authority
---   registry_test, registry_check    v2 contract validation
---   v2_store                         public-API document store
+--   tool_registry, registry_dump       standalone tool schema authority
+--   registry_test, registry_check    tool contract validation
+--   document_store                         public-API document store
 --   engrave_mcp                    stdio JSON-RPC host (engrave-mcp binary)
 --   engrave_mcp_test, host_api_test   host regression binaries
 --

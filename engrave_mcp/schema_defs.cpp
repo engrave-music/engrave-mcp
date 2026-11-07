@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace music::v2 {
+namespace music::api {
 
 namespace {
 using J = Json;
@@ -450,4 +450,4 @@ Json declared_tools() {
                   {"limits", ref("limits")}}));
     return tools;
 }
-} // namespace music::v2
+} // namespace music::api

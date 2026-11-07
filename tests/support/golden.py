@@ -42,7 +42,7 @@ All current MNX, edit and excerpt artifacts share the platform index.
 ``semantic.json`` (the exported MSCZ) and ``semantic-source.json`` (the fixture
 file) come from the ``semantic_dump`` dev tool next to the server binary. They
 record musical content read from the in-memory DOM, independent of the MSCX
-format version, and are the rebase oracle of roadmap-engrave A0/A2.
+format version, and provide an independent musical-content oracle.
 
 EID normalization preserves target identity through stable tokens.
 
@@ -64,14 +64,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import base64
-import difflib
 
 # The fork owns the shared artifact representations and comparison policy.
 import importlib.util
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
@@ -112,44 +110,30 @@ verify_golden_index = _engine_golden.verify_golden_index
 write_json = _engine_golden.write_json
 write_text = _engine_golden.write_text
 
+positions = _engine_golden.positions
+sanitize = _engine_golden.sanitize
+reset_root = _engine_golden.reset_root
+build_index = _engine_golden.build_index
+write_diff = _engine_golden.write_diff
+command_pin = _engine_golden.command_pin
+
 ROOT = REPO_ROOT
 FIXTURE_DIR = ROOT / "vendor/engrave/tests/data/inputs" / "golden"
 EXTRA_FIXTURES = (ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml",)
 # Fixtures without stored excerpts whose part excerpts are generated (after the master
 # outputs are captured) to cover excerpt creation, e.g. ChordLine path copying.
-GENERATE_EXCERPTS = {"chordline_path.mscx"}
-MNX_FIXTURES = (
-    "engine/two-notes.mnx",
-    "project_examples/tupletSimple.mnx",
-    "project_examples/percussionKit.mnx",
-    "project_examples/graceArps.mnx",
-)
-AUDIO_TOLERANCES = {
-    "peak": 1e-4,
-    "rms": 1e-4,
-    "rmsEnvelope": 1e-4,
-    "spectralCentroidHz": 1.0,
-    "centroidEnvelope": 2.0,
-}
-AUDIO_EXACT = {"sampleRate", "channels", "frames"}
+GENERATE_EXCERPTS = _engine_golden.GENERATE_EXCERPTS
+MNX_FIXTURES = _engine_golden.MNX_FIXTURES
+AUDIO_TOLERANCES = _engine_golden.AUDIO_TOLERANCES
+AUDIO_EXACT = _engine_golden.AUDIO_EXACT
 # Per-window exact silence evidence (count of nonzero PCM samples per channel). It is
 # written by describe_audio, gates the centroid comparison and is not a tolerance.
-SILENCE_EVIDENCE = "nonzeroSamples"
+SILENCE_EVIDENCE = _engine_golden.SILENCE_EVIDENCE
 ALLOW_KINDS = ("different", "extra")
 DEFAULT_PLATFORM = "windows" if sys.platform.startswith("win") else "linux"
 
 
-EID_TAGS = (
-    "eid",
-    "linkedTo",
-    "startElement",
-    "endElement",
-    "NoteEID",
-    "mmRestLast",
-    "startMeasure",
-    "endMeasure",
-    "sharedPart",
-)
+EID_TAGS = _engine_golden.EID_TAGS
 
 
 async def call_tool(session: ClientSession, name: str, arguments: dict):
@@ -165,7 +149,7 @@ async def call_tool(session: ClientSession, name: str, arguments: dict):
 
 
 async def export(session, identity, fmt, dest, **options):
-    """Export one v2 artifact to the stable path used by the comparison harness."""
+    """Export one artifact to the stable path used by the comparison harness."""
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     selected = options.pop("excerpt", None)
@@ -248,24 +232,6 @@ async def generate_excerpts(session, identity):
     )
 
 
-def positions(path):
-    result = load_rounded(path)
-    result["pageSize"] = result.pop("page_size")
-    if path.name.startswith("segment"):
-        for item in result["elements"]:
-            for key in ("x", "y"):
-                if not float(item[key]).is_integer():
-                    raise ValueError(f"non-integral segment {key}: {item[key]}")
-                item[key] = int(item[key])
-    return result
-
-
-def sanitize(text: str, roots: list[Path]) -> str:
-    for root in roots:
-        text = text.replace(str(root), "<tmp>")
-    return text
-
-
 async def text_export(session, identity, fmt, raw, out_dir, name, normalize, roots, **options):
     error = await export(session, identity, fmt, raw, **options)
     if error:
@@ -274,7 +240,7 @@ async def text_export(session, identity, fmt, raw, out_dir, name, normalize, roo
     try:
         text = normalize(read_text(raw))
         if normalize is normalize_musicxml:
-            # Engine-independent content, the A2 oracle for MusicXML (roadmap-engrave A0).
+            # Engine-independent content, the semantic oracle for MusicXML (musical content).
             write_json(out_dir / "musicxml-semantic.json", musicxml_semantic(text))
         return write_text(out_dir / name, text)
     except Exception as exc:  # noqa: BLE001 - record instead of aborting the fixture
@@ -419,7 +385,7 @@ async def capture_master(session, identity, raw, out_dir, roots):
         describe_audio,
         roots,
     )
-    # Format-independent content of the saved file (roadmap-engrave A0).
+    # Format-independent content of the saved file (musical content).
     semantic_dump(raw / "score.mscz", out_dir / "semantic.json", roots)
 
 
@@ -427,27 +393,26 @@ SEMANTIC_DUMP: dict = {}
 
 
 def semantic_dump(source: Path, dest: Path, roots, *extra: str) -> None:
-    """Run the semantic_dump dev tool next to the server binary; errors become .error.txt."""
-    if not source.is_file():
-        write_text(dest.with_suffix(".error.txt"), "source export missing\n")
-        return
-    result = subprocess.run(
-        [
-            str(SEMANTIC_DUMP["binary"]),
-            str(SEMANTIC_DUMP["resources"]),
-            str(source),
-            *extra,
-        ],
-        capture_output=True,
-        check=False,
+    _engine_golden.semantic_dump(source, dest, roots, *extra, config=SEMANTIC_DUMP)
+
+
+def verify_input_provenance(*, root=None, sources=None, fixture_dir=None) -> list[str]:
+    return _engine_golden.verify_input_provenance(
+        root=ROOT / "vendor/engrave" if root is None else root,
+        sources=fixture_files() + mnx_fixture_files() if sources is None else sources,
+        fixture_dir=FIXTURE_DIR if fixture_dir is None else fixture_dir,
     )
-    if result.returncode != 0:
-        write_text(
-            dest.with_suffix(".error.txt"),
-            sanitize(result.stderr.decode("utf-8", "replace"), roots) + "\n",
-        )
-        return
-    write_json(dest, json.loads(result.stdout.decode("utf-8")))
+
+
+def compare_trees(golden_root, actual_root, allow, output, platform) -> int:
+    return _engine_golden.compare_trees(
+        golden_root,
+        actual_root,
+        allow,
+        output,
+        platform,
+        provenance_check=verify_input_provenance,
+    )
 
 
 async def capture_excerpts(session, identity, raw, out_dir, roots):
@@ -533,40 +498,9 @@ async def capture_fixture(
         await call_tool(session, "score_close", identity)
 
 
-# Edit scenarios (roadmap-engrave A0): the edit tools' observable results, which A2 must
+# Edit scenarios (musical content): the edit tools' observable results, which the host must
 # preserve on 5.0. Each opens a source, applies one edit and captures the saved content.
-EDIT_SCENARIOS = {
-    "edit-replace-measures": {
-        "source": "created.json",
-        "kind": "replace-measures",
-        "start_measure": 1,
-        "notes": [
-            {"pitches": [60, 64, 67], "ticks": 960},
-            {"pitches": [62], "ticks": 480},
-            {"pitches": [], "ticks": 240},
-            {"pitches": [65], "ticks": 240},
-        ],
-    },
-    "edit-set-pitches-coverage": {
-        "source": "coverage.musicxml",
-        "kind": "set-pitches",
-        "part": 0,
-        "measures": 2,
-        "notes": 4,
-        "delta": 2,
-    },
-    # Generated part excerpts are linked to the master, so the edit must reach them too
-    # (linked_parts.mscx is unusable here: every note in it is tied).
-    "edit-set-pitches-linked": {
-        "source": "chordline_path.mscx",
-        "kind": "set-pitches",
-        "generate": True,
-        "part": 0,
-        "measures": 2,
-        "notes": 3,
-        "delta": 1,
-    },
-}
+EDIT_SCENARIOS = _engine_golden.EDIT_SCENARIOS
 
 
 async def capture_edit(session, name, scenario, raw_root, out_dir, roots):
@@ -761,28 +695,6 @@ def mnx_fixture_files() -> list[Path]:
     return files
 
 
-def reset_root(root: Path) -> None:
-    if root.exists():
-        for child in root.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
-    root.mkdir(parents=True, exist_ok=True)
-
-
-def build_index(root: Path) -> dict:
-    index = {}
-    for folder in sorted(path for path in root.iterdir() if path.is_dir()):
-        files = {}
-        for path in sorted(folder.rglob("*")):
-            if path.is_file():
-                files[path.relative_to(folder).as_posix()] = sha256(path.read_bytes())
-        index[folder.name] = files
-    write_json(root / "index.json", index)
-    return index
-
-
 async def capture_tree(
     binary,
     resources,
@@ -840,215 +752,6 @@ async def capture_tree(
     return build_index(target)
 
 
-def write_diff(root: Path, fixture: str, output: str, golden: Path, actual: Path) -> None:
-    lines = list(
-        difflib.unified_diff(
-            read_text(golden).splitlines(keepends=True),
-            read_text(actual).splitlines(keepends=True),
-            fromfile=f"golden/{fixture}/{output}",
-            tofile=f"actual/{fixture}/{output}",
-        )
-    )
-    if len(lines) > 2000:
-        lines = lines[:2000] + ["... truncated after 2000 diff lines ...\n"]
-    write_text(
-        root / fixture / f"{output}.diff",
-        "".join(line if line.endswith("\n") else line + "\n" for line in lines),
-    )
-
-
-def verify_input_provenance() -> list[str]:
-    """Check current inputs against main's reviewed migration pins."""
-    try:
-        pins = json.loads(read_text(ROOT / "vendor/engrave/tests/data/golden/inputs.json"))["fixtures"]
-        sources = {source.name: source for source in fixture_files() + mnx_fixture_files()}
-        sources.update({name: FIXTURE_DIR / scenario["source"] for name, scenario in EDIT_SCENARIOS.items()})
-        if set(pins) != set(sources):
-            return ["input fixture inventory differs from reviewed pins"]
-        issues = []
-        for name, source in sources.items():
-            entry = pins[name]
-            if entry["fixture_sha256"] != sha256(source.read_bytes()):
-                issues.append(f"input fixture changed: {name}")
-            if name in EDIT_SCENARIOS:
-                scenario = json.dumps(
-                    EDIT_SCENARIOS[name], sort_keys=True, ensure_ascii=False, separators=(",", ":")
-                ).encode("utf-8")
-                if entry.get("scenario_sha256") != sha256(scenario):
-                    issues.append(f"edit scenario changed: {name}")
-            if source.name == "created.json":
-                xml = composition_musicxml(json.loads(read_text(source))).encode("utf-8")
-                if entry.get("input_sha256") != sha256(xml) or entry.get("converter_sha256") != sha256(
-                    (ROOT / "vendor/engrave/tests/support/composition_fixture.py").read_bytes()
-                ):
-                    issues.append(f"created input or converter changed: {name}")
-        return issues
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        return [f"invalid input provenance: {exc}"]
-
-
-def compare_trees(
-    golden_root: Path,
-    actual_root: Path,
-    allow: list[dict],
-    output: Path,
-    platform: str,
-) -> int:
-    golden_index = json.loads(read_text(golden_root / "index.json"))
-    counts = {
-        key: 0
-        for key in (
-            "identical",
-            "allowed",
-            "different",
-            "missing",
-            "extra",
-            "goldenError",
-            "extraFixture",
-            "index",
-        )
-    }
-    report = {
-        "golden": str(golden_root),
-        "actual": str(actual_root),
-        "fixtures": {},
-        "stale": [],
-        "extraFixtures": [],
-        "indexIssues": [],
-        "counts": counts,
-        "status": "pass",
-    }
-    matched_allow: set[int] = set()
-    diff_root = output / "diff"
-    if diff_root.exists():
-        shutil.rmtree(diff_root)
-
-    report["indexIssues"].extend(verify_golden_index(golden_root, golden_index))
-    report["indexIssues"].extend(verify_input_provenance())
-    counts["index"] = len(report["indexIssues"])
-    for issue in report["indexIssues"]:
-        print(f"index    {issue}")
-    actual_fixtures = {path.name for path in actual_root.iterdir() if path.is_dir()}
-    for fixture in sorted(actual_fixtures - set(golden_index)):
-        report["extraFixtures"].append(fixture)
-        counts["extraFixture"] += 1
-        print(f"extra fixture  {fixture}")
-
-    for fixture in sorted(golden_index):
-        expected = golden_index[fixture]
-        golden_dir, actual_dir = golden_root / fixture, actual_root / fixture
-        actual_files = (
-            {path.relative_to(actual_dir).as_posix() for path in actual_dir.rglob("*") if path.is_file()}
-            if actual_dir.is_dir()
-            else set()
-        )
-        results = report["fixtures"].setdefault(fixture, {})
-        for name in sorted(set(expected) | actual_files):
-            golden_file = golden_dir / name
-            actual_file = actual_dir / name
-            golden_sha = sha256(golden_file.read_bytes()) if golden_file.is_file() else None
-            actual_sha = sha256(actual_file.read_bytes()) if actual_file.is_file() else None
-            golden_error = golden_sha is not None and name.endswith(".error.txt")
-            golden_format = None
-            if actual_sha is None:
-                kind = "missing"
-            elif name not in expected:
-                kind = "extra"
-            elif golden_sha is None:
-                kind = "different"
-            else:
-                try:
-                    same = files_equal(golden_file, actual_file, name)
-                except GoldenFormatError as exc:
-                    # A baseline missing required evidence is an error, not a difference an
-                    # allow entry may cover: it must be recaptured.
-                    same, golden_format = False, str(exc)
-                kind = None if same and not golden_error else "different"
-            if kind is None:
-                counts["identical"] += 1
-                results[name] = {"status": "identical", "sha256": actual_sha}
-                continue
-            if golden_format:
-                counts["goldenError"] += 1
-                results[name] = {
-                    "status": "golden-format",
-                    "kind": kind,
-                    "goldenSha256": golden_sha,
-                    "actualSha256": actual_sha,
-                    "error": golden_format,
-                }
-                print(f"golden-format {fixture}/{name}: {golden_format}")
-                continue
-
-            position, entry, problem = allow_accept(allow, fixture, name, kind, actual_sha, platform)
-            if entry:
-                matched_allow.add(position)
-                counts["allowed"] += 1
-                results[name] = {
-                    "status": "allowed",
-                    "kind": kind,
-                    "step": entry["step"],
-                    "reason": entry["reason"],
-                    "actualSha256": actual_sha,
-                    "goldenSha256": golden_sha,
-                }
-                print(f"allowed  {fixture}/{name} ({kind}; {entry['step']}: {entry['reason']})")
-            else:
-                status = "golden-error" if golden_error else kind
-                counts["goldenError" if golden_error else kind] += 1
-                results[name] = {
-                    "status": status,
-                    "kind": kind,
-                    "goldenSha256": golden_sha,
-                    "actualSha256": actual_sha,
-                }
-                suffix = f" (allow mismatch: {problem})" if problem else ""
-                label = "missing" if kind == "missing" else status
-                print(f"{label:<12} {fixture}/{name} actual sha256={actual_sha or 'none'}{suffix}")
-            if kind == "different" and golden_file.is_file() and actual_sha != golden_sha:
-                write_diff(diff_root, fixture, name, golden_file, actual_file)
-
-    for position, entry in enumerate(allow):
-        # An entry is only expected to match on the platforms it pins.
-        if position not in matched_allow and platform in entry["sha256"]:
-            report["stale"].append(entry)
-            print(
-                f"stale    allow entry fixture={entry['fixture']} output={entry['output']} "
-                f"({entry['step']}: {entry['reason']})"
-            )
-
-    failing = sum(
-        counts[key]
-        for key in (
-            "different",
-            "missing",
-            "extra",
-            "goldenError",
-            "extraFixture",
-            "index",
-        )
-    )
-    failing += len(report["stale"])
-    report["status"] = "pass" if failing == 0 else "fail"
-    write_json(output / "report.json", report, indent=2)
-    total = sum(
-        counts[key]
-        for key in (
-            "identical",
-            "allowed",
-            "different",
-            "missing",
-            "extra",
-            "goldenError",
-        )
-    )
-    print(f"golden compare: {len(golden_index)} fixtures, {total} outputs")
-    for key in counts:
-        print(f"{key}: {counts[key]}")
-    print(f"result: {'PASS' if failing == 0 else 'FAIL'}")
-    return 0 if failing == 0 else 1
-
-
 def command_capture(args) -> int:
     args.golden.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
@@ -1096,39 +799,6 @@ def command_compare(args) -> int:
         # Keep a copy of the server log for debugging (outside the compared tree).
         shutil.copyfile(Path(temporary) / "server-stderr.log", args.output / "server-stderr.log")
     return compare_trees(args.golden, actual, allow, args.output, args.platform)
-
-
-def command_pin(args) -> int:
-    report_path = args.output / "report.json"
-    if not report_path.is_file():
-        raise SystemExit(f"report does not exist: {report_path}")
-    report = json.loads(read_text(report_path))
-    if not isinstance(report.get("fixtures"), dict):
-        raise SystemExit("invalid golden report: expected fixtures mapping")
-    entries = []
-    for fixture, results in sorted(report["fixtures"].items()):
-        for name, result in sorted(results.items()):
-            if result.get("status") not in (
-                "different",
-                "missing",
-                "extra",
-                "golden-error",
-            ):
-                continue
-            kind = result.get("kind") or result["status"]
-            sha = {} if kind == "missing" else {"sha256": {args.platform: result["actualSha256"]}}
-            entries.append(
-                {
-                    "fixture": fixture,
-                    "output": name,
-                    "step": "TODO",
-                    "reason": "TODO",
-                    "kind": kind,
-                    **sha,
-                }
-            )
-    print(json.dumps(entries, indent=1, sort_keys=True))
-    return int(bool(entries))
 
 
 def main() -> int:
