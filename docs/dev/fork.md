@@ -4,7 +4,7 @@
 
 ## Upstream provenance
 
-Ancestral upstream synchronization terminated at `upstream-final` (syncing upstream MuseScore commit `32f0a26e5b` and framework commit `da3885cb` after absorbing `muse_framework` into `muse/`). Since that synchronization point, development moves forward independently. Upstream fixes arrive strictly by cherry-pick and adaptation with upstream SHA, framework origin if applicable, technical rationale, and focused test evidence.
+The fork is based on upstream MuseScore commit `32f0a26e5b`, with the MuseScore framework (commit `da3885cb`) absorbed into `muse/`. Development moves forward independently. Upstream fixes arrive strictly by cherry-pick and adaptation with upstream SHA, framework origin if applicable, technical rationale, and focused test evidence.
 
 ## Engine structure
 
