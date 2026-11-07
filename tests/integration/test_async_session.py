@@ -7,7 +7,8 @@ import asyncio
 import json
 from pathlib import Path
 
-from support.mcp_client import REPO_ROOT, TOOLS, VALIDATORS, Client
+from support.mcp_client import TOOLS, VALIDATORS, Client
+from support.paths import REPO_ROOT
 
 RETIRED = {
     "score_get",

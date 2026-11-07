@@ -12,7 +12,8 @@ import time
 from pathlib import Path
 
 import psutil
-from support.process_client import REPO_ROOT, export_args
+from support.paths import REPO_ROOT
+from support.process_client import export_args
 
 
 class Host:

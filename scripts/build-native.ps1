@@ -6,6 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$env:PYTHONPATH = "$projectRoot/tests;$projectRoot/scripts;$env:PYTHONPATH"
 Push-Location $projectRoot
 try {
     # Explicitly select the submodule so cached options cannot select an old worktree.

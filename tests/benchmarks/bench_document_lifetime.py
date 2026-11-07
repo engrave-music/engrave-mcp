@@ -11,7 +11,8 @@ import json
 import time
 from pathlib import Path
 
-from support.process_client import REPO_ROOT, Client, export_args, rss_bytes, summary
+from support.paths import REPO_ROOT
+from support.process_client import Client, export_args, rss_bytes, summary
 
 
 def main():

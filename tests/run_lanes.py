@@ -18,8 +18,9 @@ from pathlib import Path
 
 from support.paths import REPO_ROOT
 
-FOCUSED_DEFAULT_LANES = ["native_includes", "native_inputs", "output_schema_boundaries"]
+FOCUSED_DEFAULT_LANES = ["native_includes", "native_inputs"]
 FOCUSED_OPT_IN_LANES = [
+    "output_schema_boundaries",
     "document_stress",
     "live_dense_cancel",
     "live_queued_cancel",

@@ -11,7 +11,8 @@ import os
 import tempfile
 from pathlib import Path
 
-from support.mcp_client import REPO_ROOT, Client
+from support.mcp_client import Client
+from support.paths import REPO_ROOT
 
 
 async def open_source(args):
