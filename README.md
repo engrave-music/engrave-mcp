@@ -170,4 +170,5 @@ docs/dev/        design, tool contract, build, validation, engine fork guide
 - [Supported scope and non-goals](docs/dev/scope.md)
 - [Open defects and limitations](docs/dev/defects.md)
 - [Branching and tags](docs/dev/branching.md)
+- [Code style guide](docs/dev/code-style-guide.md)
 - [中文说明](README.zh-CN.md)

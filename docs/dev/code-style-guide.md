@@ -1,0 +1,135 @@
+This is a concise code style guide for the engrave-mcp project. Contributors or agents should follow these guidelines unless there is a compelling reason to deviate.
+
+If not specified here, just follow the code style of the existing code around the code you are writing.
+
+## Formatting
+
+Run `pixi run format <paths...>` to format specific files or directories, and `pixi run format-check` to verify that all tracked files comply with formatting rules without modifying them.
+
+Supported options:
+
+- `-l, --language <cpp|python|markdown|json|toml>`: override language detection for every input.
+- `--check`: report files that require formatting without modifying them (used by `pixi run format-check`).
+- `--engine`: format tracked owned engine C++ files under `vendor/engrave` (delegates to the engine's formatting script). Pass `--engine-root <path>` to specify the engine checkout location.
+
+Under the hood, formatters are selected by file extension:
+
+- `clang-format`: C/C++ source and header files (`.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hh`, `.hpp`, `.hxx`).
+- `ruff`: Python files (`.py`, `.pyi`).
+- `prettier`: JSON, Markdown, and YAML files (`.json`, `.md`, `.yaml`, `.yml`).
+- `taplo`: TOML files (`.toml`).
+
+Run `pixi run lint [paths...]` to lint project files (ruff for Python, clang-tidy for C++). Pass `--fix` (`pixi run lint-fix`) to automatically apply lint fixes where available. Pass `--engine` to check compiled owned engine translation units against `vendor/engrave/.clang-tidy` (note that `--fix` is unsupported with `--engine`). Pass `-j, --jobs <N>` to control linting parallelism.
+
+## Identifier Naming
+
+See [.clang-tidy](../../.clang-tidy).
+
+- Types, structs, classes, enums, and unions use `CamelCase`.
+- Functions, methods, parameters, local variables, and global constants use `lower_case`.
+- Enum constants use `UPPER_CASE`.
+- Single-letter and two-letter uppercase names (such as template parameters or coordinate identifiers like `T`, `ID`) are permitted.
+- Struct and class member variables use `lower_case`. Members may end in one trailing `_` (e.g. `member_`), but never have to.
+
+## Header Inclusion
+
+Headers should be grouped in the following order, with blank lines separating groups:
+
+```c++
+/// interface header of the current .cpp file
+#include "host_api.h"
+
+// std headers
+#include <algorithm>
+#include <array>
+#include <filesystem>
+#include <string>
+#include <vector>
+
+// 3rd party headers
+#include <asio/awaitable.hpp>
+#include <nlohmann/json.hpp>
+
+// project headers: engine public API (<engrave/...>) and host headers
+#include <engrave/engrave.h>
+
+#include "api_json_internal.h"
+#include "schema_defs.h"
+```
+
+Host code must include only the engine's public headers under `<engrave/...>`, never internal engine headers.
+
+## Structs, Custom Types
+
+Always use `struct`, do not use `class` for custom types. This way, we don't need to write `public:` for every struct, and when we need to inherit, we don't need to write `public` in the inheritance list.
+
+## Polymorphism
+
+We generally avoid virtual functions in this project. Prefer plain non-virtual structs with value semantics for better memory layout and data locality.
+
+Virtual functions are acceptable where an interface genuinely needs runtime dispatch (such as type-erased asynchronous waiters or polymorphic callbacks across subsystems).
+
+## Callable Wrappers
+
+Use standard C++23 callable wrappers according to ownership:
+
+- Use `std::function` for owning callbacks that are copied.
+- Use `std::move_only_function` for owning callbacks that are transferred or capture move-only state.
+- For synchronous, non-storing callback parameters whose target is guaranteed to outlive the call, pass a template parameter (e.g. `template <class Function>`) or a callable reference/pointer. Do not use `copyable_function` or `function_ref` (C++26).
+
+## Basic Types
+
+Use standard C++ types directly (`std::size_t`, `std::uint64_t`, `std::string`, `std::string_view`, `std::span`, etc.). Do not introduce custom integer aliases or project-specific typedefs like `usize`.
+
+## Assertions and Panic
+
+Do not use C++26 contracts.
+
+- Use `<cassert>` and `assert(...)` for programmer obligations and internal invariants checked in debug and development builds.
+- Failures that must stay checked in release builds should use small local `check(condition, message)` or `panic(message)` helpers. These helpers are added locally when code first needs them; they are not currently provided as repository-wide primitives.
+
+## Error Handling
+
+Generally we have 3 kinds of failures in our codebase:
+
+- **Expected failures**: These are failures that are expected to happen and should be handled by the caller (for example, invalid tool arguments, unknown document IDs, schema validation errors, or export path issues). These failures should be returned as `Result<T>` (`std::expected<T, HostError>`).
+- **Rare failures whose only sensible handler is a distant recovery boundary**: These are failures that rarely happen and cannot be handled by the immediate caller (for example, protocol framing errors, unexpected system errors, or internal logic violations). These should be thrown as runtime exceptions (`std::runtime_error`, `std::logic_error`, `asio::system_error`, or `ToolCallError`).
+- **Fatal failures**: These are failures that cannot be handled meaningfully anywhere in the codebase (for example, irrecoverable stdout write failures, broken transport pipes during response delivery, or unrecoverable publication watchdog timeouts). These trigger process termination (`fatal_shutdown` or watchdog exit).
+
+Distinguish these 3 kinds of failures by asking who can act on the failure:
+
+- If the immediate caller can act on it, return `std::expected` (`Result<T>`).
+- If only a distant recovery boundary can act on it, throw an exception.
+- If no one can act on it, terminate or panic.
+
+At the tool-call boundary in `mcp_transport.cpp`, dispatched tool invocations run inside exception handlers:
+
+- `ToolCallError` is caught and converted into a structured MCP tool error envelope (`isError: true` with error `code` and `message`) unless client cancellation was requested.
+- `std::system_error` with `operation_aborted` is recognized and delivered as a cancellation response or shutdown error.
+- Other `std::exception` instances and unknown exceptions (`catch (...)`) are caught and converted into structured tool errors (`isError: true` with error text), ensuring that unexpected exceptions do not crash the transport session.
+
+## Synchronization in Tests
+
+Tests for concurrent code must be deterministic and must not rely on timing assumptions or arbitrary sleeps. Coordinate concurrency through observable state transitions (such as events, condition variables, atomic flags, futures/promises, callbacks, or explicit test synchronization hooks), never through `sleep` or an assumption that enough wall-clock time has passed.
+
+## Commit Messages
+
+The headline of a commit should follow the format: `<type>(<scope>): <subject>`, type or scope can be omitted if not applicable.
+
+If the commit is big enough and you cannot describe all important changes in the headline, you can add a body to the commit message. The body should be separated from the headline by a blank line, and preferably be a list of bullet points.
+
+An example:
+
+```
+feat(export): add svg vector rendering support
+
+- Adds svg export option to score_export handler using Cairo SVG surface.
+- Verifies output against configured export byte quotas before staging.
+- Enforces atomic file rename and durable publication at destination.
+```
+
+## Engine Fork (vendor/engrave)
+
+The engine submodule in `vendor/engrave` has its own guide, build structure, and lint configuration (`vendor/engrave/.clang-tidy`, `tools/format.py`, `tools/lint.py`).
+
+When adding new code to `vendor/engrave`, only identifier naming, `struct` usage, and include grouping apply. The host's architectural rules (such as avoiding classes/virtual functions or specific error outcome conventions) do not apply to the engine fork, because the engine preserves upstream MuseScore music algorithms, object models, and legacy layout data structures.

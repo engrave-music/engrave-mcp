@@ -26,7 +26,7 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
   between machines by pushing and fetching branches, never git bundles or copied
   worktrees (`docs/dev/branching.md`).
   Current design and rationale: `docs/dev/design.md`; open issues: `docs/dev/defects.md`;
-  branch and tag policy: `docs/dev/branching.md`.
+  branch and tag policy: `docs/dev/branching.md`; code style guide: `docs/dev/code-style-guide.md`.
   Keep only `main` as a long-lived branch: merge topic branches and delete them; tag
   formal releases instead of keeping phase branches.
 - Avoid rewriting music algorithms; preserve an executable baseline for each refactor.
