@@ -9,9 +9,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import run_lanes
 from support import golden
 from support.paths import REPO_ROOT
+
+from tests import run_lanes
 
 
 class CleanupRegressions(unittest.TestCase):

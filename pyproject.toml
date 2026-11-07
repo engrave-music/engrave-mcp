@@ -8,6 +8,6 @@ version = "0.0.0"
 requires-python = ">=3.13"
 
 [tool.setuptools]
-packages = ["support", "integration"]
+packages = ["support", "integration", "tests"]
 py-modules = ["check_native_includes"]
-package-dir = { support = "tests/support", integration = "tests/integration", "" = "scripts" }
+package-dir = { tests = "tests", support = "tests/support", integration = "tests/integration", "" = "scripts" }
