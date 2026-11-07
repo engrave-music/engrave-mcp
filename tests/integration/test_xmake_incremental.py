@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from support.paths import REPO_ROOT
@@ -65,8 +66,15 @@ def main():
         "--dump",
         str(dump),
     ]
+
+    def write_source(content):
+        # xmake compares dependency timestamps at whole-second resolution. Cached
+        # builds can finish within the same second as either source replacement.
+        time.sleep(1.1)
+        source.write_bytes(content)
+
     try:
-        source.write_bytes(changed_source)
+        write_source(changed_source)
         log = build("changed")
         assert "schema_defs.cpp" in log and log.count("compiling.release") == 1, log
         run(
@@ -106,7 +114,7 @@ def main():
     finally:
         if source.read_bytes() != changed_source:
             raise RuntimeError("registry source changed during the test; refusing to overwrite it")
-        source.write_bytes(original)
+        write_source(original)
         build("restored")
     run("restored-schema-check", [*generator, "--schema", str(schema), "--check"])
     unchanged = build("unchanged")
