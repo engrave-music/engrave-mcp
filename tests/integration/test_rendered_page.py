@@ -36,6 +36,20 @@ class TestSvgGeometry(unittest.TestCase):
         for value, wanted in zip(actual, expected):
             self.assertAlmostEqual(value, wanted, places=6)
 
+    def test_pinned_png_diagnostics_use_checker_text(self):
+        payload = json.loads(REFERENCE.read_text(encoding="utf-8"))
+        for pin in payload["png_exceptions"]:
+            for issue in pin["issues"]:
+                with self.subTest(page=pin["page"], issue=issue):
+                    # Diagnostics are ASCII except for the checker's plus/minus.
+                    self.assertTrue(set(issue) <= set(chr(c) for c in range(128)) | {"\u00b1"})
+                    if issue.startswith("PNG ink share ratio "):
+                        ratio = float(issue.split()[4])
+                        with mock.patch.object(page, "png_metrics", return_value=(ratio, 0, 0)):
+                            self.assertEqual(
+                                page.png_issues({"size": [1, 1]}, {"size": [1, 1]}), [issue]
+                            )
+
     def test_relative_commands_implicit_lines_and_close(self):
         self.assertBoxAlmostEqual(page.path_bounds("M10 10 l10 0 0 10 h-10 z m2 3 v4"), (10, 10, 20, 20))
         self.assertBoxAlmostEqual(page.path_bounds("M1e1,0 20 0 20 10z"), (10, 0, 20, 10))
