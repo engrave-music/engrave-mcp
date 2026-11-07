@@ -73,7 +73,6 @@ Additional focused tests located in `tests/integration/` can be run directly whe
 - `test_live_queued_cancel.py` — queued export cancellation
 - `test_live_dense_cancel.py` — large score cancellation recovery
 - `test_transport_wakeup.py` — transport teardown and idle CPU checks
-- `test_native_export_versions.py` — native version options and warnings
 - `test_destination_errors.py` — destination path error mapping
 - `test_document_stress.py` — bounded repeated document lifecycles
 - `test_native_includes.py` — public C++ header boundary verification

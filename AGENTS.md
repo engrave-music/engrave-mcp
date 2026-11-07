@@ -36,6 +36,10 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
   (`vendor/engrave/tests/data/golden/allow.json`).
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
+- Temporary worktrees and review clones go under the ignored `.worktrees/<name>` of the checkout
+  (also on linux-host), never at drive roots, in `$TEMP` or beside the repository. Do not junction or
+  symlink into the main checkout: call the main checkout's `.pixi/envs/native/python.exe` by path.
+  Remove them when done (`git worktree remove`, then delete the clone directory).
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
 - Worker models: GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Astra, Opus 5.5, DeepSeek Flash and
   Gemini 3.8 Flash. Pick the cheapest model likely to finish a task in one pass, and escalate on a stall rather
