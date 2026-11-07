@@ -5,12 +5,6 @@ resample observations; pooled intervals resample runs, then observations within
 each selected run. These do not model serial correlation or bound future maxima.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import json
 import math

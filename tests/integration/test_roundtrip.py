@@ -7,10 +7,6 @@ MusicXML subset parity against known interop losses.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import difflib
@@ -28,8 +24,6 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
 
 # Known interop losses observed at the pre-fork baseline.
 # {fixture: {phase: (digest, justification)}}; phase is "mscz_text", "musicxml", or "idempotence".
@@ -1484,7 +1478,7 @@ async def run_suite(
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
-    native_lib = ROOT / ".pixi/envs/native/Library/bin"
+    native_lib = REPO_ROOT / ".pixi/envs/native/Library/bin"
     if os.name == "nt" and native_lib.exists():
         env["PATH"] = str(native_lib) + os.pathsep + env.get("PATH", "")
 
@@ -1603,10 +1597,10 @@ async def run_suite(
                         await runner.call("score_close", {"document": doc_create})
 
                 # Case 2: import all golden fixtures except created.json / README.md, + evening.musicxml
-                golden_dir = ROOT / "vendor/engrave/tests/data/inputs/golden"
+                golden_dir = REPO_ROOT / "vendor/engrave/tests/data/inputs/golden"
                 import_files = sorted(
                     [p for p in golden_dir.glob("*") if p.is_file() and p.name not in ("created.json", "README.md")]
-                    + [ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"]
+                    + [REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"]
                 )
                 for path in import_files:
                     cid = f"import_{path.stem}"

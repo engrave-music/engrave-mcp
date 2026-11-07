@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import io
@@ -19,9 +15,9 @@ import zipfile
 import zlib
 from pathlib import Path
 
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
 
 
 def raw_deflate(data):
@@ -384,10 +380,8 @@ def run_probe(binary, out):
 
 
 async def valid_score_imports(binary, resources, out):
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
 
-    xml = (ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").read_bytes()
+    xml = (REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").read_bytes()
     with zipfile.ZipFile(out / "valid.mxl", "w", compression=zipfile.ZIP_DEFLATED) as target:
         target.writestr(
             "META-INF/container.xml",
@@ -423,7 +417,7 @@ async def valid_score_imports(binary, resources, out):
                 for path, label in [
                     (out / "valid.mscz", "mscz"),
                     (
-                        ROOT / "vendor/engrave/src/importexport/guitarpro/tests/data/sforzato.gp",
+                        REPO_ROOT / "vendor/engrave/src/importexport/guitarpro/tests/data/sforzato.gp",
                         "gp",
                     ),
                 ]:
@@ -443,8 +437,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True, help="archive_test native probe")
     parser.add_argument("--server", type=Path, help="Optional MCP executable for valid score formats")
-    parser.add_argument("--resources", type=Path, default=ROOT / ".runtime/assets")
-    parser.add_argument("--output", type=Path, default=ROOT / "artifacts/archive-bounds")
+    parser.add_argument("--resources", type=Path, default=REPO_ROOT / ".runtime/assets")
+    parser.add_argument("--output", type=Path, default=REPO_ROOT / "artifacts/archive-bounds")
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)

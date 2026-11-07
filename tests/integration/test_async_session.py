@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import asyncio
 import json
 from pathlib import Path
 
-from support.mcp_client import ROOT, TOOLS, VALIDATORS, Client
+from support.mcp_client import REPO_ROOT, TOOLS, VALIDATORS, Client
 
 RETIRED = {
     "score_get",
@@ -182,7 +176,7 @@ async def run(args):
         }, info["limits"]
         doc = (
             await client.tool(
-                "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx")}
+                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx")}
             )
         )["document"]
         outline = await client.tool("score_outline", {"document": doc})
@@ -258,7 +252,7 @@ async def run(args):
         # in the synchronous export error.
         partial_doc = (
             await client.tool(
-                "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx")}
+                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx")}
             )
         )["document"]
         measure = (await client.tool("score_outline", {"document": partial_doc}))["outline"]["measures"][0]["id"]

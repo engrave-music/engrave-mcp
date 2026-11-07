@@ -1,9 +1,5 @@
 """Verify tool registry regeneration, large UTF-8 descriptions and no-op builds."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
 import os
@@ -12,8 +8,6 @@ import sys
 from pathlib import Path
 
 from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
 
 
 def main():
@@ -25,7 +19,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     binary = args.binary.resolve()
     dump = binary.parent / ("registry_dump.exe" if os.name == "nt" else "registry_dump")
-    source = ROOT / "engrave_mcp/schema_defs.cpp"
+    source = REPO_ROOT / "engrave_mcp/schema_defs.cpp"
     original = source.read_bytes()
     description = "Open a score; decoded cap 8 MiB, subject to lower transport line budget."
     marker_unit = "xmake schema regeneration 乐谱 "
@@ -39,14 +33,14 @@ def main():
         raise RuntimeError("registry description to mutate is missing or ambiguous")
     changed_source = original.replace(old, replacement, 1)
     environment = dict(os.environ)
-    prefix = ROOT / ".pixi/envs/native"
+    prefix = REPO_ROOT / ".pixi/envs/native"
     if os.name == "nt":
         environment["PATH"] = str(prefix / "Library/bin") + os.pathsep + environment.get("PATH", "")
 
     def run(name, command, expected=0, **kwargs):
         result = subprocess.run(
             command,
-            cwd=ROOT,
+            cwd=REPO_ROOT,
             env=environment,
             capture_output=True,
             text=True,
@@ -63,10 +57,10 @@ def main():
     def build(name):
         return run(name, ["xmake", "build", "-y", "-j", "4", "registry_dump", "engrave_mcp"])
 
-    schema = ROOT / "engrave_mcp/tools.json"
+    schema = REPO_ROOT / "engrave_mcp/tools.json"
     generator = [
         sys.executable,
-        str(ROOT / "tests/support/generate_tool_schema.py"),
+        str(REPO_ROOT / "tests/support/generate_tool_schema.py"),
         "--dump",
         str(dump),
     ]
@@ -103,7 +97,7 @@ def main():
         ]
         stdout = run(
             "live-list",
-            [str(binary), "--resources", str(ROOT / ".runtime/assets")],
+            [str(binary), "--resources", str(REPO_ROOT / ".runtime/assets")],
             input="".join(json.dumps(r) + "\n" for r in requests),
         )
         response = next(json.loads(line) for line in stdout.splitlines() if json.loads(line).get("id") == 2)

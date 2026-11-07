@@ -1,11 +1,5 @@
 """Destination metadata errors retain their filesystem classification."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import errno
 import json
@@ -13,7 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from support.process_client import ROOT, Client, export_args
+from support.process_client import REPO_ROOT, Client, export_args
 
 
 def main():
@@ -24,14 +18,14 @@ def main():
     parser.add_argument(
         "--soundfont",
         type=Path,
-        default=ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3",
+        default=REPO_ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3",
     )
     a = parser.parse_args()
     a.output = a.output.resolve()
     c = Client(a.binary, a.resources, a.output, soundfont=a.soundfont)
     results = {}
     try:
-        doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
+        doc = c.tool("score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
             "document"
         ]
         measure = c.tool("score_outline", {"document": doc})["outline"]["measures"][0]["id"]

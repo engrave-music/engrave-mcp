@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
 import os
@@ -17,8 +13,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-BUILD = ROOT / ("build/xmake-windows" if os.name == "nt" else "build/xmake-linux")
+BUILD = REPO_ROOT / ("build/xmake-windows" if os.name == "nt" else "build/xmake-linux")
 SUFFIX = ".exe" if os.name == "nt" else ""
 NAMES = [
     "score_open",
@@ -376,11 +371,11 @@ def check_cases(tools):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--schema", type=Path, default=ROOT / "engrave_mcp/tools.json")
+    parser.add_argument("--schema", type=Path, default=REPO_ROOT / "engrave_mcp/tools.json")
     parser.add_argument("--dump", type=Path, default=BUILD / f"registry_dump{SUFFIX}")
     parser.add_argument("--registry-test", type=Path, default=BUILD / f"registry_test{SUFFIX}")
     args = parser.parse_args()
-    generator = ROOT / "tests/support/generate_tool_schema.py"
+    generator = REPO_ROOT / "tests/support/generate_tool_schema.py"
     subprocess.run(
         [
             sys.executable,

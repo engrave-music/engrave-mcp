@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import base64
@@ -20,7 +16,6 @@ from integration.test_native_edit import fixture
 from support.mcp_client import Client
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
 TRACK_BALANCE_LEAKAGE_LIMIT = 0.30
 
 
@@ -325,7 +320,9 @@ async def run(args):
         await client.tool("score_close", {"document": doc})
 
         mix_doc = (
-            await client.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/audio/mix.mscz")})
+            await client.tool(
+                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/audio/mix.mscz")}
+            )
         )["document"]
         mix_tracks = (await tracks(mix_doc))["tracks"]
         assert len(mix_tracks) == 3
@@ -354,7 +351,7 @@ async def run(args):
 
         parts_doc = (
             await client.tool(
-                "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/audio/mix_parts.mscz")}
+                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/audio/mix_parts.mscz")}
             )
         )["document"]
         saved_excerpts = {e["name"]: e["id"] for e in (await outline(parts_doc))["outline"]["excerpts"]}
@@ -371,7 +368,7 @@ async def run(args):
         await client.tool("score_close", {"document": parts_doc})
         evidence["checks"].extend(["saved_master_mix", "saved_excerpt_mix"])
 
-        source = ROOT / "vendor/engrave/src/engraving/tests/instrumentchange_data/change-ref.mscx"
+        source = REPO_ROOT / "vendor/engrave/src/engraving/tests/instrumentchange_data/change-ref.mscx"
         changed_doc = (await client.tool("score_open", {"path": str(source)}))["document"]
         changed_tracks = (await tracks(changed_doc))["tracks"]
         assert len(changed_tracks) == 3 and len({t["track"] for t in changed_tracks}) == 3

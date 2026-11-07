@@ -6,10 +6,6 @@ Builds an isolated working directory and runs the current acceptance lanes.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 import argparse
 import hashlib
 import json
@@ -22,7 +18,20 @@ from pathlib import Path
 
 from support.paths import REPO_ROOT
 
+FOCUSED_DEFAULT_LANES = ["native_includes", "native_inputs", "output_schema_boundaries"]
+FOCUSED_OPT_IN_LANES = [
+    "document_stress",
+    "live_dense_cancel",
+    "live_queued_cancel",
+    "native_470_conversion_cancel",
+    "native_470_serialization_cancel",
+    "transport_wakeup",
+    "xmake_incremental",
+]
+
 LANE_NAMES = [
+    *FOCUSED_DEFAULT_LANES,
+    *FOCUSED_OPT_IN_LANES,
     "host_api",
     "live_export",
     "live_audio",
@@ -62,7 +71,7 @@ LANE_NAMES = [
 
 # The 4.7.6 oracle is a preserved Linux-only input and must be explicitly
 # selected with its pinned archive, executable and assets.
-DEFAULT_LANES = [name for name in LANE_NAMES if name != "native_470_oracle"]
+DEFAULT_LANES = [name for name in LANE_NAMES if name not in {"native_470_oracle", *FOCUSED_OPT_IN_LANES}]
 
 
 def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str]) -> None:
@@ -71,6 +80,10 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         sys.exit(2)
     missing = []
     requirements = {
+        "native_includes": [],
+        "native_470_conversion_cancel": ["engrave-mcp-test"],
+        "native_470_serialization_cancel": ["engrave-mcp-test"],
+        "xmake_incremental": ["engrave-mcp", "registry_dump"],
         "host_api": ["host_api_test"],
         "live_export": ["live_export_test", "engrave-mcp-test"],
         "live_audio": ["engrave-mcp", "engrave-mcp-test"],
@@ -218,15 +231,34 @@ def run_lane(
 ) -> int:
     py = sys.executable
 
+    if lane in FOCUSED_DEFAULT_LANES + FOCUSED_OPT_IN_LANES:
+        cmd = [py, str(repo_root / "tests/integration" / f"test_{lane}.py")]
+        focused_env = dict(base_env)
+        if lane == "document_stress":
+            focused_env["ENGRAVE_MCP_STRESS_OUTPUT"] = str(output / lane)
+        elif lane not in ("native_includes", "native_inputs"):
+            test_binary = "engrave-mcp-test" if lane.startswith("native_470_") else "engrave-mcp"
+            cmd += ["--binary", str(build_dir / f"{test_binary}{exe_suffix}"), "--output", str(output / lane)]
+            if lane != "xmake_incremental":
+                cmd += ["--resources", str(assets)]
+            if lane in ("live_dense_cancel", "live_queued_cancel", "output_schema_boundaries"):
+                cmd += ["--soundfont", str(soundfont)]
+            if lane == "live_dense_cancel":
+                from support.make_dense_score import generate_dense_score
+
+                score = output / "dense.musicxml"
+                generate_dense_score(score)
+                cmd += ["--score", str(score), "--delay-ms", "10"]
+        return subprocess.run(cmd, cwd=repo_root, env=focused_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+
     retarget_code = (
         "import runpy, sys; from pathlib import Path; "
         "test_root = Path(sys.argv.pop(1)).resolve(); "
         "script = Path(sys.argv.pop(1)).resolve(); "
-        "sys.path.insert(0, str(script.parent)); "
         "sys.argv[0] = str(script); "
         "module = runpy.run_path(str(script), run_name='__main__retargeted'); "
         "main = module['main']; "
-        "main.__globals__['ROOT'] = test_root; "
+        "main.__globals__['REPO_ROOT'] = test_root; "
         "res = main(); "
         "sys.exit(res if isinstance(res, int) else 0)"
     )
@@ -985,6 +1017,9 @@ def main() -> None:
     setup_link(engine_source, testcwd / "vendor/engrave", output)
 
     base_env = os.environ.copy()
+    base_env["PYTHONPATH"] = os.pathsep.join(
+        (str(repo_root / "tests"), str(repo_root / "scripts"), base_env.get("PYTHONPATH", ""))
+    )
     base_env["TEMP"] = str(output / "tmp")
     base_env["TMP"] = str(output / "tmp")
     base_env["TMPDIR"] = str(output / "tmp")
@@ -1010,6 +1045,7 @@ def main() -> None:
 
     if args.only is None:
         notice = (
+            f"opt-in lanes NOT SELECTED: {', '.join(FOCUSED_OPT_IN_LANES)}; "
             "native_470_oracle NOT SELECTED: run it explicitly on physical Linux "
             "with the preserved oracle; native 4.70 interoperability is not verified by this run"
         )

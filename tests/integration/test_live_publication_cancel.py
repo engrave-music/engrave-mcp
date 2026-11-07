@@ -3,12 +3,6 @@
 Run with the test-hook host on Windows and POSIX; no timing-only phase inference.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import hashlib
 import json
@@ -16,7 +10,7 @@ import os
 import time
 from pathlib import Path
 
-from support.process_client import ROOT, Client, export_args
+from support.process_client import REPO_ROOT, Client, export_args
 
 
 def main():
@@ -31,9 +25,9 @@ def main():
         out = a.output / ("partial" if fail else "complete")
         c = Client(a.binary, a.resources, out)
         try:
-            doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
-                "document"
-            ]
+            doc = c.tool(
+                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")}
+            )["document"]
             measure = c.tool("score_outline", {"document": doc})["outline"]["measures"][0]["id"]
             c.tool(
                 "score_edit",

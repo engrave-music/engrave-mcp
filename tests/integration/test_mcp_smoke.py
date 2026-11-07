@@ -1,9 +1,5 @@
 """Exercise the MCP wire with the independent official Python MCP client."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import asyncio
 import json
 import logging
@@ -12,14 +8,15 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
 from jsonschema import Draft202012Validator
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", ROOT / "artifacts/mcp-smoke")).resolve()
-TOOLS = {tool["name"]: tool for tool in json.loads((ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))}
+OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", REPO_ROOT / "artifacts/mcp-smoke")).resolve()
+TOOLS = {tool["name"]: tool for tool in json.loads((REPO_ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))}
 VALIDATORS = {name: Draft202012Validator(tool["outputSchema"]) for name, tool in TOOLS.items()}
 
 
@@ -33,11 +30,13 @@ async def main():
 
     logging.getLogger("mcp.client.stdio").addHandler(ProtocolLog())
     OUT.mkdir(parents=True, exist_ok=True)
-    default_binary = ROOT / (
+    default_binary = REPO_ROOT / (
         "build/xmake-windows/engrave-mcp.exe" if os.name == "nt" else "build/xmake-linux/engrave-mcp"
     )
     binary = Path(os.environ.get("ENGRAVE_MCP_BINARY", default_binary)).resolve()
-    soundfont = Path(os.environ.get("ENGRAVE_MCP_SOUNDFONT", ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3")).resolve()
+    soundfont = Path(
+        os.environ.get("ENGRAVE_MCP_SOUNDFONT", REPO_ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3")
+    ).resolve()
     child_env = dict(os.environ)
     if os.environ.get("ENGRAVE_MCP_CLEAN_ENV"):
         if os.name == "nt":
@@ -85,7 +84,7 @@ async def main():
                 info = await call("runtime_info", {})
                 assert info["tool_revision"] == "2" and info["limits"]["transport_request_bytes"] == 4194304
                 opened = await call(
-                    "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")}
+                    "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")}
                 )
                 doc, revision = opened["document"], opened["revision"]
                 outline = await call("score_outline", {"document": doc})
@@ -201,8 +200,6 @@ async def main():
     assert not protocol_errors, protocol_errors
     report["seconds"] = round(time.perf_counter() - started, 3)
     assert "ERROR:" not in (OUT / "stderr.log").read_text(encoding="utf-8")
-    import numpy as np
-    import soundfile as sf
 
     samples, rate = sf.read(OUT / "score.wav", always_2d=True)
     assert rate == 44100 and samples.shape[1] == 2 and np.isfinite(samples).all() and np.max(np.abs(samples)) > 0.01

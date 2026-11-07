@@ -9,10 +9,6 @@ decoded payload above the 8 MiB input limit cannot be opened.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import base64
@@ -28,7 +24,6 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
 MAX_INPUT = 8 * 1024 * 1024
 
 
@@ -152,7 +147,7 @@ async def run(args):
                     info["musicxml"] = target.read_text(encoding="utf-8")
                     return info
 
-                source = ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"
+                source = REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"
                 reference = await open_path(client, source)
                 reference_id = reference["document"]
                 exports = {}
@@ -260,7 +255,7 @@ async def run(args):
                 with zipfile.ZipFile(legacy_zip, "w") as archive:
                     archive.writestr(
                         "score.mscx",
-                        (ROOT / "tests/data/negative/legacy-3.mscx").read_bytes(),
+                        (REPO_ROOT / "tests/data/negative/legacy-3.mscx").read_bytes(),
                     )
                 rejections = [
                     (
@@ -273,15 +268,15 @@ async def run(args):
                     ),
                     (
                         "pre-MuseScore-4 path",
-                        {"path": str(ROOT / "tests/data/negative/legacy-3.mscx")},
+                        {"path": str(REPO_ROOT / "tests/data/negative/legacy-3.mscx")},
                         "written by MuseScore 3.02; scores from before MuseScore 4.6 are not supported",
                     ),
                     (
                         "pre-MuseScore-4 data",
                         {
-                            "data": base64.b64encode((ROOT / "tests/data/negative/legacy-3.mscx").read_bytes()).decode(
-                                "ascii"
-                            ),
+                            "data": base64.b64encode(
+                                (REPO_ROOT / "tests/data/negative/legacy-3.mscx").read_bytes()
+                            ).decode("ascii"),
                             "format": "mscx",
                         },
                         "scores from before MuseScore 4.6 are not supported",
@@ -375,7 +370,7 @@ if __name__ == "__main__":
         "--engine-source",
         dest="upstream",
         type=Path,
-        default=ROOT / "vendor/engrave",
+        default=REPO_ROOT / "vendor/engrave",
         help="Path to engine source root",
     )
     asyncio.run(asyncio.wait_for(run(parser.parse_args()), timeout=600))

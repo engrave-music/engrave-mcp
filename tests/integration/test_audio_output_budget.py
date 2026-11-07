@@ -2,12 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import asyncio
 import hashlib
@@ -17,13 +11,15 @@ import os
 import tempfile
 from pathlib import Path
 
-from support.mcp_client import ROOT, Client
+from support.mcp_client import REPO_ROOT, Client
 
 
 async def open_source(args):
     async with Client(args, args.output) as client:
         doc = (
-            await client.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")})
+            await client.tool(
+                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")}
+            )
         )["document"]
         duration = (await client.tool("score_outline", {"document": doc}))["outline"]["duration"]
         path = (args.output / "source.mscz").resolve()

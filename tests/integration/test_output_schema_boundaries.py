@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import json
@@ -14,12 +10,10 @@ from pathlib import Path
 from support.mcp_client import TOOLS, VALIDATORS, Client
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-
 
 async def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
-    source = (ROOT / "vendor/engrave/tests/data/inputs/version/header.mscx").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "vendor/engrave/tests/data/inputs/version/header.mscx").read_text(encoding="utf-8")
     title, part_name, lyric = "T" * 5000, "P" * 5000, "L" * 66000
     source = source.replace("Version header fixture", title)
     source = source.replace("<longName>Piano</longName>", f"<longName>{part_name}</longName>")

@@ -1,11 +1,5 @@
 """Real long audio export plus queued cancellation must not kill its owner."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import hashlib
 import json

@@ -1,27 +1,21 @@
 """Malformed/archive input must fail without killing or poisoning the server."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import asyncio
 import base64
 import json
 import os
 import zipfile
-from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-OUT = ROOT / "artifacts/native-input-errors"
+OUT = REPO_ROOT / "artifacts/native-input-errors"
 
 
 async def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    fixture = (ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").read_text(encoding="utf-8")
+    fixture = (REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").read_text(encoding="utf-8")
     cases = {
         "oversized-root": (
             "<container><rootfiles><rootfile full-path='score.xml'/></rootfiles></container>",
@@ -42,9 +36,11 @@ async def main():
             archive.writestr("score.xml", score)
     binary = os.environ.get(
         "ENGRAVE_MCP_BINARY",
-        str(ROOT / ("build/xmake-windows/engrave-mcp.exe" if os.name == "nt" else "build/xmake-linux/engrave-mcp")),
+        str(
+            REPO_ROOT / ("build/xmake-windows/engrave-mcp.exe" if os.name == "nt" else "build/xmake-linux/engrave-mcp")
+        ),
     )
-    resources = os.environ.get("ENGRAVE_MCP_RESOURCES", str(ROOT / ".runtime/assets"))
+    resources = os.environ.get("ENGRAVE_MCP_RESOURCES", str(REPO_ROOT / ".runtime/assets"))
     params = StdioServerParameters(command=binary, args=["--resources", resources], env=dict(os.environ))
     with (OUT / "stderr.log").open("w", encoding="utf-8") as log:
         async with stdio_client(params, errlog=log) as (read, write):
@@ -62,7 +58,7 @@ async def main():
                 )
                 assert response.is_error
                 valid = await session.call_tool(
-                    "score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")}
+                    "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")}
                 )
                 assert not valid.is_error
                 closed = await session.call_tool("score_close", {"document": valid.structured_content["document"]})

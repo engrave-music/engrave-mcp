@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import json
@@ -21,7 +17,6 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
 SVG = "{http://www.w3.org/2000/svg}"
 XLINK = "{http://www.w3.org/1999/xlink}href"
 
@@ -198,7 +193,7 @@ async def run(args):
 
         # The fixture records programVersion 4.5.0. The owner retains that
         # source version, but exports render a newly written MSCZ snapshot.
-        fixture_mscx_path = ROOT / "vendor/engrave/tests/data/inputs/version/header.mscx"
+        fixture_mscx_path = REPO_ROOT / "vendor/engrave/tests/data/inputs/version/header.mscx"
         if expected_version != "4.7.6":
             fixture_content = fixture_mscx_path.read_text(encoding="utf-8")
             fixture_content = fixture_content.replace(
@@ -350,7 +345,7 @@ if __name__ == "__main__":
         "--engine-source",
         dest="upstream",
         type=Path,
-        default=ROOT / "vendor/engrave",
+        default=REPO_ROOT / "vendor/engrave",
         help="Path to engine source root",
     )
     asyncio.run(asyncio.wait_for(run(parser.parse_args()), timeout=180))

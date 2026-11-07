@@ -7,10 +7,6 @@ or expires the real reservation there for the deadline variant.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import hashlib
 import json
@@ -23,8 +19,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
 
 
 def sha(path):
@@ -101,12 +95,12 @@ def main():
     assert sha(args.binary) == args.host_sha256, "host hash mismatch"
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
-    source = ROOT / "tests/data/native_470/notes.mscx"
+    source = REPO_ROOT / "tests/data/native_470/notes.mscx"
     preflight = dict(
         host_sha256=sha(args.binary),
         source_sha256=sha(source),
         engine_revision=subprocess.check_output(
-            ["git", "-C", str(ROOT / "vendor/engrave"), "rev-parse", "HEAD"], text=True
+            ["git", "-C", str(REPO_ROOT / "vendor/engrave"), "rev-parse", "HEAD"], text=True
         ).strip(),
         assets={str(f.relative_to(args.resources)): sha(f) for f in sorted(args.resources.rglob("*")) if f.is_file()},
     )

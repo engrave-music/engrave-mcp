@@ -9,10 +9,6 @@ producer output is evidence of the source-to-writer-to-oracle route.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import base64
@@ -32,7 +28,6 @@ from pathlib import Path
 
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
 ARCHIVE_SHA = "b915ae9f4ec2fdbfd5fc0edd4be19c3d9026f4e154174967b47556915ac719fa"
 BINARY_SHA = "f6d9ee1e826e27074cb2a9481987ddbd9318544e9c3586dc16ab534c3fd7fe8a"
 
@@ -655,7 +650,7 @@ def main() -> int:
     parser.add_argument("--oracle-executable", type=Path, required=True)
     parser.add_argument("--oracle-assets", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True, help="new, nonexistent output directory")
-    parser.add_argument("--fixture-root", type=Path, default=ROOT / "tests/data/native_470")
+    parser.add_argument("--fixture-root", type=Path, default=REPO_ROOT / "tests/data/native_470")
     parser.add_argument("--manifest", type=Path, help="override manifest for negative tests")
     parser.add_argument("--current-binary", type=Path)
     parser.add_argument("--current-assets", type=Path)

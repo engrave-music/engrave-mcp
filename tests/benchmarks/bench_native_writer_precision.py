@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import hashlib
@@ -25,7 +21,6 @@ from mcp.client.stdio import stdio_client
 from PIL import Image
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
 BINARY = RESOURCES = SOUNDFONT = PRECISION_DIR = None
 VERSION = "4.70"
 
@@ -471,7 +466,7 @@ async def run_single_iteration(run_id: str) -> dict:
             "--soundfont",
             str(SOUNDFONT.resolve()),
         ],
-        cwd=str(ROOT),
+        cwd=str(REPO_ROOT),
     )
 
     iteration_results = {}
@@ -482,7 +477,7 @@ async def run_single_iteration(run_id: str) -> dict:
 
             for item in FIXTURES:
                 name = item["name"]
-                fix_path = ROOT / item.get("folder", "vendor/engrave/tests/data/inputs/golden") / name
+                fix_path = REPO_ROOT / item.get("folder", "vendor/engrave/tests/data/inputs/golden") / name
                 fix_dir = run_dir / name
                 fix_dir.mkdir(parents=True, exist_ok=True)
 
@@ -604,7 +599,7 @@ if __name__ == "__main__":
         ).strip(),
         "sources": {
             str(Path(f.get("folder", "vendor/engrave/tests/data/inputs/golden")) / f["name"]): sha256_bytes(
-                (ROOT / f.get("folder", "vendor/engrave/tests/data/inputs/golden") / f["name"]).read_bytes()
+                (REPO_ROOT / f.get("folder", "vendor/engrave/tests/data/inputs/golden") / f["name"]).read_bytes()
             )
             for f in FIXTURES
         },

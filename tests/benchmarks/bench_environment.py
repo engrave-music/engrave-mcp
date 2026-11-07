@@ -5,13 +5,8 @@ and process names are retained; process command lines and environment secrets ar
 never collected. Use -- before the benchmark command.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -19,6 +14,7 @@ import platform
 import subprocess
 import threading
 import time
+from ctypes import wintypes as w
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -89,8 +85,6 @@ def context():
 def windows_processes():
     # psutil's fallback for protected processes queries the entire Windows
     # process table once per denied PID. Avoid that expensive observer effect.
-    import ctypes
-    from ctypes import wintypes as w
 
     k = ctypes.WinDLL("kernel32", use_last_error=True)
     k.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]

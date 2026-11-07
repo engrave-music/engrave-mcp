@@ -1,18 +1,12 @@
 """Live audio parity, reuse, cancellation and watchdog acceptance probe."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import hashlib
 import json
 import time
 from pathlib import Path
 
-from support.process_client import ROOT, Client, rss_bytes, summary
+from support.process_client import REPO_ROOT, Client, rss_bytes, summary
 
 
 def main():
@@ -34,7 +28,7 @@ def main():
         )
 
     def opened(c):
-        return c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
+        return c.tool("score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
             "document"
         ]
 

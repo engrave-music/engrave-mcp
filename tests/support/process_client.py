@@ -9,10 +9,6 @@ import subprocess
 import threading
 from pathlib import Path
 
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
-
 
 class Client:
     def __init__(self, binary, resources, output, mode=None, soundfont=None):

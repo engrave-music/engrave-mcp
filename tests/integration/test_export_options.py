@@ -16,20 +16,20 @@ Python MCP SDK client:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
+import base64
+import io
 import json
 import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
 
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
+import numpy as np
+import soundfile as sf
+from integration.test_native_edit import fixture
+from PIL import Image
+from support.mcp_client import Client
 
 # Tiny 2-measure MusicXML repeat fixture:
 # Measure 1: forward repeat barline, 1 whole note C4
@@ -162,9 +162,6 @@ def read_png_dimensions(data_or_path: bytes | Path) -> tuple[int, int]:
 
 
 def inspect_png_alpha(data_or_path: bytes | Path) -> dict:
-    import io
-
-    from PIL import Image
 
     data = data_or_path.read_bytes() if isinstance(data_or_path, Path) else data_or_path
     with Image.open(io.BytesIO(data)) as image:
@@ -374,8 +371,6 @@ def extract_rpn_controllers(midi_info: dict) -> list[dict]:
 
 
 def inspect_wav_audio(path: Path) -> dict:
-    import numpy as np
-    import soundfile as sf
 
     audio, rate = sf.read(path, always_2d=True)
     assert rate == 44100 and audio.shape[1] == 2 and len(audio) > 0
@@ -391,11 +386,6 @@ def inspect_wav_audio(path: Path) -> dict:
 
 
 async def main() -> None:
-    import base64
-
-    from integration.test_native_edit import fixture
-    from PIL import Image
-    from support.mcp_client import Client
 
     parser = argparse.ArgumentParser(description="V2 score, render and audio export options")
     parser.add_argument("--binary", type=Path, required=True)

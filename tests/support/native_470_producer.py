@@ -5,12 +5,6 @@ Imported lazily so baseline replay does not require the MCP Python package.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import asyncio
 import json
 import os
@@ -18,6 +12,18 @@ import platform
 from pathlib import Path
 
 import anyio
+from integration.test_native_470_oracle import (
+    check_file,
+    compare_semantics,
+    compare_warnings,
+    compare_xml,
+    file_sha,
+    read_json,
+    require,
+    run_dump,
+    save_json,
+    sha,
+)
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -64,18 +70,6 @@ class RecordingStream:
 
 
 async def produce(args, cases, fixture_root, output, binary, assets, oracle_env):
-    from integration.test_native_470_oracle import (
-        check_file,
-        compare_semantics,
-        compare_warnings,
-        compare_xml,
-        file_sha,
-        read_json,
-        require,
-        run_dump,
-        save_json,
-        sha,
-    )
 
     host = args.host_binary.resolve()
     host_hash = file_sha(host)

@@ -8,12 +8,6 @@ cancellation flag and callback, without the pause or stderr diagnostics.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import copy
 import json
@@ -21,7 +15,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from integration.test_native_470_conversion_cancel import ROOT, Client, sha
+from integration.test_native_470_conversion_cancel import REPO_ROOT, Client, sha
 
 
 def main():
@@ -32,7 +26,7 @@ def main():
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
-    tree = ET.parse(ROOT / "tests/data/native_470/notes.mscx")
+    tree = ET.parse(REPO_ROOT / "tests/data/native_470/notes.mscx")
     staff = tree.find("./Score/Staff")
     measures = list(staff.findall("Measure"))
     for _ in range(511):

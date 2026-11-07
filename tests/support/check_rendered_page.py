@@ -7,10 +7,6 @@ Glyph overlap is measured between transformed outline bounding boxes.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import hashlib
@@ -26,9 +22,25 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
+from support import golden as golden
+from support.golden import (
+    GENERATE_EXCERPTS,
+    ClientSession,
+    StdioServerParameters,
+    call_tool,
+    export,
+    fixture_files,
+    generate_excerpts,
+    normalize_svg,
+    open_fixture,
+    required,
+    stdio_client,
+    write_text,
+)
 from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
 SVG = "{http://www.w3.org/2000/svg}"
 XLINK = "{http://www.w3.org/1999/xlink}"
 IDENTITY = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
@@ -713,10 +725,9 @@ def accepted_svg_counts(name, digest):
 
 def current_png_oracle(path, name, platform):
     """Match decoded pixels to the indexed current descriptor."""
-    from support import golden as golden
 
     fixture, output = name.split("/", 1)
-    root = ROOT / "vendor/engrave/tests/data/golden" / platform
+    root = REPO_ROOT / "vendor/engrave/tests/data/golden" / platform
     index = json.loads((root / "index.json").read_text(encoding="utf-8"))
     digest = index.get(fixture, {}).get(output + ".json")
     baseline = root / fixture / (output + ".json")
@@ -737,8 +748,6 @@ def current_png_oracle(path, name, platform):
 
 def png_stats(path):
     """Measure visible ink after compositing RGBA over white, in page coordinates."""
-    import numpy as np
-    from PIL import Image
 
     with Image.open(path) as image:
         rgba = np.asarray(image.convert("RGBA"), dtype=np.uint16)
@@ -821,20 +830,6 @@ def png_issues(actual, reference):
 
 async def capture_pages(binary, resources, soundfont, output):
     """Capture the golden harness's SVGs and master page-0 PNGs through MCP."""
-    from support.golden import (
-        GENERATE_EXCERPTS,
-        ClientSession,
-        StdioServerParameters,
-        call_tool,
-        export,
-        fixture_files,
-        generate_excerpts,
-        normalize_svg,
-        open_fixture,
-        required,
-        stdio_client,
-        write_text,
-    )
 
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
@@ -903,13 +898,13 @@ def main():
     parser.add_argument(
         "--golden",
         type=Path,
-        default=ROOT / "vendor/engrave/tests/data/golden/windows",
+        default=REPO_ROOT / "vendor/engrave/tests/data/golden/windows",
         help="directory of already captured SVG and PNG pages to check",
     )
     parser.add_argument(
         "--reference",
         type=Path,
-        default=ROOT / "vendor/engrave/tests/data/golden/page_reference.json",
+        default=REPO_ROOT / "vendor/engrave/tests/data/golden/page_reference.json",
         help="checked-in 4.7.6 statistics",
     )
     parser.add_argument(

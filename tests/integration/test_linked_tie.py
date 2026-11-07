@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import json
@@ -14,8 +10,6 @@ from pathlib import Path
 
 from support.mcp_client import Client
 from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
 
 
 def first_tie(path: Path):
@@ -34,7 +28,7 @@ async def run(args):
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     args.soundfont = None
-    fixture = ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx"
+    fixture = REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx"
     observed = {}
     async with Client(args, out) as client:
         for label, both in [("partial", False), ("complete", True)]:

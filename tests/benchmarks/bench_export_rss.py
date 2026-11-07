@@ -1,11 +1,5 @@
 """Measure live export RSS after warmup, with consecutive equal-size blocks."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import json
 from pathlib import Path
