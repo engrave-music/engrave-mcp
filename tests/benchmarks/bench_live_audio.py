@@ -97,7 +97,7 @@ def main():
     save()
     print(json.dumps(result["summary"], indent=2))
     assert result["summary"]["cancel_ms"]["p95"] <= 50 and result["summary"]["cancel_ms"]["max"] <= 100, (
-        "M2 cancellation gate failed; see saved samples"
+        "Audio cancellation gate failed; see saved samples"
     )
 
 

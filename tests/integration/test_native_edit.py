@@ -1,4 +1,4 @@
-"""Exercise v2 edits, stable note IDs, rollback and revision conflicts over MCP."""
+"""Exercise edits, stable note IDs, rollback and revision conflicts over MCP."""
 
 from __future__ import annotations
 

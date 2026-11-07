@@ -1,4 +1,4 @@
-"""M3: live open, independent cold-to-PDF sessions, mixed-document soak.
+"""Live open, independent cold-to-PDF sessions, mixed-document soak.
 
 Raw samples include every timed request; RSS probes are outside latency timers.
 Open/close churn is measured separately from the fixed-document live soak because

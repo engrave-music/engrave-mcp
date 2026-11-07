@@ -3,7 +3,7 @@
 
 Tests both probe-level engine capabilities and MCP server integration:
 1. Cross-platform current audio features:
-   - Captures the current host and compares it to the other host's A2 capture,
+   - Captures the current host and compares it to the other host's audio capture,
      using explicit per-feature tolerances (frames/sample rate/channels exact)
 2. Pure sine wave SoundFont generation and pitch/onset/level accuracy:
    - Renders known scores with vendor/engrave/tests/data/engine_audio/sine.sf2
@@ -224,7 +224,7 @@ CROSS_PLATFORM_TOLERANCES = {
 }
 CROSS_PLATFORM_EXACT = ("sampleRate", "channels", "frames")
 
-# A0 reported the maximum onset rounded to 1.95 ms. Its retained WAV actually
+# The frozen reference reported the maximum onset rounded to 1.95 ms. Its retained WAV actually
 # places that onset 86 samples late at 44.1 kHz; compare the duration exactly
 # in sample units so the original measurement is included without rounding.
 SINE_ONSET_MAX_FRAMES = 86
@@ -827,7 +827,7 @@ def check_sine_pitch(cents_diff: float, midi_pitch: int, detected_freq: float, e
 
 
 def test_sine_threshold_mutations() -> None:
-    # The A0 onset and the exact pitch limit must pass; the old 5 ms / 1 cent
+    # The reference onset and the exact pitch limit must pass; the old 5 ms / 1 cent
     # limits would also have accepted the two mutations, which must now fail.
     check_sine_onset(86, 0.0, 44100, 64)
     check_sine_pitch(0.80, 60, 261.5, 261.6)
@@ -1050,7 +1050,7 @@ def write_midi_goldens(
 # --- MIDI event oracle: the 4.7.6 reference plus the accepted 5.0 differences ----
 #
 # vendor/engrave/tests/data/engine_audio/midi/<fixture>.json are the exact 4.7.6 event streams (restored
-# from 9a74eb1, byte-identical to codex/xmake-parity). A0/A2 requires the step-5 MIDI
+# from 9a74eb1, byte-identical to codex/xmake-parity). the audio baseline requires the step-5 MIDI
 # oracle to stay exact, so those files are NOT re-baselined on 5.0 playback. Only the
 # two upstream 5.0 changes below are accepted (notes/a2/decisions.md 2026-10-29 and
 # notes/a2/audio-parity-roots.md sections 1 and 5). The 5.0 stream must equal the
@@ -1276,7 +1276,7 @@ def check_midi_stream_against_reference(
     reference_events = golden["events"]
     assert golden["eventTotal"] == len(reference_events) == rule["reference_event_total"], (
         f"MIDI golden for {name} has eventTotal {golden['eventTotal']} and "
-        f"{len(reference_events)} stored events, but A0/A2 pins the 4.7.6 reference at "
+        f"{len(reference_events)} stored events, but the audio baseline pins the 4.7.6 reference at "
         f"{rule['reference_event_total']}. Do not re-baseline this file on 5.0 output; "
         "document accepted 5.0 changes in MIDI_ACCEPTED_RULES with an upstream cause"
     )
@@ -1755,7 +1755,7 @@ async def test_mcp_level_integration(
     out_dir: Path,
     evidence: dict[str, Any],
 ) -> None:
-    """Exercise v2 mix, excerpt, codec and MIDI output against existing evidence."""
+    """Exercise mix, excerpt, codec and MIDI output against existing evidence."""
     from types import SimpleNamespace
 
     from support.mcp_client import Client
@@ -1866,7 +1866,7 @@ async def test_mcp_level_integration(
         "non_ascii_async_exports": nonascii_async,
         "midi_matches_golden": True,
     }
-    print("  MCP-level v2 integration tests PASSED")
+    print("  MCP-level integration tests PASSED")
 
 
 def main() -> int:

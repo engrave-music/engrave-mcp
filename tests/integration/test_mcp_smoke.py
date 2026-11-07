@@ -1,4 +1,4 @@
-"""Exercise the v2 wire with the independent official Python MCP client."""
+"""Exercise the MCP wire with the independent official Python MCP client."""
 
 import sys
 from pathlib import Path
