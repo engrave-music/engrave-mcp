@@ -956,7 +956,7 @@ def main():
         print("error: missing golden directory or reference file", file=sys.stderr)
         return 2
     payload = json.loads(args.reference.read_text(encoding="utf-8"))
-    if payload.get("version") != 3 or not isinstance(payload.get("pages"), dict):
+    if payload.get("version") != 4 or not isinstance(payload.get("pages"), dict):
         print("error: invalid page reference format", file=sys.stderr)
         return 2
     pages = payload["pages"]

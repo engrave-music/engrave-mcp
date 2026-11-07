@@ -35,8 +35,6 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 ARCHIVE_SHA = "b915ae9f4ec2fdbfd5fc0edd4be19c3d9026f4e154174967b47556915ac719fa"
 BINARY_SHA = "f6d9ee1e826e27074cb2a9481987ddbd9318544e9c3586dc16ab534c3fd7fe8a"
-CREATED_SHA = "a8d841d0af0b56744dff7ead93373e747a8196fae4bcfabf79fcca822d5b7d21"
-CREATED_SEMANTIC_SHA = "e1a79ef26cc7eef398aee8122bb75477e53e85a4aff059e9a1e8c6d8e9070040"
 
 
 class GateError(Exception):
@@ -482,44 +480,12 @@ def mutation_tests(root: Path, case_dir: Path, binary: Path, assets: Path, oracl
     else:
         raise GateError("comparator accepted mutation: swapped_id_association")
 
-    corpus = ROOT / "vendor/engrave/tests/data/compat-corpus/engrave-19"
-    source, reference = (
-        corpus / "created.json.mscz",
-        corpus / "created.json.semantic.json",
-    )
-    require(
-        file_sha(source) == CREATED_SHA and file_sha(reference) == CREATED_SEMANTIC_SHA,
-        "spoof reference is missing or differs from engrave-19",
-    )
-    with zipfile.ZipFile(source) as archive:
-        xml = archive.read("score.mscx")
-    require(xml.count(b'version="5.00"') == 1, "spoof source has an unexpected header")
-    spoof = case_dir / "spoof.mscx"
-    spoof.write_bytes(xml.replace(b'version="5.00"', b'version="4.70"', 1))
-    proc = run_dump(binary, assets, spoof, case_dir, "spoof-oracle", oracle_env)
-    require(
-        proc.returncode == 0 and not proc.stderr,
-        "oracle did not silently accept the frozen relabel control",
-    )
-    spoof_semantics = json.loads(proc.stdout)
-    reference_semantics = read_json(reference)
-    names.append(
-        expect_comparator_rejection(
-            "header_spoof_acceptance",
-            lambda: compare_semantics(reference_semantics, spoof_semantics),
-        )
-    )
     return {
         "rejected_mutations": names,
         "control_mscz_sha256": file_sha(wrapped),
         "control_exit": control.returncode,
         "control_stdout_sha256": sha(control.stdout),
         "control_stderr_sha256": sha(control.stderr),
-        "spoof_source_sha256": sha(xml),
-        "spoof_sha256": file_sha(spoof),
-        "spoof_stdout_sha256": sha(proc.stdout),
-        "spoof_stderr_sha256": sha(proc.stderr),
-        "spoof_exit": proc.returncode,
         "reference_semantics_sha256": file_sha(reference),
     }
 

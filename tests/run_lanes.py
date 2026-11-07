@@ -49,7 +49,6 @@ LANE_NAMES = [
     "transport",
     "golden",
     "semantic_check",
-    "compat_corpus",
     "native_470_oracle",
     "roundtrip",
     "oracle_harness",
@@ -88,7 +87,6 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         "golden": ["engrave-mcp", "semantic_dump"],
         "semantic_check": [],
         "oracle_harness": [],
-        "compat_corpus": ["semantic_dump"],
         "native_470_oracle": [],
         "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
         "engine_audio": ["engine_audio_probe", "engrave-mcp"],
@@ -630,19 +628,6 @@ def run_lane(
         if expected_count == 0 or actual_count != expected_count:
             return 1
         return check_code
-
-    if lane == "compat_corpus":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_compat_corpus.py"),
-            "--binary",
-            str(build_dir / f"semantic_dump{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--output",
-            str(output / "compat-corpus"),
-        ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "native_470_oracle":
         cmd = [

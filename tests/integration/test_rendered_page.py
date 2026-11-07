@@ -274,7 +274,7 @@ class TestRenderedPageControls(unittest.TestCase):
             target.parent.mkdir()
             target.write_text(self.source, encoding="utf-8")
             payload = {
-                "version": 3,
+                "version": 4,
                 "pages": {"pedal.mscx/page-0.svg": {"stats": self.reference, "png": None}},
             }
             reference = temp / "reference.json"
@@ -374,7 +374,7 @@ class TestRenderedPageControls(unittest.TestCase):
                 "reason": "control",
             }
             payload = {
-                "version": 3,
+                "version": 4,
                 "pages": {entry["page"]: {"stats": self.reference, "png": None}},
                 "count_exceptions": [entry],
             }
@@ -470,7 +470,7 @@ class TestPngInkControls(unittest.TestCase):
         target.write_text(PEDAL.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
         reference = json.loads(REFERENCE.read_text(encoding="utf-8"))["pages"]["pedal.mscx/page-0.svg"]
         payload = {
-            "version": 3,
+            "version": 4,
             "pages": {
                 "pedal.mscx/page-0.svg": {
                     "stats": reference["stats"],
@@ -532,7 +532,7 @@ class TestPngInkControls(unittest.TestCase):
             "reason": "synthetic precision control",
         }
         payload = {
-            "version": 3,
+            "version": 4,
             "pages": {
                 "pedal.mscx/page-0.svg": {
                     "stats": svg_reference["stats"],
