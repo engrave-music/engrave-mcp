@@ -2,8 +2,6 @@
 
 `engrave` is a native, headless C++ score engraving and audio playback engine library, maintained as a hard fork of MuseScore core at https://github.com/Locietta/engrave. It is completely free of Qt, GUI, and desktop dependencies. The host consumes it as the shallow submodule `vendor/engrave`.
 
-Candidate pin on fork `cleanup/final`: `7d6d3ca5768f3be2ce3d4fb0ec134dccdfe72dbb` (pending review and fast-forward to fork `main`).
-
 ## Upstream provenance
 
 Ancestral upstream synchronization terminated at `upstream-final` (syncing upstream MuseScore commit `32f0a26e5b` and framework commit `da3885cb` after absorbing `muse_framework` into `muse/`). Since that synchronization point, development moves forward independently. Upstream fixes arrive strictly by cherry-pick and adaptation with upstream SHA, framework origin if applicable, technical rationale, and focused test evidence.
