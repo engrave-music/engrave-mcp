@@ -1,7 +1,20 @@
-"""Compatibility entry point for the engine-owned validator."""
+"""Compatibility exports for the fork-owned output comparators."""
 
-import runpy
-from pathlib import Path
+from engrave_testing.integration.test_public_output import (
+    compare as compare,
+)
+from engrave_testing.integration.test_public_output import (
+    describe_audio_file as describe_audio_file,
+)
+from engrave_testing.integration.test_public_output import (
+    describe_render as describe_render,
+)
+from engrave_testing.integration.test_public_output import (
+    probe_command as probe_command,
+)
+from engrave_testing.integration.test_public_output import (
+    run_probe as run_probe,
+)
 
-_path = Path(__file__).resolve().parents[2] / "vendor/engrave/tests/engrave_testing/integration/test_public_output.py"
-globals().update(runpy.run_path(str(_path), run_name="__main__" if __name__ == "__main__" else "engrave_validator"))
+if __name__ == "__main__":
+    raise SystemExit("Partial comparison CLI removed; use tests/engine_gate.py for validated captures")
