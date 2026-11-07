@@ -1926,7 +1926,7 @@ def main() -> int:
     parser.add_argument(
         "--cross-platform-captures",
         type=Path,
-        default=ROOT / "artifacts" / "a2" / "audio-cross-platform",
+        default=ROOT / ".runtime" / "audio-cross-platform",
         help="Directory containing windows/ and linux/ current captures",
     )
     parser.add_argument(
