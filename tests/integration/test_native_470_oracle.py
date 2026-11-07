@@ -486,7 +486,6 @@ def mutation_tests(root: Path, case_dir: Path, binary: Path, assets: Path, oracl
         "control_exit": control.returncode,
         "control_stdout_sha256": sha(control.stdout),
         "control_stderr_sha256": sha(control.stderr),
-        "reference_semantics_sha256": file_sha(reference),
     }
 
 

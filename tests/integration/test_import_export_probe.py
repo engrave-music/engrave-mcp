@@ -1,4 +1,4 @@
-"""Check the current engine's Qt-free import, layout and export probe."""
+"""Check the current engine's import, layout and export probe."""
 
 from __future__ import annotations
 

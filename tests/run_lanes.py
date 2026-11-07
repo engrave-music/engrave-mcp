@@ -31,7 +31,7 @@ LANE_NAMES = [
     "score_edit",
     "score_audio",
     "score_positions",
-    "noqt_probe",
+    "import_export_probe",
     "excerpts",
     "assets",
     "archives",
@@ -79,7 +79,7 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         "score_edit": ["score_edit_test"],
         "score_audio": ["score_audio_test"],
         "score_positions": ["score_positions_test"],
-        "noqt_probe": ["noqt_probe"],
+        "import_export_probe": ["import_export_probe"],
         "excerpts": ["excerpts_test"],
         "assets": ["assets_test"],
         "archives": ["archive_test", "engrave-mcp"],
@@ -326,18 +326,18 @@ def run_lane(
         cmd = [str(build_dir / f"score_positions_test{exe_suffix}"), str(assets)]
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
-    if lane == "noqt_probe":
+    if lane == "import_export_probe":
         cmd = [
             py,
-            str(repo_root / "tests/integration/test_noqt_probe.py"),
+            str(repo_root / "tests/integration/test_import_export_probe.py"),
             "--binary",
-            str(build_dir / f"noqt_probe{exe_suffix}"),
+            str(build_dir / f"import_export_probe{exe_suffix}"),
             "--assets",
             str(assets),
             "--input",
             str(repo_root / "vendor/engrave/tests/data/inputs/evening.musicxml"),
             "--output",
-            str(output / "noqt-probe"),
+            str(output / "import-export-probe"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 

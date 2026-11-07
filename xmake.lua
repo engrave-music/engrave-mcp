@@ -1,26 +1,4 @@
--- Qt-free xmake build for the engrave-mcp host (MuseScore 5.0 engine).
---
--- The engine's build belongs to the engine.  The fork (github.com/Locietta/
--- engrave, consumed as the pinned vendor/engrave submodule) carries its own
--- xmake build: project settings, the pinned package recipes, the engine module
--- targets, the engrave adapter library and their tests, all in the engine
--- checkout's xmake/ directory.  This file includes that build - from
--- vendor/engrave by default, or from the checkout named by
--- --engine_source - and keeps what is the host's:
---
---   tool_registry, registry_dump       standalone tool schema authority
---   registry_test, registry_check    tool contract validation
---   document_store                         public-API document store
---   engrave_mcp                    stdio JSON-RPC host (engrave-mcp binary)
---   engrave_mcp_test, host_api_test   host regression binaries
---
--- Engine targets (muse_global, muse_draw, muse_mpe, engraving, iex_musicxml,
--- iex_guitarpro, iex_midi, native_fluidsynth, muse_audio_engine,
--- muse_generated), the engrave library and its tests and probes are defined by
--- the included engine build and are not repeated here.
---
--- Host translation units include only the engine's public engrave/ headers.
--- The included engine targets and their tests still use internal include roots.
+-- Native engrave-mcp host; engine targets are included from vendor/engrave.
 
 set_project("engrave-mcp")
 set_xmakever("3.1.1")
@@ -90,8 +68,8 @@ end
 ENGRAVE_SOURCE_ROOT = source_root
 includes(engine_build)
 
-if not ENGRAVE_DEFINES or not ENGRAVE_INCLUDES or not ENGRAVE_INTERNAL_INCLUDES then
-    configure_failure("the engine build did not export ENGRAVE_DEFINES, ENGRAVE_INCLUDES, or ENGRAVE_INTERNAL_INCLUDES")
+if not ENGRAVE_INCLUDES or not ENGRAVE_INTERNAL_INCLUDES then
+    configure_failure("the engine build did not export ENGRAVE_INCLUDES or ENGRAVE_INTERNAL_INCLUDES")
     return
 end
 if not ENGRAVE_SOURCE_ROOT
@@ -154,36 +132,14 @@ add_links("z")
 -- Engine targets and tests use these shared roots; host code is public-only.
 add_includedirs(ENGRAVE_INCLUDES)
 
--- The Qt-free feature selection comes from the engine manifest generator (its
--- PROJECT_DEFINES list), so there is one place to change what the engine
--- and its tests compile as.
-add_defines(table.unpack(ENGRAVE_DEFINES))
-
--- Qt platform macros normally come from <QtGlobal>; the pinned engine and
--- engrave_mcp/ adapters branch on them under NO_QT_SUPPORT. Define them once,
--- project-wide, for every target compiled from the engine and engrave_mcp/.
 if is_plat("windows") then
     set_runtimes("MD")
     set_exceptions("cxx")
-    add_defines("WIN32", "_WINDOWS", "NOMINMAX", "WIN32_LEAN_AND_MEAN", "NOGDI", "_USE_MATH_DEFINES", "UNICODE", "_UNICODE",
-        "_CRT_SECURE_NO_WARNINGS", "_CRT_NONSTDC_NO_WARNINGS",
-        "_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING")
-    add_defines("Q_OS_WIN", "Q_OS_WIN32", "Q_OS_WINDOWS")
-    if is_arch("x64", "x86_64") then
-        add_defines("Q_OS_WIN64")
-    end
-    add_cxflags("/utf-8", "/bigobj", "/Zc:__cplusplus", {tools = {"cl", "clang_cl"}})
+    add_defines("WIN32", "NOMINMAX", "WIN32_LEAN_AND_MEAN", "_USE_MATH_DEFINES", "_UNICODE")
+    add_cxflags("/utf-8", "/Zc:__cplusplus", {tools = {"cl", "clang_cl"}})
     add_cflags("/utf-8", {tools = {"cl", "clang_cl"}})
-elseif is_plat("macosx") then
-    add_defines("Q_OS_MAC", "Q_OS_MACOS", "Q_OS_DARWIN", "Q_OS_UNIX")
-    add_cxflags("-fPIC", "-pthread")
-    add_ldflags("-pthread")
-elseif is_plat("linux") then
-    add_defines("Q_OS_LINUX", "Q_OS_UNIX")
-    add_cxflags("-fPIC", "-pthread")
-    add_ldflags("-pthread")
 else
-    add_cxflags("-fPIC", "-pthread")
+    add_cxflags("-pthread")
     add_ldflags("-pthread")
 end
 
