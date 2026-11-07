@@ -1,4 +1,4 @@
-"""Exercise v2 audio-track queries, mix overrides and live exports."""
+"""Exercise audio-track queries, mix overrides and live exports."""
 
 from __future__ import annotations
 

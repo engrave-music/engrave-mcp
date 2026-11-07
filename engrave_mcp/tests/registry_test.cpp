@@ -7,7 +7,7 @@
 #include "tool_result.h"
 
 namespace {
-using namespace music::v2;
+using namespace music::api;
 
 template <std::size_t I>
 Json mock_handler(void *, const Json &) {

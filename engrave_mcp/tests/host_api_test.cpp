@@ -8,8 +8,8 @@
 #include <thread>
 
 namespace fs = std::filesystem;
-using music::v2::HostApi;
-using music::v2::Json;
+using music::api::HostApi;
+using music::api::Json;
 
 namespace {
 void require(bool condition, const std::string &message) {
@@ -114,7 +114,7 @@ int main(int argc, char **argv) {
         options.resources = assets;
         options.fonts = {font_input};
         options.soundfonts = {sf_input};
-        music::v2::ExportLimits configured;
+        music::api::ExportLimits configured;
         configured.output_bytes = 234567;
         configured.deadline = std::chrono::milliseconds(3456);
         auto made = HostApi::create(options, configured);
@@ -180,17 +180,17 @@ int main(int argc, char **argv) {
         ok(*host, "score_describe", {{"scope", "styles"}});
         error(*host, "score_describe", {{"scope", "type"}, {"type", "NoSuchType"}}, "NotFound");
         bool visited = false;
-        auto visit = host->with_document(doc, 1, [&](engrave::Document &d) -> music::v2::Result<void> {
+        auto visit = host->with_document(doc, 1, [&](engrave::Document &d) -> music::api::Result<void> {
             visited = d.revision() == 1;
             return {};
         });
         require(visit && visited, "with_document did not visit owner document");
-        auto guarded = host->with_document(doc, 1, [&](engrave::Document &) -> music::v2::Result<void> {
+        auto guarded = host->with_document(doc, 1, [&](engrave::Document &) -> music::api::Result<void> {
             error(*host, "score_close", {{"document", doc}}, "InvalidArgument");
             return {};
         });
         require(bool(guarded), "with_document did not guard its document's lifetime");
-        require(!host->with_document(doc, 2, [](engrave::Document &) -> music::v2::Result<void> { return {}; }),
+        require(!host->with_document(doc, 2, [](engrave::Document &) -> music::api::Result<void> { return {}; }),
                 "with_document ignored revision");
         Json wrong_thread;
         std::thread other([&] { wrong_thread = host->outline({{"document", doc}}); });
@@ -229,19 +229,19 @@ int main(int argc, char **argv) {
              {{"op", "add_tuplet"}, {"first", r}, {"last", r}},
              {{"op", "add_text"}, {"at", a}, {"style", "staff"}, {"text", "hello"}},
              {{"op", "add"}, {"anchor", r}, {"type", "Dynamic"}}});
-        require(samples.size() == music::v2::operation_names.size(), "operation coverage count differs");
+        require(samples.size() == music::api::operation_names.size(), "operation coverage count differs");
         for (std::size_t i = 0; i < samples.size(); ++i) {
-            auto decoded = music::v2::decode_batch(Json::array({samples.at(i)}));
-            require(decoded && decoded->ops.at(0).index() == i && samples.at(i).at("op") == std::string(music::v2::operation_names[i]),
+            auto decoded = music::api::decode_batch(Json::array({samples.at(i)}));
+            require(decoded && decoded->ops.at(0).index() == i && samples.at(i).at("op") == std::string(music::api::operation_names[i]),
                     "operation failed codec coverage: " + samples.at(i).dump());
             auto extra = samples.at(i);
             extra["unknown"] = 1;
-            require(!music::v2::decode_batch(Json::array({extra})), "unknown operation key accepted");
+            require(!music::api::decode_batch(Json::array({extra})), "unknown operation key accepted");
         }
-        require(!music::v2::decode_batch(Json::array({Json{{"op", "remove"}, {"target", opref(0, 0)}}})), "forward OpRef accepted");
+        require(!music::api::decode_batch(Json::array({Json{{"op", "remove"}, {"target", opref(0, 0)}}})), "forward OpRef accepted");
         auto bad_fraction = samples.at(3);
         bad_fraction["duration"]["num"] = "9223372036854775808";
-        require(!music::v2::decode_batch(Json::array({bad_fraction})), "overflowing int64 accepted");
+        require(!music::api::decode_batch(Json::array({bad_fraction})), "overflowing int64 accepted");
         auto malformed = error(*host, "score_edit", {{"document", doc}, {"ops", Json::array({bad_fraction})}}, "InvalidArgument");
         require(malformed.at("error").at("op_index") == 0, "invalid operation omitted its index");
         const Json values = Json::array(
@@ -254,20 +254,20 @@ int main(int argc, char **argv) {
         for (const auto &value : values) {
             auto item = samples.at(0);
             item["value"] = value;
-            auto decoded = music::v2::decode_batch(Json::array({item}));
-            require(decoded && music::v2::encode(std::get<engrave::SetProperty>(decoded->ops.at(0)).value) == value,
+            auto decoded = music::api::decode_batch(Json::array({item}));
+            require(decoded && music::api::encode(std::get<engrave::SetProperty>(decoded->ops.at(0)).value) == value,
                     "value codec changed a tagged value");
         }
         auto opaque = samples.at(0);
         opaque["value"] = {{"kind", "opaque"}, {"type", "path"}};
-        require(!music::v2::decode_batch(Json::array({opaque})), "opaque edit value accepted");
-        require(music::v2::decode_revision("18446744073709551615").has_value() &&
-                    !music::v2::decode_revision("18446744073709551616").has_value() && !music::v2::decode_revision("01").has_value(),
+        require(!music::api::decode_batch(Json::array({opaque})), "opaque edit value accepted");
+        require(music::api::decode_revision("18446744073709551615").has_value() &&
+                    !music::api::decode_revision("18446744073709551616").has_value() && !music::api::decode_revision("01").has_value(),
                 "revision decimal bounds not enforced");
         for (const auto &addr : Json::array({a, Json{{"kind", "page"}, {"score", Json::object()}, {"index", 0}},
                                              Json{{"kind", "system"}, {"score", Json::object()}, {"page", 0}, {"index", 0}},
                                              Json{{"kind", "spanner_segment"}, {"spanner", measure}, {"index", 0}}})) {
-            require(music::v2::decode_ref(Json{{"kind", "address"}, {"address", addr}}).has_value(),
+            require(music::api::decode_ref(Json{{"kind", "address"}, {"address", addr}}).has_value(),
                     "address codec rejected a declared address");
         }
         engrave::Positions positions;
@@ -275,7 +275,7 @@ int main(int argc, char **argv) {
         positions.page_height = 200;
         positions.elements.push_back({3, 1, 2, 4, 5, 0});
         positions.events.push_back({3, 123});
-        require(music::v2::encode(positions) ==
+        require(music::api::encode(positions) ==
                     Json({{"page_size", {{"width", 100}, {"height", 200}}},
                           {"elements", Json::array({Json{{"id", 3}, {"x", 1}, {"y", 2}, {"sx", 4}, {"sy", 5}, {"page", 0}}})},
                           {"events", Json::array({Json{{"elid", 3}, {"position", 123}}})}}),
@@ -414,12 +414,12 @@ int main(int argc, char **argv) {
         auto recovery = ok(*host, "score_open", {{"path", path_text(input)}});
         const auto recovery_doc = recovery.at("document").get<std::string>();
         auto failed = host->with_document(
-            recovery_doc, {}, [](engrave::Document &) -> music::v2::Result<void> { throw std::runtime_error("callback failure"); });
+            recovery_doc, {}, [](engrave::Document &) -> music::api::Result<void> { throw std::runtime_error("callback failure"); });
         require(!failed && failed.error().code == "EngineFailure", "callback failure was not reported");
         ok(*host, "score_query", {{"document", recovery_doc}, {"mode", "audio_tracks"}});
         bool reached = false;
         require(bool(host->with_document(recovery_doc, {},
-                                         [&](engrave::Document &) -> music::v2::Result<void> {
+                                         [&](engrave::Document &) -> music::api::Result<void> {
                                              reached = true;
                                              return {};
                                          })) &&

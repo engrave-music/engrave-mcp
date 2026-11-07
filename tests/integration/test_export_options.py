@@ -1,7 +1,7 @@
 """Native engrave-mcp Export Options Integration Test.
 
 Exercises native export options introduced to score_export via the standard
-Python MCP SDK v2 client:
+Python MCP SDK client:
 - score_export MSCX uncompressed XML export and score_open import roundtrip
 - PNG DPI sizing: 72 DPI vs 144 DPI resolution and dimension verification
 - PNG transparency: transparent alpha (min alpha < 255) vs opaque white background (alpha == 255)

@@ -1,4 +1,4 @@
-"""Verify v2 registry regeneration, large UTF-8 descriptions and no-op builds."""
+"""Verify tool registry regeneration, large UTF-8 descriptions and no-op builds."""
 
 import sys
 from pathlib import Path

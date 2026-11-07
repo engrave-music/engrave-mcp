@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write or check the v2 tool contract from the standalone registry dump."""
+"""Write or check the tool contract from the standalone registry dump."""
 
 from __future__ import annotations
 

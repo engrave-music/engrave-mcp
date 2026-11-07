@@ -43,7 +43,7 @@ inline std::size_t export_report_bound(const nlohmann::json &payload) {
     // bound monotonic when a smaller visible subset falls below that cutoff.
     auto result = make_tool_result(payload);
     result["content"][0]["text"] = payload.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
-    return result.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace).size() + v2::transport_request_limit + 1024;
+    return result.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace).size() + api::transport_request_limit + 1024;
 }
 
 } // namespace music

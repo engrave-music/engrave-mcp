@@ -226,7 +226,7 @@ async def run(args):
         metadata_after = await outline_version(fixture_document)
         assert metadata_after == "4.5.0", metadata_after
 
-        # Metadata-file export was removed in v2. The repeated MSCZ export
+        # Metadata-file export was removed from the tool contract. The repeated MSCZ export
         # still must not alter the owner document's source version.
         await export(fixture_document, "mscz", out / "header-background.mscz")
         metadata_background = await outline_version(fixture_document)

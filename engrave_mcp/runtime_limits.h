@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace music::v2 {
+namespace music::api {
 
 // Shared by the live transport, export and runtime_info contract.
 inline constexpr std::size_t transport_request_limit = 4 * 1024 * 1024;
@@ -14,4 +14,4 @@ struct ExportLimits {
     std::chrono::milliseconds deadline{120000};
 };
 
-} // namespace music::v2
+} // namespace music::api

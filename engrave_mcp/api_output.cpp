@@ -25,7 +25,7 @@
 #include "tool_result.h"
 #include "utf8_text.h"
 
-namespace music::v2 {
+namespace music::api {
 
 namespace {
 using detail::invalid;
@@ -681,4 +681,4 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         return std::unexpected(std::move(error));
     }
 }
-} // namespace music::v2
+} // namespace music::api

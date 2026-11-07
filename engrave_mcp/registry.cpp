@@ -6,7 +6,7 @@
 #include "api_json.h"
 #include "host_api.h"
 
-namespace music::v2 {
+namespace music::api {
 
 namespace {
 constexpr std::array specs = {
@@ -61,7 +61,7 @@ Json tools_json() {
 
 void validate_handlers(const HandlerTable &handlers) {
     for (auto handler : handlers) {
-        if (!handler) throw std::logic_error("unbound v2 handler");
+        if (!handler) throw std::logic_error("unbound tool handler");
     }
 }
 
@@ -88,4 +88,4 @@ void validate_registry() {
         if (!declared.contains(std::string(name))) throw std::logic_error("missing op schema");
     }
 }
-} // namespace music::v2
+} // namespace music::api

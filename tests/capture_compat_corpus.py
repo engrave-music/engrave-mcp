@@ -1,4 +1,4 @@
-"""Export the A0 fixtures and edit scenarios as a forward-compat reference.
+"""Export the golden fixtures and edit scenarios as a forward-compat reference.
 
 Use the pinned host build and record the commits it was built from. The output
 directory must not already exist: previously captured bytes are never replaced.

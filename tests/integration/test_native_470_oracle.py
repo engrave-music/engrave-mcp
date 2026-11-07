@@ -807,7 +807,7 @@ def main() -> int:
             "mutations": mutations["rejected_mutations"],
         }
         save_json(output / "summary.json", summary)
-        print(f"PASS {len(results)} cases; {summary['mode']} (not phase B acceptance)")
+        print(f"PASS {len(results)} cases; {summary['mode']}")
         return 0
     except (
         GateError,
@@ -820,7 +820,7 @@ def main() -> int:
         zipfile.BadZipFile,
         ET.ParseError,
     ) as error:
-        print(f"phase B oracle lane FAILED: {error}", file=sys.stderr)
+        print(f"native 4.70 oracle lane FAILED: {error}", file=sys.stderr)
         return 1
 
 

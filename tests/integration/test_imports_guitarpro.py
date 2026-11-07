@@ -1,7 +1,7 @@
 """End-to-end Guitar Pro / Power Tab import lane checks.
 
 The script uses the official Python MCP SDK and the pinned upstream fixtures in
-vendor/engrave/src/importexport/guitarpro/tests/data through the v2 host.
+vendor/engrave/src/importexport/guitarpro/tests/data through the host.
 
 Run with:
     python tests/integration/test_imports_guitarpro.py

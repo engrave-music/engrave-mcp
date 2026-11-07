@@ -6,7 +6,7 @@
 
 #include "schema_defs.h"
 
-namespace music::v2 {
+namespace music::api {
 
 enum class HandlerId { OPEN, CREATE, CLOSE, OUTLINE, QUERY, DESCRIBE, EDIT, EXPORT, RUNTIME_INFO, COUNT };
 enum class Scheduling { OWNER };
@@ -35,4 +35,4 @@ using HandlerTable = std::array<Handler, static_cast<std::size_t>(HandlerId::COU
 
 void validate_handlers(const HandlerTable &);
 
-} // namespace music::v2
+} // namespace music::api

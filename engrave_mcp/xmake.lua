@@ -19,7 +19,7 @@ target("native_include_check")
 target_end()
 
 -- The declared contract is independent of the Engine and of tools.json.
-target("v2_registry")
+target("tool_registry")
     set_kind("static")
     set_default(false)
     add_deps("native_include_check")
@@ -28,10 +28,10 @@ target("v2_registry")
 target_end()
 
 -- The document store uses the public engine API.
-target("v2_store")
+target("document_store")
     set_kind("static")
     set_default(false)
-    add_deps("engrave", "v2_registry")
+    add_deps("engrave", "tool_registry")
     add_includedirs(path.join(source_root, "engrave", "include"))
     add_files(path.join(host_dir, "api_json.cpp"), path.join(host_dir, "api_edit_json.cpp"),
         path.join(host_dir, "host_api.cpp"))
@@ -40,14 +40,14 @@ target_end()
 target("registry_dump")
     set_kind("binary")
     set_default(false)
-    add_deps("v2_registry")
+    add_deps("tool_registry")
     add_files(path.join(host_dir, "tools", "registry_dump.cpp"))
 target_end()
 
 target("registry_test")
     set_kind("binary")
     set_default(false)
-    add_deps("v2_registry")
+    add_deps("tool_registry")
     add_files(path.join(host_dir, "tests", "registry_test.cpp"))
 target_end()
 
@@ -72,7 +72,7 @@ local function add_host_binary(name, basename)
         set_kind("binary")
         set_default(false)
         set_basename(basename)
-        add_deps("muse_generated", "v2_registry", "v2_store")
+        add_deps("muse_generated", "tool_registry", "document_store")
         add_files(path.join(host_dir, "api_output.cpp"))
         add_files(path.join(host_dir, "async_session.cpp"))
         add_files(path.join(host_dir, "main.cpp"))
@@ -95,7 +95,7 @@ target_end()
 target("host_api_test")
     set_kind("binary")
     set_default(false)
-    add_deps("muse_generated", "v2_store")
+    add_deps("muse_generated", "document_store")
     add_files(path.join(host_dir, "tests", "host_api_test.cpp"))
     if is_plat("windows") then
         add_files(path.join(host_dir, "utf8.manifest"))
@@ -103,11 +103,11 @@ target("host_api_test")
 target_end()
 
 
--- M1 direct public API oracle; no worker or snapshot in either comparison.
+-- Direct public API oracle; no worker or snapshot in either comparison.
 target("live_export_test")
     set_kind("binary")
     set_default(false)
-    add_deps("muse_generated", "v2_store")
+    add_deps("muse_generated", "document_store")
     add_files(path.join(host_dir, "tests", "live_export_test.cpp"), path.join(host_dir, "api_output.cpp"),
         path.join(host_dir, "publication.cpp"))
     if is_plat("windows") then

@@ -1,4 +1,4 @@
-"""M2 live audio parity, reuse, cancellation and watchdog acceptance probe."""
+"""Live audio parity, reuse, cancellation and watchdog acceptance probe."""
 
 import sys
 from pathlib import Path

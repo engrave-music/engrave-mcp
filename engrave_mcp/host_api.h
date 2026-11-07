@@ -7,7 +7,7 @@
 #include "api_json.h"
 #include "runtime_limits.h"
 
-namespace music::v2 {
+namespace music::api {
 
 // S2 implementation. Construct/use/destroy only on Engine's owner thread.
 // Impl owns Engine first, then Documents; close all documents before Engine.
@@ -42,4 +42,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-} // namespace music::v2
+} // namespace music::api

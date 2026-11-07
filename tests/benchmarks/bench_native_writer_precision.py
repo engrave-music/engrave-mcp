@@ -1,4 +1,4 @@
-"""Measure and record writer/round-trip precision baseline for phase B (DEFECT-ENGRAVE-016)."""
+"""Measure and record writer/round-trip precision baseline of the native 4.70 writer (DEFECT-ENGRAVE-016)."""
 
 from __future__ import annotations
 

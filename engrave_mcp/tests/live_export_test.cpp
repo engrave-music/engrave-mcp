@@ -4,7 +4,7 @@
 #include "api_output.h"
 #include "export_timing.h"
 
-using namespace music::v2;
+using namespace music::api;
 namespace fs = std::filesystem;
 
 template <class T>

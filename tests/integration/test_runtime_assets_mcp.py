@@ -1,4 +1,4 @@
-"""Exercise live asset replacement and private runtime assets through v2 MCP."""
+"""Exercise live asset replacement and private runtime assets through MCP."""
 
 from __future__ import annotations
 

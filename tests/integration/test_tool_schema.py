@@ -1,4 +1,4 @@
-"""Verify the standalone v2 registry, schemas, and independent wire cases."""
+"""Verify the standalone tool registry, schemas, and independent wire cases."""
 
 from __future__ import annotations
 
@@ -424,7 +424,7 @@ def main():
         assert copy.stat().st_mtime_ns == stamp
         subprocess.run(base + ["--check"], check=True, capture_output=True)
     print(
-        f"v2 schema passed: {len(NAMES)} handlers, {len(OPS)} operations, "
+        f"tool schema passed: {len(NAMES)} handlers, {len(OPS)} operations, "
         f"{input_count} input and {output_count} success cases"
     )
 

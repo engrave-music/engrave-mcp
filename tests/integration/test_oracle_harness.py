@@ -1,4 +1,4 @@
-"""Unit tests for oracle harness improvements (A2 review findings).
+"""Unit tests for oracle harness improvements (oracle review findings).
 
 Tests:
   1. Semantic checker mutations:
@@ -104,6 +104,31 @@ class TestGoldenInventory(unittest.TestCase):
             golden.write_json(output / "report.json", {"unknown": {}})
             with self.assertRaisesRegex(SystemExit, "expected fixtures"):
                 golden.command_pin(SimpleNamespace(output=output, platform="windows"))
+
+
+class TestCapturedInputProvenance(unittest.TestCase):
+    def test_capture_uses_the_authenticated_converter(self):
+        engine = golden.REPO_ROOT / "vendor/engrave/tests/support/composition_fixture.py"
+        self.assertEqual(Path(sys.modules["support.composition_fixture"].__file__).resolve(), engine.resolve())
+
+    def test_capture_refuses_unreviewed_converter_output(self):
+        import asyncio
+
+        source = golden.FIXTURE_DIR / "created.json"
+        sent = []
+
+        async def fake_required(session, name, arguments):
+            sent.append(arguments)
+            return {}
+
+        original = golden.composition_musicxml
+        with mock.patch.object(golden, "required", fake_required):
+            asyncio.run(golden.open_fixture(None, source))
+            self.assertEqual(len(sent), 1)
+            with mock.patch.object(golden, "composition_musicxml", lambda score: original(score) + "<!-- x -->"):
+                with self.assertRaisesRegex(RuntimeError, "unreviewed MusicXML"):
+                    asyncio.run(golden.open_fixture(None, source))
+        self.assertEqual(len(sent), 1)
 
 
 class TestCurrentGoldenInventory(unittest.TestCase):
@@ -412,7 +437,7 @@ class TestCentroidSilenceEvidence(unittest.TestCase):
     def test_rounded_zero_rms_with_samples_still_compared(self):
         """A rounded-zero RMS is not silence: one or two nonzero samples keep the 2 Hz rule.
 
-        This is the A2 re-review case: a single 1-LSB sample stores RMS 0.0 in the 5-decimal
+        This is the silence regression case: a single 1-LSB sample stores RMS 0.0 in the 5-decimal
         envelope but the centroid moved from 11024.0 to 8011.4 Hz.
         """
         golden_audio = self.audio(11024.0, [1, 1])

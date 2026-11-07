@@ -2,7 +2,7 @@
 
 #include "api_json.h"
 
-namespace music::v2::detail {
+namespace music::api::detail {
 
 // The S1 schemas are the authority for shape and ordinary bounds. The codecs
 // additionally check decimal overflow, EID validity and backward-only OpRefs.
@@ -27,4 +27,4 @@ engrave::Value value(const Json &value);
 std::filesystem::path path(const Json &value);
 std::string path_text(const std::filesystem::path &value);
 
-} // namespace music::v2::detail
+} // namespace music::api::detail

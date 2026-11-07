@@ -1,4 +1,4 @@
-"""Exercise imported and edited score outputs against the emitted v2 schemas."""
+"""Exercise imported and edited score outputs against the emitted tool schemas."""
 
 from __future__ import annotations
 

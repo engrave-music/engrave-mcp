@@ -1,4 +1,4 @@
-"""Exercise v2 session scheduling, live export, cancellation and shutdown over stdio."""
+"""Exercise session scheduling, live export, cancellation and shutdown over stdio."""
 
 from __future__ import annotations
 
