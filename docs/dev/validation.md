@@ -19,8 +19,9 @@ xmake f --engrave_tests=y
 
 # Build engine test suite (the engine_tests phony target pulls in semantic_dump, score_edit_test,
 # score_audio_test, score_positions_test, excerpts_test, archive_test, assets_test, diagnostics_test,
-# io_boundary_test, engraving_playback_tests, etc.) plus the noqt_probe runtime probe
-xmake build engine_tests noqt_probe
+# io_boundary_test, engraving_playback_tests, etc.) plus the import_export_probe runtime probe
+# (verifies EngineContext import, layout, MusicXML export, and MIDI export)
+xmake build engine_tests import_export_probe
 
 # Build required host test targets
 xmake build live_export_test staging_test
@@ -46,7 +47,7 @@ Use `--only lane1,lane2` to execute a subset. The runner verifies line endings, 
 
 ## Lanes
 
-There are 36 lanes; 35 run by default. `native_470_oracle` is opt-in and requires the pinned 4.7.6 oracle archive, executable, and assets.
+There are 35 lanes; 34 run by default. `native_470_oracle` is opt-in and requires the pinned 4.7.6 oracle archive, executable, and assets.
 
 | Area                        | Lanes                                                                                             |
 | --------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -55,8 +56,8 @@ There are 36 lanes; 35 run by default. `native_470_oracle` is opt-in and require
 | Audio                       | `live_audio`, `audio_budget`, `score_audio`, `audio_facade`, `engine_audio`                       |
 | Notation and edits          | `score_edit`, `native_edit`, `linked_tie`, `xml_text`, `repeats`                                  |
 | Documents and formats       | `score_positions`, `excerpts`, `open_data`, `imports_midi`, `imports_gp`, `archives`, `roundtrip` |
-| Golden and semantics        | `golden`, `semantic_check`, `compat_corpus`, `rendered_page`, `oracle_harness`                    |
-| Assets and engine           | `runtime_assets`, `assets`, `noqt_probe`, `upstream_gtest`, `version_info`                        |
+| Golden and semantics        | `golden`, `semantic_check`, `rendered_page`, `oracle_harness`                                     |
+| Assets and engine           | `runtime_assets`, `assets`, `import_export_probe`, `upstream_gtest`, `version_info`               |
 | Smoke                       | `mcp_smoke`                                                                                       |
 | Opt-in                      | `native_470_oracle` (4.70 writer, pinned Linux oracle)                                            |
 
