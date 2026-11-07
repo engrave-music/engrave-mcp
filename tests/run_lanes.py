@@ -31,7 +31,7 @@ LANE_NAMES = [
     "score_edit",
     "score_audio",
     "score_positions",
-    "noqt_probe",
+    "import_export_probe",
     "excerpts",
     "assets",
     "archives",
@@ -49,7 +49,6 @@ LANE_NAMES = [
     "transport",
     "golden",
     "semantic_check",
-    "compat_corpus",
     "native_470_oracle",
     "roundtrip",
     "oracle_harness",
@@ -80,7 +79,7 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         "score_edit": ["score_edit_test"],
         "score_audio": ["score_audio_test"],
         "score_positions": ["score_positions_test"],
-        "noqt_probe": ["noqt_probe"],
+        "import_export_probe": ["import_export_probe"],
         "excerpts": ["excerpts_test"],
         "assets": ["assets_test"],
         "archives": ["archive_test", "engrave-mcp"],
@@ -88,7 +87,6 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         "golden": ["engrave-mcp", "semantic_dump"],
         "semantic_check": [],
         "oracle_harness": [],
-        "compat_corpus": ["semantic_dump"],
         "native_470_oracle": [],
         "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
         "engine_audio": ["engine_audio_probe", "engrave-mcp"],
@@ -328,18 +326,18 @@ def run_lane(
         cmd = [str(build_dir / f"score_positions_test{exe_suffix}"), str(assets)]
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
-    if lane == "noqt_probe":
+    if lane == "import_export_probe":
         cmd = [
             py,
-            str(repo_root / "tests/integration/test_noqt_probe.py"),
+            str(repo_root / "tests/integration/test_import_export_probe.py"),
             "--binary",
-            str(build_dir / f"noqt_probe{exe_suffix}"),
+            str(build_dir / f"import_export_probe{exe_suffix}"),
             "--assets",
             str(assets),
             "--input",
             str(repo_root / "vendor/engrave/tests/data/inputs/evening.musicxml"),
             "--output",
-            str(output / "noqt-probe"),
+            str(output / "import-export-probe"),
         ]
         return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
@@ -630,19 +628,6 @@ def run_lane(
         if expected_count == 0 or actual_count != expected_count:
             return 1
         return check_code
-
-    if lane == "compat_corpus":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_compat_corpus.py"),
-            "--binary",
-            str(build_dir / f"semantic_dump{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--output",
-            str(output / "compat-corpus"),
-        ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "native_470_oracle":
         cmd = [

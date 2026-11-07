@@ -16,7 +16,7 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
   and validation evidence in the host bump commit message, no pin tags). webmscore and `patches/` are retired.
   Native compilation is the target; do not introduce Node.js or WASM as runtime dependencies.
 - No computer use, screenshots, simulated input, or dependence on a desktop MuseScore install.
-- The build is Qt-free xmake: the engine build lives in the fork (`xmake/engrave.lua`
+- The build is xmake (no Qt): the engine build lives in the fork (`xmake/engrave.lua`
   with folder globs, pinned engine package recipes), the host build in this repository's
   `xmake.lua`, which includes the engine build from `vendor/engrave`; validate Windows
   and Linux.
@@ -26,7 +26,7 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
   between machines by pushing and fetching branches, never git bundles or copied
   worktrees (`docs/dev/branching.md`).
   Current design and rationale: `docs/dev/design.md`; open issues: `docs/dev/defects.md`;
-  branch and tag policy: `docs/dev/branching.md`.
+  branch and tag policy: `docs/dev/branching.md`; code style guide: `docs/dev/code-style-guide.md`.
   Keep only `main` as a long-lived branch: merge topic branches and delete them; tag
   formal releases instead of keeping phase branches.
 - Avoid rewriting music algorithms; preserve an executable baseline for each refactor.
