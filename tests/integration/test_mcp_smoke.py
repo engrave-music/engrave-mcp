@@ -13,6 +13,7 @@ import soundfile as sf
 from jsonschema import Draft202012Validator
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from support.musicxml_notes import canonical_notes
 from support.paths import REPO_ROOT
 
 OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", REPO_ROOT / "artifacts/mcp-smoke")).resolve()
@@ -174,7 +175,6 @@ async def main():
                 assert root.findall("part") and root.findall(".//note/pitch")
 
                 # Reopen both native and compressed interchange files and compare exported notes.
-                from support.musicxml_notes import canonical_notes
 
                 for extension in ("mscz", "mxl"):
                     restored = await call("score_open", {"path": str(OUT / f"score.{extension}")})

@@ -1,6 +1,7 @@
 """Destination metadata errors retain their filesystem classification."""
 
 import argparse
+import csv
 import errno
 import json
 import os
@@ -223,7 +224,6 @@ def main():
             check("name_too_long", a.output / ("x" * 300), "Io")
         elif os.name == "nt":
             # Deny metadata access only on our disposable subtree, then restore it.
-            import csv
 
             row = next(
                 csv.reader(subprocess.check_output(["whoami", "/user", "/fo", "csv", "/nh"], text=True).splitlines())

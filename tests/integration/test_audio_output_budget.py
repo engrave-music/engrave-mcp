@@ -10,6 +10,7 @@ import math
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 from support.mcp_client import Client
 from support.paths import REPO_ROOT
@@ -42,7 +43,6 @@ def live_budget(args, source, audio_options, limit, expected):
         with tempfile.TemporaryDirectory(prefix="live-budget-", dir=args.output) as temporary:
             out = Path(temporary).resolve()
             configured = dict(vars(args), output=out)
-            from types import SimpleNamespace
 
             previous = os.environ.get("ENGRAVE_MCP_TEST_OUTPUT_BYTES")
             os.environ["ENGRAVE_MCP_TEST_OUTPUT_BYTES"] = str(limit)

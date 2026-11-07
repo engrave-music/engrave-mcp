@@ -11,6 +11,7 @@ import json
 import time
 from pathlib import Path
 
+from support.golden import describe_pdf
 from support.paths import REPO_ROOT
 from support.process_client import Client, export_args, rss_bytes, summary
 
@@ -83,7 +84,6 @@ def main():
                         rss_bytes=rss,
                     )
                 )
-            from support.golden import describe_pdf
 
             page_count = describe_pdf(out / "pdf-all")["pages"]
             assert page_count >= 2

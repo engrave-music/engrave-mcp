@@ -21,6 +21,7 @@ Tests:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import copy
 import io
@@ -102,7 +103,6 @@ class TestCapturedInputProvenance(unittest.TestCase):
         self.assertEqual(Path(sys.modules["support.composition_fixture"].__file__).resolve(), engine.resolve())
 
     def test_capture_refuses_unreviewed_converter_output(self):
-        import asyncio
 
         source = golden.FIXTURE_DIR / "created.json"
         sent = []

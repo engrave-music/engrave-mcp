@@ -24,7 +24,7 @@ import sys
 import tarfile
 import xml.etree.ElementTree as ET
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from support.paths import REPO_ROOT
 
@@ -704,7 +704,6 @@ def main() -> int:
         if args.oracle_ssh:
             oracle_root = remote_preflight(args)
             # PurePosixPath preserves Linux paths on Windows.
-            from pathlib import PurePosixPath
 
             binary, assets = (
                 PurePosixPath(args.oracle_executable.as_posix()),
