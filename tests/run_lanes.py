@@ -244,10 +244,10 @@ def run_lane(
             if lane in ("live_dense_cancel", "live_queued_cancel", "output_schema_boundaries"):
                 cmd += ["--soundfont", str(soundfont)]
             if lane == "live_dense_cancel":
-                from support.make_dense_score import generate_dense_score
+                from integration.test_live_queued_cancel import generate_cancel_score
 
                 score = output / "dense.musicxml"
-                generate_dense_score(score)
+                generate_cancel_score(score)
                 cmd += ["--score", str(score), "--delay-ms", "10"]
         return subprocess.run(cmd, cwd=repo_root, env=focused_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 

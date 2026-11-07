@@ -68,7 +68,7 @@ def main():
         if soundfont:
             command += [
                 "--soundfont",
-                str(REPO_ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"),
+                os.environ.get("ENGRAVE_MCP_SOUNDFONT", str(REPO_ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3")),
             ]
         with (OUT / f"stderr-{soundfont}.log").open("wb") as log:
             process = subprocess.Popen(
