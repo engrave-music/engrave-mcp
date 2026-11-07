@@ -130,6 +130,6 @@ feat(export): add svg vector rendering support
 
 ## Engine Fork (vendor/engrave)
 
-The engine submodule in `vendor/engrave` has its own guide, build structure, and lint configuration (`vendor/engrave/.clang-tidy`, `tools/format.py`, `tools/lint.py`).
+The engine submodule in `vendor/engrave` has its own build and lint configuration (`vendor/engrave/.clang-tidy`, `tools/format.py`, `tools/lint.py`).
 
-When adding new code to `vendor/engrave`, only identifier naming, `struct` usage, and include grouping apply. The host's architectural rules (such as avoiding classes/virtual functions or specific error outcome conventions) do not apply to the engine fork, because the engine preserves upstream MuseScore music algorithms, object models, and legacy layout data structures.
+When adding new code to `vendor/engrave`, only identifier naming, `struct` usage, and include grouping apply. The host's architectural rules (avoiding virtual functions, the callable-wrapper and error-handling conventions) do not apply to the engine fork, because the engine keeps upstream MuseScore music algorithms and object models.
