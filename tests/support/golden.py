@@ -62,7 +62,6 @@ import asyncio
 import base64
 
 # The fork owns the shared artifact representations and comparison policy.
-import importlib.util
 import json
 import os
 import shutil
@@ -72,24 +71,12 @@ import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
 
+from engrave_testing import golden as _engine_golden
+from engrave_testing.musicxml_semantic import musicxml_semantic
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.musicxml_semantic import musicxml_semantic
 from support.paths import REPO_ROOT
 
-_engine_support = REPO_ROOT / "vendor/engrave/tests/support"
-# The fork's golden.py imports `support.composition_fixture`; inside the host that name would
-# resolve to the host's own `support` package, so bind it to the fork's authenticated converter.
-_converter_spec = importlib.util.spec_from_file_location(
-    "support.composition_fixture", _engine_support / "composition_fixture.py"
-)
-_converter = importlib.util.module_from_spec(_converter_spec)
-_converter_spec.loader.exec_module(_converter)
-sys.modules["support.composition_fixture"] = _converter
-_engine_golden_path = _engine_support / "golden.py"
-_engine_spec = importlib.util.spec_from_file_location("engrave_golden", _engine_golden_path)
-_engine_golden = importlib.util.module_from_spec(_engine_spec)
-_engine_spec.loader.exec_module(_engine_golden)
 GoldenFormatError = _engine_golden.GoldenFormatError
 # Use the fork's converter: its bytes are what the input provenance check authenticates.
 composition_musicxml = _engine_golden.composition_musicxml

@@ -42,3 +42,6 @@ soundfile = "==0.14.0"
 pillow = ">=13.0.0, <14"
 pymupdf = ">=2.0, <3"
 psutil = ">=7, <8"
+
+engrave-host-testing = { path = ".", editable = true }
+engrave-testing = { path = "vendor/engrave", editable = true }

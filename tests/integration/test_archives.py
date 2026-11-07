@@ -15,8 +15,6 @@ import zipfile
 import zlib
 from pathlib import Path
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 from support.paths import REPO_ROOT
 
 
@@ -380,6 +378,8 @@ def run_probe(binary, out):
 
 
 async def valid_score_imports(binary, resources, out):
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
 
     xml = (REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").read_bytes()
     with zipfile.ZipFile(out / "valid.mxl", "w", compression=zipfile.ZIP_DEFLATED) as target:

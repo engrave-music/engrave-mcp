@@ -76,14 +76,14 @@ from unittest.mock import patch
 # The fork owns the created.json converter; its bytes are pinned in the capture manifests.
 import numpy as np
 import soundfile as sf
+from engrave_testing.make_sine_soundfont import generate_sine_soundfont
 from support import golden as golden
 from support.golden import describe_midi
 from support.make_dense_score import generate_dense_score
-from support.make_sine_soundfont import generate_sine_soundfont
 from support.mcp_client import Client
 from support.paths import REPO_ROOT
 
-COMPOSITION_FIXTURE = REPO_ROOT / "vendor/engrave/tests/support/composition_fixture.py"
+COMPOSITION_FIXTURE = REPO_ROOT / "vendor/engrave/tests/engrave_testing/composition_fixture.py"
 
 
 def find_probe_binary(bin_dir: Path | None) -> Path:

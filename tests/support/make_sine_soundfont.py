@@ -1,7 +1,6 @@
-"""Compatibility entry point for the engine-owned validator."""
+"""Compatibility entry point for the fork-owned tool."""
 
-import runpy
-from pathlib import Path
+from engrave_testing.make_sine_soundfont import main
 
-_path = Path(__file__).resolve().parents[2] / "vendor/engrave/tests/support/make_sine_soundfont.py"
-globals().update(runpy.run_path(str(_path), run_name="__main__" if __name__ == "__main__" else "engrave_validator"))
+if __name__ == "__main__":
+    raise SystemExit(main())

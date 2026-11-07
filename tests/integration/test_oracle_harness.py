@@ -34,8 +34,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from engrave_testing import check_semantic_dump as csd
 from integration.test_roundtrip import PAGE_STYLE_DEFAULTS, compare_mscz_xml, parse_mscx
-from support import check_semantic_dump as csd
 from support import golden as golden
 from support.paths import REPO_ROOT
 
@@ -99,8 +99,8 @@ class TestGoldenInventory(unittest.TestCase):
 
 class TestCapturedInputProvenance(unittest.TestCase):
     def test_capture_uses_the_authenticated_converter(self):
-        engine = golden.REPO_ROOT / "vendor/engrave/tests/support/composition_fixture.py"
-        self.assertEqual(Path(sys.modules["support.composition_fixture"].__file__).resolve(), engine.resolve())
+        engine = golden.REPO_ROOT / "vendor/engrave/tests/engrave_testing/composition_fixture.py"
+        self.assertEqual(Path(sys.modules["engrave_testing.composition_fixture"].__file__).resolve(), engine.resolve())
 
     def test_capture_refuses_unreviewed_converter_output(self):
 

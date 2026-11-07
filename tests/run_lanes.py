@@ -237,7 +237,9 @@ def run_lane(
         focused_env = dict(base_env)
         if lane == "document_stress":
             focused_env["ENGRAVE_MCP_STRESS_OUTPUT"] = str(output / lane)
-        elif lane not in ("native_includes", "native_inputs"):
+        elif lane == "native_inputs":
+            cmd += ["--output", str(output / lane)]
+        elif lane != "native_includes":
             test_binary = "engrave-mcp-test" if lane.startswith("native_470_") else "engrave-mcp"
             cmd += ["--binary", str(build_dir / f"{test_binary}{exe_suffix}"), "--output", str(output / lane)]
             if lane == "native_470_conversion_cancel":
@@ -245,8 +247,7 @@ def run_lane(
                     "--host-sha256",
                     hashlib.sha256((build_dir / f"{test_binary}{exe_suffix}").read_bytes()).hexdigest(),
                 ]
-            if lane != "xmake_incremental":
-                cmd += ["--resources", str(assets)]
+            cmd += ["--assets" if lane == "xmake_incremental" else "--resources", str(assets)]
             if lane in ("live_dense_cancel", "live_queued_cancel", "output_schema_boundaries"):
                 cmd += ["--soundfont", str(soundfont)]
             if lane == "live_dense_cancel":
@@ -1023,9 +1024,6 @@ def main() -> None:
     setup_link(engine_source, testcwd / "vendor/engrave", output)
 
     base_env = os.environ.copy()
-    base_env["PYTHONPATH"] = os.pathsep.join(
-        (str(repo_root / "tests"), str(repo_root / "scripts"), base_env.get("PYTHONPATH", ""))
-    )
     base_env["TEMP"] = str(output / "tmp")
     base_env["TMP"] = str(output / "tmp")
     base_env["TMPDIR"] = str(output / "tmp")

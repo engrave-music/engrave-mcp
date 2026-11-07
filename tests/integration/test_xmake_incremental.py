@@ -13,6 +13,7 @@ from support.paths import REPO_ROOT
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
+    parser.add_argument("--assets", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     output = args.output.resolve()
@@ -55,7 +56,7 @@ def main():
         return result.stdout
 
     def build(name):
-        return run(name, ["xmake", "build", "-y", "-j", "4", "registry_dump", "engrave_mcp"])
+        return run(name, ["xmake", "build", "-P", ".", "-y", "-j", "4", "registry_dump", "engrave_mcp"])
 
     schema = REPO_ROOT / "engrave_mcp/tools.json"
     generator = [
@@ -97,7 +98,7 @@ def main():
         ]
         stdout = run(
             "live-list",
-            [str(binary), "--resources", str(REPO_ROOT / ".runtime/assets")],
+            [str(binary), "--resources", str(args.assets.resolve())],
             input="".join(json.dumps(r) + "\n" for r in requests),
         )
         response = next(json.loads(line) for line in stdout.splitlines() if json.loads(line).get("id") == 2)

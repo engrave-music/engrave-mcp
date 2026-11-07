@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "engrave-host-testing"
+version = "0.0.0"
+requires-python = ">=3.13"
+
+[tool.setuptools]
+packages = ["support", "integration"]
+py-modules = ["check_native_includes"]
+package-dir = { support = "tests/support", integration = "tests/integration", "" = "scripts" }

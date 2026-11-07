@@ -1,19 +1,22 @@
 """Malformed/archive input must fail without killing or poisoning the server."""
 
+import argparse
 import asyncio
 import base64
 import json
 import os
 import zipfile
+from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from support.paths import REPO_ROOT
 
-OUT = REPO_ROOT / "artifacts/native-input-errors"
-
 
 async def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, default=REPO_ROOT / "artifacts/native-input-errors")
+    OUT = parser.parse_args().output.resolve()
     OUT.mkdir(parents=True, exist_ok=True)
     fixture = (REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").read_text(encoding="utf-8")
     cases = {
