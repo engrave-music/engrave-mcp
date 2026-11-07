@@ -32,7 +32,7 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
 - Avoid rewriting music algorithms; preserve an executable baseline for each refactor.
   Compare every engine change against the engine gate (`vendor/engrave/tests/gate.py`,
   wrapped by `tests/engine_gate.py`) and goldens in `vendor/engrave/tests/data/golden`
-  (`tests/support/golden.py`) with the explicit, hash-pinned allow-list
+  (`tests/engrave_mcp_testing/golden.py`) with the explicit, hash-pinned allow-list
   (`vendor/engrave/tests/data/golden/allow.json`).
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
