@@ -78,15 +78,25 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.composition_fixture import composition_musicxml
 from support.musicxml_semantic import musicxml_semantic
 from support.paths import REPO_ROOT
 
-_engine_golden_path = REPO_ROOT / "vendor/engrave/tests/support/golden.py"
+_engine_support = REPO_ROOT / "vendor/engrave/tests/support"
+# The fork's golden.py imports `support.composition_fixture`; inside the host that name would
+# resolve to the host's own `support` package, so bind it to the fork's authenticated converter.
+_converter_spec = importlib.util.spec_from_file_location(
+    "support.composition_fixture", _engine_support / "composition_fixture.py"
+)
+_converter = importlib.util.module_from_spec(_converter_spec)
+_converter_spec.loader.exec_module(_converter)
+sys.modules["support.composition_fixture"] = _converter
+_engine_golden_path = _engine_support / "golden.py"
 _engine_spec = importlib.util.spec_from_file_location("engrave_golden", _engine_golden_path)
 _engine_golden = importlib.util.module_from_spec(_engine_spec)
 _engine_spec.loader.exec_module(_engine_golden)
 GoldenFormatError = _engine_golden.GoldenFormatError
+# Use the fork's converter: its bytes are what the input provenance check authenticates.
+composition_musicxml = _engine_golden.composition_musicxml
 allow_accept = _engine_golden.allow_accept
 audio_equal = _engine_golden.audio_equal
 describe_audio = _engine_golden.describe_audio
@@ -208,14 +218,25 @@ async def required(session, name, arguments):
     return result
 
 
+def created_input_pin() -> str:
+    """Reviewed hash of the MusicXML sent for created.json, from the authenticated manifest."""
+    manifest = _engine_golden.ROOT / "tests/data/golden/inputs.json"
+    data = manifest.read_bytes()
+    if sha256(data) != _engine_golden.INPUT_MANIFEST_SHA256:
+        raise RuntimeError("input provenance manifest hash mismatch")
+    return json.loads(data)["fixtures"]["created.json"]["input_sha256"]
+
+
 async def open_fixture(session, source):
     if source.name == "created.json":
-        xml = composition_musicxml(json.loads(read_text(source)))
+        data = composition_musicxml(json.loads(read_text(source))).encode("utf-8")
+        if sha256(data) != created_input_pin():
+            raise RuntimeError("created.json converted to unreviewed MusicXML bytes")
         return await required(
             session,
             "score_open",
             {
-                "data": base64.b64encode(xml.encode("utf-8")).decode("ascii"),
+                "data": base64.b64encode(data).decode("ascii"),
                 "format": "musicxml",
             },
         )

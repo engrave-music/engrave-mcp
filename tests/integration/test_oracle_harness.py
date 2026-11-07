@@ -106,6 +106,31 @@ class TestGoldenInventory(unittest.TestCase):
                 golden.command_pin(SimpleNamespace(output=output, platform="windows"))
 
 
+class TestCapturedInputProvenance(unittest.TestCase):
+    def test_capture_uses_the_authenticated_converter(self):
+        engine = golden.REPO_ROOT / "vendor/engrave/tests/support/composition_fixture.py"
+        self.assertEqual(Path(sys.modules["support.composition_fixture"].__file__).resolve(), engine.resolve())
+
+    def test_capture_refuses_unreviewed_converter_output(self):
+        import asyncio
+
+        source = golden.FIXTURE_DIR / "created.json"
+        sent = []
+
+        async def fake_required(session, name, arguments):
+            sent.append(arguments)
+            return {}
+
+        original = golden.composition_musicxml
+        with mock.patch.object(golden, "required", fake_required):
+            asyncio.run(golden.open_fixture(None, source))
+            self.assertEqual(len(sent), 1)
+            with mock.patch.object(golden, "composition_musicxml", lambda score: original(score) + "<!-- x -->"):
+                with self.assertRaisesRegex(RuntimeError, "unreviewed MusicXML"):
+                    asyncio.run(golden.open_fixture(None, source))
+        self.assertEqual(len(sent), 1)
+
+
 class TestCurrentGoldenInventory(unittest.TestCase):
     def test_unapproved_changes_missing_and_extra_artifacts_fail(self):
         for mutation in ("changed", "missing", "extra", "fixture", "baseline", "index"):

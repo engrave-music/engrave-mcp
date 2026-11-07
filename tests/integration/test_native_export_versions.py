@@ -1,6 +1,6 @@
 """Live native-version/warning contract; retains actual oracle input artifacts.
 
-This checks the pinned restricted writer, not full Phase B acceptance.
+This checks the pinned restricted 4.70 writer; the 4.7.6 oracle lane covers independent reading.
 """
 
 from __future__ import annotations

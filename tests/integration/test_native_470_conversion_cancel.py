@@ -121,7 +121,7 @@ def main():
                 dict(
                     protocolVersion="2024-11-05",
                     capabilities={},
-                    clientInfo=dict(name="phase-b-conversion-interruption", version="2"),
+                    clientInfo=dict(name="native-470-conversion-interruption", version="2"),
                 ),
             )
         )

@@ -78,6 +78,8 @@ from unittest.mock import patch
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
+# The fork owns the created.json converter; its bytes are pinned in the capture manifests.
+COMPOSITION_FIXTURE = ROOT / "vendor/engrave/tests/support/composition_fixture.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import numpy as np
@@ -315,7 +317,7 @@ async def capture_current_audio(
     """Render the golden fixture inventory and preserve the server's version stamp."""
     import base64
 
-    from support.composition_fixture import composition_musicxml
+    composition_musicxml = golden.composition_musicxml
 
     fixtures = audio_fixture_sources()
     with tempfile.TemporaryDirectory(prefix="musescore-audio-capture-") as temporary:
@@ -414,7 +416,7 @@ def write_capture_manifest(
         "soundfont_sha256": soundfont_sha,
         "extractor_sha256": file_sha256(ROOT / "tests/support/golden.py"),
         "capture_script_sha256": file_sha256(Path(__file__)),
-        "fixture_helper_sha256": file_sha256(ROOT / "tests/support/composition_fixture.py"),
+        "fixture_helper_sha256": file_sha256(COMPOSITION_FIXTURE),
         "version_proof_sha256": file_sha256(target / "version.mscx"),
         "fixture_sha256": {name: file_sha256(path) for name, path in fixtures.items()},
         "audio_sha256": {name: file_sha256(target / name / "audio.json") for name in fixtures},
@@ -465,7 +467,7 @@ def make_current_audio_capture(
     fixture_hashes = {name: file_sha256(path) for name, path in fixtures.items()}
     extractor_sha = file_sha256(ROOT / "tests/support/golden.py")
     script_sha = file_sha256(Path(__file__))
-    fixture_helper_sha = file_sha256(ROOT / "tests/support/composition_fixture.py")
+    fixture_helper_sha = file_sha256(COMPOSITION_FIXTURE)
     capture_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f"{platform}-capture-", dir=capture_root) as temporary:
         target = Path(temporary)
@@ -484,9 +486,7 @@ def make_current_audio_capture(
         )
         assert file_sha256(ROOT / "tests/support/golden.py") == extractor_sha, "extractor changed during capture"
         assert file_sha256(Path(__file__)) == script_sha, "capture script changed during capture"
-        assert file_sha256(ROOT / "tests/support/composition_fixture.py") == fixture_helper_sha, (
-            "fixture helper changed during capture"
-        )
+        assert file_sha256(COMPOSITION_FIXTURE) == fixture_helper_sha, "fixture helper changed during capture"
         write_capture_manifest(
             target,
             platform,
@@ -530,7 +530,7 @@ def read_audio_capture(
         f"{platform} feature extractor is stale"
     )
     assert manifest.get("capture_script_sha256") == file_sha256(Path(__file__)), f"{platform} capture script is stale"
-    assert manifest.get("fixture_helper_sha256") == file_sha256(ROOT / "tests/support/composition_fixture.py"), (
+    assert manifest.get("fixture_helper_sha256") == file_sha256(COMPOSITION_FIXTURE), (
         f"{platform} fixture helper is stale"
     )
     proof = tree / "version.mscx"
