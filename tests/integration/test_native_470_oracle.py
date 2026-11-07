@@ -743,6 +743,10 @@ def main() -> int:
                 current_binary.is_file() and current_assets.is_dir(),
                 "current binary or assets are missing",
             )
+        require(
+            args.producer or current_binary is not None,
+            "spoof control requires --current-binary and --current-assets outside producer mode",
+        )
         if args.writer_results:
             require(args.writer_results.is_dir(), "writer results directory is missing")
         output = args.output.resolve()
