@@ -411,7 +411,15 @@ def expect_comparator_rejection(label: str, action) -> str:
     raise GateError(f"comparator accepted mutation: {label}")
 
 
-def mutation_tests(root: Path, case_dir: Path, binary: Path, assets: Path, oracle_env: dict[str, str]):
+def mutation_tests(
+    root: Path,
+    case_dir: Path,
+    binary: Path,
+    assets: Path,
+    oracle_env: dict[str, str],
+    current_binary: Path,
+    current_assets: Path,
+):
     expected = read_json(root / "expected/notes.json")
     # A real 4.70 MSCZ reopen is a reader control in every mode. This wrapper
     # is scratch input, not evidence that the current writer produced it.
@@ -429,9 +437,29 @@ def mutation_tests(root: Path, case_dir: Path, binary: Path, assets: Path, oracl
         "oracle MSCZ control failed or reported diagnostics",
     )
     compare_semantics(expected, json.loads(control.stdout))
+    # A current-format fixture keeps its 5.00-only payload when relabelled.
+    # The oracle gate must reject it even though its declared version is 4.70.
+    spoof = case_dir / "spoofed-470.mscx"
+    tree = ET.parse(root / "shared_parts.source.mscx")
+    require(tree.getroot().get("version") == "5.00", "spoof control is not current format")
+    require(tree.find(".//SharedPart") is not None, "spoof control has no 5.00 payload")
+    tree.getroot().set("version", "4.70")
+    tree.write(spoof, encoding="utf-8", xml_declaration=True)
+    current = run_dump(
+        current_binary, current_assets, root / "shared_parts.source.mscx", case_dir, "spoof-current", os.environ.copy()
+    )
+    require(current.returncode == 0 and not current.stderr, "current spoof source control failed")
+    proc = run_dump(binary, assets, spoof, case_dir, "spoof-oracle", oracle_env)
+    if proc.returncode != 0 or proc.stderr:
+        spoof_rejection = "header_spoof_acceptance"
+    else:
+        spoof_rejection = expect_comparator_rejection(
+            "header_spoof_acceptance", lambda: compare_semantics(json.loads(current.stdout), json.loads(proc.stdout))
+        )
+
     altered = copy.deepcopy(expected)
     altered["events"][0][0][0]["notes"].clear()
-    names = [expect_comparator_rejection("lost_note", lambda: compare_semantics(expected, altered))]
+    names = [spoof_rejection, expect_comparator_rejection("lost_note", lambda: compare_semantics(expected, altered))]
     altered = copy.deepcopy(expected)
     require(bool(altered["parts"][0]["longName"]), "name mutation is vacuous")
     altered["parts"][0]["longName"] = ""
@@ -721,7 +749,18 @@ def main() -> int:
         output.mkdir(parents=True, exist_ok=False)
         mutation_dir = output / "mutations"
         mutation_dir.mkdir()
-        mutations = mutation_tests(fixture_root, mutation_dir, binary, assets, oracle_env)
+        mutation_binary = current_binary or args.host_binary.resolve().with_name(
+            "semantic_dump.exe" if sys.platform.startswith("win") else "semantic_dump"
+        )
+        mutations = mutation_tests(
+            fixture_root,
+            mutation_dir,
+            binary,
+            assets,
+            oracle_env,
+            mutation_binary,
+            current_assets or args.host_resources.resolve(),
+        )
         save_json(mutation_dir / "record.json", mutations)
         if args.producer:
             from support.native_470_producer import produce
