@@ -75,7 +75,8 @@ from engrave_testing import golden as _engine_golden
 from engrave_testing.musicxml_semantic import musicxml_semantic
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.paths import REPO_ROOT
+
+from engrave_mcp_testing.paths import REPO_ROOT
 
 GoldenFormatError = _engine_golden.GoldenFormatError
 # Use the fork's converter: its bytes are what the input provenance check authenticates.

@@ -17,9 +17,9 @@ from collections import Counter
 from fractions import Fraction
 from pathlib import Path
 
+from engrave_mcp_testing.paths import REPO_ROOT
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.paths import REPO_ROOT
 
 FIXTURES = REPO_ROOT / "vendor/engrave/src/importexport/guitarpro/tests/data"
 OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", REPO_ROOT / "artifacts/imports-guitarpro"))

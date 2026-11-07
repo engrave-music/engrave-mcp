@@ -8,8 +8,8 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
+from engrave_mcp_testing.paths import REPO_ROOT
 from jsonschema import Draft202012Validator
-from support.paths import REPO_ROOT
 
 
 def main() -> int:

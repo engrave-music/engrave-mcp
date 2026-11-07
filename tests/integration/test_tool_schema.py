@@ -10,8 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from engrave_mcp_testing.paths import REPO_ROOT
 from jsonschema import Draft202012Validator
-from support.paths import REPO_ROOT
 
 BUILD = REPO_ROOT / ("build/xmake-windows" if os.name == "nt" else "build/xmake-linux")
 SUFFIX = ".exe" if os.name == "nt" else ""
@@ -375,7 +375,7 @@ def main():
     parser.add_argument("--dump", type=Path, default=BUILD / f"registry_dump{SUFFIX}")
     parser.add_argument("--registry-test", type=Path, default=BUILD / f"registry_test{SUFFIX}")
     args = parser.parse_args()
-    generator = REPO_ROOT / "tests/support/generate_tool_schema.py"
+    generator = REPO_ROOT / "tests/engrave_mcp_testing/generate_tool_schema.py"
     subprocess.run(
         [
             sys.executable,

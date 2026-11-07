@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.paths import REPO_ROOT
 
 
 def main():
@@ -62,7 +62,7 @@ def main():
     schema = REPO_ROOT / "engrave_mcp/tools.json"
     generator = [
         sys.executable,
-        str(REPO_ROOT / "tests/support/generate_tool_schema.py"),
+        str(REPO_ROOT / "tests/engrave_mcp_testing/generate_tool_schema.py"),
         "--dump",
         str(dump),
     ]

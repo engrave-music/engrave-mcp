@@ -10,11 +10,11 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
+from engrave_mcp_testing.musicxml_notes import canonical_notes
+from engrave_mcp_testing.paths import REPO_ROOT
 from jsonschema import Draft202012Validator
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.musicxml_notes import canonical_notes
-from support.paths import REPO_ROOT
 
 OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", REPO_ROOT / "artifacts/mcp-smoke")).resolve()
 TOOLS = {tool["name"]: tool for tool in json.loads((REPO_ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))}

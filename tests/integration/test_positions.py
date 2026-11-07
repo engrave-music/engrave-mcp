@@ -11,10 +11,10 @@ import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from integration.test_export_options import REPEAT_FIXTURE_MUSICXML, read_png_dimensions
+from engrave_mcp_testing.export_formats import REPEAT_FIXTURE_MUSICXML, read_png_dimensions
+from engrave_mcp_testing.paths import REPO_ROOT
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.paths import REPO_ROOT
 
 
 def timed_fixture():

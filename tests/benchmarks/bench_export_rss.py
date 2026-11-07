@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from support.process_client import Client, export_args, rss_bytes, summary
+from engrave_mcp_testing.process_client import Client, export_args, rss_bytes, summary
 
 
 def main():

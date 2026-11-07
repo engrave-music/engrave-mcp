@@ -19,9 +19,9 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from engrave_mcp_testing.paths import REPO_ROOT
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.paths import REPO_ROOT
 
 # Pinned repeat test count from repeat_tests.cpp (72 tests: repeat01..repeat72)
 EXPECTED_TOTAL = 72

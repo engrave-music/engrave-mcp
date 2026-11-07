@@ -14,10 +14,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest import mock
 
+from engrave_mcp_testing import check_rendered_page as page
+from engrave_mcp_testing.paths import REPO_ROOT
 from PIL import Image, ImageDraw
 from PIL.PngImagePlugin import PngInfo
-from support import check_rendered_page as page
-from support.paths import REPO_ROOT
 
 PEDAL = REPO_ROOT / "vendor/engrave/tests/data/golden/windows/pedal.mscx/page-0.svg"
 BEND = REPO_ROOT / "vendor/engrave/tests/data/golden/windows/bend.gp/page-0.svg"

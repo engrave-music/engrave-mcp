@@ -6,7 +6,8 @@ import asyncio
 import json
 
 from jsonschema import Draft202012Validator
-from support.paths import REPO_ROOT
+
+from engrave_mcp_testing.paths import REPO_ROOT
 
 TOOLS = {x["name"]: x for x in json.loads((REPO_ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))}
 VALIDATORS = {name: Draft202012Validator(tool["outputSchema"]) for name, tool in TOOLS.items()}

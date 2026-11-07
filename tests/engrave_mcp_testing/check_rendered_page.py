@@ -24,8 +24,9 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from support import golden as golden
-from support.golden import (
+
+from engrave_mcp_testing import golden as golden
+from engrave_mcp_testing.golden import (
     GENERATE_EXCERPTS,
     ClientSession,
     StdioServerParameters,
@@ -39,7 +40,7 @@ from support.golden import (
     stdio_client,
     write_text,
 )
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.paths import REPO_ROOT
 
 SVG = "{http://www.w3.org/2000/svg}"
 XLINK = "{http://www.w3.org/1999/xlink}"

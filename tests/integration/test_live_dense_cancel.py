@@ -14,7 +14,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from support.process_client import Client, summary
+from engrave_mcp_testing.process_client import Client, summary
 
 
 def observer(engine, remove):

@@ -10,8 +10,8 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from support.mcp_client import Client
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.mcp_client import Client
+from engrave_mcp_testing.paths import REPO_ROOT
 
 
 async def run(args):

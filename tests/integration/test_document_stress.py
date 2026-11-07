@@ -9,7 +9,7 @@ import threading
 from ctypes import wintypes
 from pathlib import Path
 
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.paths import REPO_ROOT
 
 OUT = Path(os.environ.get("ENGRAVE_MCP_STRESS_OUTPUT", REPO_ROOT / "artifacts/stress"))
 

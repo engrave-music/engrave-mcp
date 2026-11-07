@@ -8,6 +8,5 @@ version = "0.0.0"
 requires-python = ">=3.13"
 
 [tool.setuptools]
-packages = ["support", "integration", "tests"]
-py-modules = ["check_native_includes"]
-package-dir = { tests = "tests", support = "tests/support", integration = "tests/integration", "" = "scripts" }
+packages = ["engrave_mcp_testing"]
+package-dir = { engrave_mcp_testing = "tests/engrave_mcp_testing" }

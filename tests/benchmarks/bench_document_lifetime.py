@@ -11,8 +11,8 @@ import json
 import time
 from pathlib import Path
 
-from support.paths import REPO_ROOT
-from support.process_client import Client, export_args, rss_bytes, summary
+from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_mcp_testing.process_client import Client, export_args, rss_bytes, summary
 
 
 def main():

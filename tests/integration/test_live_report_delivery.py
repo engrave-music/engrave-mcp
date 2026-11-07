@@ -12,8 +12,8 @@ import time
 from pathlib import Path
 
 import psutil
-from support.paths import REPO_ROOT
-from support.process_client import export_args
+from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_mcp_testing.process_client import export_args
 
 
 class Host:

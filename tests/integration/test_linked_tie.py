@@ -8,8 +8,8 @@ import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from support.mcp_client import Client
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.mcp_client import Client
+from engrave_mcp_testing.paths import REPO_ROOT
 
 
 def first_tie(path: Path):

@@ -12,7 +12,10 @@ import platform
 from pathlib import Path
 
 import anyio
-from integration.test_native_470_oracle import (
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+from engrave_mcp_testing.native_470 import (
     check_file,
     compare_semantics,
     compare_warnings,
@@ -24,8 +27,6 @@ from integration.test_native_470_oracle import (
     save_json,
     sha,
 )
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 
 
 class RecordingStream:
@@ -240,7 +241,7 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                                         )
                                         expected = read_json(check_file(fixture_root, case, "expected_semantics"))
                                         actual = json.loads(proc.stdout)
-                                        from support.native_470_edits import association_report
+                                        from engrave_mcp_testing.native_470_edits import association_report
 
                                         save_json(
                                             folder / "associations.json",
@@ -280,7 +281,7 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                     print(f"{record['status'].upper()} {case['id']}", flush=True)
                     records.append(record)
     if getattr(args, "live_edits", False):
-        from support.native_470_edits import live_edits
+        from engrave_mcp_testing.native_470_edits import live_edits
 
         records.extend(await live_edits(args, fixture_root, output, binary, assets, oracle_env))
     require(file_sha(host) == host_hash, "host binary changed during run")

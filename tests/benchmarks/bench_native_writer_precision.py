@@ -16,10 +16,10 @@ from pathlib import Path
 
 import numpy as np
 import pymupdf
+from engrave_mcp_testing.paths import REPO_ROOT
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from PIL import Image
-from support.paths import REPO_ROOT
 
 BINARY = RESOURCES = SOUNDFONT = PRECISION_DIR = None
 VERSION = "4.70"

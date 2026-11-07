@@ -15,8 +15,8 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from integration.test_native_470_conversion_cancel import Client, sha
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.conversion_client import Client, sha
+from engrave_mcp_testing.paths import REPO_ROOT
 
 
 def main():

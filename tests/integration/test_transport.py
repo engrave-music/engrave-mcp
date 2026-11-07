@@ -5,7 +5,7 @@ import sys
 import time
 from pathlib import Path
 
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.paths import REPO_ROOT
 
 PROTOCOL_VERSION = "2025-11-25"
 # The advertised tool list must match the checked-in schema exactly.

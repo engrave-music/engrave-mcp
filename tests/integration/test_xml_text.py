@@ -8,7 +8,7 @@ import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from support.mcp_client import Client
+from engrave_mcp_testing.mcp_client import Client
 
 
 async def run(args):

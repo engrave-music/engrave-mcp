@@ -12,9 +12,9 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from integration.test_native_edit import fixture
-from support.mcp_client import Client
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.mcp_client import Client
+from engrave_mcp_testing.native_edit_fixture import fixture
+from engrave_mcp_testing.paths import REPO_ROOT
 
 TRACK_BALANCE_LEAKAGE_LIMIT = 0.30
 

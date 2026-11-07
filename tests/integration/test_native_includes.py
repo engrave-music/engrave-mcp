@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from check_native_includes import audit
+from engrave_mcp_testing.native_includes import audit
 
 
 class IncludeBoundaryTest(unittest.TestCase):
