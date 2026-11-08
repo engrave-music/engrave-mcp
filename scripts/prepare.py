@@ -23,7 +23,7 @@ def verify_submodule():
         raise RuntimeError("vendor/engrave is not a submodule of this repository")
     marker = status[0]
     if marker == "-":
-        raise RuntimeError("vendor/engrave is not initialized; run scripts/bootstrap.py first")
+        raise RuntimeError("vendor/engrave is not initialized; run `git submodule update --init vendor/engrave` first")
     if marker == "+":
         raise RuntimeError("vendor/engrave is at a different commit than the superproject records")
     if marker == "U":

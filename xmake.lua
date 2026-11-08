@@ -59,7 +59,7 @@ if not os.isfile(engine_build) then
     else
         configure_failure("the engine checkout has no xmake build: " .. engine_build
             .. "\nThe vendor/engrave build is also missing: " .. vendor_build
-            .. "\nRun scripts/bootstrap.py to initialize vendor/engrave,"
+            .. "\nRun `git submodule update --init vendor/engrave`,"
             .. " or point --engine_source at an engrave checkout that carries xmake/engrave.lua.")
         return
     end

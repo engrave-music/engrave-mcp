@@ -6,6 +6,9 @@ build_directory="${2:-build/xmake-linux}"
 cairo_prefix="${3:-}"
 # Fourth positional argument optionally selects a custom engine checkout.
 engine_source="${4:-$PWD/vendor/engrave}"
+# The pixi environment installs vendor/engrave as an editable package, so the
+# submodule must exist before the first pixi command.
+git submodule update --init --depth 1 -- vendor/engrave
 pixi run --locked python scripts/bootstrap.py
 pixi run --locked python scripts/prepare.py
 pixi run --locked python scripts/prepare_xmake.py --check --engine-source "$engine_source"

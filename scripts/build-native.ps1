@@ -15,8 +15,10 @@ try {
     if (-not $vsPath) { throw 'Visual Studio C++ x64 toolchain is required' }
     Import-Module (Join-Path $vsPath 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
     Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
-    # bootstrap.py initializes an absent vendor/engrave submodule and prepare.py
-    # refuses to run until it is initialized, so a fresh checkout needs this order.
+    # The pixi environment installs vendor/engrave as an editable package, so the
+    # submodule must exist before the first pixi command.
+    & git submodule update --init --depth 1 -- vendor/engrave
+    if ($LASTEXITCODE) { throw 'Engine submodule initialization failed' }
     & pixi run --locked python scripts/bootstrap.py
     if ($LASTEXITCODE) { throw 'Engine bootstrap failed' }
     & pixi run --locked python scripts/prepare.py
