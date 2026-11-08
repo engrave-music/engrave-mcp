@@ -22,6 +22,7 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -332,12 +333,12 @@ private:
 
             ReaderEvent eof;
             eof.kind = ReaderEvent::Kind::EOF;
-            (void) enqueue(std::move(eof));
+            std::ignore = enqueue(std::move(eof));
         } else if (saw_error) {
             ReaderEvent event;
             event.kind = ReaderEvent::Kind::ERROR;
             event.data = read_error.empty() ? std::string("unknown stdin read error") : read_error;
-            (void) enqueue(std::move(event));
+            std::ignore = enqueue(std::move(event));
         }
     }
 
@@ -538,7 +539,7 @@ private:
 #else
         original_stdout_flags_ = ::fcntl(STDOUT_FILENO, F_GETFL, 0);
         if (original_stdout_flags_ >= 0) {
-            (void) ::fcntl(STDOUT_FILENO, F_SETFL, original_stdout_flags_ | O_NONBLOCK);
+            std::ignore = ::fcntl(STDOUT_FILENO, F_SETFL, original_stdout_flags_ | O_NONBLOCK);
         }
 #endif
         try {
@@ -548,7 +549,7 @@ private:
         }
 #if !defined(_WIN32)
         if (original_stdout_flags_ >= 0) {
-            (void) ::fcntl(STDOUT_FILENO, F_SETFL, original_stdout_flags_);
+            std::ignore = ::fcntl(STDOUT_FILENO, F_SETFL, original_stdout_flags_);
         }
 #endif
         post_writer_exited();
@@ -1352,9 +1353,10 @@ private:
                         asio::co_spawn(
                             self->ioc_,
                             [self, target]() -> asio::awaitable<void> {
-                                (void) co_await self->send_error(target->id, -32603,
-                                                                 "Live export cancellation watchdog expired after 5 seconds; session "
-                                                                 "terminates if export remains blocked");
+                                std::ignore =
+                                    co_await self->send_error(target->id, -32603,
+                                                              "Live export cancellation watchdog expired after 5 seconds; session "
+                                                              "terminates if export remains blocked");
                             },
                             asio::detached);
                     });
@@ -1598,7 +1600,7 @@ private:
         call->response_started = true;
 
         if (!fatal_.load(std::memory_order_acquire)) {
-            (void) co_await send_error(call->id, -32800, "Request cancelled");
+            std::ignore = co_await send_error(call->id, -32800, "Request cancelled");
         }
 
         erase_inflight(call);
@@ -1621,9 +1623,9 @@ private:
         }
 
         if (error && call->cancel_requested && is_operation_aborted(error)) {
-            (void) co_await send_error(call->id, -32800, "Request cancelled");
+            std::ignore = co_await send_error(call->id, -32800, "Request cancelled");
         } else {
-            (void) co_await send_error(call->id, -32603, "Internal error");
+            std::ignore = co_await send_error(call->id, -32603, "Internal error");
         }
 
         erase_inflight(call);

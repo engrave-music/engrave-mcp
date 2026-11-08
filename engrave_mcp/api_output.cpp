@@ -11,6 +11,7 @@
 #include <set>
 #include <sstream>
 #include <thread>
+#include <tuple>
 
 #ifdef MUSIC_ASYNC_TEST_HOOKS
 #include <engrave/testing/write470.h>
@@ -367,7 +368,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             try {
                 // Use the wire encoder's strict UTF-8 rules; replacement would
                 // make both success and partial-error paths unusable.
-                (void) Json(report_path_text(path)).dump();
+                std::ignore = Json(report_path_text(path)).dump();
             } catch (const Json::type_error &) {
                 invalid_resolved_path();
             }
