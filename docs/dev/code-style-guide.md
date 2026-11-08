@@ -81,12 +81,22 @@ Use standard C++23 callable wrappers according to ownership:
 
 Use standard C++ types directly (`std::size_t`, `std::uint64_t`, `std::string`, `std::string_view`, `std::span`, etc.). Do not introduce custom integer aliases or project-specific typedefs like `usize`.
 
+## Unused Values and Parameters
+
+Unused parameters and variables use `[[maybe_unused]]` on the declaration. Deliberately discarded `[[nodiscard]]` results use `std::ignore = expr;` (include `<tuple>`). Do not use `(void)` casts.
+
 ## Assertions and Panic
 
 Do not use C++26 contracts.
 
 - Use `<cassert>` and `assert(...)` for programmer obligations and internal invariants checked in debug and development builds.
 - Failures that must stay checked in release builds should use small local `check(condition, message)` or `panic(message)` helpers. These helpers are added locally when code first needs them; they are not currently provided as repository-wide primitives.
+
+## Python Code Style
+
+- Shared test helpers live only in the package (`engrave_mcp_testing` in host, `engrave_testing` in the engine fork).
+- Test scripts never import other test scripts; the layout lint guard enforces this boundary.
+- Python code adheres to Ruff rules: `E` (pycodestyle errors), `F` (Pyflakes), `I` (isort), and `W` (pycodestyle warnings).
 
 ## Error Handling
 
