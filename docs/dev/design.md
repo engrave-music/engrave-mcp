@@ -83,11 +83,15 @@ The export budget (1 GiB, `ExportLimits::output_bytes`) is enforced during rende
 
 The 16 KiB diagnostic limit (`k_diagnostic_limit` in `api_output.cpp`, and UTF-8 safe truncation in `mcp_transport.cpp`) applies only to export reports and transport-generated diagnostics, not to arbitrary engine or tool messages. Other messages (such as `runtime_info` error details) are not separately bounded and are subject only to the 16 MiB response cap.
 
+### Windows heap policy
+
+On Windows, the host executables (`engrave-mcp.exe` and test/probe binaries) and the engine's test executables embed an application manifest that selects the Windows Segment Heap. The engine library does not embed a heap manifest; programs that embed it choose their own heap. This policy addresses score audio teardown, which frees roughly 1.3 million small objects with over half released on threads other than the allocating thread, where the default NT heap is slow. On the dense-audio test, the Segment Heap lowers synthesis and encode cleanup p95 by about 25–30% for approximately 6.5% more peak working set. An alternative allocator (mimalloc) cuts cleanup by ~47% but costs ~24% more memory and requires an extra DLL, so it is not adopted.
+
 ## 7. Performance characteristics and limitations
 
 - Under measured test conditions, vector rendering (PDF, SVG) for standard scores once fonts are loaded has been observed in single-digit milliseconds (an observation under measured conditions, not an architectural guarantee).
 - Audio synthesis latency scales with score duration, voice count, and SoundFont complexity.
-- Audio synthesis cancellation contains cooperative polling, but thread scheduling variance on Windows can cause cancellation latency to exceed 30 ms under high system load.
+- Audio cancellation is observed within a fraction of a millisecond; the time until the export call returns is dominated by tearing down playback events and the audio graph (tens of milliseconds for dense scores, slower on Windows).
 - Memory usage: logical file quotas are enforced, but process virtual memory is not capped by an OS sandbox.
 
 ## 8. Non-goals

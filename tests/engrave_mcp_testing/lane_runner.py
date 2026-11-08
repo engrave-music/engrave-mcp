@@ -20,7 +20,7 @@ from engrave_testing.paths import pixi_env
 
 from engrave_mcp_testing.paths import REPO_ROOT
 
-FOCUSED_DEFAULT_LANES = ["native_includes", "native_inputs"]
+FOCUSED_DEFAULT_LANES = ["native_includes", "native_inputs", "windows_manifest"]
 FOCUSED_OPT_IN_LANES = [
     "output_schema_boundaries",
     "document_stress",
@@ -84,6 +84,7 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
     missing = []
     requirements = {
         "native_includes": [],
+        "windows_manifest": [],
         "native_470_conversion_cancel": ["engrave-mcp-test"],
         "native_470_serialization_cancel": ["engrave-mcp-test"],
         "xmake_incremental": ["engrave-mcp", "registry_dump"],
@@ -241,7 +242,9 @@ def run_lane(
             focused_env["ENGRAVE_MCP_STRESS_OUTPUT"] = str(output / lane)
         elif lane == "native_inputs":
             cmd += ["--output", str(output / lane)]
-        elif lane != "native_includes":
+        elif lane == "windows_manifest":
+            cmd += ["--build-dir", str(build_dir)]
+        elif lane not in ("native_includes", "windows_manifest"):
             test_binary = "engrave-mcp-test" if lane.startswith("native_470_") else "engrave-mcp"
             cmd += ["--binary", str(build_dir / f"{test_binary}{exe_suffix}"), "--output", str(output / lane)]
             if lane == "native_470_conversion_cancel":
