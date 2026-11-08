@@ -64,6 +64,10 @@ On Linux:
 
 Because `pixi install` installs `engrave-host-testing` (`tests/engrave_mcp_testing`) and `engrave-testing` (`vendor/engrave/tests/engrave_testing`) in editable mode into `.pixi/envs/default`, all test helpers are importable directly by the environment interpreter without requiring `PYTHONPATH`.
 
+### Windows manifest verification
+
+Embedded Windows application manifests are verified manually rather than through an automated lane or lint task by passing built executables to `tests/integration/test_windows_manifest.py`. The check uses the Windows SDK `mt.exe` to extract each binary's manifest and assert `SegmentHeap`, UTF-8, and `asInvoker` settings.
+
 ## Running Lanes
 
 Run the unified test runner:
