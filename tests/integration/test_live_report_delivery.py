@@ -1,11 +1,5 @@
 """Deterministic publication lock, visible-artifact and terminal resource regressions."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import json
 import os
@@ -18,7 +12,8 @@ import time
 from pathlib import Path
 
 import psutil
-from support.process_client import ROOT, export_args
+from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_mcp_testing.process_client import export_args
 
 
 class Host:
@@ -59,7 +54,7 @@ class Host:
             "tools/call",
             dict(
                 name="score_open",
-                arguments=dict(path=str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")),
+                arguments=dict(path=str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")),
             ),
             2,
         )

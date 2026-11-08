@@ -1,7 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import json
 import os
 import subprocess
@@ -9,7 +5,7 @@ import sys
 import time
 from pathlib import Path
 
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.paths import REPO_ROOT
 
 PROTOCOL_VERSION = "2025-11-25"
 # The advertised tool list must match the checked-in schema exactly.

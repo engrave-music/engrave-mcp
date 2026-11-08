@@ -27,10 +27,13 @@ MuseScore 的乐谱也要能被 Agent 打开并继续编辑。读取器接受 Mu
 
 环境要求：Git、[Pixi](https://pixi.sh/) 与 Visual Studio C++ x64 工具链（MSVC 14.51+）。
 
+克隆时使用 `--recursive`，或者在安装前初始化引擎子模块：
+
 ```powershell
-pixi install -e native --locked
-pixi run -e native python scripts/bootstrap.py --soundfont
-pixi run -e native python scripts/prepare.py
+git submodule update --init
+pixi install --locked
+pixi run python scripts/bootstrap.py --soundfont
+pixi run python scripts/prepare.py
 pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 ```
 
@@ -38,12 +41,12 @@ pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 
 ```powershell
 # 开发构建依赖 Pixi 原生库，先把它们加入 PATH。
-$env:PATH = "$PWD\.pixi\envs\native\Library\bin;$env:PATH"
+$env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
 
 $env:ENGRAVE_MCP_BINARY   = "$PWD/build/xmake-windows/engrave-mcp.exe"
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
-pixi run -e native python tests/integration/test_mcp_smoke.py
+pixi run python tests/integration/test_mcp_smoke.py
 ```
 
 手动启动服务时显式传入资源目录；`--soundfont` 可选：

@@ -1,17 +1,10 @@
 """Regression checks for the native public-header boundary."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import tempfile
 import unittest
 from pathlib import Path
 
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
-from check_native_includes import audit
+from engrave_mcp_testing.native_includes import audit
 
 
 class IncludeBoundaryTest(unittest.TestCase):

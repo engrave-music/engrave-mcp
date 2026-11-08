@@ -5,12 +5,6 @@ This is the complete entry point: --direct-binary is required. The native
 --partial-write mode returns 3 and leaves PDF/MSCZ comparison to this wrapper.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import hashlib
 import json
@@ -22,7 +16,9 @@ import time
 import zipfile
 from pathlib import Path
 
-from support.process_client import ROOT, Client, export_args
+from engrave_mcp_testing.golden import describe_pdf
+from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_mcp_testing.process_client import Client, export_args
 
 
 def main():
@@ -58,15 +54,14 @@ def main():
             "--partial-write",
             str(a.resources.resolve()),
             str(oracle),
-            str(ROOT / "vendor/engrave/tests/data"),
-            str(ROOT / "tests/data/live_export/created.musicxml"),
+            str(REPO_ROOT / "vendor/engrave/tests/data"),
+            str(REPO_ROOT / "tests/data/live_export/created.musicxml"),
         ],
         capture_output=True,
         text=True,
     )
     if partial.returncode != 3 or "partial: no content comparison" not in partial.stdout:
         raise RuntimeError(f"partial writer contract failed: {partial.returncode} {partial.stdout} {partial.stderr}")
-    from support.golden import describe_pdf
 
     folders = [folder for folder in oracle.iterdir() if folder.is_dir()]
     if not folders:
@@ -86,7 +81,7 @@ def main():
     subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tests/integration/test_live_publication_cancel.py"),
+            str(REPO_ROOT / "tests/integration/test_live_publication_cancel.py"),
             "--binary",
             str(a.binary),
             "--resources",
@@ -99,7 +94,7 @@ def main():
     subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tests/integration/test_live_publication_limits.py"),
+            str(REPO_ROOT / "tests/integration/test_live_publication_limits.py"),
             "--binary",
             str(a.binary),
             "--resources",
@@ -112,7 +107,7 @@ def main():
     subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tests/integration/test_destination_errors.py"),
+            str(REPO_ROOT / "tests/integration/test_destination_errors.py"),
             "--binary",
             str(a.binary),
             "--resources",
@@ -128,7 +123,7 @@ def main():
     subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tests/integration/test_live_path_utf8.py"),
+            str(REPO_ROOT / "tests/integration/test_live_path_utf8.py"),
             "--binary",
             str(a.binary),
             "--resources",
@@ -141,7 +136,7 @@ def main():
     subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tests/integration/test_live_report_delivery.py"),
+            str(REPO_ROOT / "tests/integration/test_live_report_delivery.py"),
             "--binary",
             str(a.binary),
             "--resources",
@@ -154,7 +149,7 @@ def main():
     for mode in (None,):
         out = a.output / (mode or "default")
         c = Client(a.binary, a.resources, out, mode)
-        doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
+        doc = c.tool("score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
             "document"
         ]
         for fmt, dest in [
@@ -259,9 +254,9 @@ def main():
                 c = Client(a.binary, a.resources, a.output / (mode + "-" + seam), mode)
             finally:
                 del os.environ[key]
-            doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
-                "document"
-            ]
+            doc = c.tool(
+                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")}
+            )["document"]
             dest = a.output / (mode + "-" + seam) / "old.pdf"
             for existing in (False, True):
                 if existing:

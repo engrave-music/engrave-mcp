@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
 import subprocess
 from collections import Counter
 from pathlib import Path
 
+from engrave_mcp_testing.paths import REPO_ROOT
 from jsonschema import Draft202012Validator
-from support.paths import REPO_ROOT
 
 
 def main() -> int:

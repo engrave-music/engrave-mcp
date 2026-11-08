@@ -9,6 +9,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from engrave_testing.paths import pixi_env
+
 ROOT = Path(__file__).resolve().parents[1]
 CODEC_NOTICES = (
     ("fdk-aac", "codecs/fdk-aac/NOTICE"),
@@ -162,7 +164,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         raise SystemExit("Package output must be empty; choose a new --output directory")
-    environment = ROOT / ".pixi/envs" / ("native" if args.no_qt else "default")
+    environment = pixi_env(ROOT)
     library = environment / "Library"
     redist = Path(os.environ["VCToolsRedistDir"]) / "x64"
     available = {p.name.lower(): p for p in redist.rglob("*.dll") if "debug" not in str(p).lower()}

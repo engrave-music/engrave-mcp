@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import contextlib
 import hashlib
 import io
@@ -18,16 +14,15 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest import mock
 
+from engrave_mcp_testing import check_rendered_page as page
+from engrave_mcp_testing.paths import REPO_ROOT
 from PIL import Image, ImageDraw
 from PIL.PngImagePlugin import PngInfo
-from support import check_rendered_page as page
-from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-PEDAL = ROOT / "vendor/engrave/tests/data/golden/windows/pedal.mscx/page-0.svg"
-BEND = ROOT / "vendor/engrave/tests/data/golden/windows/bend.gp/page-0.svg"
-LAYOUT = ROOT / "vendor/engrave/tests/data/golden/windows/layout_elements.mscx/page-0.svg"
-REFERENCE = ROOT / "vendor/engrave/tests/data/golden/page_reference.json"
+PEDAL = REPO_ROOT / "vendor/engrave/tests/data/golden/windows/pedal.mscx/page-0.svg"
+BEND = REPO_ROOT / "vendor/engrave/tests/data/golden/windows/bend.gp/page-0.svg"
+LAYOUT = REPO_ROOT / "vendor/engrave/tests/data/golden/windows/layout_elements.mscx/page-0.svg"
+REFERENCE = REPO_ROOT / "vendor/engrave/tests/data/golden/page_reference.json"
 
 
 class TestSvgGeometry(unittest.TestCase):
@@ -316,7 +311,7 @@ class TestRenderedPageControls(unittest.TestCase):
     def test_reviewed_svg_hash_is_exact_and_platform_specific(self):
         name = "layout_elements.mscx/page-0.svg"
         index = json.loads(
-            (page.ROOT / "vendor/engrave/tests/data/golden/linux/index.json").read_text(encoding="utf-8")
+            (page.REPO_ROOT / "vendor/engrave/tests/data/golden/linux/index.json").read_text(encoding="utf-8")
         )
         digest = index["layout_elements.mscx"]["page-0.svg"]
         with mock.patch.object(page.sys, "platform", "linux"):
@@ -329,8 +324,8 @@ class TestRenderedPageControls(unittest.TestCase):
     def test_removed_glyph_with_updated_index_fails(self):
         name = "layout_elements.mscx/page-0.svg"
         platform = "windows" if sys.platform.startswith("win") else "linux"
-        source = page.ROOT / "vendor/engrave/tests/data/golden" / platform / name
-        payload = json.loads((page.ROOT / "vendor/engrave/tests/data/golden/page_reference.json").read_text())
+        source = page.REPO_ROOT / "vendor/engrave/tests/data/golden" / platform / name
+        payload = json.loads((page.REPO_ROOT / "vendor/engrave/tests/data/golden/page_reference.json").read_text())
         payload["pages"] = {name: payload["pages"][name]}
         payload["pages"][name]["png"] = None
         payload["png_exceptions"] = []
@@ -358,7 +353,7 @@ class TestRenderedPageControls(unittest.TestCase):
                 json.dumps({"layout_elements.mscx": {"page-0.svg": hashlib.sha256(target.read_bytes()).hexdigest()}})
             )
             with (
-                mock.patch.object(page, "ROOT", fake),
+                mock.patch.object(page, "REPO_ROOT", fake),
                 mock.patch.object(sys, "argv", args),
                 contextlib.redirect_stdout(io.StringIO()),
             ):

@@ -157,7 +157,7 @@ std::filesystem::path create_private_directory(const std::filesystem::path &pare
     throw std::runtime_error("Cannot allocate unique staging directory");
 }
 
-void validate_output_path_syntax(const std::filesystem::path &path) {
+void validate_output_path_syntax([[maybe_unused]] const std::filesystem::path &path) {
 #ifdef _WIN32
     const auto &text = path.native();
     auto separator = [](wchar_t c) { return c == L'/' || c == L'\\'; };
@@ -214,7 +214,7 @@ void validate_output_path_syntax(const std::filesystem::path &path) {
         start = end + 1;
     }
 #else
-    (void) path; // POSIX component names have no additional restrictions.
+    // POSIX component names have no additional restrictions.
 #endif
 }
 

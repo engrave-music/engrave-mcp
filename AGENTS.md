@@ -13,14 +13,14 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
 - The engine is the fork github.com/Locietta/engrave, consumed as the shallow submodule
   `vendor/engrave` (governance rules in `docs/dev/fork.md`; never force-push fork branches;
   pin commits on fork `main` by SHA; push fork `main` first and record the commit range
-  and validation evidence in the host bump commit message, no pin tags). webmscore and `patches/` are retired.
+  and validation evidence in the host bump commit message, no pin tags).
   Native compilation is the target; do not introduce Node.js or WASM as runtime dependencies.
 - No computer use, screenshots, simulated input, or dependence on a desktop MuseScore install.
 - The build is xmake (no Qt): the engine build lives in the fork (`xmake/engrave.lua`
   with folder globs, pinned engine package recipes), the host build in this repository's
   `xmake.lua`, which includes the engine build from `vendor/engrave`; validate Windows
   and Linux.
-  Work natively on Windows (PowerShell, `.pixi/envs/native/python.exe`). Linux means the
+  Work natively on Windows (PowerShell, `.pixi/envs/default/python.exe`). Linux means the
   physical host `ssh <linux-host>` (checkout `~/OSS/engrave-mcp`); never use WSL for this project.
   Both repositories are on GitHub (host: `Locietta/engrave-mcp`); move commits
   between machines by pushing and fetching branches, never git bundles or copied
@@ -32,13 +32,13 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
 - Avoid rewriting music algorithms; preserve an executable baseline for each refactor.
   Compare every engine change against the engine gate (`vendor/engrave/tests/gate.py`,
   wrapped by `tests/engine_gate.py`) and goldens in `vendor/engrave/tests/data/golden`
-  (`tests/support/golden.py`) with the explicit, hash-pinned allow-list
+  (`tests/engrave_mcp_testing/golden.py`) with the explicit, hash-pinned allow-list
   (`vendor/engrave/tests/data/golden/allow.json`).
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
 - Temporary worktrees and review clones go under the ignored `.worktrees/<name>` of the checkout
   (also on linux-host), never at drive roots, in `$TEMP` or beside the repository. Do not junction or
-  symlink into the main checkout: call the main checkout's `.pixi/envs/native/python.exe` by path.
+  symlink into the main checkout: call the main checkout's `.pixi/envs/default/python.exe` by path.
   Remove them when done (`git worktree remove`, then delete the clone directory).
 - Workers are not alone: edit only assigned files and never revert other workers' changes.
 - Worker models: GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Astra, Opus 5.5, DeepSeek Flash and

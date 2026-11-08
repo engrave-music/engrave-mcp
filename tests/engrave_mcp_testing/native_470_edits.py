@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import asyncio
 import copy
 import json
 import os
 import xml.etree.ElementTree as ET
 
-from integration.test_native_470_oracle import (
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+from engrave_mcp_testing.native_470 import (
     compare_semantics,
     compare_xml,
     file_sha,
@@ -23,9 +20,7 @@ from integration.test_native_470_oracle import (
     run_dump,
     save_json,
 )
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from support.native_470_producer import RecordingStream
+from engrave_mcp_testing.native_470_producer import RecordingStream
 
 
 def association_report(expected, actual):
@@ -228,7 +223,7 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                     for eid in sorted(warning_ids)
                                 ]
                             )
-                            from integration.test_native_470_oracle import compare_warnings
+                            from engrave_mcp_testing.native_470 import compare_warnings
 
                             for fmt in ("mscx", "mscz"):
                                 # Retain the historical -run evidence key for existing comparators.

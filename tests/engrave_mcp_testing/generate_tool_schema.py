@@ -3,19 +3,13 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
+from engrave_mcp_testing.paths import REPO_ROOT
 
 
 def dump_registry(executable: Path) -> bytes:
@@ -34,7 +28,7 @@ def dump_registry(executable: Path) -> bytes:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dump", type=Path, required=True, help="Standalone registry_dump executable")
-    parser.add_argument("--schema", type=Path, default=ROOT / "engrave_mcp/tools.json")
+    parser.add_argument("--schema", type=Path, default=REPO_ROOT / "engrave_mcp/tools.json")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true", help="Fail if schema bytes differ")
     mode.add_argument("--write", action="store_true", help="Update schema only when bytes differ")

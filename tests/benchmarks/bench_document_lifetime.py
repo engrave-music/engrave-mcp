@@ -5,19 +5,14 @@ Open/close churn is measured separately from the fixed-document live soak becaus
 DEFECT-ENGRAVE-001 is an inherited document-lifetime leak.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import hashlib
 import json
 import time
 from pathlib import Path
 
-from support.process_client import ROOT, Client, export_args, rss_bytes, summary
+from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_mcp_testing.process_client import Client, export_args, rss_bytes, summary
 
 
 def main():
@@ -46,7 +41,7 @@ def main():
         return reply, (time.perf_counter() - start) * 1000
 
     for fixture in () if a.soak_only else ("repeat70.mscx", "lyrics.mscx"):
-        path = str(ROOT / "vendor/engrave/tests/data/inputs/golden" / fixture)
+        path = str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden" / fixture)
         c = Client(a.binary, a.resources, a.output / fixture, "live", a.soundfont)
         samples, rss = [], []
         try:
@@ -90,7 +85,9 @@ def main():
         c = Client(a.binary, a.resources, a.output / "soak", "live", a.soundfont)
         try:
             docs = [
-                c.tool("score_open", dict(path=str(ROOT / "vendor/engrave/tests/data/inputs/golden" / f)))["document"]
+                c.tool("score_open", dict(path=str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden" / f)))[
+                    "document"
+                ]
                 for f in ("repeat70.mscx", "lyrics.mscx")
             ]
             measures = [c.tool("score_outline", dict(document=d))["outline"]["measures"][0]["id"] for d in docs]

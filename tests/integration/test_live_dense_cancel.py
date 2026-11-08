@@ -6,20 +6,15 @@ poll; they measure notification-to-response including real cleanup, NOT latency
 to the next poll. Delay trials use an unmodified release binary.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import hashlib
 import json
 import os
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from support.process_client import Client, summary
+from engrave_mcp_testing.process_client import Client, summary
 
 
 def observer(engine, remove):
@@ -76,7 +71,6 @@ def main():
     out = a.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     score = a.score.resolve()
-    import xml.etree.ElementTree as ET
 
     assert len(ET.parse(score).findall(".//note")) == 49152
     result = dict(

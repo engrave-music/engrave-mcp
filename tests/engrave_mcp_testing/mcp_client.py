@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import asyncio
 import json
-from pathlib import Path
 
 from jsonschema import Draft202012Validator
-from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-TOOLS = {x["name"]: x for x in json.loads((ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))}
+from engrave_mcp_testing.paths import REPO_ROOT
+
+TOOLS = {x["name"]: x for x in json.loads((REPO_ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))}
 VALIDATORS = {name: Draft202012Validator(tool["outputSchema"]) for name, tool in TOOLS.items()}
 
 
