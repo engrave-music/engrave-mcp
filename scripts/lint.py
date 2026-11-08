@@ -143,7 +143,12 @@ def main() -> int:
     py_files = [f for f in files if f.suffix.lower() in PYTHON_EXTENSIONS]
     cpp_files = [f for f in files if f.suffix.lower() in CPP_EXTENSIONS]
 
-    total_returncode = 0
+    from engrave_mcp_testing.layout import audit_test_layout
+
+    layout_errors = audit_test_layout(repo_root)
+    for error in layout_errors:
+        print(error, file=sys.stderr)
+    total_returncode = int(bool(layout_errors))
 
     # 1. Python linting with ruff
     if py_files:

@@ -83,7 +83,12 @@ end
 -- Shared include/link environment
 -------------------------------------------------------------------------------
 
-local native_env = path.join(project_root, ".pixi", "envs", "native")
+includes("xmake/pixi.lua")
+if not os.isfile(ENGRAVE_PIXI_PYTHON) then
+    configure_failure("Pixi environment interpreter is missing: " .. ENGRAVE_PIXI_PYTHON .. "; run `pixi install`")
+    return
+end
+local native_env = ENGRAVE_PIXI_ENV
 local native_root = path.join(native_env, "Library")
 if not os.isdir(native_root) then
     native_root = native_env

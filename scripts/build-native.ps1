@@ -17,14 +17,14 @@ try {
     Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
     # bootstrap.py initializes an absent vendor/engrave submodule and prepare.py
     # refuses to run until it is initialized, so a fresh checkout needs this order.
-    & pixi run --locked -e native python scripts/bootstrap.py
+    & pixi run --locked python scripts/bootstrap.py
     if ($LASTEXITCODE) { throw 'Engine bootstrap failed' }
-    & pixi run --locked -e native python scripts/prepare.py
+    & pixi run --locked python scripts/prepare.py
     if ($LASTEXITCODE) { throw 'Native source preparation failed' }
-    & pixi run --locked -e native python scripts/prepare_xmake.py --check --engine-source $EngineSource
+    & pixi run --locked python scripts/prepare_xmake.py --check --engine-source $EngineSource
     if ($LASTEXITCODE) { throw 'xmake input validation failed' }
-    & xmake f -y -m release -o $BuildDirectory "--engine_source=$EngineSource"
+    & xmake f -P . -y -m release -o $BuildDirectory "--engine_source=$EngineSource"
     if ($LASTEXITCODE) { throw 'Native configuration failed' }
-    & xmake build -y -j $Jobs @Targets
+    & xmake build -P . -y -j $Jobs @Targets
     if ($LASTEXITCODE) { throw 'Native build failed' }
 } finally { Pop-Location }

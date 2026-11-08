@@ -7,88 +7,15 @@ or expires the real reservation there for the deadline variant.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
-import hashlib
 import json
-import os
-import queue
 import subprocess
-import threading
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
-
-
-def sha(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-class Client:
-    def __init__(self, args, out):
-        self.log = (out / "wire.jsonl").open("w", encoding="utf-8")
-        self.errors = (out / "stderr.log").open("w", encoding="utf-8")
-        self.process = subprocess.Popen(
-            [str(args.binary.resolve()), "--resources", str(args.resources.resolve())],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=self.errors,
-            env=dict(os.environ),
-        )
-        self.responses = queue.Queue()
-        self.counter = 0
-
-        def read():
-            for line in self.process.stdout:
-                self.responses.put(json.loads(line))
-
-        self.reader = threading.Thread(target=read, daemon=True)
-        self.reader.start()
-
-    def send(self, method, params, notification=False):
-        self.counter += 1
-        request = dict(jsonrpc="2.0", method=method, params=params)
-        if not notification:
-            request["id"] = self.counter
-        self.log.write(json.dumps(dict(time=time.monotonic(), sent=request)) + "\n")
-        self.log.flush()
-        self.process.stdin.write((json.dumps(request) + "\n").encode())
-        self.process.stdin.flush()
-        return self.counter
-
-    def receive(self, ident):
-        deadline = time.monotonic() + 150
-        while time.monotonic() < deadline:
-            response = self.responses.get(timeout=max(0.01, deadline - time.monotonic()))
-            self.log.write(json.dumps(dict(time=time.monotonic(), received=response)) + "\n")
-            self.log.flush()
-            if response.get("id") == ident:
-                return response
-        raise TimeoutError(ident)
-
-    def call(self, tool, args):
-        response = self.receive(self.send("tools/call", dict(name=tool, arguments=args)))
-        assert "result" in response, response
-        return response["result"]["structuredContent"]
-
-    def close(self):
-        self.process.stdin.close()
-        try:
-            assert self.process.wait(timeout=15) == 0
-        finally:
-            if self.process.poll() is None:
-                self.process.kill()
-                self.process.wait()
-            self.reader.join(timeout=2)
-            self.log.close()
-            self.errors.close()
+from engrave_mcp_testing.conversion_client import Client, sha
+from engrave_mcp_testing.paths import REPO_ROOT
 
 
 def main():
@@ -101,12 +28,12 @@ def main():
     assert sha(args.binary) == args.host_sha256, "host hash mismatch"
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
-    source = ROOT / "tests/data/native_470/notes.mscx"
+    source = REPO_ROOT / "tests/data/native_470/notes.mscx"
     preflight = dict(
         host_sha256=sha(args.binary),
         source_sha256=sha(source),
         engine_revision=subprocess.check_output(
-            ["git", "-C", str(ROOT / "vendor/engrave"), "rev-parse", "HEAD"], text=True
+            ["git", "-C", str(REPO_ROOT / "vendor/engrave"), "rev-parse", "HEAD"], text=True
         ).strip(),
         assets={str(f.relative_to(args.resources)): sha(f) for f in sorted(args.resources.rglob("*")) if f.is_file()},
     )

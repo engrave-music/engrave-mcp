@@ -57,16 +57,11 @@ Usage:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import base64
 
 # The fork owns the shared artifact representations and comparison policy.
-import importlib.util
 import json
 import os
 import shutil
@@ -76,24 +71,13 @@ import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
 
+from engrave_testing import golden as _engine_golden
+from engrave_testing.musicxml_semantic import musicxml_semantic
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.musicxml_semantic import musicxml_semantic
-from support.paths import REPO_ROOT
 
-_engine_support = REPO_ROOT / "vendor/engrave/tests/support"
-# The fork's golden.py imports `support.composition_fixture`; inside the host that name would
-# resolve to the host's own `support` package, so bind it to the fork's authenticated converter.
-_converter_spec = importlib.util.spec_from_file_location(
-    "support.composition_fixture", _engine_support / "composition_fixture.py"
-)
-_converter = importlib.util.module_from_spec(_converter_spec)
-_converter_spec.loader.exec_module(_converter)
-sys.modules["support.composition_fixture"] = _converter
-_engine_golden_path = _engine_support / "golden.py"
-_engine_spec = importlib.util.spec_from_file_location("engrave_golden", _engine_golden_path)
-_engine_golden = importlib.util.module_from_spec(_engine_spec)
-_engine_spec.loader.exec_module(_engine_golden)
+from engrave_mcp_testing.paths import REPO_ROOT
+
 GoldenFormatError = _engine_golden.GoldenFormatError
 # Use the fork's converter: its bytes are what the input provenance check authenticates.
 composition_musicxml = _engine_golden.composition_musicxml
@@ -127,9 +111,9 @@ build_index = _engine_golden.build_index
 write_diff = _engine_golden.write_diff
 command_pin = _engine_golden.command_pin
 
-ROOT = REPO_ROOT
-FIXTURE_DIR = ROOT / "vendor/engrave/tests/data/inputs" / "golden"
-EXTRA_FIXTURES = (ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml",)
+
+FIXTURE_DIR = REPO_ROOT / "vendor/engrave/tests/data/inputs" / "golden"
+EXTRA_FIXTURES = (REPO_ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml",)
 # Fixtures without stored excerpts whose part excerpts are generated (after the master
 # outputs are captured) to cover excerpt creation, e.g. ChordLine path copying.
 GENERATE_EXCERPTS = _engine_golden.GENERATE_EXCERPTS
@@ -220,7 +204,7 @@ async def required(session, name, arguments):
 
 def created_input_pin() -> str:
     """Reviewed hash of the MusicXML sent for created.json, from the authenticated manifest."""
-    manifest = _engine_golden.ROOT / "tests/data/golden/inputs.json"
+    manifest = _engine_golden.REPO_ROOT / "tests/data/golden/inputs.json"
     data = manifest.read_bytes()
     if sha256(data) != _engine_golden.INPUT_MANIFEST_SHA256:
         raise RuntimeError("input provenance manifest hash mismatch")
@@ -419,7 +403,7 @@ def semantic_dump(source: Path, dest: Path, roots, *extra: str) -> None:
 
 def verify_input_provenance(*, root=None, sources=None, fixture_dir=None) -> list[str]:
     return _engine_golden.verify_input_provenance(
-        root=ROOT / "vendor/engrave" if root is None else root,
+        root=REPO_ROOT / "vendor/engrave" if root is None else root,
         sources=fixture_files() + mnx_fixture_files() if sources is None else sources,
         fixture_dir=FIXTURE_DIR if fixture_dir is None else fixture_dir,
         scenarios=EDIT_SCENARIOS,
@@ -708,7 +692,7 @@ def fixture_files() -> list[Path]:
 
 def mnx_fixture_files() -> list[Path]:
     """Engine-owned MNX inputs covered by the platform baseline."""
-    engine = Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor/engrave"))
+    engine = Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", REPO_ROOT / "vendor/engrave"))
     data = engine / "src/importexport/mnx/tests/data"
     files = [data / name for name in MNX_FIXTURES]
     missing = [str(path) for path in files if not path.is_file()]

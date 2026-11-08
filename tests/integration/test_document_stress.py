@@ -1,9 +1,5 @@
 """Bounded repeated-document and stream-recovery checks on the native executable."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ctypes
 import json
 import os
@@ -13,10 +9,9 @@ import threading
 from ctypes import wintypes
 from pathlib import Path
 
-from support.paths import REPO_ROOT
+from engrave_mcp_testing.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-OUT = Path(os.environ.get("ENGRAVE_MCP_STRESS_OUTPUT", ROOT / "artifacts/stress"))
+OUT = Path(os.environ.get("ENGRAVE_MCP_STRESS_OUTPUT", REPO_ROOT / "artifacts/stress"))
 
 
 class Counters(ctypes.Structure):
@@ -63,7 +58,7 @@ def main():
             os.environ.get(
                 "ENGRAVE_MCP_BINARY",
                 str(
-                    ROOT
+                    REPO_ROOT
                     / ("build/xmake-windows/engrave-mcp.exe" if os.name == "nt" else "build/xmake-linux/engrave-mcp")
                 ),
             )
@@ -73,7 +68,7 @@ def main():
         if soundfont:
             command += [
                 "--soundfont",
-                str(ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"),
+                os.environ.get("ENGRAVE_MCP_SOUNDFONT", str(REPO_ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3")),
             ]
         with (OUT / f"stderr-{soundfont}.log").open("wb") as log:
             process = subprocess.Popen(

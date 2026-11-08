@@ -7,10 +7,6 @@ Run with:
     python tests/integration/test_imports_guitarpro.py
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import asyncio
 import json
 import os
@@ -21,13 +17,12 @@ from collections import Counter
 from fractions import Fraction
 from pathlib import Path
 
+from engrave_mcp_testing.paths import REPO_ROOT
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-FIXTURES = ROOT / "vendor/engrave/src/importexport/guitarpro/tests/data"
-OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", ROOT / "artifacts/imports-guitarpro"))
+FIXTURES = REPO_ROOT / "vendor/engrave/src/importexport/guitarpro/tests/data"
+OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", REPO_ROOT / "artifacts/imports-guitarpro"))
 
 # Quarter-note durations used by the .mscx reference scores.
 MSCX_QUARTERS = {
@@ -353,8 +348,8 @@ async def _export(session, document, fmt, path):
 
 async def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    binary = Path(os.environ.get("ENGRAVE_MCP_BINARY", ROOT / "build/xmake-windows/engrave-mcp.exe"))
-    resources = Path(os.environ.get("ENGRAVE_MCP_RESOURCES", ROOT / ".runtime/assets"))
+    binary = Path(os.environ.get("ENGRAVE_MCP_BINARY", REPO_ROOT / "build/xmake-windows/engrave-mcp.exe"))
+    resources = Path(os.environ.get("ENGRAVE_MCP_RESOURCES", REPO_ROOT / ".runtime/assets"))
     params = StdioServerParameters(
         command=str(binary),
         args=["--resources", str(resources)],
@@ -462,7 +457,7 @@ async def main():
                 finally:
                     await _close(session, recovered_id)
 
-                musicxml_fixture = ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"
+                musicxml_fixture = REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"
                 if musicxml_fixture.is_file():
                     musicxml_id = await _open(session, musicxml_fixture)
                     await _close(session, musicxml_id)

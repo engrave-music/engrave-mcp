@@ -17,6 +17,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from engrave_testing.paths import pixi_env
+
 ENGINE_PACKAGE_RECIPES = (
     "freetype",
     "harfbuzz",
@@ -33,7 +35,7 @@ ENGINE_PACKAGE_RECIPES = (
 
 
 def _find_native_root(project_root: Path) -> Path:
-    env = project_root / ".pixi" / "envs" / "native"
+    env = pixi_env(project_root)
     library = env / "Library"
     return library if library.is_dir() else env
 

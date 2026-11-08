@@ -9,10 +9,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import run_lanes
-from support import golden
-from support.paths import REPO_ROOT
+from engrave_mcp_testing import golden
+from engrave_mcp_testing import lane_runner as run_lanes
+from engrave_mcp_testing.paths import REPO_ROOT
 
 
 class CleanupRegressions(unittest.TestCase):

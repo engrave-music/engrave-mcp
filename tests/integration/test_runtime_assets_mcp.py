@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import json
@@ -14,10 +10,8 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from support.mcp_client import Client
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
+from engrave_mcp_testing.mcp_client import Client
+from engrave_mcp_testing.paths import REPO_ROOT
 
 
 async def run(args):
@@ -29,9 +23,9 @@ async def run(args):
         out / "mutable-soundfont.sf2",
     )
     shutil.copyfile(font_source, font_input)
-    shutil.copyfile(ROOT / "vendor/engrave/tests/data/engine_audio/sine.sf2", soundfont_input)
+    shutil.copyfile(REPO_ROOT / "vendor/engrave/tests/data/engine_audio/sine.sf2", soundfont_input)
 
-    score = (ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx").read_text(encoding="utf-8")
+    score = (REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/linked_parts.mscx").read_text(encoding="utf-8")
     marker = "<height>10</height>"
     assert marker in score
     score = score.replace(
@@ -99,7 +93,9 @@ async def run(args):
         await client.tool("score_close", {"document": doc})
 
         audio_doc = (
-            await client.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")})
+            await client.tool(
+                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")}
+            )
         )["document"]
         revision = (await client.tool("score_outline", {"document": audio_doc}))["revision"]
         fluid, captured_path, sine, again_path = (

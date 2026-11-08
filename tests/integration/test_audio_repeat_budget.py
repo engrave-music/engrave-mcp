@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
 import argparse
 import asyncio
 import json
 import math
 from pathlib import Path
 
-from integration.test_audio_output_budget import live_budget
-from integration.test_export_options import REPEAT_FIXTURE_MUSICXML
-from support.mcp_client import Client
+from engrave_mcp_testing.audio_budget import live_budget
+from engrave_mcp_testing.export_formats import REPEAT_FIXTURE_MUSICXML
+from engrave_mcp_testing.mcp_client import Client
 
 
 async def capture(args, repeats):

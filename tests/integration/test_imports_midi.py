@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import json
@@ -15,10 +11,10 @@ from collections import Counter
 from fractions import Fraction
 from pathlib import Path
 
-from integration.test_export_options import count_note_on_events, parse_midi_file
+from engrave_mcp_testing.export_formats import count_note_on_events, parse_midi_file
+from engrave_mcp_testing.paths import REPO_ROOT
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.paths import REPO_ROOT
 
 
 def vlq(value):

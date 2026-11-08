@@ -6,21 +6,14 @@ transport serialization/write and session resume; client total adds client-side
 transport.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import json
 import time
 from pathlib import Path
 
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
-
-
-from support.process_client import Client, export_args, rss_bytes, summary
+from engrave_mcp_testing.golden import describe_pdf
+from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_mcp_testing.process_client import Client, export_args, rss_bytes, summary
 
 
 def main():
@@ -42,7 +35,7 @@ def main():
         for fixture in ("repeat70.mscx", "lyrics.mscx"):
             out = a.output / mode / fixture
             c = Client(a.binary, a.resources, out, mode)
-            doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden" / fixture)})[
+            doc = c.tool("score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden" / fixture)})[
                 "document"
             ]
             for fmt, pages in (
@@ -91,7 +84,6 @@ def main():
                         rss_bytes=rss,
                     )
                 )
-            from support.golden import describe_pdf
 
             page_count = describe_pdf(out / "pdf-all")["pages"]
             assert page_count >= 2
@@ -156,9 +148,9 @@ def main():
             for i in range(a.cold):
                 start = time.perf_counter()
                 c = Client(a.binary, a.resources, out / ("cold-" + str(i)), mode)
-                doc = c.tool("score_open", {"path": str(ROOT / "vendor/engrave/tests/data/inputs/golden" / fixture)})[
-                    "document"
-                ]
+                doc = c.tool(
+                    "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden" / fixture)}
+                )["document"]
                 c.tool(
                     "score_export",
                     export_args(doc, "pdf", out / ("cold-" + str(i) + ".pdf")),

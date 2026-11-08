@@ -8,10 +8,6 @@ and comparing against expected sequences defined in upstream repeat_tests.cpp.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
 import json
@@ -23,11 +19,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_testing.paths import pixi_env
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
 
 # Pinned repeat test count from repeat_tests.cpp (72 tests: repeat01..repeat72)
 EXPECTED_TOTAL = 72
@@ -133,7 +128,7 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
         print(f"ERROR: expected {EXPECTED_TOTAL} executable repeat cases, selected {len(tests)}", file=sys.stderr)
         return 1
     env = dict(os.environ)
-    native_lib = ROOT / ".pixi/envs/native/Library/bin"
+    native_lib = pixi_env(REPO_ROOT) / "Library/bin"
     if os.name == "nt" and native_lib.exists():
         env["PATH"] = str(native_lib) + os.pathsep + env.get("PATH", "")
 
@@ -288,7 +283,7 @@ def main() -> None:
     parser.add_argument(
         "--upstream",
         type=Path,
-        default=ROOT / "vendor/engrave",
+        default=REPO_ROOT / "vendor/engrave",
         help="Path to vendor/engrave submodule",
     )
     args = parser.parse_args()

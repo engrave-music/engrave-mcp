@@ -27,7 +27,7 @@ Tests both probe-level engine capabilities and MCP server integration:
    - Exports every format to a non-ASCII output path and checks uriRoundTrip for a
      non-ASCII SoundFont copy
 5. Performance and memory budget on a real dense workload:
-   - Generates tests/support/make_dense_score.py's deterministic 24-part, 300 s score
+   - Generates tests/engrave_mcp_testing/make_dense_score.py's deterministic 24-part, 300 s score
      (33,600 notes with chords and dynamics) in a temporary directory
    - Renders wav and ogg, measures render seconds per audio minute and peak memory
    - Budget: < 12.0 s per audio minute and < 1.0 GiB peak memory. Measurements on
@@ -49,12 +49,9 @@ Tests both probe-level engine capabilities and MCP server integration:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 import asyncio
+import base64
 import contextlib
 import hashlib
 import io
@@ -72,21 +69,22 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-from support.paths import REPO_ROOT
-
-ROOT = REPO_ROOT
 # The fork owns the created.json converter; its bytes are pinned in the capture manifests.
-COMPOSITION_FIXTURE = ROOT / "vendor/engrave/tests/support/composition_fixture.py"
-sys.path.insert(0, str(ROOT / "scripts"))
-
 import numpy as np
 import soundfile as sf
-from support import golden as golden
-from support.golden import describe_midi
-from support.make_sine_soundfont import generate_sine_soundfont
+from engrave_mcp_testing import golden as golden
+from engrave_mcp_testing.golden import describe_midi
+from engrave_mcp_testing.make_dense_score import generate_dense_score
+from engrave_mcp_testing.mcp_client import Client
+from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_testing.make_sine_soundfont import generate_sine_soundfont
+from engrave_testing.paths import pixi_env
+
+COMPOSITION_FIXTURE = REPO_ROOT / "vendor/engrave/tests/engrave_testing/composition_fixture.py"
 
 
 def find_probe_binary(bin_dir: Path | None) -> Path:
@@ -100,12 +98,12 @@ def find_probe_binary(bin_dir: Path | None) -> Path:
         )
     candidates.extend(
         [
-            ROOT / "build" / "xmake-windows" / "engine_audio_probe.exe",
-            ROOT / "build" / "xmake-windows" / "engine_audio_probe",
-            ROOT / "build" / "xmake-linux" / "engine_audio_probe",
-            ROOT / "build" / "xmake-linux" / "engine_audio_probe.exe",
-            ROOT / "build" / "windows" / "engine_audio_probe.exe",
-            ROOT / "build" / "linux" / "engine_audio_probe",
+            REPO_ROOT / "build" / "xmake-windows" / "engine_audio_probe.exe",
+            REPO_ROOT / "build" / "xmake-windows" / "engine_audio_probe",
+            REPO_ROOT / "build" / "xmake-linux" / "engine_audio_probe",
+            REPO_ROOT / "build" / "xmake-linux" / "engine_audio_probe.exe",
+            REPO_ROOT / "build" / "windows" / "engine_audio_probe.exe",
+            REPO_ROOT / "build" / "linux" / "engine_audio_probe",
         ]
     )
     for c in candidates:
@@ -116,7 +114,7 @@ def find_probe_binary(bin_dir: Path | None) -> Path:
 
 def probe_env() -> dict[str, str]:
     env = os.environ.copy()
-    native_env = ROOT / ".pixi" / "envs" / "native"
+    native_env = pixi_env(REPO_ROOT)
     for extra in (native_env / "Library" / "bin", native_env / "bin"):
         if extra.is_dir():
             env["PATH"] = str(extra.resolve()) + os.pathsep + env.get("PATH", "")
@@ -241,7 +239,7 @@ SINE_LEVEL_RMS = 0.1751
 SINE_LEVEL_RMS_RELATIVE_TOLERANCE = 0.02
 
 # Dense benchmark budget. The score has 24 parts, 150 4/4 measures, 300 s of
-# music and 33,600 notes (see tests/support/make_dense_score.py). Headroom is ~35%
+# music and 33,600 notes (see tests/engrave_mcp_testing/make_dense_score.py). Headroom is ~35%
 # over the slowest measured format (ogg 8.68-8.86 s/min on Windows and 2.54-2.57
 # on Linux, 2026-10-28) and ~2.2x over the measured peak working set
 # (462-468 MiB).
@@ -286,7 +284,9 @@ def audio_fixture_sources() -> dict[str, Path]:
     edits = set(golden.EDIT_SCENARIOS)
     assert not edits.intersection(fixtures), "fixture and edit scenario names overlap"
     indexed = set(
-        json.loads((ROOT / "vendor/engrave/tests/data/golden" / "windows" / "index.json").read_text(encoding="utf-8"))
+        json.loads(
+            (REPO_ROOT / "vendor/engrave/tests/data/golden" / "windows" / "index.json").read_text(encoding="utf-8")
+        )
     )
     expected = set(fixtures) | edits
     assert expected == indexed, (
@@ -315,7 +315,6 @@ async def capture_current_audio(
     binary: Path, resources: Path, soundfont: Path, target: Path, engine_commit: str
 ) -> None:
     """Render the golden fixture inventory and preserve the server's version stamp."""
-    import base64
 
     composition_musicxml = golden.composition_musicxml
 
@@ -414,7 +413,7 @@ def write_capture_manifest(
         "engine_commit": engine_commit,
         "binary_sha256": binary_sha,
         "soundfont_sha256": soundfont_sha,
-        "extractor_sha256": file_sha256(ROOT / "tests/support/golden.py"),
+        "extractor_sha256": file_sha256(REPO_ROOT / "tests/engrave_mcp_testing/golden.py"),
         "capture_script_sha256": file_sha256(Path(__file__)),
         "fixture_helper_sha256": file_sha256(COMPOSITION_FIXTURE),
         "version_proof_sha256": file_sha256(target / "version.mscx"),
@@ -426,7 +425,7 @@ def write_capture_manifest(
 
 def capture_destination(capture_root: Path, platform: str) -> Path:
     root = capture_root.resolve()
-    golden_root = (ROOT / "vendor/engrave/tests/data/golden").resolve()
+    golden_root = (REPO_ROOT / "vendor/engrave/tests/data/golden").resolve()
     assert root != golden_root and golden_root not in root.parents, (
         "capture directory must not be inside vendor/engrave/tests/data/golden"
     )
@@ -453,19 +452,19 @@ def make_current_audio_capture(
     destination = capture_destination(capture_root, platform)
     status = subprocess.run(
         ["git", "status", "--porcelain"],
-        cwd=ROOT,
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         encoding="utf-8",
         check=True,
     ).stdout
     assert not status.strip(), "capture requires a clean superproject checkout"
-    source_commit = git_revision(ROOT)
+    source_commit = git_revision(REPO_ROOT)
     engine_commit = git_revision(engine_source)
     binary_sha, soundfont_sha = file_sha256(binary), file_sha256(soundfont)
     fixtures = audio_fixture_sources()
     fixture_hashes = {name: file_sha256(path) for name, path in fixtures.items()}
-    extractor_sha = file_sha256(ROOT / "tests/support/golden.py")
+    extractor_sha = file_sha256(REPO_ROOT / "tests/engrave_mcp_testing/golden.py")
     script_sha = file_sha256(Path(__file__))
     fixture_helper_sha = file_sha256(COMPOSITION_FIXTURE)
     capture_root.mkdir(parents=True, exist_ok=True)
@@ -477,14 +476,16 @@ def make_current_audio_capture(
                 timeout=1800,
             )
         )
-        assert git_revision(ROOT) == source_commit, "superproject commit changed during capture"
+        assert git_revision(REPO_ROOT) == source_commit, "superproject commit changed during capture"
         assert git_revision(engine_source) == engine_commit, "engine commit changed during capture"
         assert file_sha256(binary) == binary_sha, "binary changed during capture"
         assert file_sha256(soundfont) == soundfont_sha, "soundfont changed during capture"
         assert {name: file_sha256(path) for name, path in audio_fixture_sources().items()} == fixture_hashes, (
             "fixture inventory or inputs changed during capture"
         )
-        assert file_sha256(ROOT / "tests/support/golden.py") == extractor_sha, "extractor changed during capture"
+        assert file_sha256(REPO_ROOT / "tests/engrave_mcp_testing/golden.py") == extractor_sha, (
+            "extractor changed during capture"
+        )
         assert file_sha256(Path(__file__)) == script_sha, "capture script changed during capture"
         assert file_sha256(COMPOSITION_FIXTURE) == fixture_helper_sha, "fixture helper changed during capture"
         write_capture_manifest(
@@ -526,7 +527,7 @@ def read_audio_capture(
     assert manifest.get("engine_commit") == engine_commit, f"{platform} capture engine is stale"
     assert re.fullmatch(r"[0-9a-f]{64}", manifest.get("binary_sha256", "")), manifest_path
     assert manifest.get("soundfont_sha256") == soundfont_sha, f"{platform} soundfont differs"
-    assert manifest.get("extractor_sha256") == file_sha256(ROOT / "tests/support/golden.py"), (
+    assert manifest.get("extractor_sha256") == file_sha256(REPO_ROOT / "tests/engrave_mcp_testing/golden.py"), (
         f"{platform} feature extractor is stale"
     )
     assert manifest.get("capture_script_sha256") == file_sha256(Path(__file__)), f"{platform} capture script is stale"
@@ -670,7 +671,7 @@ def test_audio_check_reporting() -> None:
     source_commit, engine_commit, soundfont_sha = "a" * 40, "b" * 40, "c" * 64
     with tempfile.TemporaryDirectory(prefix="musescore-audio-check-") as temp_dir:
         captures = Path(temp_dir)
-        for forbidden in (ROOT / "vendor/engrave/tests/data/golden", captures / "unrelated"):
+        for forbidden in (REPO_ROOT / "vendor/engrave/tests/data/golden", captures / "unrelated"):
             if forbidden == captures / "unrelated":
                 (forbidden / "windows").mkdir(parents=True)
             try:
@@ -762,7 +763,7 @@ def test_audio_check_reporting() -> None:
         for platform in ("windows", "linux"):
             for name in fixtures:
                 shutil.copyfile(
-                    ROOT / "vendor/engrave/tests/data/golden" / "windows" / name / "audio.json",
+                    REPO_ROOT / "vendor/engrave/tests/data/golden" / "windows" / name / "audio.json",
                     captures / platform / name / "audio.json",
                 )
             write_capture_manifest(
@@ -852,11 +853,11 @@ def test_pitch_onset_and_level(
     evidence: dict[str, Any],
 ) -> None:
     print("[2/6] Testing pitch, onset and sine SoundFont output level...")
-    sine_sf2 = ROOT / "vendor/engrave/tests/data/engine_audio" / "sine.sf2"
+    sine_sf2 = REPO_ROOT / "vendor/engrave/tests/data/engine_audio" / "sine.sf2"
     if not sine_sf2.is_file():
         generate_sine_soundfont(sine_sf2)
 
-    score_path = ROOT / "vendor/engrave/tests/data/engine_audio" / "pitch_test.musicxml"
+    score_path = REPO_ROOT / "vendor/engrave/tests/data/engine_audio" / "pitch_test.musicxml"
     if not score_path.is_file():
         raise FileNotFoundError(f"Missing pitch test score: {score_path}")
 
@@ -934,7 +935,7 @@ def test_pitch_onset_and_level(
 
     # Output level: one explicit mf note at C4. The captured events must show
     # the documented dynamic mapping, then the steady-state RMS must match.
-    level_score = ROOT / "vendor/engrave/tests/data/engine_audio" / "level_test.musicxml"
+    level_score = REPO_ROOT / "vendor/engrave/tests/data/engine_audio" / "level_test.musicxml"
     assert level_score.is_file(), f"Missing level test score: {level_score}"
     level_wav = out_dir / "level_test.wav"
     if level_wav.exists():
@@ -988,14 +989,14 @@ def test_pitch_onset_and_level(
 
 def midi_fixtures() -> list[tuple[str, Path]]:
     return [
-        ("evening", ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml"),
+        ("evening", REPO_ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml"),
         (
             "hairpins_and_repeats",
-            ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "hairpins_and_repeats.mscx",
+            REPO_ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "hairpins_and_repeats.mscx",
         ),
-        ("pedal", ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "pedal.mscx"),
-        ("bend.gp", ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "bend.gp"),
-        ("repeat70", ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "repeat70.mscx"),
+        ("pedal", REPO_ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "pedal.mscx"),
+        ("bend.gp", REPO_ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "bend.gp"),
+        ("repeat70", REPO_ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "repeat70.mscx"),
     ]
 
 
@@ -1041,7 +1042,7 @@ def write_midi_goldens(
         path = target / f"{name}.json"
         path.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8", newline="\n")
         try:
-            display = path.resolve().relative_to(ROOT)
+            display = path.resolve().relative_to(REPO_ROOT)
         except ValueError:
             display = path
         print(f"  wrote {display}: {total} events")
@@ -1399,7 +1400,7 @@ def test_midi_event_goldens(
 ) -> None:
     print("[3/6] Testing the 4.7.6 MIDI event reference plus the accepted 5.0 differences...")
     fixtures = midi_fixtures()
-    golden_dir = ROOT / "vendor/engrave/tests/data/engine_audio" / "midi"
+    golden_dir = REPO_ROOT / "vendor/engrave/tests/data/engine_audio" / "midi"
     golden_results = {}
 
     for name, fix_path in fixtures:
@@ -1441,7 +1442,7 @@ def test_midi_event_goldens(
             res.get("midiEventTotal"),
             res.get("midiEventsTruncated"),
         )
-        result["golden"] = str(golden_file.relative_to(ROOT))
+        result["golden"] = str(golden_file.relative_to(REPO_ROOT))
         result["reference_sha256"] = reference_sha256
         result["negative_controls_rejected"] = midi_oracle_negative_controls(name, golden, events)
         golden_results[name] = result
@@ -1486,7 +1487,7 @@ def test_determinism_and_decoding(
     evidence: dict[str, Any],
 ) -> None:
     print("[4/6] Testing determinism, decoded durations and non-ASCII paths across wav, flac, ogg, mp3, aac...")
-    score_path = ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "hairpins_and_repeats.mscx"
+    score_path = REPO_ROOT / "vendor/engrave/tests/data/inputs" / "golden" / "hairpins_and_repeats.mscx"
     formats = ["wav", "flac", "ogg", "mp3", "aac"]
     det_results = {}
 
@@ -1548,13 +1549,13 @@ def test_determinism_and_decoding(
         det_results[fmt] = dec_info
 
     # Non-ASCII SoundFont copy and output paths for every audio format.
-    sine_sf2 = ROOT / "vendor/engrave/tests/data/engine_audio" / "sine.sf2"
+    sine_sf2 = REPO_ROOT / "vendor/engrave/tests/data/engine_audio" / "sine.sf2"
     if not sine_sf2.is_file():
         generate_sine_soundfont(sine_sf2)
     nonascii_sf = out_dir / "非ASCII 音色" / "正弦 音色.sf2"
     nonascii_sf.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(sine_sf2, nonascii_sf)
-    pitch_score = ROOT / "vendor/engrave/tests/data/engine_audio" / "pitch_test.musicxml"
+    pitch_score = REPO_ROOT / "vendor/engrave/tests/data/engine_audio" / "pitch_test.musicxml"
     nonascii_dir = out_dir / "输出 音频"
     nonascii_dir.mkdir(parents=True, exist_ok=True)
     nonascii_results = {}
@@ -1618,7 +1619,6 @@ def test_performance_and_memory(
     evidence: dict[str, Any],
 ) -> None:
     print("[5/6] Testing performance and memory on the generated dense orchestral score...")
-    from support.make_dense_score import generate_dense_score
 
     budget_bytes = int(BUDGET_PEAK_MEMORY_MIB * 1024 * 1024)
     measurements: dict[str, Any] = {}
@@ -1669,7 +1669,7 @@ def test_performance_and_memory(
                 out_path.unlink()
 
         perf_info = {
-            "score": "generated by tests/support/make_dense_score.py",
+            "score": "generated by tests/engrave_mcp_testing/make_dense_score.py",
             "score_bytes": score_info["bytes"],
             "parts": score_info["parts"],
             "measures": score_info["measures"],
@@ -1702,7 +1702,7 @@ def test_excerpt_rendering_parity(
     evidence: dict[str, Any],
 ) -> None:
     print("[6/6] Testing excerpt render identity against master with other parts muted...")
-    score_path = ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml"
+    score_path = REPO_ROOT / "vendor/engrave/tests/data/inputs" / "evening.musicxml"
     out_exc = out_dir / "evening_excerpt0.wav"
     out_muted = out_dir / "evening_master_muted12.wav"
 
@@ -1756,9 +1756,6 @@ async def test_mcp_level_integration(
     evidence: dict[str, Any],
 ) -> None:
     """Exercise mix, excerpt, codec and MIDI output against existing evidence."""
-    from types import SimpleNamespace
-
-    from support.mcp_client import Client
 
     print("[MCP] Running MCP-level audio integration tests...")
     args = SimpleNamespace(binary=binary, resources=resources, soundfont=soundfont)
@@ -1784,7 +1781,7 @@ async def test_mcp_level_integration(
         doc = (
             await client.tool(
                 "score_open",
-                {"path": str((ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").resolve())},
+                {"path": str((REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").resolve())},
             )
         )["document"]
         info = await client.tool("score_query", {"document": doc, "mode": "audio_tracks"})
@@ -1853,9 +1850,9 @@ async def test_mcp_level_integration(
 
         midi = await export(doc, "midi", out_dir / "mcp_evening.mid")
         expected = json.loads(
-            (ROOT / "vendor/engrave/tests/data/golden" / golden_platform() / "evening.musicxml/midi.json").read_text(
-                encoding="utf-8"
-            )
+            (
+                REPO_ROOT / "vendor/engrave/tests/data/golden" / golden_platform() / "evening.musicxml/midi.json"
+            ).read_text(encoding="utf-8")
         )
         assert describe_midi(midi.read_bytes()) == expected
         await client.tool("score_close", {"document": doc})
@@ -1886,13 +1883,13 @@ def main() -> int:
     parser.add_argument(
         "--resources",
         type=Path,
-        default=ROOT / ".runtime" / "assets",
+        default=REPO_ROOT / ".runtime" / "assets",
         help="Path to assets",
     )
     parser.add_argument(
         "--soundfont",
         type=Path,
-        default=ROOT / ".runtime" / "soundfonts" / "FluidR3Mono_GM.sf3",
+        default=REPO_ROOT / ".runtime" / "soundfonts" / "FluidR3Mono_GM.sf3",
         help="Path to soundfont",
     )
     parser.add_argument("--output", type=Path, required=True, help="Output directory for test artifacts")
@@ -1904,7 +1901,7 @@ def main() -> int:
     parser.add_argument(
         "--midi-golden-dir",
         type=Path,
-        default=ROOT / "vendor/engrave/tests/data/engine_audio" / "midi",
+        default=REPO_ROOT / "vendor/engrave/tests/data/engine_audio" / "midi",
         help="Directory for --write-midi-goldens",
     )
     parser.add_argument(
@@ -1920,13 +1917,13 @@ def main() -> int:
     parser.add_argument(
         "--engine-source",
         type=Path,
-        default=Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", ROOT / "vendor" / "engrave")),
+        default=Path(os.environ.get("MUSESCORE_ENGINE_SOURCE", REPO_ROOT / "vendor" / "engrave")),
         help="Git checkout used to build the engine",
     )
     parser.add_argument(
         "--cross-platform-captures",
         type=Path,
-        default=ROOT / ".runtime" / "audio-cross-platform",
+        default=REPO_ROOT / ".runtime" / "audio-cross-platform",
         help="Directory containing windows/ and linux/ current captures",
     )
     parser.add_argument(
