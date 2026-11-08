@@ -20,13 +20,16 @@ Linux (validated on Linux x86_64, GCC 15.3, C++23):
 
 ## Initial checkout and setup
 
+Clone with `--recursive`, or initialize the submodule before running `pixi install` (which depends on `vendor/engrave` in editable mode):
+
 ```powershell
+git submodule update --init
 pixi install --locked
 pixi run python scripts/bootstrap.py --soundfont
 pixi run python scripts/prepare.py
 ```
 
-`bootstrap.py` initializes the `vendor/engrave` submodule and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies the submodule pin and stages the engine's hash-pinned asset manifest (348 files, 28,404,538 bytes) into `.runtime/assets`.
+`bootstrap.py` verifies the submodule status and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies the submodule pin and stages the engine's hash-pinned asset manifest (348 files, 28,404,538 bytes) into `.runtime/assets`.
 
 ## Development builds
 

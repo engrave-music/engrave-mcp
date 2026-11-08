@@ -13,7 +13,7 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
 - The engine is the fork github.com/Locietta/engrave, consumed as the shallow submodule
   `vendor/engrave` (governance rules in `docs/dev/fork.md`; never force-push fork branches;
   pin commits on fork `main` by SHA; push fork `main` first and record the commit range
-  and validation evidence in the host bump commit message, no pin tags). webmscore and `patches/` are retired.
+  and validation evidence in the host bump commit message, no pin tags).
   Native compilation is the target; do not introduce Node.js or WASM as runtime dependencies.
 - No computer use, screenshots, simulated input, or dependence on a desktop MuseScore install.
 - The build is xmake (no Qt): the engine build lives in the fork (`xmake/engrave.lua`

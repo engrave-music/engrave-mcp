@@ -27,7 +27,10 @@ MuseScore 的乐谱也要能被 Agent 打开并继续编辑。读取器接受 Mu
 
 环境要求：Git、[Pixi](https://pixi.sh/) 与 Visual Studio C++ x64 工具链（MSVC 14.51+）。
 
+克隆时使用 `--recursive`，或者在安装前初始化引擎子模块：
+
 ```powershell
+git submodule update --init
 pixi install --locked
 pixi run python scripts/bootstrap.py --soundfont
 pixi run python scripts/prepare.py

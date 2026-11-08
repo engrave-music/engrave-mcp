@@ -127,7 +127,48 @@ The 9 opt-in lanes are excluded from default runs and require specific parameter
 6. `native_470_serialization_cancel`: Verifies low-level MuseScore 4.70 serialization cancellation. Requires `--binary engrave-mcp-test`, `--resources <assets>`, and `--output <dir>`.
 7. `transport_wakeup`: Verifies transport process teardown, thread termination, and idle CPU limits. Requires `--binary engrave-mcp`, `--resources <assets>`, and `--output <dir>`.
 8. `xmake_incremental`: Verifies tool registry schema regeneration, large UTF-8 descriptions, and incremental no-op build behavior. Requires `--binary engrave-mcp`, `--assets <assets>`, and `--output <dir>`. Because this test mutates `engrave_mcp/schema_defs.cpp` and triggers incremental builds, it must execute only in an isolated clone (under `.worktrees/`).
-9. `native_470_oracle`: Compares 4.70 writer output against the pinned Linux 4.7.6 oracle. Requires `--output <dir>`, the pinned oracle archive (`--archive`), oracle executable (`--oracle-bin`), oracle assets (`--oracle-assets`), and host resources (`--resources`).
+9. `native_470_oracle`: Compares 4.70 writer output against the pinned Linux 4.7.6 oracle. Requires `--only native_470_oracle`, the oracle artifacts (`--native-470-oracle-archive`, `--native-470-oracle-executable`, `--native-470-oracle-assets`), and exactly one mode choice: `--native-470-baseline`, `--native-470-writer-results <dir>`, or `--native-470-producer` (which requires `--host-binary <bin>` and `--host-sha256 <sha256>`).
+
+### Running the Native 4.70 Oracle Lane
+
+The oracle test executes through the unified test runner (`tests/run_lanes.py`) or by running the integration test script (`tests/integration/test_native_470_oracle.py`) directly.
+
+#### Runner Invocation
+
+The test runner passes common lane arguments (`--build-dir`, `--engine-source`, `--assets`, `--soundfont`, `--output`) and requires `--only native_470_oracle`, the oracle flags, and a mode selection:
+
+```bash
+.pixi/envs/default/bin/python tests/run_lanes.py \
+  --build-dir build/xmake-linux \
+  --engine-source vendor/engrave \
+  --assets .runtime/assets \
+  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 \
+  --output notes/lanes/oracle \
+  --only native_470_oracle \
+  --native-470-oracle-archive /path/to/musescore-4.7.6-oracle.tar.gz \
+  --native-470-oracle-executable /path/to/semantic_dump \
+  --native-470-oracle-assets /path/to/oracle_assets \
+  --native-470-baseline
+```
+
+For `--native-470-producer` mode, supply `--host-binary <path>` and `--host-sha256 <sha256>` (and optionally `--native-470-live-edits`). For `--native-470-writer-results <dir>`, supply the directory of actual writer outputs.
+
+#### Direct Script Invocation
+
+The standalone script requires `--oracle-archive`, `--oracle-executable`, `--oracle-assets`, `--output`, and exactly one mode (`--baseline`, `--writer-results <dir>`, or `--producer`):
+
+```bash
+.pixi/envs/default/bin/python tests/integration/test_native_470_oracle.py \
+  --oracle-archive /path/to/musescore-4.7.6-oracle.tar.gz \
+  --oracle-executable /path/to/oracle_bin/semantic_dump \
+  --oracle-assets /path/to/oracle_assets \
+  --output notes/oracle/run \
+  --baseline \
+  --current-binary build/xmake-linux/semantic_dump \
+  --current-assets .runtime/assets
+```
+
+When using `--producer`, pass `--host-binary <path>`, `--host-resources <assets>`, and `--host-sha256 <sha256>` (with optional `--live-edits`) instead of `--current-binary` and `--current-assets`.
 
 ### Focused Default Lanes
 

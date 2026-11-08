@@ -34,7 +34,10 @@ is available for MuseScore 4.x interop where the score stays inside its document
 Prerequisites: Git, [Pixi](https://pixi.sh/), and the Visual Studio C++ x64
 toolchain (MSVC 14.51+).
 
+Clone with `--recursive`, or initialize the submodule before installing:
+
 ```powershell
+git submodule update --init
 pixi install --locked
 pixi run python scripts/bootstrap.py --soundfont
 pixi run python scripts/prepare.py
