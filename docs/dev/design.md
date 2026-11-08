@@ -91,7 +91,7 @@ On Windows, the host executables (`engrave-mcp.exe` and test/probe binaries) and
 
 - Under measured test conditions, vector rendering (PDF, SVG) for standard scores once fonts are loaded has been observed in single-digit milliseconds (an observation under measured conditions, not an architectural guarantee).
 - Audio synthesis latency scales with score duration, voice count, and SoundFont complexity.
-- Audio synthesis cancellation contains cooperative polling, but thread scheduling variance on Windows can cause cancellation latency to exceed 30 ms under high system load.
+- Audio cancellation is observed within a fraction of a millisecond; the time until the export call returns is dominated by tearing down playback events and the audio graph (tens of milliseconds for dense scores, slower on Windows).
 - Memory usage: logical file quotas are enforced, but process virtual memory is not capped by an OS sandbox.
 
 ## 8. Non-goals

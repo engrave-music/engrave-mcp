@@ -66,7 +66,7 @@ Because `pixi install` installs `engrave-host-testing` (`tests/engrave_mcp_testi
 
 ### Windows manifest verification
 
-Embedded Windows application manifests are verified manually rather than through an automated lane or lint task by passing built executables to `tests/integration/test_windows_manifest.py`. The check uses the Windows SDK `mt.exe` to extract each binary's manifest and assert `SegmentHeap`, UTF-8, and `asInvoker` settings.
+The default `windows_manifest` lane runs `tests/integration/test_windows_manifest.py --build-dir <build-dir>`, which extracts the embedded manifest of `engrave-mcp.exe`, `engrave-mcp-test.exe` and `engrave_output_test.exe` with the Windows SDK `mt.exe` and requires `SegmentHeap` and UTF-8 under `application/windowsSettings`, plus `asInvoker`. Windows ignores these settings anywhere else, so a misplaced element fails the check. Other executables can be passed as arguments; off Windows the lane skips.
 
 ## Running Lanes
 
@@ -90,7 +90,7 @@ On Windows, standard `MAX_PATH` limitations (260 characters) can cause filesyste
 
 ## Lane Inventory
 
-The test runner registers 45 acceptance lanes in total: 36 execute by default and 9 are opt-in.
+The test runner registers 46 acceptance lanes in total: 37 execute by default and 9 are opt-in.
 
 | Area                        | Lanes                                                                                                                                                 |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -101,7 +101,7 @@ The test runner registers 45 acceptance lanes in total: 36 execute by default an
 | Documents and formats       | `score_positions`, `excerpts`, `open_data`, `imports_midi`, `imports_gp`, `archives`, `roundtrip`, `native_470_oracle` (opt-in)                       |
 | Golden and semantics        | `golden`, `semantic_check`, `rendered_page`, `oracle_harness`                                                                                         |
 | Assets and engine           | `runtime_assets`, `assets`, `import_export_probe`, `upstream_gtest`, `version_info`                                                                   |
-| Smoke and hygiene           | `mcp_smoke`, `native_includes`, `native_inputs`, `document_stress` (opt-in), `xmake_incremental` (opt-in)                                             |
+| Smoke and hygiene           | `mcp_smoke`, `native_includes`, `native_inputs`, `windows_manifest`, `document_stress` (opt-in), `xmake_incremental` (opt-in)                         |
 
 ### Direct Fork Script Invocations
 
@@ -176,10 +176,11 @@ When using `--producer`, pass `--host-binary <path>`, `--host-resources <assets>
 
 ### Focused Default Lanes
 
-Two focused lanes run by default:
+Three focused lanes run by default:
 
 - `native_includes`: Scans source files and checks that public C++ header inclusion boundaries across host and engine are maintained (requires no precompiled binaries).
 - `native_inputs`: Validates server handling of malformed and corrupt inputs (requires `--output <dir>`).
+- `windows_manifest`: Checks the embedded Windows application manifests (Segment Heap, UTF-8, asInvoker); skips off Windows.
 
 Lane `archives` runs `tests/integration/test_archives.py` with `--binary build/.../archive_test`, `--server build/.../engrave-mcp`, `--resources <assets>`, and `--output <dir>`, requiring the `--server` binary dependency.
 
