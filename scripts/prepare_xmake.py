@@ -54,7 +54,7 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
         "MuseScore submodule": source_root / "version.cmake",
         "engine xmake build": source_root / "xmake" / "engrave.lua",
         "tool schema source": project_root / "engrave_mcp" / "tools.json",
-        "host asio recipe": project_root / "xmake" / "packages" / "asio.lua",
+        "host asio recipe": project_root / "xmake" / "packages" / "a" / "asio" / "xmake.lua",
         "native env cairo header": native_root / "include" / "cairo" / "cairo.h",
         "native env zlib header": native_root / "include" / "zlib.h",
     }
