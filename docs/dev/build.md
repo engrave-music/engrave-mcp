@@ -31,7 +31,7 @@ pixi run python scripts/bootstrap.py --soundfont
 pixi run python scripts/prepare.py
 ```
 
-`bootstrap.py` verifies the submodule status and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies the submodule pin and stages the engine's hash-pinned asset manifest (348 files, 28,404,538 bytes) into `.runtime/assets`.
+`bootstrap.py` verifies the submodule status and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies the submodule pin and stages the engine's hash-pinned asset manifest (348 files, 28,405,982 bytes) into `.runtime/assets`.
 
 ## Development builds
 
