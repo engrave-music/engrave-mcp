@@ -11,12 +11,12 @@
 #define ASIO_STANDALONE
 #endif
 #include <asio/awaitable.hpp>
-#include <nlohmann/json.hpp>
 
+#include "json.h"
 #include "publication_gate.h"
 
 namespace music {
-using Json = nlohmann::json;
+using Json = music::Json;
 
 // Structured, transport-independent failure raised by AsyncSession (or any
 // tool implementation) when a call has a stable machine-readable code. The

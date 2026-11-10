@@ -33,7 +33,7 @@ const Json &schemas() {
 }
 
 const Json &definition(std::string_view name) {
-    for (auto &tool : schemas()) {
+    for (const auto &tool : schemas().get_array()) {
         if (tool.at("name").get<std::string>() == name) return tool;
     }
     throw std::logic_error("missing tool definition");
@@ -54,8 +54,8 @@ const ToolSpec *find_tool(std::string_view name) {
 }
 
 Json tools_json() {
-    Json tools = Json::array();
-    for (auto &spec : specs) tools.push_back(definition(spec.name));
+    Json tools = make_array<Json>();
+    for (auto &spec : specs) json_push(tools, definition(spec.name));
     return tools;
 }
 
@@ -69,7 +69,7 @@ void validate_registry() {
     auto tools = tools_json();
     if (schemas().size() != specs.size()) throw std::logic_error("tool count mismatch");
     std::set<std::string> names;
-    for (const auto &tool : schemas()) {
+    for (const auto &tool : schemas().get_array()) {
         const auto name = tool.at("name").get<std::string>();
         if (!names.insert(name).second || !find_tool(name)) throw std::logic_error("duplicate or unknown schema definition");
     }
@@ -80,7 +80,7 @@ void validate_registry() {
         }
     }
     std::set<std::string> declared;
-    for (auto &op : tools[6]["inputSchema"]["$defs"]["op"]["oneOf"]) {
+    for (auto &op : tools[6]["inputSchema"]["$defs"]["op"]["oneOf"].get_array()) {
         if (!declared.insert(op["properties"]["op"]["const"].get<std::string>()).second) throw std::logic_error("duplicate op");
     }
     if (declared.size() != operation_names.size()) throw std::logic_error("op count mismatch");

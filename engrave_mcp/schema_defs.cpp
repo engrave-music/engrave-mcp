@@ -25,8 +25,8 @@ J array(J v, int max = 4096) { return {{"type", "array"}, {"items", v}, {"maxIte
 
 J object(J p, J required = nullptr) {
     if (required.is_null()) {
-        required = J::array();
-        for (auto it = p.begin(); it != p.end(); ++it) required.push_back(it.key());
+        required = json_array<J>();
+        for (const auto &[key, value] : p.get_object()) json_push(required, key);
     }
     return {{"type", "object"}, {"properties", p}, {"required", required}, {"additionalProperties", false}};
 }
@@ -35,7 +35,7 @@ J one(J v) { return {{"oneOf", v}}; }
 
 J ref(const char *n) { return {{"$ref", std::string("#/$defs/") + n}}; }
 
-J nullable(J v) { return one(J::array({v, J{{"type", "null"}}})); }
+J nullable(J v) { return one(json_array<J>({v, J{{"type", "null"}}})); }
 
 J tagged(const char *kind, J value) { return object({{"kind", lit(kind)}, {"value", value}}); }
 
@@ -53,14 +53,14 @@ void collect(const J &node, const J &defs, J &used) {
                 collect(defs.at(k), defs, used);
             }
         }
-        for (auto &v : node) collect(v, defs, used);
+        for (auto &[key, v] : node.get_object()) collect(v, defs, used);
     } else if (node.is_array()) {
-        for (auto &v : node) collect(v, defs, used);
+        for (auto &v : node.get_array()) collect(v, defs, used);
     }
 }
 
 J schema(J body, const J &defs) {
-    J used = J::object();
+    J used = make_object<J>();
     collect(body, defs, used);
     body["type"] = "object";
     body["unevaluatedProperties"] = false;
@@ -75,20 +75,20 @@ J schema(J body, const J &defs) {
 // vectors, and numbers. Keep only bounds established by the output producers.
 void output_bounds(J &node, const std::string &field = {}) {
     if (node.is_array()) {
-        for (auto &item : node) output_bounds(item, field);
+        for (auto &item : node.get_array()) output_bounds(item, field);
         return;
     }
     if (!node.is_object()) return;
-    const auto type = node.value("type", std::string());
-    if (type == "string" && !node.contains("pattern")) node.erase("maxLength");
-    if (type == "array" && field != "elements" && field != "ops" && field != "artifacts") node.erase("maxItems");
+    const auto type = json_value<std::string>(node, "type", {});
+    if (type == "string" && !node.contains("pattern")) json_erase(node, "maxLength");
+    if (type == "array" && field != "elements" && field != "ops" && field != "artifacts") json_erase(node, "maxItems");
     if (type == "integer" || type == "number") {
-        const bool color = node.value("minimum", -1) == 0 && node.value("maximum", -1) == 255;
-        const bool paging = (field == "total" || field == "next_cursor") && node.value("maximum", -1) == 4096;
+        const bool color = json_value<int>(node, "minimum", -1) == 0 && json_value<int>(node, "maximum", -1) == 255;
+        const bool paging = (field == "total" || field == "next_cursor") && json_value<int>(node, "maximum", -1) == 4096;
         const bool mix = field == "volume_db" || field == "balance";
         if (!color && !paging && !mix) {
-            node.erase("minimum");
-            node.erase("maximum");
+            json_erase(node, "minimum");
+            json_erase(node, "maximum");
             // These public DTO fields are int32_t, including any sentinel.
             static const std::vector<std::string> int32_fields = {
                 "page", "index", "part",  "lines",         "pages", "file_version",     "measure_count",
@@ -99,11 +99,11 @@ void output_bounds(J &node, const std::string &field = {}) {
             }
         }
     }
-    for (auto it = node.begin(); it != node.end(); ++it) {
-        if (it.key() == "properties" && it->is_object()) {
-            for (auto property = it->begin(); property != it->end(); ++property) output_bounds(property.value(), property.key());
+    for (auto &[key, child] : node.get_object()) {
+        if (key == "properties" && child.is_object()) {
+            for (auto &[property_name, property] : child.get_object()) output_bounds(property, property_name);
         } else {
-            output_bounds(it.value(), field);
+            output_bounds(child, field);
         }
     }
 }
@@ -115,84 +115,84 @@ Json declared_tools() {
     const J i = {{"type", "string"}, {"pattern", "^(0|-?[1-9][0-9]*)$"}, {"maxLength", 20}};
     const J eid = {{"type", "string"}, {"minLength", 3}, {"maxLength", 32}, {"pattern", "^[A-Za-z0-9+/_-]+$"}};
     const J doc = {{"type", "string"}, {"maxLength", 128}, {"pattern", "^doc-[A-Za-z0-9]+-[1-9][0-9]*$"}};
-    J d = J::object();
+    J d = make_object<J>();
     d["fraction"] = object({{"num", i}, {"den", {{"type", "string"}, {"pattern", "^[1-9][0-9]*$"}, {"maxLength", 19}}}});
-    d["score"] = object({{"excerpt", eid}}, J::array());
+    d["score"] = object({{"excerpt", eid}}, json_array<J>());
     const J f = ref("fraction"), score = ref("score");
-    d["address"] = one(J::array({object({{"kind", lit("segment")},
-                                         {"measure", eid},
-                                         {"staff", idx},
-                                         {"voice", integer(0, 3)},
-                                         {"tick", f},
-                                         {"segment_kind", str(128)}}),
-                                 object({{"kind", lit("page")}, {"score", score}, {"index", idx}}),
-                                 object({{"kind", lit("system")}, {"score", score}, {"page", idx}, {"index", idx}}),
-                                 object({{"kind", lit("spanner_segment")}, {"spanner", eid}, {"index", idx}})}));
+    d["address"] = one(json_array<J>({object({{"kind", lit("segment")},
+                                              {"measure", eid},
+                                              {"staff", idx},
+                                              {"voice", integer(0, 3)},
+                                              {"tick", f},
+                                              {"segment_kind", str(128)}}),
+                                      object({{"kind", lit("page")}, {"score", score}, {"index", idx}}),
+                                      object({{"kind", lit("system")}, {"score", score}, {"page", idx}, {"index", idx}}),
+                                      object({{"kind", lit("spanner_segment")}, {"spanner", eid}, {"index", idx}})}));
     const J a = ref("address");
-    J refs = J::array({object({{"kind", lit("id")}, {"id", eid}}), object({{"kind", lit("address")}, {"address", a}})});
+    J refs = json_array<J>({object({{"kind", lit("id")}, {"id", eid}}), object({{"kind", lit("address")}, {"address", a}})});
     d["read_ref"] = one(refs);
-    refs.push_back(object({{"kind", lit("op")}, {"op", integer(0, 1023)}, {"item", integer(0, 65535)}}));
+    json_push(refs, object({{"kind", lit("op")}, {"op", integer(0, 1023)}, {"item", integer(0, 65535)}}));
     d["ref"] = one(refs);
     const J r = ref("ref");
-    J values =
-        J::array({J{{"type", "null"}}, tagged("bool", b), tagged("int", i), tagged("real", n), tagged("string", str(65536)),
-                  tagged("fraction", f), tagged("point", object({{"x", n}, {"y", n}})), tagged("size", object({{"w", n}, {"h", n}})),
-                  tagged("color", object({{"r", integer(0, 255)}, {"g", integer(0, 255)}, {"b", integer(0, 255)}, {"a", integer(0, 255)}})),
-                  tagged("enum", text), tagged("int_list", array(i))});
+    J values = json_array<J>(
+        {J{{"type", "null"}}, tagged("bool", b), tagged("int", i), tagged("real", n), tagged("string", str(65536)), tagged("fraction", f),
+         tagged("point", object({{"x", n}, {"y", n}})), tagged("size", object({{"w", n}, {"h", n}})),
+         tagged("color", object({{"r", integer(0, 255)}, {"g", integer(0, 255)}, {"b", integer(0, 255)}, {"a", integer(0, 255)}})),
+         tagged("enum", text), tagged("int_list", array(i))});
     d["edit_value"] = one(values);
-    values.push_back(object({{"kind", lit("opaque")}, {"type", text}}));
+    json_push(values, object({{"kind", lit("opaque")}, {"type", text}}));
     d["value"] = one(values);
     const J v = ref("edit_value"), props = array(object({{"name", text}, {"value", v}}), 1024);
-    J ops = J::array();
-    auto op = [&](const char *name, J p, J optional = J::array()) {
+    J ops = json_array<J>();
+    auto op = [&](const char *name, J p, J optional = json_array<J>()) {
         p["op"] = lit(name);
-        J req = J::array();
-        for (auto it = p.begin(); it != p.end(); ++it) {
+        J req = json_array<J>();
+        for (const auto &[key, value] : p.get_object()) {
             bool skip = false;
-            for (auto &x : optional) {
-                if (x == it.key()) skip = true;
+            for (const auto &x : optional.get_array()) {
+                if (x == std::string_view(key)) skip = true;
             }
-            if (!skip) req.push_back(it.key());
+            if (!skip) json_push(req, key);
         }
-        ops.push_back(object(p, req));
+        json_push(ops, object(p, req));
     };
     op("set_property", {{"target", r}, {"property", text}, {"value", v}});
     op("reset_property", {{"target", r}, {"property", text}});
     op("set_style", {{"score", score}, {"style", text}, {"value", v}});
     op("enter_notes", {{"at", a},
                        {"duration", f},
-                       {"pitches", array(object({{"pitch", integer(0, 127)}, {"tpc", integer(-1, 33)}}, J::array({"pitch"})), 128)}});
-    op("set_pitch", {{"note", r}, {"pitch", integer(0, 127)}, {"tpc", integer(-1, 33)}}, J::array({"tpc"}));
+                       {"pitches", array(object({{"pitch", integer(0, 127)}, {"tpc", integer(-1, 33)}}, json_array<J>({"pitch"})), 128)}});
+    op("set_pitch", {{"note", r}, {"pitch", integer(0, 127)}, {"tpc", integer(-1, 33)}}, json_array<J>({"tpc"}));
     op("set_duration", {{"chord_rest", r}, {"duration", f}});
     op("remove", {{"target", r}});
     op("insert_measures", {{"before", r}, {"count", integer(1, 1024)}, {"kind", en({"Measure", "VBox", "HBox", "TBox", "FBox"})}},
-       J::array({"before", "kind"}));
+       json_array<J>({"before", "kind"}));
     op("remove_measures", {{"first", r}, {"last", r}});
     op("set_time_sig", {{"measure", r}, {"sig", f}});
-    op("set_key_sig", {{"measure", r}, {"key", integer(-7, 7)}, {"staff", r}}, J::array({"staff"}));
+    op("set_key_sig", {{"measure", r}, {"key", integer(-7, 7)}, {"staff", r}}, json_array<J>({"staff"}));
     op("insert_clef", {{"at", a}, {"clef", text}});
     op("set_layout_break", {{"measure", r}, {"kind", en({"line", "page", "section", "nobreak"})}, {"on", b}});
-    op("add_part", {{"instrument_id", text}, {"before", r}}, J::array({"before"}));
+    op("add_part", {{"instrument_id", text}, {"before", r}}, json_array<J>({"before"}));
     op("remove_part", {{"part", r}});
     op("add_staff", {{"part", r}});
     op("remove_staff", {{"staff", r}});
     op("generate_excerpts", {{"parts", array(r, 256)}});
-    op("add_spanner", {{"type", text}, {"start", r}, {"end", r}, {"props", props}}, J::array({"props"}));
+    op("add_spanner", {{"type", text}, {"start", r}, {"end", r}, {"props", props}}, json_array<J>({"props"}));
     op("add_tie", {{"note", r}});
     op("add_tuplet", {{"first", r}, {"last", r}, {"actual", integer(1, 1024)}, {"normal", integer(1, 1024)}},
-       J::array({"actual", "normal"}));
+       json_array<J>({"actual", "normal"}));
     op("add_text", {{"at", a}, {"style", text}, {"text", str(65536)}});
-    op("add", {{"anchor", r}, {"type", text}, {"props", props}}, J::array({"props"}));
+    op("add", {{"anchor", r}, {"type", text}, {"props", props}}, json_array<J>({"props"}));
     d["op"] = one(ops);
     d["diagnostic"] = object({{"severity", en({"info", "warning"})}, {"message", str(65536)}});
     const J diagnostics = array(ref("diagnostic"));
     d["export_warning"] = object({{"code", str()}, {"message", str()}, {"object", object({{"kind", str(128)}, {"id", str(256)}})}},
-                                 J::array({"code", "message"}));
+                                 json_array<J>({"code", "message"}));
     for (const auto *field : {"kind", "id"}) d["export_warning"]["properties"]["object"]["properties"][field]["minLength"] = 1;
     // Frozen 4.70 warnings always identify their source; other warning families
     // retain the optional object contract.
-    d["export_warning"]["if"] = {{"properties", {{"code", {{"pattern", "^B470_"}}}}}, {"required", {"code"}}};
-    d["export_warning"]["then"] = {{"required", {"object"}}};
+    d["export_warning"]["if"] = J{{"properties", {{"code", {{"pattern", "^B470_"}}}}}, {"required", {"code"}}};
+    d["export_warning"]["then"] = J{{"required", {"object"}}};
     d["error"] = object({{"code", en({"InvalidArgument", "InvalidInput", "UnsupportedFormat", "NotFound", "StaleHandle", "ResourceLimit",
                                       "Unsupported", "Io", "RevisionConflict", "EditRejected", "Poisoned", "EngineFailure", "Cancelled",
                                       "DeadlineExceeded", "WorkerFailed"})},
@@ -202,7 +202,7 @@ Json declared_tools() {
                          {"current_revision", u},
                          {"published_artifacts", array(text)},
                          {"export_warnings", array(ref("export_warning"))}},
-                        J::array({"code", "message"}));
+                        json_array<J>({"code", "message"}));
     d["property"] = object({{"name", text}, {"value", ref("value")}, {"is_default", b}, {"styled", b}});
     d["box"] = object({{"page", idx}, {"x", n}, {"y", n}, {"width", n}, {"height", n}});
     d["element"] = object({{"id", eid},
@@ -281,12 +281,12 @@ Json declared_tools() {
                           {"deadline_ms", idx},
                           {"cancellation", lit("cooperative")},
                           {"transport_request_bytes", idx}});
-    J tools = J::array();
+    J tools = json_array<J>();
     auto tool = [&](const char *name, const char *description, J input, J output) {
-        auto out = schema(one(J::array({output, object({{"ok", lit(false)}, {"error", ref("error")}})})), d);
+        auto out = schema(one(json_array<J>({output, object({{"ok", lit(false)}, {"error", ref("error")}})})), d);
         output_bounds(out);
-        tools.push_back(
-            {{"name", name}, {"description", description}, {"inputSchema", schema(input, d)}, {"outputSchema", std::move(out)}});
+        json_push(tools,
+                  J{{"name", name}, {"description", description}, {"inputSchema", schema(input, d)}, {"outputSchema", std::move(out)}});
     };
     J input = object(
         {{"path", text},
@@ -295,20 +295,20 @@ Json declared_tools() {
          {"format", formats},
          {"filename_hint", text},
          {"strict_ids", b}},
-        J::array());
-    input["oneOf"] = {J{{"required", {"path"}}, {"not", {{"required", {"data"}}}}},
-                      J{{"required", {"data"}}, {"not", {{"required", {"path"}}}}}};
+        json_array<J>());
+    input["oneOf"] = json_array<J>(
+        {J{{"required", {"path"}}, {"not", {{"required", {"data"}}}}}, J{{"required", {"data"}}, {"not", {{"required", {"path"}}}}}});
     const J opened = success({{"document", doc}, {"revision", u}, {"diagnostics", diagnostics}});
     tool("score_open", "Open a score; decoded cap 8 MiB, subject to lower transport line budget.", input, opened);
     input = object(
         {{"template_id", text}, {"template_path", text}, {"title", text}, {"subtitle", text}, {"composer", text}, {"lyricist", text}},
-        J::array());
-    input["oneOf"] = {J{{"required", {"template_id"}}, {"not", {{"required", {"template_path"}}}}},
-                      J{{"required", {"template_path"}}, {"not", {{"required", {"template_id"}}}}}};
+        json_array<J>());
+    input["oneOf"] = json_array<J>({J{{"required", {"template_id"}}, {"not", {{"required", {"template_path"}}}}},
+                                    J{{"required", {"template_path"}}, {"not", {{"required", {"template_id"}}}}}});
     tool("score_create", "Create from exactly one engine template.", input, opened);
-    tool("score_close", "Destroy the document on its owner thread.", object({{"document", doc}}), success(J::object()));
+    tool("score_close", "Destroy the document on its owner thread.", object({{"document", doc}}), success(make_object<J>()));
     tool("score_outline", "Read structure and source revision; expected_revision guards the read.",
-         object({{"document", doc}, {"expected_revision", u}, {"score", score}}, J::array({"document"})),
+         object({{"document", doc}, {"expected_revision", u}, {"score", score}}, json_array<J>({"document"})),
          success({{"revision", u}, {"outline", ref("outline")}}));
     J query = object({{"score", score},
                       {"types", array(text)},
@@ -324,35 +324,36 @@ Json declared_tools() {
                       {"layout_boxes", b},
                       {"limit", integer(1, 4096)},
                       {"cursor", integer(0, 4096)}},
-                     J::array());
-    query["not"] = {{"allOf", J::array({J{{"anyOf", J::array({J{{"required", {"first_measure"}}}, J{{"required", {"measure_count"}}}})}},
-                                        J{{"anyOf", J::array({J{{"required", {"from_measure"}}}, J{{"required", {"to_measure"}}}})}}})}};
+                     json_array<J>());
+    query["not"] =
+        J{{"allOf", json_array<J>({J{{"anyOf", json_array<J>({J{{"required", {"first_measure"}}}, J{{"required", {"measure_count"}}}})}},
+                                   J{{"anyOf", json_array<J>({J{{"required", {"from_measure"}}}, J{{"required", {"to_measure"}}}})}}})}};
     tool("score_query", "Queued reads; expected_revision guards pagination. Layout addresses are ephemeral.",
-         one(J::array({object({{"document", doc}, {"expected_revision", u}, {"mode", lit("elements")}, {"query", query}},
-                              J::array({"document", "mode"})),
-                       object({{"document", doc},
-                               {"expected_revision", u},
-                               {"mode", lit("properties")},
-                               {"target", ref("read_ref")},
-                               {"props", array(text)}},
-                              J::array({"document", "mode", "target"})),
-                       object({{"document", doc}, {"expected_revision", u}, {"mode", lit("audio_tracks")}, {"score", score}},
-                              J::array({"document", "mode"}))})),
-         one(J::array({success({{"mode", lit("elements")},
-                                {"revision", u},
-                                {"elements", array(ref("element"))},
-                                {"total", integer(0, 4096)},
-                                {"next_cursor", nullable(integer(0, 4096))}}),
-                       success({{"mode", lit("properties")}, {"revision", u}, {"properties", array(ref("property"))}}),
-                       success({{"mode", lit("audio_tracks")}, {"revision", u}, {"audio_tracks", ref("audio_tracks")}})})));
+         one(json_array<J>({object({{"document", doc}, {"expected_revision", u}, {"mode", lit("elements")}, {"query", query}},
+                                   json_array<J>({"document", "mode"})),
+                            object({{"document", doc},
+                                    {"expected_revision", u},
+                                    {"mode", lit("properties")},
+                                    {"target", ref("read_ref")},
+                                    {"props", array(text)}},
+                                   json_array<J>({"document", "mode", "target"})),
+                            object({{"document", doc}, {"expected_revision", u}, {"mode", lit("audio_tracks")}, {"score", score}},
+                                   json_array<J>({"document", "mode"}))})),
+         one(json_array<J>({success({{"mode", lit("elements")},
+                                     {"revision", u},
+                                     {"elements", array(ref("element"))},
+                                     {"total", integer(0, 4096)},
+                                     {"next_cursor", nullable(integer(0, 4096))}}),
+                            success({{"mode", lit("properties")}, {"revision", u}, {"properties", array(ref("property"))}}),
+                            success({{"mode", lit("audio_tracks")}, {"revision", u}, {"audio_tracks", ref("audio_tracks")}})})));
     tool("score_describe", "Read property and style catalogue.",
-         one(J::array(
+         one(json_array<J>(
              {object({{"scope", lit("types")}}), object({{"scope", lit("type")}, {"type", text}}), object({{"scope", lit("styles")}})})),
-         one(J::array({success({{"scope", lit("types")}, {"types", array(ref("type_info"))}}),
-                       success({{"scope", lit("type")}, {"type", ref("type_info")}}),
-                       success({{"scope", lit("styles")}, {"styles", array(ref("style_info"))}})})));
+         one(json_array<J>({success({{"scope", lit("types")}, {"types", array(ref("type_info"))}}),
+                            success({{"scope", lit("type")}, {"type", ref("type_info")}}),
+                            success({{"scope", lit("styles")}, {"styles", array(ref("style_info"))}})})));
     tool("score_edit", "Decode entire batch before one atomic edit. OpRefs name earlier ops only. Opaque is read-only.",
-         object({{"document", doc}, {"expected_revision", u}, {"ops", array(ref("op"), 1024)}}, J::array({"document", "ops"})),
+         object({{"document", doc}, {"expected_revision", u}, {"ops", array(ref("op"), 1024)}}, json_array<J>({"document", "ops"})),
          success({{"revision", u},
                   {"ops", array(object({{"created", array(nullable(eid), 65536)}}), 1024)},
                   {"created", array(eid, 65536)},
@@ -371,9 +372,10 @@ Json declared_tools() {
            {"default", "5.00"},
            {"description",
             "Requested native version; supported: 5.00 (default), 4.70. Other values are rejected by the engine with export warnings."}}}},
-        J::array({"format"}));
-    score_options["if"] = {{"properties", {{"format", {{"not", lit("midi")}}}}}};
-    score_options["then"] = {{"not", {{"anyOf", J::array({J{{"required", {"midi_expand_repeats"}}}, J{{"required", {"midi_rpns"}}}})}}}};
+        json_array<J>({"format"}));
+    score_options["if"] = J{{"properties", {{"format", {{"not", lit("midi")}}}}}};
+    score_options["then"] =
+        J{{"not", {{"anyOf", json_array<J>({J{{"required", {"midi_expand_repeats"}}}, J{{"required", {"midi_rpns"}}}})}}}};
     J render_options = object({{"score", score},
                                {"format", en({"pdf", "png", "svg"})},
                                {"first_page", idx},
@@ -381,20 +383,20 @@ Json declared_tools() {
                                {"dpi", integer(36, 1200)},
                                {"background", b},
                                {"transparent", b}},
-                              J::array({"format"}));
-    render_options["if"] = {{"properties", {{"format", en({"pdf", "svg"})}}}};
-    render_options["then"] = {{"not", {{"anyOf", J::array({J{{"required", {"dpi"}}}, J{{"required", {"transparent"}}}})}}}};
+                              json_array<J>({"format"}));
+    render_options["if"] = J{{"properties", {{"format", en({"pdf", "svg"})}}}};
+    render_options["then"] = J{{"not", {{"anyOf", json_array<J>({J{{"required", {"dpi"}}}, J{{"required", {"transparent"}}}})}}}};
     J track_options = object({{"track", idx},
                               {"volume_db", volume},
                               {"balance", balance},
                               {"mute", b},
                               {"solo", b},
-                              {"soundfont", one(J::array({J{{"type", "null"}}, idx, text}))},
+                              {"soundfont", one(json_array<J>({J{{"type", "null"}}, idx, text}))},
                               {"preset", text}},
-                             J::array({"track"}));
+                             json_array<J>({"track"}));
     J audio_options = object({{"score", score},
                               {"format", en({"wav", "flac", "opus", "mp3", "aac"})},
-                              {"bitrate_kbps", one(J::array({lit(0), integer(32, 512)}))},
+                              {"bitrate_kbps", one(json_array<J>({lit(0), integer(32, 512)}))},
                               {"bit_depth", {{"enum", {0, 16, 24, 32}}}},
                               {"use_repeats", b},
                               {"master_volume_db", volume},
@@ -403,29 +405,31 @@ Json declared_tools() {
                               {"reverb", b},
                               {"reverb_send", {{"type", "number"}, {"minimum", 0}, {"maximum", 1}}},
                               {"sample_rate", idx}},
-                             J::array({"format"}));
-    J destination = one(J::array({object({{"kind", lit("file")}, {"path", text}}), object({{"kind", lit("directory")}, {"path", text}})}));
-    audio_options["allOf"] = J::array(
+                             json_array<J>({"format"}));
+    J destination =
+        one(json_array<J>({object({{"kind", lit("file")}, {"path", text}}), object({{"kind", lit("directory")}, {"path", text}})}));
+    audio_options["allOf"] = json_array<J>(
         {J{{"if", {{"properties", {{"format", en({"wav", "flac"})}}}}},
            {"then", {{"properties", {{"bitrate_kbps", lit(0)}}}}},
            {"else", {{"properties", {{"bit_depth", lit(0)}}}}}},
          J{{"if", {{"properties", {{"format", lit("flac")}}}}}, {"then", {{"properties", {{"bit_depth", {{"enum", {0, 16, 24}}}}}}}}}});
-    J exports = J::array();
-    for (auto &entry :
-         J::array({J::array({"score", score_options}), J::array({"render", render_options}), J::array({"audio", audio_options}),
-                   J::array({"positions",
-                             object({{"score", score}, {"position_kind", en({"measure", "segment"})}}, J::array({"position_kind"}))})})) {
+    J exports = json_array<J>();
+    J export_variants = json_array<J>(
+        {json_array<J>({"score", score_options}), json_array<J>({"render", render_options}), json_array<J>({"audio", audio_options}),
+         json_array<J>(
+             {"positions", object({{"score", score}, {"position_kind", en({"measure", "segment"})}}, json_array<J>({"position_kind"}))})});
+    for (auto &entry : export_variants.get_array()) {
         J variant = object(
             {{"document", doc}, {"expected_revision", u}, {"kind", lit(entry[0])}, {"options", entry[1]}, {"destination", destination}},
-            J::array({"document", "kind", "options", "destination"}));
-        if (entry[0] == "render") {
-            variant["if"] = {{"properties", {{"options", {{"properties", {{"format", en({"png", "svg"})}}}}}}}};
-            variant["then"] = {{"properties", {{"destination", {{"properties", {{"kind", lit("directory")}}}}}}}};
-            variant["else"] = {{"properties", {{"destination", {{"properties", {{"kind", lit("file")}}}}}}}};
+            json_array<J>({"document", "kind", "options", "destination"}));
+        if (entry[0].get<std::string>() == "render") {
+            variant["if"] = J{{"properties", {{"options", {{"properties", {{"format", en({"png", "svg"})}}}}}}}};
+            variant["then"] = J{{"properties", {{"destination", {{"properties", {{"kind", lit("directory")}}}}}}}};
+            variant["else"] = J{{"properties", {{"destination", {{"properties", {{"kind", lit("file")}}}}}}}};
         } else {
             variant["properties"]["destination"] = object({{"kind", lit("file")}, {"path", text}});
         }
-        exports.push_back(variant);
+        json_push(exports, variant);
     }
     tool("score_export",
          "Export synchronously from the live document. Report source revision. Select master or excerpt for score, render, audio and "
@@ -437,12 +441,12 @@ Json declared_tools() {
                  {"source_revision", u},
                  {"artifacts", array(ref("artifact"))},
                  {"export_warnings", array(ref("export_warning"))}},
-                J::array({"ok", "source_revision", "artifacts"})));
+                json_array<J>({"ok", "source_revision", "artifacts"})));
     tool("runtime_info",
          "Inspect runtime or add_font(path)/set_soundfonts(files) on owner thread. Empty files disables audio. Changes preserve document "
          "revisions; fonts trigger relayout. Sample rate stays fixed.",
-         one(J::array({object({{"action", lit("get")}}, J::array()), object({{"action", lit("add_font")}, {"path", text}}),
-                       object({{"action", lit("set_soundfonts")}, {"files", array(text, 256)}})})),
+         one(json_array<J>({object({{"action", lit("get")}}, json_array<J>()), object({{"action", lit("add_font")}, {"path", text}}),
+                            object({{"action", lit("set_soundfonts")}, {"files", array(text, 256)}})})),
          success({{"tool_revision", lit("2")},
                   {"capabilities", ref("capabilities")},
                   {"templates", array(ref("template"))},

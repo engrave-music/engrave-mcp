@@ -14,7 +14,7 @@ int main() {
 #endif
     try {
         music::api::validate_registry();
-        std::cout << music::api::tools_json().dump(2) << '\n';
+        std::cout << music::dump_json(music::api::tools_json(), 2) << '\n';
         if (!std::cout) return 1;
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

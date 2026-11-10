@@ -7,8 +7,8 @@
 
 #include <asio/awaitable.hpp>
 #include <engrave/engine.h>
-#include <nlohmann/json.hpp>
 
+#include "json.h"
 #include "publication_gate.h"
 
 namespace music {
@@ -19,7 +19,7 @@ struct AsyncSession {
     ~AsyncSession();
     AsyncSession(const AsyncSession &) = delete;
     AsyncSession &operator=(const AsyncSession &) = delete;
-    asio::awaitable<nlohmann::json> call(std::string name, nlohmann::json arguments, std::shared_ptr<RequestExecution> execution = {});
+    asio::awaitable<Json> call(std::string name, Json arguments, std::shared_ptr<RequestExecution> execution = {});
     void shutdown() noexcept;
 
 private:

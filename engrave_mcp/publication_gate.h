@@ -6,7 +6,7 @@
 #include <functional>
 #include <mutex>
 
-#include <nlohmann/json.hpp>
+#include "json.h"
 
 namespace music {
 
@@ -27,7 +27,7 @@ inline PublicationGate publication_gate;
 struct RequestExecution : std::atomic<int> {
     RequestExecution() : std::atomic<int>(0) {}
 
-    std::function<void(nlohmann::json)> report;
+    std::function<void(Json)> report;
 
     void mark_report_sent() {
         std::lock_guard lock(response_mutex);

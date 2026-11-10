@@ -1,10 +1,10 @@
 #pragma once
 
-#include <nlohmann/json.hpp>
+#include "json.h"
 
 namespace music::api {
 
-using Json = nlohmann::json;
+using Json = music::Json;
 
 Json declared_tools();
 

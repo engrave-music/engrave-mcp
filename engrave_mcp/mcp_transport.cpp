@@ -101,7 +101,33 @@ enum class ServerState { UNINITIALIZED, INITIALIZED_PENDING, READY };
 
 enum class WireStatus { OK, TOO_LARGE, FAILED };
 
-bool is_valid_id(const Json &id) { return id.is_string() || id.is_number_integer(); }
+bool json_nesting_exceeds(std::string_view text, int max_depth) {
+    int depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (const char ch : text) {
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{' || ch == '[') {
+            if (++depth > max_depth) return true;
+        } else if (ch == '}' || ch == ']') {
+            --depth;
+        }
+    }
+    return false;
+}
+
+bool is_valid_id(const Json &id) { return id.is_string() || id.holds<uint64_t>() || id.holds<int64_t>(); }
 
 bool is_cancellation_code(const std::string &code) {
     return code == "operation_aborted" || code == "cancelled" || code == "canceled" || code == "aborted";
@@ -649,16 +675,15 @@ private:
                 result = make_tool_result(payload, true);
             } catch (...) {
                 result = make_tool_error_result("EngineFailure", "Completed export wrapper failed");
-                Json paths = Json::array();
+                Json paths = make_array<Json>();
                 if (payload.contains("artifacts")) {
-                    for (const auto &a : payload.at("artifacts")) paths.push_back(a.at("path"));
+                    for (const auto &a : payload.at("artifacts").get_array()) json_push(paths, a.at("path"));
                 } else {
-                    paths = payload.at("error").value("published_artifacts", Json::array());
+                    paths = json_value<Json>(payload.at("error"), "published_artifacts", make_array<Json>());
                 }
                 result["structuredContent"]["error"]["published_artifacts"] = std::move(paths);
             }
-            auto wire =
-                Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}}.dump(-1, ' ', false, Json::error_handler_t::replace);
+            auto wire = dump_json(Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}});
             wire.push_back('\n');
             if (wire.size() > k_max_response_bytes) post_writer_failure("published report exceeds limit", true);
             if (!write_report_bytes(wire)) post_writer_failure("stdout write failed", true);
@@ -922,7 +947,7 @@ private:
 
         std::string wire;
         try {
-            wire = value.dump(-1, ' ', false, Json::error_handler_t::replace);
+            wire = dump_json(value);
             wire.push_back('\n');
         } catch (...) {
             release_output_reservation(k_max_response_bytes);
@@ -944,7 +969,7 @@ private:
 
     asio::awaitable<WireStatus> send_result_status(const Json &id, Json result) {
         try {
-            Json response = Json::object();
+            Json response = make_object<Json>();
             response["jsonrpc"] = "2.0";
             response["id"] = id;
             response["result"] = std::move(result);
@@ -957,10 +982,10 @@ private:
 
     asio::awaitable<bool> send_error(const Json &id, int code, const std::string &message) {
         try {
-            Json error = Json::object();
+            Json error = make_object<Json>();
             error["jsonrpc"] = "2.0";
             error["id"] = is_valid_id(id) ? id : Json(nullptr);
-            error["error"] = {{"code", code}, {"message", message}};
+            error["error"] = Json{{"code", code}, {"message", message}};
             const WireStatus status = co_await send_wire(error);
             if (status == WireStatus::TOO_LARGE) {
                 fatal_shutdown("MCP error response exceeded the 16 MiB limit");
@@ -1089,34 +1114,16 @@ private:
     }
 
     asio::awaitable<bool> process_line(const std::string &line) {
-        Json req;
-        // A coroutine catch handler may not suspend, so classify the parse
-        // failure here and deliver the protocol error after the handler.
-        int parse_error_code = 0;
-        const char *parse_error_message = nullptr;
-        try {
-            req = Json::parse(line, [](int depth, Json::parse_event_t, Json &) {
-                if (depth > 64) {
-                    throw std::length_error("JSON nesting exceeds 64 levels");
-                }
-                return true;
-            });
-        } catch (const std::length_error &) {
-            parse_error_code = -32600;
-            parse_error_message = "Invalid Request: JSON nesting exceeds 64 levels";
-        } catch (const Json::parse_error &) {
-            parse_error_code = -32700;
-            parse_error_message = "Parse error";
-        } catch (const Json::exception &) {
-            parse_error_code = -32700;
-            parse_error_message = "Parse error";
-        } catch (...) {
-            parse_error_code = -32700;
-            parse_error_message = "Parse error";
+        // The protocol caps nesting at 64 levels; glaze's own parser limit is
+        // higher, so enforce the wire contract before parsing.
+        if (json_nesting_exceeds(line, 64)) {
+            co_return co_await send_error(nullptr, -32600, "Invalid Request: JSON nesting exceeds 64 levels");
         }
-        if (parse_error_code != 0) {
-            co_return co_await send_error(nullptr, parse_error_code, parse_error_message);
+        auto parsed = parse_json<Json>(line);
+        if (!parsed) {
+            co_return co_await send_error(nullptr, -32700, "Parse error");
         }
+        Json req = std::move(*parsed);
 
         if (req.is_array()) {
             co_return co_await send_error(nullptr, -32600, "Batch requests are not supported");
@@ -1131,7 +1138,7 @@ private:
         std::string protocol_error_message;
         Json protocol_error_id = nullptr;
         try {
-            if (!req.contains("jsonrpc") || req["jsonrpc"] != "2.0") {
+            if (!req.contains("jsonrpc") || req["jsonrpc"].get<std::string>() != "2.0") {
                 Json fallback_id = nullptr;
                 if (req.contains("id") && is_valid_id(req["id"])) {
                     fallback_id = req["id"];
@@ -1174,7 +1181,7 @@ private:
                 }
             }
 
-            Json params = Json::object();
+            Json params = make_object<Json>();
             if (req.contains("params")) {
                 if (!req["params"].is_object()) {
                     co_return co_await send_error(id, -32602, "Invalid params: must be an object");
@@ -1202,7 +1209,7 @@ private:
                 }
 
                 Json result = {{"protocolVersion", "2025-11-25"},
-                               {"capabilities", {{"tools", Json::object()}}},
+                               {"capabilities", {{"tools", make_object<Json>()}}},
                                {"serverInfo", {{"name", "engrave-mcp"}, {"version", "0.1.0"}}}};
                 if (!co_await send_result(id, std::move(result))) {
                     co_return false;
@@ -1212,7 +1219,7 @@ private:
             }
 
             if (method == "ping") {
-                co_return co_await send_result(id, Json::object());
+                co_return co_await send_result(id, make_object<Json>());
             }
 
             if (method == "tools/list") {
@@ -1236,7 +1243,7 @@ private:
                     co_return co_await send_error(id, -32603, list_tools_error);
                 }
 
-                Json tools_list = Json::array();
+                Json tools_list = make_array<Json>();
                 if (tools_raw.is_array()) {
                     tools_list = tools_raw;
                 } else if (tools_raw.is_object() && tools_raw.contains("tools") && tools_raw["tools"].is_array()) {
@@ -1256,7 +1263,7 @@ private:
                 }
 
                 std::string tool_name = params["name"].get<std::string>();
-                Json arguments = Json::object();
+                Json arguments = make_object<Json>();
                 if (params.contains("arguments")) {
                     arguments = params["arguments"];
                 }
@@ -1273,7 +1280,7 @@ private:
             }
 
             co_return co_await send_error(id, -32601, "Method not found: " + method);
-        } catch (const Json::exception &e) {
+        } catch (const std::bad_variant_access &e) {
             protocol_error_code = -32600;
             protocol_error_message = std::string("Malformed request: ") + e.what();
             if (req.is_object() && req.contains("id") && is_valid_id(req["id"])) {
@@ -1505,15 +1512,15 @@ private:
     }
 
     static Json make_tool_error_result(const std::string &code, const std::string &message) {
-        Json content_item = Json::object();
+        Json content_item = make_object<Json>();
         content_item["type"] = "text";
         std::string bounded_message = message;
         bounded_message.resize(utf8_prefix(bounded_message, 16384));
         content_item["text"] = bounded_message;
 
-        Json result = Json::object();
-        result["content"] = Json::array({std::move(content_item)});
-        result["structuredContent"] = {{"ok", false}, {"error", {{"code", code}, {"message", bounded_message}}}};
+        Json result = make_object<Json>();
+        result["content"] = json_array(std::move(content_item));
+        result["structuredContent"] = Json{{"ok", false}, {"error", {{"code", code}, {"message", bounded_message}}}};
         result["isError"] = true;
         return result;
     }

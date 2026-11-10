@@ -149,8 +149,14 @@ engrave::Format input_format(const std::string &s) {
 
 template <class T>
 Json encoded_array(const std::vector<T> &values) {
-    Json result = Json::array();
-    for (const auto &value : values) result.push_back(encode(value));
+    Json result = make_array<Json>();
+    for (const auto &value : values) json_push(result, encode(value));
+    return result;
+}
+
+std::vector<std::string> json_strings(const Json &array) {
+    std::vector<std::string> result;
+    for (const auto &item : array.get_array()) result.push_back(item.get<std::string>());
     return result;
 }
 } // namespace
@@ -279,10 +285,10 @@ Json HostApi::create_document(const Json &j) {
         engrave::CreateOptions o;
         if (j.contains("template_id")) o.template_id = j.at("template_id").get<std::string>();
         if (j.contains("template_path")) o.template_path = detail::path(j.at("template_path"));
-        o.title = j.value("title", std::string());
-        o.subtitle = j.value("subtitle", std::string());
-        o.composer = j.value("composer", std::string());
-        o.lyricist = j.value("lyricist", std::string());
+        o.title = json_value<std::string>(j, "title", {});
+        o.subtitle = json_value<std::string>(j, "subtitle", {});
+        o.composer = json_value<std::string>(j, "composer", {});
+        o.lyricist = json_value<std::string>(j, "lyricist", {});
         for (const auto *value : {&o.title, &o.subtitle, &o.composer, &o.lyricist}) detail::validate_xml_text(*value);
         return impl_->publish(engine_result(impl_->engine->create_document(o)));
     });
@@ -326,17 +332,17 @@ Json HostApi::query(const Json &j) {
         const auto mode = j.at("mode").get<std::string>();
         Json result = {{"ok", true}, {"mode", mode}, {"revision", std::to_string(doc.revision())}};
         if (mode == "elements") {
-            auto query = unwrap(decode_query(j.value("query", Json::object())));
+            auto query = unwrap(decode_query(json_value<Json>(j, "query", make_object<Json>())));
             auto out = doc.query(query);
             if (!out) {
                 auto e = api_error(out.error());
                 e.document = j.at("document").get<std::string>();
                 throw detail::DecodeError{std::move(e)};
             }
-            result.update(encode(*out));
+            json_merge(result, encode(*out));
         } else if (mode == "properties") {
             auto target = unwrap(decode_ref(j.at("target")));
-            auto out = doc.get(target, j.value("props", std::vector<std::string>{}));
+            auto out = doc.get(target, j.contains("props") ? json_strings(j.at("props")) : std::vector<std::string>{});
             if (!out) {
                 auto e = api_error(out.error());
                 e.document = j.at("document").get<std::string>();
@@ -378,7 +384,7 @@ Json HostApi::edit(const Json &j) {
         // index of malformed operations while still decoding the whole batch
         // before looking up or mutating a document.
         auto envelope = j;
-        if (envelope.is_object() && envelope.contains("ops")) envelope["ops"] = Json::array();
+        if (envelope.is_object() && envelope.contains("ops")) envelope["ops"] = make_array<Json>();
         detail::validate_tool("score_edit", envelope);
         auto batch = unwrap(decode_batch(j.at("ops")));
         const auto expected = revision_arg(j);
@@ -411,7 +417,7 @@ Json HostApi::runtime_info(const Json &j) {
     return boundary([&] {
         impl_->check_thread();
         detail::validate_tool("runtime_info", j);
-        const auto action = j.value("action", std::string("get"));
+        const auto action = json_value<std::string>(j, "action", "get");
         if (action == "add_font") {
             auto font = unwrap(copy_asset(detail::path(j.at("path"))));
             const bool exists = std::any_of(impl_->assets->fonts.begin(), impl_->assets->fonts.end(),
@@ -427,7 +433,7 @@ Json HostApi::runtime_info(const Json &j) {
             auto next = std::make_shared<RuntimeAssets>(*impl_->assets);
             next->soundfonts.clear();
             std::vector<fs::path> paths;
-            for (const auto &item : j.at("files")) {
+            for (const auto &item : j.at("files").get_array()) {
                 auto f = unwrap(copy_asset(detail::path(item)));
                 paths.push_back(f->file);
                 next->soundfonts.push_back(std::move(f));
@@ -439,8 +445,8 @@ Json HostApi::runtime_info(const Json &j) {
         auto caps = impl_->engine->capabilities();
         auto opts = impl_->asset_options();
         caps.soundfonts = opts.soundfonts;
-        Json fonts = Json::array();
-        for (const auto &path : opts.fonts) fonts.push_back(detail::path_text(path));
+        Json fonts = make_array<Json>();
+        for (const auto &path : opts.fonts) json_push(fonts, detail::path_text(path));
         return Json{{"ok", true},
                     {"tool_revision", "2"},
                     {"capabilities", encode(caps)},

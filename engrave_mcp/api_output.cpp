@@ -65,7 +65,14 @@ HostError with_destination(HostError error, std::string_view requested) {
 
 template <class T>
 void assign_if(const Json &j, const char *key, T &out) {
-    if (j.contains(key)) out = j.at(key).get<T>();
+    if (!j.contains(key)) return;
+    if constexpr (std::same_as<T, bool>) {
+        out = j.at(key).get<bool>();
+    } else if constexpr (std::integral<T> || std::floating_point<T>) {
+        out = j.at(key).as<T>();
+    } else {
+        out = j.at(key).get<T>();
+    }
 }
 
 template <class T>
@@ -101,16 +108,17 @@ std::vector<std::byte> position_json(const engrave::Positions &positions, const 
     for (const auto &e : positions.elements) {
         if (!first) append(",");
         first = false;
-        append(Json{{"id", e.id}, {"x", e.x}, {"y", e.y}, {"sx", e.sx}, {"sy", e.sy}, {"page", e.page}}.dump());
+        append(dump_json(Json{{"id", e.id}, {"x", e.x}, {"y", e.y}, {"sx", e.sx}, {"sy", e.sy}, {"page", e.page}}));
     }
     append("],\"events\":[");
     first = true;
     for (const auto &e : positions.events) {
         if (!first) append(",");
         first = false;
-        append(Json{{"elid", e.elid}, {"position", e.position}}.dump());
+        append(dump_json(Json{{"elid", e.elid}, {"position", e.position}}));
     }
-    append("],\"page_size\":{\"height\":" + Json(positions.page_height).dump() + ",\"width\":" + Json(positions.page_width).dump() + "}}");
+    append("],\"page_size\":{\"height\":" + dump_json(Json(positions.page_height)) + ",\"width\":" + dump_json(Json(positions.page_width)) +
+           "}}");
     return result;
 }
 
@@ -210,7 +218,7 @@ Result<ExportRequest> decode_export(const Json &j) {
             result.expected_revision = *revision;
         }
         const auto &destination = j.at("destination");
-        result.destination.directory = destination.at("kind") == "directory";
+        result.destination.directory = destination.at("kind").get<std::string>() == "directory";
         result.destination.path = detail::path(destination.at("path"));
         result.destination.requested_path = destination.at("path").get<std::string>();
         if (result.destination.path.empty()) invalid("destination path is empty");
@@ -247,21 +255,21 @@ Result<ExportRequest> decode_export(const Json &j) {
             assign_if(options, "reverb", o.reverb);
             assign_if(options, "reverb_send", o.reverb_send);
             assign_if(options, "sample_rate", o.sample_rate);
-            if (options.contains("master_volume_db")) o.master_volume_db = options.at("master_volume_db").get<double>();
-            if (options.contains("master_balance")) o.master_balance = options.at("master_balance").get<double>();
+            if (options.contains("master_volume_db")) o.master_volume_db = options.at("master_volume_db").as<double>();
+            if (options.contains("master_balance")) o.master_balance = options.at("master_balance").as<double>();
             if (options.contains("tracks")) {
-                for (const auto &t : options.at("tracks")) {
+                for (const auto &t : options.at("tracks").get_array()) {
                     engrave::AudioTrackOptions track;
-                    track.track = t.at("track").get<std::int32_t>();
-                    if (t.contains("volume_db")) track.volume_db = t.at("volume_db").get<double>();
-                    if (t.contains("balance")) track.balance = t.at("balance").get<double>();
+                    track.track = t.at("track").as<std::int32_t>();
+                    if (t.contains("volume_db")) track.volume_db = t.at("volume_db").as<double>();
+                    if (t.contains("balance")) track.balance = t.at("balance").as<double>();
                     if (t.contains("mute")) track.mute = t.at("mute").get<bool>();
                     if (t.contains("solo")) track.solo = t.at("solo").get<bool>();
                     if (t.contains("preset")) track.preset = t.at("preset").get<std::string>();
                     if (t.contains("soundfont") && !t.at("soundfont").is_null()) {
                         const auto &sf = t.at("soundfont");
                         track.soundfont = sf.is_string() ? engrave::SoundFontSelection(sf.get<std::string>()) :
-                                                           engrave::SoundFontSelection(sf.get<std::int32_t>());
+                                                           engrave::SoundFontSelection(sf.as<std::int32_t>());
                     }
                     o.tracks.push_back(std::move(track));
                 }
@@ -269,8 +277,8 @@ Result<ExportRequest> decode_export(const Json &j) {
         } else {
             result.kind = ExportKind::POSITIONS;
             result.position_score = selection;
-            result.position_kind =
-                options.at("position_kind") == "measure" ? engrave::PositionKind::MEASURE : engrave::PositionKind::SEGMENT;
+            result.position_kind = options.at("position_kind").get<std::string>() == "measure" ? engrave::PositionKind::MEASURE :
+                                                                                                 engrave::PositionKind::SEGMENT;
         }
         return result;
     } catch (const detail::DecodeError &e) {
@@ -365,13 +373,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             }
         };
         auto validate_report_path = [&](const fs::path &path) {
-            try {
-                // Use the wire encoder's strict UTF-8 rules; replacement would
-                // make both success and partial-error paths unusable.
-                std::ignore = Json(report_path_text(path)).dump();
-            } catch (const Json::type_error &) {
-                invalid_resolved_path();
-            }
+            // Use the wire encoder's strict UTF-8 rules; replacement would
+            // make both success and partial-error paths unusable.
+            if (!valid_utf8(report_path_text(path))) invalid_resolved_path();
         };
         validate_report_path(cleanup.destination);
         try {
@@ -581,11 +585,11 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             staged.push_back({path, {mime, destination, bytes}});
         }
         // Preflight both complete and worst-case partial reports before any rename.
-        Json all = Json::array(), paths = Json::array();
+        Json all = make_array<Json>(), paths = make_array<Json>();
         for (const auto &file : staged) {
             validate_report_path(file.artifact.path);
-            all.push_back(encode(file.artifact));
-            paths.push_back(detail::path_text(file.artifact.path));
+            json_push(all, encode(file.artifact));
+            json_push(paths, detail::path_text(file.artifact.path));
         }
         Json success{{"ok", true},
                      {"source_revision", std::to_string(document.revision())},
@@ -649,8 +653,8 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             }
             timing.add("publish", start);
         }
-        Json encoded = Json::array();
-        for (const auto &a : artifacts) encoded.push_back(encode(a));
+        Json encoded = make_array<Json>();
+        for (const auto &a : artifacts) json_push(encoded, encode(a));
         return Json{{"ok", true},
                     {"source_revision", std::to_string(document.revision())},
                     {"artifacts", std::move(encoded)},

@@ -40,12 +40,12 @@ int main(int argc, char **argv) {
             [] {
                 auto tools = music::api::tools_json();
 #ifdef MUSIC_ASYNC_TEST_HOOKS
-                tools.push_back({{"name", "test_owner_state"},
-                                 {"description", "Test-only owner-thread state"},
-                                 {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
-                tools.push_back({{"name", "test_owner_sleep"},
-                                 {"description", "Test-only owner-thread stall"},
-                                 {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
+                music::json_push(tools, music::Json{{"name", "test_owner_state"},
+                                                    {"description", "Test-only owner-thread state"},
+                                                    {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
+                music::json_push(tools, music::Json{{"name", "test_owner_sleep"},
+                                                    {"description", "Test-only owner-thread stall"},
+                                                    {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
 #endif
                 return tools;
             },

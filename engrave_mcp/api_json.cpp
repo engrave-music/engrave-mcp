@@ -64,28 +64,31 @@ bool conforms(const Json &schema, const Json &instance, const Json &root) {
         if (type == "string" && !instance.is_string()) return false;
         if (type == "boolean" && !instance.is_boolean()) return false;
         if (type == "null" && !instance.is_null()) return false;
-        if (type == "number" && (!instance.is_number() || !std::isfinite(instance.get<double>()))) return false;
-        if (type == "integer" && (!instance.is_number() || !std::isfinite(instance.get<double>()) ||
-                                  std::trunc(instance.get<double>()) != instance.get<double>())) {
+        if (type == "number" && (!instance.is_number() || !std::isfinite(instance.as<double>()))) return false;
+        if (type == "integer" && (!instance.is_number() || !std::isfinite(instance.as<double>()) ||
+                                  std::trunc(instance.as<double>()) != instance.as<double>())) {
             return false;
         }
     }
-    if (schema.contains("const") && instance != schema.at("const")) return false;
-    if (schema.contains("enum") && std::find(schema.at("enum").begin(), schema.at("enum").end(), instance) == schema.at("enum").end()) {
-        return false;
+    if (schema.contains("const") && !json_equal(instance, schema.at("const"))) return false;
+    if (schema.contains("enum")) {
+        const auto &choices = schema.at("enum").get_array();
+        if (std::none_of(choices.begin(), choices.end(), [&](const Json &choice) { return json_equal(choice, instance); })) {
+            return false;
+        }
     }
     if (instance.is_number()) {
-        const long double n = instance.get<long double>();
-        if (schema.contains("minimum") && n < schema.at("minimum").get<long double>()) return false;
-        if (schema.contains("maximum") && n > schema.at("maximum").get<long double>()) return false;
+        const long double n = instance.as<long double>();
+        if (schema.contains("minimum") && n < schema.at("minimum").as<long double>()) return false;
+        if (schema.contains("maximum") && n > schema.at("maximum").as<long double>()) return false;
     }
     if (instance.is_string()) {
-        const auto &s = instance.get_ref<const std::string &>();
+        const auto &s = instance.get<std::string>();
         const auto count = unicode_length(s);
-        if (schema.contains("minLength") && count < schema.at("minLength").get<std::size_t>()) return false;
-        if (schema.contains("maxLength") && count > schema.at("maxLength").get<std::size_t>()) return false;
+        if (schema.contains("minLength") && count < schema.at("minLength").as<std::size_t>()) return false;
+        if (schema.contains("maxLength") && count > schema.at("maxLength").as<std::size_t>()) return false;
         if (schema.contains("pattern")) {
-            const auto &pattern = schema.at("pattern").get_ref<const std::string &>();
+            const auto &pattern = schema.at("pattern").get<std::string>();
             if (pattern.starts_with("^(?:[A-Za-z0-9+/]")) {
                 if (!base64_shape(s)) return false;
             } else if (!std::regex_search(s, compiled_pattern(pattern))) {
@@ -94,43 +97,43 @@ bool conforms(const Json &schema, const Json &instance, const Json &root) {
         }
     }
     if (instance.is_array()) {
-        if (schema.contains("maxItems") && instance.size() > schema.at("maxItems").get<std::size_t>()) return false;
+        if (schema.contains("maxItems") && instance.size() > schema.at("maxItems").as<std::size_t>()) return false;
         if (schema.contains("items")) {
-            for (const auto &v : instance) {
+            for (const auto &v : instance.get_array()) {
                 if (!conforms(schema.at("items"), v, root)) return false;
             }
         }
     }
     if (instance.is_object()) {
         if (schema.contains("required")) {
-            for (const auto &key : schema.at("required")) {
+            for (const auto &key : schema.at("required").get_array()) {
                 if (!instance.contains(key.get<std::string>())) return false;
             }
         }
         if (schema.contains("properties")) {
             const auto &props = schema.at("properties");
-            for (auto it = instance.begin(); it != instance.end(); ++it) {
-                if (props.contains(it.key())) {
-                    if (!conforms(props.at(it.key()), it.value(), root)) return false;
-                } else if (schema.value("additionalProperties", true) == false) {
+            for (const auto &[key, value] : instance.get_object()) {
+                if (props.contains(key)) {
+                    if (!conforms(props.at(key), value, root)) return false;
+                } else if (!json_value<bool>(schema, "additionalProperties", true)) {
                     return false;
                 }
             }
         }
     }
     if (schema.contains("allOf")) {
-        for (const auto &s : schema.at("allOf")) {
+        for (const auto &s : schema.at("allOf").get_array()) {
             if (!conforms(s, instance, root)) return false;
         }
     }
     if (schema.contains("anyOf")) {
         bool found = false;
-        for (const auto &s : schema.at("anyOf")) found |= conforms(s, instance, root);
+        for (const auto &s : schema.at("anyOf").get_array()) found |= conforms(s, instance, root);
         if (!found) return false;
     }
     if (schema.contains("oneOf")) {
         int count = 0;
-        for (const auto &s : schema.at("oneOf")) count += conforms(s, instance, root) ? 1 : 0;
+        for (const auto &s : schema.at("oneOf").get_array()) count += conforms(s, instance, root) ? 1 : 0;
         if (count != 1) return false;
     }
     if (schema.contains("not") && conforms(schema.at("not"), instance, root)) return false;
@@ -151,13 +154,31 @@ Json fraction_json(const engrave::Fraction &f) { return {{"num", std::to_string(
 
 Json eid_json(const std::optional<engrave::ElementId> &id) { return id ? Json(engrave::to_string(*id)) : Json(nullptr); }
 
-Json score_json(const engrave::ScoreSel &s) { return s.excerpt ? Json{{"excerpt", engrave::to_string(*s.excerpt)}} : Json::object(); }
+Json score_json(const engrave::ScoreSel &s) { return s.excerpt ? Json{{"excerpt", engrave::to_string(*s.excerpt)}} : make_object<Json>(); }
 
 template <class T, class F>
 Json mapped(const std::vector<T> &items, F f) {
-    Json out = Json::array();
-    for (const auto &x : items) out.push_back(f(x));
+    Json out = make_array<Json>();
+    for (const auto &x : items) json_push(out, f(x));
     return out;
+}
+
+std::vector<std::string> strings(const Json &array) {
+    std::vector<std::string> result;
+    for (const auto &item : array.get_array()) result.push_back(item.get<std::string>());
+    return result;
+}
+
+Json strings_json(const std::vector<std::string> &values) {
+    Json result = make_array<Json>();
+    for (const auto &value : values) json_push(result, value);
+    return result;
+}
+
+std::vector<std::int32_t> ints(const Json &array) {
+    std::vector<std::int32_t> result;
+    for (const auto &item : array.get_array()) result.push_back(item.as<std::int32_t>());
+    return result;
 }
 
 Json ids(const std::vector<engrave::ElementId> &items) {
@@ -220,7 +241,7 @@ void validate_def(std::string_view tool, std::string_view name, const Json &valu
 }
 
 std::int64_t signed_decimal(const Json &j) {
-    const auto &s = j.get_ref<const std::string &>();
+    const auto &s = j.get<std::string>();
     std::int64_t n{};
     const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), n);
     if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s) invalid("integer is not a canonical int64 decimal");
@@ -245,12 +266,12 @@ engrave::ScoreSel score(const Json &j) { return {j.contains("excerpt") ? std::op
 engrave::Address address(const Json &j) {
     const auto k = j.at("kind").get<std::string>();
     if (k == "segment") {
-        return engrave::SegmentAddress{eid(j.at("measure")), j.at("staff").get<int>(), j.at("voice").get<int>(), fraction(j.at("tick")),
+        return engrave::SegmentAddress{eid(j.at("measure")), j.at("staff").as<int>(), j.at("voice").as<int>(), fraction(j.at("tick")),
                                        j.at("segment_kind").get<std::string>()};
     }
-    if (k == "page") return engrave::PageAddress{score(j.at("score")), j.at("index").get<int>()};
-    if (k == "system") return engrave::SystemAddress{score(j.at("score")), j.at("page").get<int>(), j.at("index").get<int>()};
-    if (k == "spanner_segment") return engrave::SpannerSegmentAddress{eid(j.at("spanner")), j.at("index").get<int>()};
+    if (k == "page") return engrave::PageAddress{score(j.at("score")), j.at("index").as<int>()};
+    if (k == "system") return engrave::SystemAddress{score(j.at("score")), j.at("page").as<int>(), j.at("index").as<int>()};
+    if (k == "spanner_segment") return engrave::SpannerSegmentAddress{eid(j.at("spanner")), j.at("index").as<int>()};
     invalid("unknown address kind");
 }
 
@@ -259,9 +280,9 @@ engrave::Ref ref(const Json &j, bool allow_op, std::size_t before) {
     if (k == "id") return eid(j.at("id"));
     if (k == "address") return address(j.at("address"));
     if (k == "op" && allow_op) {
-        const auto op = j.at("op").get<std::size_t>();
+        const auto op = j.at("op").as<std::size_t>();
         if (op >= before) invalid("OpRef must refer to an earlier operation");
-        return engrave::OpRef{op, j.at("item").get<std::size_t>()};
+        return engrave::OpRef{op, j.at("item").as<std::size_t>()};
     }
     invalid("OpRef is only valid in an edit batch");
 }
@@ -272,30 +293,30 @@ engrave::Value value(const Json &j) {
     const auto &v = j.at("value");
     if (k == "bool") return v.get<bool>();
     if (k == "int") return signed_decimal(v);
-    if (k == "real") return v.get<double>();
+    if (k == "real") return v.as<double>();
     if (k == "string") {
         auto text = v.get<std::string>();
         validate_xml_text(text);
         return text;
     }
     if (k == "fraction") return fraction(v);
-    if (k == "point") return engrave::Point{v.at("x").get<double>(), v.at("y").get<double>()};
-    if (k == "size") return engrave::Size{v.at("w").get<double>(), v.at("h").get<double>()};
+    if (k == "point") return engrave::Point{v.at("x").as<double>(), v.at("y").as<double>()};
+    if (k == "size") return engrave::Size{v.at("w").as<double>(), v.at("h").as<double>()};
     if (k == "color") {
-        return engrave::Color{v.at("r").get<std::uint8_t>(), v.at("g").get<std::uint8_t>(), v.at("b").get<std::uint8_t>(),
-                              v.at("a").get<std::uint8_t>()};
+        return engrave::Color{v.at("r").as<std::uint8_t>(), v.at("g").as<std::uint8_t>(), v.at("b").as<std::uint8_t>(),
+                              v.at("a").as<std::uint8_t>()};
     }
     if (k == "enum") return engrave::Enum{v.get<std::string>()};
     if (k == "int_list") {
         std::vector<std::int64_t> xs;
-        for (const auto &x : v) xs.push_back(signed_decimal(x));
+        for (const auto &x : v.get_array()) xs.push_back(signed_decimal(x));
         return xs;
     }
     invalid("unknown or read-only value kind");
 }
 
 std::filesystem::path path(const Json &j) {
-    const auto &s = j.get_ref<const std::string &>();
+    const auto &s = j.get<std::string>();
     if (s.find('\0') != std::string::npos) invalid("path contains a NUL byte");
     return std::filesystem::u8path(s);
 }
@@ -309,7 +330,7 @@ std::string path_text(const std::filesystem::path &p) {
 Result<std::uint64_t> decode_revision(const Json &j) {
     try {
         if (!j.is_string()) invalid("revision must be a decimal string");
-        const auto &s = j.get_ref<const std::string &>();
+        const auto &s = j.get<std::string>();
         std::uint64_t n{};
         const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), n);
         if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s) {
@@ -344,19 +365,19 @@ Result<engrave::Query> decode_query(const Json &j) {
         detail::validate_tool("score_query", Json{{"document", "doc-A-1"}, {"mode", "elements"}, {"query", j}});
         engrave::Query q;
         if (j.contains("score")) q.score = detail::score(j.at("score"));
-        if (j.contains("types")) q.types = j.at("types").get<std::vector<std::string>>();
-        if (j.contains("first_measure")) q.first_measure = j.at("first_measure").get<int>();
-        if (j.contains("measure_count")) q.measure_count = j.at("measure_count").get<int>();
+        if (j.contains("types")) q.types = strings(j.at("types"));
+        if (j.contains("first_measure")) q.first_measure = j.at("first_measure").as<int>();
+        if (j.contains("measure_count")) q.measure_count = j.at("measure_count").as<int>();
         if (j.contains("from_measure")) q.from_measure = detail::eid(j.at("from_measure"));
         if (j.contains("to_measure")) q.to_measure = detail::eid(j.at("to_measure"));
-        if (j.contains("staves")) q.staves = j.at("staves").get<std::vector<std::int32_t>>();
-        if (j.contains("voices")) q.voices = j.at("voices").get<std::vector<std::int32_t>>();
+        if (j.contains("staves")) q.staves = ints(j.at("staves"));
+        if (j.contains("voices")) q.voices = ints(j.at("voices"));
         if (j.contains("from_tick")) q.from_tick = detail::fraction(j.at("from_tick"));
         if (j.contains("to_tick")) q.to_tick = detail::fraction(j.at("to_tick"));
-        if (j.contains("props")) q.props = j.at("props").get<std::vector<std::string>>();
+        if (j.contains("props")) q.props = strings(j.at("props"));
         if (j.contains("layout_boxes")) q.layout_boxes = j.at("layout_boxes").get<bool>();
-        if (j.contains("limit")) q.limit = j.at("limit").get<std::size_t>();
-        if (j.contains("cursor")) q.cursor = j.at("cursor").get<std::size_t>();
+        if (j.contains("limit")) q.limit = j.at("limit").as<std::size_t>();
+        if (j.contains("cursor")) q.cursor = j.at("cursor").as<std::size_t>();
         return q;
     } catch (const detail::DecodeError &e) {
         return std::unexpected(e.error);
@@ -447,7 +468,7 @@ Json encode(const engrave::Outline &o) {
 Json encode(const engrave::QueryResult &q) {
     auto elements = mapped(q.elements, [](const auto &e) {
         Json box = nullptr;
-        if (e.box) box = {{"page", e.box->page}, {"x", e.box->x}, {"y", e.box->y}, {"width", e.box->width}, {"height", e.box->height}};
+        if (e.box) box = Json{{"page", e.box->page}, {"x", e.box->x}, {"y", e.box->y}, {"width", e.box->width}, {"height", e.box->height}};
         return Json{{"id", engrave::to_string(e.id)},
                     {"type", e.type},
                     {"score", score_json(e.score)},
@@ -500,18 +521,19 @@ Json encode(const engrave::Positions &p) {
 }
 
 Json encode(const engrave::TypeInfo &t) {
-    return {{"type", t.type},
-            {"props", mapped(t.props, [](const auto &p) {
-                 return Json{{"name", p.name},         {"kind", kind(p.kind)}, {"unit", unit(p.unit)}, {"enum_tokens", p.enum_tokens},
-                             {"settable", p.settable}, {"link", p.link},       {"group", p.group}};
-             })}};
+    return {{"type", t.type}, {"props", mapped(t.props, [](const auto &p) {
+                                   return Json{{"name", p.name},         {"kind", kind(p.kind)},
+                                               {"unit", unit(p.unit)},   {"enum_tokens", strings_json(p.enum_tokens)},
+                                               {"settable", p.settable}, {"link", p.link},
+                                               {"group", p.group}};
+                               })}};
 }
 
 Json encode(const engrave::StyleInfo &s) {
     return {{"name", s.name},
             {"kind", kind(s.kind)},
             {"unit", unit(s.unit)},
-            {"enum_tokens", s.enum_tokens},
+            {"enum_tokens", strings_json(s.enum_tokens)},
             {"default_value", encode(s.default_value)}};
 }
 
@@ -560,11 +582,11 @@ Json encode(const engrave::Capabilities &c) {
 }
 
 Json encode(const std::vector<engrave::ExportWarning> &warnings) {
-    Json result = Json::array();
+    Json result = make_array<Json>();
     for (const auto &warning : warnings) {
         Json item = {{"code", warning.code}, {"message", warning.message}};
         if (warning.object) item["object"] = Json{{"kind", warning.object->kind}, {"id", warning.object->id}};
-        result.push_back(std::move(item));
+        json_push(result, std::move(item));
     }
     return result;
 }
