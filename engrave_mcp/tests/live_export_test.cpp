@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
                 std::vector<std::byte> expected;
                 if (svg || pdf) {
                     auto rendered = value(doc->render(request->render_options));
-                    expected = pdf ? std::move(rendered.document) : std::move(rendered.pages.at(0));
+                    expected = pdf ? std::move(rendered.document) : std::move(rendered.pages[0]);
                 } else {
                     expected = value(doc->export_score(request->score_options));
                 }
@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
                 tiny.output_bytes = 1;
                 auto limited = live_export(*doc, denied_request, tiny, [] { return false; }, ExportTiming::Clock::now(), timing);
                 if (limited || limited.error().code != "ResourceLimit") throw std::runtime_error("output limit failed");
-                const auto path = fs::u8path(actual->at("artifacts").at(0).at("path").get<std::string>());
+                const auto path = fs::u8path(actual->at("artifacts")[0].at("path").get<std::string>());
                 if (std::string(fmt) == "mscz" || pdf) {
                     // PDF has volatile Cairo metadata, including compressed streams.
                     // The Python harness compares complete golden.describe_pdf descriptors.
