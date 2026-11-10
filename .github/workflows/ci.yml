@@ -156,7 +156,8 @@ jobs:
           restore-keys: ccache-${{ matrix.name }}-
 
       # Same configuration as scripts/build-native.ps1 (Windows) and
-      # scripts/build-native.sh (Linux: pinned Pixi GCC, Pixi cairo prefix).
+      # scripts/build-native.sh (Linux: pinned Pixi GCC). cairo and zlib come
+      # from the Pixi environment through xmake's pixi:: packages.
       - name: Configure (release)
         id: configure
         run: |
@@ -173,7 +174,6 @@ jobs:
             xmake @config
           } else {
             $config += @(
-              "--cairo_prefix=$env_prefix",
               "--cc=gcc@$env_prefix/bin/x86_64-conda-linux-gnu-cc",
               "--cxx=g++@$env_prefix/bin/x86_64-conda-linux-gnu-c++",
               "--ld=g++@$env_prefix/bin/x86_64-conda-linux-gnu-c++"

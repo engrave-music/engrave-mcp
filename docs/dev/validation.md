@@ -211,11 +211,10 @@ Linux:
   --build-dir vendor/engrave/build/gate \
   --assets .runtime/assets \
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 \
-  --output .runtime/gate-run \
-  --cairo-prefix .pixi/envs/default
+  --output .runtime/gate-run
 ```
 
-On Windows, use native Python (`.pixi\envs\default\python.exe`) in PowerShell 7 (`--cairo-prefix` is optional on Windows). Pass `--mutex-wrapper scripts/xmake_mutex.ps1` when the engine build shares xmake's build lock. On Linux, set `--cairo-prefix` to the Pixi environment root, with its `bin` on `PATH` and `lib` on `LD_LIBRARY_PATH`. Use a fresh `--output` directory for each run; existing capture directories are rejected.
+On Windows, use native Python (`.pixi\envs\default\python.exe`) in PowerShell 7. Pass `--mutex-wrapper scripts/xmake_mutex.ps1` when the engine build shares xmake's build lock. The wrapper passes `--pixi-manifest pixi.toml`, so the gate builds against this project's Pixi environment (the cairo and zlib in `pixi.lock`; on Linux also its conda GCC), puts the environment's `bin` on `PATH` and lets binaries find its libraries through their run path. Use a fresh `--output` directory for each run; existing capture directories are rejected.
 
 The gate builds the fork's `engine_tests` target and executes the API, import, playback, and adapter suites, along with `diagnostics_test`, `io_boundary_test`, installer tests, and asset manifest verification. It compares outputs against pinned goldens using `golden.py` comparators and the platform hash allow-list (`vendor/engrave/tests/data/golden/allow.json`).
 

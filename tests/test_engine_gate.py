@@ -1,4 +1,7 @@
-"""The host wrapper dispatches both argparse spellings to the requested fork."""
+"""The host wrapper dispatches both argparse spellings to the requested fork.
+
+It also selects this project's Pixi environment unless the caller chose one.
+"""
 
 import json
 import subprocess
@@ -7,8 +10,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+WRAPPER = Path(__file__).with_name("engine_gate.py")
+HOST_MANIFEST = str(Path(__file__).resolve().parents[1] / "pixi.toml")
+
 
 class EngineGateDispatch(unittest.TestCase):
+    def dispatch(self, args):
+        result = subprocess.run([sys.executable, str(WRAPPER), *args], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
     def test_engine_source_forms(self):
         with tempfile.TemporaryDirectory(prefix="fork with spaces ") as directory:
             root = Path(directory)
@@ -17,13 +28,11 @@ class EngineGateDispatch(unittest.TestCase):
             for source_args in (["--engine-source", str(root)], ["--engine-source=" + str(root)]):
                 with self.subTest(args=source_args):
                     args = [*source_args, "--output", "unchanged"]
-                    result = subprocess.run(
-                        [sys.executable, str(Path(__file__).with_name("engine_gate.py")), *args],
-                        capture_output=True,
-                        text=True,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertEqual(json.loads(result.stdout), args)
+                    self.assertEqual(self.dispatch(args), ["--pixi-manifest", HOST_MANIFEST, *args])
+            for manifest_args in (["--pixi-manifest", "other.toml"], ["--pixi-manifest=other.toml"]):
+                with self.subTest(args=manifest_args):
+                    args = ["--engine-source", str(root), *manifest_args]
+                    self.assertEqual(self.dispatch(args), args)
 
 
 if __name__ == "__main__":
