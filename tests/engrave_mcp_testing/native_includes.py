@@ -184,7 +184,7 @@ def audit(native: Path, public: Path) -> list[str]:
                     name in SYSTEM_HEADERS
                     or name == "asio.hpp"
                     or name.startswith("asio/")
-                    or name == "nlohmann/json.hpp"
+                    or name.startswith("glaze/")
                 )
             if not allowed:
                 errors.append(f"{source}:{number}: forbidden or unknown include {name!r}")

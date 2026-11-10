@@ -23,8 +23,9 @@ target("tool_registry")
     set_kind("static")
     set_default(false)
     add_deps("native_include_check")
+    add_packages("glaze")
     add_includedirs(path.join(source_root, "engrave", "include"))
-    add_files(path.join(host_dir, "registry.cpp"), path.join(host_dir, "schema_defs.cpp"))
+    add_files(path.join(host_dir, "json.cpp"), path.join(host_dir, "registry.cpp"), path.join(host_dir, "schema_defs.cpp"))
 target_end()
 
 -- The document store uses the public engine API.
@@ -32,6 +33,7 @@ target("document_store")
     set_kind("static")
     set_default(false)
     add_deps("engrave", "tool_registry")
+    add_packages("glaze")
     add_includedirs(path.join(source_root, "engrave", "include"))
     add_files(path.join(host_dir, "api_json.cpp"), path.join(host_dir, "api_edit_json.cpp"),
         path.join(host_dir, "host_api.cpp"))
@@ -41,6 +43,7 @@ target("registry_dump")
     set_kind("binary")
     set_default(false)
     add_deps("tool_registry")
+    add_packages("glaze")
     add_files(path.join(host_dir, "tools", "registry_dump.cpp"))
 target_end()
 
@@ -48,6 +51,7 @@ target("registry_test")
     set_kind("binary")
     set_default(false)
     add_deps("tool_registry")
+    add_packages("glaze")
     add_files(path.join(host_dir, "tests", "registry_test.cpp"))
 target_end()
 
@@ -78,7 +82,7 @@ local function add_host_binary(name, basename)
         add_files(path.join(host_dir, "main.cpp"))
         add_files(path.join(host_dir, "mcp_transport.cpp"))
         add_files(path.join(host_dir, "publication.cpp"))
-        add_packages("asio")
+        add_packages("asio", "glaze")
         if is_plat("windows") then
             add_defines("_WIN32_WINNT=0x0A00")
             add_syslinks("ws2_32", "mswsock")
@@ -96,6 +100,7 @@ target("host_api_test")
     set_kind("binary")
     set_default(false)
     add_deps("muse_generated", "document_store")
+    add_packages("glaze")
     add_files(path.join(host_dir, "tests", "host_api_test.cpp"))
     if is_plat("windows") then
         add_files(path.join(host_dir, "utf8.manifest"))
@@ -108,6 +113,7 @@ target("live_export_test")
     set_kind("binary")
     set_default(false)
     add_deps("muse_generated", "document_store")
+    add_packages("glaze")
     add_files(path.join(host_dir, "tests", "live_export_test.cpp"), path.join(host_dir, "api_output.cpp"),
         path.join(host_dir, "publication.cpp"))
     if is_plat("windows") then
@@ -135,3 +141,9 @@ target("staging_test")
         add_syslinks("advapi32")
     end
 target_end()
+
+
+
+
+
+

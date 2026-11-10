@@ -57,7 +57,6 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
         "host asio recipe": project_root / "xmake" / "packages" / "asio.lua",
         "native env cairo header": native_root / "include" / "cairo" / "cairo.h",
         "native env zlib header": native_root / "include" / "zlib.h",
-        "native env nlohmann header": native_root / "include" / "nlohmann" / "json.hpp",
     }
     for label, path in required_files.items():
         if not path.is_file():
