@@ -12,10 +12,10 @@ add_rules("mode.debug", "mode.release", "mode.releasedbg")
 set_policy("package.install_locally", true)
 set_policy("package.precompiled", false)
 
--- Host-only third-party dependency.  The engine's own pinned packages
--- (freetype, harfbuzz, flac, lame, opus, opusenc, fdk-aac, pugixml, utfcpp,
--- picojson) are declared by the engine build that is included below.
-includes("xmake/packages/asio.lua")
+-- Host-only third-party dependency, from the host's pinned package repository
+-- (xmake/packages/<letter>/<name>/xmake.lua).  The engine's own pinned
+-- packages are required by the engine build that is included below.
+add_repositories("engrave-mcp-pinned xmake", {rootdir = os.scriptdir()})
 add_requires("asio 1.36.0", {system = false})
 
 -- JSON: host targets add_packages("glaze") explicitly. The engine build pins
