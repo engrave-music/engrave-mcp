@@ -22,7 +22,7 @@ Owner thread (one per process)
    └─ FluidSynth offline audio + encoders
 ```
 
-Host sources in `engrave_mcp/` include only the engine's public headers under `engrave/...`, enforced by `scripts/check_native_includes.py` during builds. The engine is a separate library in `vendor/engrave` compiled into the host binary.
+Host sources in `engrave_mcp/` include only the engine's public headers under `engrave/...`, enforced by `scripts/check_native_includes.py` during builds. The engine is a separate library in `vendor/engrave` compiled into the host binary. For the data-oriented architecture of the engine's offline audio render pipeline, event stores, and synthesis, see [vendor/engrave/docs/playback.md](../../vendor/engrave/docs/playback.md).
 
 ## 2. One owner thread, multiple documents
 

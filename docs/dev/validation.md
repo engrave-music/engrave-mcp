@@ -219,6 +219,12 @@ On Windows, use native Python (`.pixi\envs\default\python.exe`) in PowerShell 7 
 
 The gate builds the fork's `engine_tests` target and executes the API, import, playback, and adapter suites, along with `diagnostics_test`, `io_boundary_test`, installer tests, and asset manifest verification. It compares outputs against pinned goldens using `golden.py` comparators and the platform hash allow-list (`vendor/engrave/tests/data/golden/allow.json`).
 
+## CI
+
+`.github/workflows/ci.yml` (pushes to `main`, pull requests, manual dispatch) is a build-and-unit-test lane, not acceptance. A `checks` job (Ubuntu, Pixi) verifies the submodule pin and xmake inputs, runs `pixi run format-check`, the layout audit and the Python checks that need no binary or asset (`test_test_layout`, `test_native_includes`, `test_engine_gate_wrapper`, `test_cleanup_regressions`, `test_oracle_harness`, `test_rendered_page`, `tests/test_engine_gate.py`). A `build-test` job on Windows (MSVC, `windows-latest`) and Linux (the pinned Pixi GCC) builds `engrave_mcp`, `engrave_mcp_test`, `registry_dump`, `registry_check` (which runs the tool-schema test), `host_api_test`, `staging_test` and, on Linux, `publication_test`, then runs `staging_test`, `publication_test`, `host_api_test` and the integration scripts that need only the server binary and the staged engine assets (`version_info`, `open_data`, `native_inputs`, `positions`, `imports_midi`, `imports_guitarpro`, `repeats`, `transport`, plus `windows_manifest` on Windows). `host_api_test` runs with the in-repository `vendor/engrave/tests/data/engine_audio/sine.sf2` as both SoundFonts, so CI downloads none. The fork has its own workflow (`vendor/engrave/.github/workflows/ci.yml`) for the engine unit tests.
+
+Not run in CI, and still manual here: the engine gate and golden comparisons (`tests/engine_gate.py`), the audio corpus and `engine_audio`, every lane that takes `--soundfont` (`live_export`, `live_audio`, `async_session`, `export_options`, `mcp_smoke`, ...), the opt-in lanes, the benchmarks, the Windows-versus-Linux paired captures, and engine naming lint. A green CI run does not replace the native Windows plus `ssh <linux-host>` acceptance above.
+
 ## Known timing and platform limitations
 
 - **Dense-audio cancellation measurements**: The engine test measures request-to-first-cancellation-observation (p95 ≤ 5 ms, max ≤ 10 ms) separately from observation-to-return, including synchronous cleanup (p95 ≤ 50 ms, max ≤ 100 ms). The host integration test retains its request-to-return limits.
