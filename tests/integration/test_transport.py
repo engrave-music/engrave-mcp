@@ -312,6 +312,58 @@ def _check_oversized_responses(failures: list[str], responses: list[dict]) -> No
         )
 
 
+def _check_edge_cases(exe: str, failures: list[str]) -> dict[str, dict]:
+    cases = {
+        "jsonrpc-not-string": (
+            '{"jsonrpc":2,"id":3,"method":"ping"}\n',
+            -32600,
+            "invalid or missing jsonrpc version",
+        ),
+        "trailing-garbage": (
+            '{"jsonrpc":"2.0","id":1,"method":"ping"} garbage\n',
+            -32700,
+            "Parse error",
+        ),
+        "leading-bom": (
+            '\ufeff{"jsonrpc":"2.0","id":1,"method":"ping"}\n',
+            None,
+            None,
+        ),
+    }
+    records: dict[str, dict] = {}
+    for label, (payload, expected_code, expected_message) in cases.items():
+        result = _run_server(exe, payload)
+        responses = _parse_responses(result["stdout"], label, failures) if not result["run_error"] else []
+        _check(
+            failures,
+            not result["timed_out"] and not result["run_error"],
+            f"{label}: server run failed: {result['run_error'] or 'timeout'}",
+        )
+        _check(failures, len(responses) == 1, f"{label}: expected one response, got {len(responses)}")
+        if responses:
+            response = responses[0]
+            if expected_code is None:
+                if _check_ok(failures, response, label):
+                    _check(failures, response.get("result") == {}, f"{label}: expected empty result")
+                    _check(failures, response.get("id") == 1, f"{label}: expected id 1")
+            else:
+                _check_error(failures, response, expected_code, label)
+                error = response.get("error")
+                message = error.get("message") if isinstance(error, dict) else None
+                _check(
+                    failures,
+                    isinstance(message, str) and expected_message in message,
+                    f"{label}: expected message containing {expected_message!r}, got {message!r}",
+                )
+        records[label] = {
+            "input": payload,
+            "returncode": result["returncode"],
+            "responses": responses,
+            "stderr": result["stderr"],
+        }
+    return records
+
+
 def main() -> int:
     if len(sys.argv) not in (2, 3):
         print(
@@ -451,6 +503,8 @@ def main() -> int:
         oversized_responses = _parse_responses(oversized_run["stdout"], "oversized stream", failures)
         _check_oversized_responses(failures, oversized_responses)
 
+    edge_cases = _check_edge_cases(exe, failures)
+
     main_record = {
         "input_line_count": len(main_lines),
         "returncode": main_run["returncode"],
@@ -491,6 +545,7 @@ def main() -> int:
         "validation_path": str(output_path),
         "main_stream": main_record,
         "oversized_stream": oversized_record,
+        "edge_cases": edge_cases,
         "failures": failures,
     }
 

@@ -182,12 +182,32 @@ bool operator!=(T left, const music::Json &right) {
 } // namespace glz
 
 namespace music {
+namespace json_detail {
+
+// nlohmann rejected trailing content and skipped one leading UTF-8 BOM; glaze
+// needs both behaviours opted in explicitly.
+struct ReadOpts : glz::opts {
+    bool validate_trailing_whitespace = true;
+};
+
+inline std::string_view without_bom(std::string_view text) {
+    if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
+        static_cast<unsigned char>(text[2]) == 0xBF) {
+        text.remove_prefix(3);
+    }
+    return text;
+}
+
+} // namespace json_detail
+
 // Non-throwing parse: the transport classifies errors from the result.
 template <class J = Json>
 std::optional<J> parse_json(std::string_view text) {
-    auto parsed = glz::read_json<J>(text);
-    if (!parsed) return std::nullopt;
-    return std::optional<J>(std::move(*parsed));
+    text = json_detail::without_bom(text);
+    J value{};
+    glz::context context{};
+    if (glz::read<json_detail::ReadOpts{}>(value, text, context)) return std::nullopt;
+    return std::optional<J>(std::move(value));
 }
 
 // UTF-8 validation and repair compatible with the previous wire encoder:

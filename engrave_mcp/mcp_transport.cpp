@@ -1138,7 +1138,7 @@ private:
         std::string protocol_error_message;
         Json protocol_error_id = nullptr;
         try {
-            if (!req.contains("jsonrpc") || req["jsonrpc"].get<std::string>() != "2.0") {
+            if (!req.contains("jsonrpc") || !req["jsonrpc"].is_string() || req["jsonrpc"].get<std::string>() != "2.0") {
                 Json fallback_id = nullptr;
                 if (req.contains("id") && is_valid_id(req["id"])) {
                     fallback_id = req["id"];
