@@ -18,6 +18,11 @@ set_policy("package.precompiled", false)
 includes("xmake/packages/asio.lua")
 add_requires("asio 1.36.0", {system = false})
 
+-- JSON: host targets add_packages("glaze") explicitly. The engine build pins
+-- and requires the same glaze release; declaring it here keeps the host's
+-- dependency visible in the host project.
+add_requires("glaze 9.1.0", {system = false})
+
 option("engine_source")
     set_default("")
     set_showmenu(true)
