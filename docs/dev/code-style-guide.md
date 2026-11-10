@@ -48,7 +48,7 @@ Headers should be grouped in the following order, with blank lines separating gr
 
 // 3rd party headers
 #include <asio/awaitable.hpp>
-#include <nlohmann/json.hpp>
+#include <glaze/json/generic.hpp>
 
 // project headers: engine public API (<engrave/...>) and host headers
 #include <engrave/engrave.h>

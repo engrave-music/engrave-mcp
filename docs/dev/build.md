@@ -18,6 +18,8 @@ Linux (validated on Linux x86_64, GCC 15.3, C++23):
 
 > If xmake's bundled aria2 fails to download a package with a TLS handshake error, run `xmake g --downloader=curl` once.
 
+JSON: the host uses **glaze 9.1** for its DOM and wire writer. The engine build declares the pinned package and the `engrave-pinned` xmake repository; every host target that compiles JSON code lists `add_packages("glaze")` explicitly instead of relying on the `engrave` target's public propagation.
+
 ## Initial checkout and setup
 
 Clone with `--recursive`, or initialize the submodule before running `pixi install` (which depends on `vendor/engrave` in editable mode):
