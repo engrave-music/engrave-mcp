@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -43,6 +44,34 @@ def _engine_source_root(project_root: Path) -> Path:
     return project_root / "vendor" / "engrave"
 
 
+# Packages whose builds the render goldens and archive bytes depend on; the
+# host and the engine checkout must lock the same ones.
+NATIVE_PINNED_PACKAGES = ("cairo", "zlib", "libzlib")
+_LOCKED_PACKAGE = re.compile(r"^- conda: (\S+/(win-64|linux-64)/([A-Za-z0-9_.-]+?)-\d\S*\.conda)$", re.MULTILINE)
+
+
+def _locked_native_packages(lock: Path) -> dict[tuple[str, str], str]:
+    pins: dict[tuple[str, str], str] = {}
+    for url, platform, name in _LOCKED_PACKAGE.findall(lock.read_text(encoding="utf-8")):
+        if name in NATIVE_PINNED_PACKAGES:
+            pins[platform, name] = url
+    return pins
+
+
+def _check_native_pins(host_lock: Path, engine_lock: Path) -> list[str]:
+    for lock in (host_lock, engine_lock):
+        if not lock.is_file():
+            return [f"missing Pixi lock: {lock}"]
+    host, engine = _locked_native_packages(host_lock), _locked_native_packages(engine_lock)
+    errors = []
+    for key in sorted(host.keys() | engine.keys()):
+        if host.get(key) != engine.get(key):
+            errors.append(
+                f"pixi.lock pins differ for {key[1]} ({key[0]}): host {host.get(key)}, engine {engine.get(key)}"
+            )
+    return errors
+
+
 def validate(project_root: Path, source_root: Path) -> list[str]:
     errors: list[str] = []
     native_root = _find_native_root(project_root)
@@ -69,6 +98,8 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
         for name in expected:
             if not (library_dir / name).is_file():
                 errors.append(f"missing native link library: {library_dir / name}")
+
+    errors += _check_native_pins(project_root / "pixi.lock", source_root / "pixi.lock")
 
     # The engine's third-party dependencies are pinned recipes in the engine
     # checkout's xmake package repository, not trees in the superproject.
