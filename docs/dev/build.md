@@ -13,7 +13,7 @@ Windows:
 Linux (validated on Linux x86_64, GCC 15.3, C++23):
 
 - Git and Pixi.
-- Cairo in the Pixi environment (passed with `--cairo_prefix`).
+- Cairo and zlib come from the Pixi environment: the engine build requires them as `pixi::cairo` and `pixi::zlib` (an xmake package manager in `vendor/engrave/xmake/modules`), so no prefix option is needed.
 - WSL is not supported.
 
 > If xmake's bundled aria2 fails to download a package with a TLS handshake error, run `xmake g --downloader=curl` once.
@@ -76,10 +76,10 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 ## Linux build
 
 ```bash
-bash scripts/build-native.sh 8 build/xmake-linux "$PWD/.pixi/envs/default"
+bash scripts/build-native.sh 8 build/xmake-linux
 ```
 
-The third argument specifies the Cairo prefix (`<prefix>/include/cairo`, `<prefix>/lib`). The output binary is `build/xmake-linux/engrave-mcp`.
+An optional third argument selects another engine checkout. The output binary is `build/xmake-linux/engrave-mcp`; it finds the Pixi cairo through its run path.
 
 ## Test binaries
 

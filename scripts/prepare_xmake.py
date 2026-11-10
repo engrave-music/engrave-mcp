@@ -22,15 +22,14 @@ from engrave_testing.paths import pixi_env
 ENGINE_PACKAGE_RECIPES = (
     "freetype",
     "harfbuzz",
-    "flac",
+    "libflac",
     "lame",
-    "opus",
-    "opusenc",
+    "libopus",
+    "libopusenc",
     "fdk-aac",
     "pugixml",
     "utfcpp",
     "picojson",
-    "zlib",
 )
 
 
@@ -72,9 +71,9 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
                 errors.append(f"missing native link library: {library_dir / name}")
 
     # The engine's third-party dependencies are pinned recipes in the engine
-    # checkout, not trees in the superproject.
+    # checkout's xmake package repository, not trees in the superproject.
     for recipe in ENGINE_PACKAGE_RECIPES:
-        path = source_root / "xmake" / "packages" / f"{recipe}.lua"
+        path = source_root / "xmake" / "packages" / recipe[0] / recipe / "xmake.lua"
         if not path.is_file():
             errors.append(f"missing engine package recipe: {path}")
     return errors
