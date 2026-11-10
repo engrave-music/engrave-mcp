@@ -87,6 +87,11 @@ static std::wstring dacl_sddl(const fs::path &path) {
         }
     } free_descriptor{descriptor};
 
+    // SE_DACL_AUTO_INHERITED ("AI") only records that inherited ACEs were propagated automatically. SetSecurityInfo
+    // always sets it, while a normally created file gets it only when its parent has it (the GitHub Windows runner's
+    // %TEMP% does not). It grants nothing, so compare ACEs and protection without it.
+    require(SetSecurityDescriptorControl(descriptor, SE_DACL_AUTO_INHERITED, 0) != FALSE, "SetSecurityDescriptorControl failed");
+
     LPWSTR text = nullptr;
     require(ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &text, nullptr) !=
                 FALSE,
@@ -144,7 +149,10 @@ static void check_publication_acl(const fs::path &parent) {
     const auto stage = music::create_private_directory(directory);
     { std::ofstream(stage / "new", std::ios::binary) << "new"; }
     music::publish_output(stage / "new", directory / "new.pdf");
-    require(dacl_sddl(directory / "new.pdf") == dacl_sddl(reference), "new publication DACL differs from a normally created file");
+    const auto published_sddl = dacl_sddl(directory / "new.pdf");
+    const auto reference_sddl = dacl_sddl(reference);
+    if (published_sddl != reference_sddl) std::wcerr << L"published: " << published_sddl << L"\nreference: " << reference_sddl << L"\n";
+    require(published_sddl == reference_sddl, "new publication DACL differs from a normally created file");
 
     { std::ofstream(stage / "replacement", std::ios::binary) << "replacement"; }
     music::publish_output(stage / "replacement", existing);
