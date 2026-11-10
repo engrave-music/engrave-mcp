@@ -53,7 +53,10 @@ void json_push(J &array, V &&value) {
 
 template <class J>
 void json_erase(J &object, std::string_view key) {
-    if (object.is_object()) object.get_object().erase(key);
+    if (!object.is_object()) return;
+    // find + erase(iterator): heterogeneous erase(key) is C++23 and missing from the pinned libstdc++.
+    auto &members = object.get_object();
+    if (const auto found = members.find(key); found != members.end()) members.erase(found);
 }
 
 // A missing key returns the fallback; integers convert through u64/i64/double.
