@@ -446,8 +446,9 @@ Json encode(const engrave::Outline &o) {
                     {"key", s.key},     {"bpm", s.bpm},
                     {"text", s.text}};
     });
-    auto excerpts =
-        mapped(o.excerpts, [](const auto &e) { return Json{{"id", engrave::to_string(e.id)}, {"name", e.name}, {"pages", e.pages}}; });
+    auto excerpts = mapped(o.excerpts, [](const auto &e) {
+        return Json{{"id", engrave::to_string(e.id)}, {"name", e.name}, {"pages", e.pages ? Json(*e.pages) : Json(nullptr)}};
+    });
     return {{"title", o.title},
             {"subtitle", o.subtitle},
             {"composer", o.composer},
@@ -455,7 +456,7 @@ Json encode(const engrave::Outline &o) {
             {"timesig", o.timesig},
             {"mscore_version", o.mscore_version},
             {"file_version", o.file_version},
-            {"pages", o.pages},
+            {"pages", o.pages ? Json(*o.pages) : Json(nullptr)},
             {"measure_count", o.measure_count},
             {"key", o.key},
             {"duration", o.duration},

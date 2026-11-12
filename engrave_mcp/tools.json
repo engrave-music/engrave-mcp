@@ -655,7 +655,7 @@
     }
   },
   {
-    "description": "Read structure and source revision; expected_revision guards the read.",
+    "description": "Read structure and source revision without layout; pages may be null until layout is current. Use score_query mode page_count for a fresh count; expected_revision guards the read.",
     "inputSchema": {
       "$defs": {
         "score": {
@@ -769,9 +769,16 @@
               "type": "string"
             },
             "pages": {
-              "maximum": 2147483647,
-              "minimum": -2147483648,
-              "type": "integer"
+              "oneOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -919,9 +926,16 @@
               "type": "string"
             },
             "pages": {
-              "maximum": 2147483647,
-              "minimum": -2147483648,
-              "type": "integer"
+              "oneOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "parts": {
               "items": {
@@ -1137,7 +1151,7 @@
     }
   },
   {
-    "description": "Queued reads; expected_revision guards pagination. Layout addresses are ephemeral.",
+    "description": "Queued reads; mode page_count lays out the selected score and returns a fresh pages count. expected_revision guards pagination. Layout addresses are ephemeral.",
     "inputSchema": {
       "$defs": {
         "address": {
@@ -1506,6 +1520,32 @@
             "document",
             "mode",
             "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "document": {
+              "maxLength": 128,
+              "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
+              "type": "string"
+            },
+            "expected_revision": {
+              "maxLength": 20,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            "mode": {
+              "const": "page_count"
+            },
+            "score": {
+              "$ref": "#/$defs/score"
+            }
+          },
+          "required": [
+            "document",
+            "mode"
           ],
           "type": "object"
         },
@@ -2250,6 +2290,34 @@
                 "mode",
                 "ok",
                 "properties",
+                "revision"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "const": "page_count"
+                },
+                "ok": {
+                  "const": true
+                },
+                "pages": {
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
+                },
+                "revision": {
+                  "maxLength": 20,
+                  "pattern": "^(0|[1-9][0-9]*)$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "mode",
+                "ok",
+                "pages",
                 "revision"
               ],
               "type": "object"

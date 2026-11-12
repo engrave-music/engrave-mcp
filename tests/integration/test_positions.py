@@ -176,7 +176,7 @@ async def run(args):
                     )
 
                 async def pages(doc):
-                    return (await call("score_outline", {"document": doc}))["outline"]["pages"]
+                    return (await call("score_query", {"document": doc, "mode": "page_count"}))["pages"]
 
                 tools = await client.list_tools()
                 schema = next(t.input_schema for t in tools.tools if t.name == "score_export")
@@ -255,8 +255,14 @@ async def run(args):
                         assert sentinel.read_bytes() == b"unchanged"
                 await call("score_close", {"document": doc})
                 opened = await open_xml(multipage_fixture())
+                identity = {"document": opened["document"]}
+                unlaid = await call("score_outline", identity)
+                assert unlaid["outline"]["pages"] is None
                 page_count = await pages(opened["document"])
                 assert page_count >= 2
+                laid = await call("score_outline", identity)
+                assert laid["revision"] == unlaid["revision"]
+                assert laid["outline"]["pages"] == page_count
                 for fmt, count, interval in [
                     ("measurePositions", 60, 2000),
                     ("segmentPositions", 240, 500),

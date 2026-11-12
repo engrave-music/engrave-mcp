@@ -228,7 +228,7 @@ Json declared_tools() {
                              {"key", integer(-7, 7)},
                              {"bpm", n},
                              {"text", text}});
-    d["excerpt"] = object({{"id", eid}, {"name", text}, {"pages", idx}});
+    d["excerpt"] = object({{"id", eid}, {"name", text}, {"pages", nullable(idx)}});
     d["outline"] = object({{"title", text},
                            {"subtitle", text},
                            {"composer", text},
@@ -236,7 +236,7 @@ Json declared_tools() {
                            {"timesig", text},
                            {"mscore_version", text},
                            {"file_version", idx},
-                           {"pages", idx},
+                           {"pages", nullable(idx)},
                            {"measure_count", idx},
                            {"key", integer(-7, 7)},
                            {"duration", n},
@@ -307,7 +307,9 @@ Json declared_tools() {
                                     J{{"required", {"template_path"}}, {"not", {{"required", {"template_id"}}}}}});
     tool("score_create", "Create from exactly one engine template.", input, opened);
     tool("score_close", "Destroy the document on its owner thread.", object({{"document", doc}}), success(make_object<J>()));
-    tool("score_outline", "Read structure and source revision; expected_revision guards the read.",
+    tool("score_outline",
+         "Read structure and source revision without layout; pages may be null until layout is current. Use score_query mode page_count "
+         "for a fresh count; expected_revision guards the read.",
          object({{"document", doc}, {"expected_revision", u}, {"score", score}}, json_array<J>({"document"})),
          success({{"revision", u}, {"outline", ref("outline")}}));
     J query = object({{"score", score},
@@ -328,7 +330,9 @@ Json declared_tools() {
     query["not"] =
         J{{"allOf", json_array<J>({J{{"anyOf", json_array<J>({J{{"required", {"first_measure"}}}, J{{"required", {"measure_count"}}}})}},
                                    J{{"anyOf", json_array<J>({J{{"required", {"from_measure"}}}, J{{"required", {"to_measure"}}}})}}})}};
-    tool("score_query", "Queued reads; expected_revision guards pagination. Layout addresses are ephemeral.",
+    tool("score_query",
+         "Queued reads; mode page_count lays out the selected score and returns a fresh pages count. expected_revision guards pagination. "
+         "Layout addresses are ephemeral.",
          one(json_array<J>({object({{"document", doc}, {"expected_revision", u}, {"mode", lit("elements")}, {"query", query}},
                                    json_array<J>({"document", "mode"})),
                             object({{"document", doc},
@@ -337,6 +341,8 @@ Json declared_tools() {
                                     {"target", ref("read_ref")},
                                     {"props", array(text)}},
                                    json_array<J>({"document", "mode", "target"})),
+                            object({{"document", doc}, {"expected_revision", u}, {"mode", lit("page_count")}, {"score", score}},
+                                   json_array<J>({"document", "mode"})),
                             object({{"document", doc}, {"expected_revision", u}, {"mode", lit("audio_tracks")}, {"score", score}},
                                    json_array<J>({"document", "mode"}))})),
          one(json_array<J>({success({{"mode", lit("elements")},
@@ -345,6 +351,7 @@ Json declared_tools() {
                                      {"total", integer(0, 4096)},
                                      {"next_cursor", nullable(integer(0, 4096))}}),
                             success({{"mode", lit("properties")}, {"revision", u}, {"properties", array(ref("property"))}}),
+                            success({{"mode", lit("page_count")}, {"revision", u}, {"pages", idx}}),
                             success({{"mode", lit("audio_tracks")}, {"revision", u}, {"audio_tracks", ref("audio_tracks")}})})));
     tool("score_describe", "Read property and style catalogue.",
          one(json_array<J>(

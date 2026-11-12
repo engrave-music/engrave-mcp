@@ -345,8 +345,8 @@ async def capture_master(session, identity, raw, out_dir, roots):
         positions,
         roots,
     )
-    info = await required(session, "score_outline", identity)
-    pages = info["outline"]["pages"]
+    info = await required(session, "score_query", {**identity, "mode": "page_count"})
+    pages = info["pages"]
     for page in range(int(pages)):
         await text_export(
             session,

@@ -349,6 +349,15 @@ Json HostApi::query(const Json &j) {
                 throw detail::DecodeError{std::move(e)};
             }
             result["properties"] = encoded_array(*out);
+        } else if (mode == "page_count") {
+            auto selection = j.contains("score") ? unwrap(decode_score(j.at("score"))) : engrave::ScoreSel{};
+            auto out = doc.page_count(selection);
+            if (!out) {
+                auto e = api_error(out.error());
+                e.document = j.at("document").get<std::string>();
+                throw detail::DecodeError{std::move(e)};
+            }
+            result["pages"] = *out;
         } else {
             auto selection = j.contains("score") ? unwrap(decode_score(j.at("score"))) : engrave::ScoreSel{};
             auto out = doc.audio_tracks(selection);

@@ -195,6 +195,7 @@ def check_cases(tools):
             False,
         ),
         ("score_query", {"document": doc, "mode": "audio_tracks", "score": {}}, True),
+        ("score_query", {"document": doc, "mode": "page_count", "score": {}}, True),
         ("score_describe", {"scope": "types"}, True),
         ("score_describe", {"scope": "type", "type": "Note"}, True),
         ("score_describe", {"scope": "styles"}, True),
@@ -272,7 +273,7 @@ def check_cases(tools):
         "timesig": "4/4",
         "mscore_version": "5.0.0",
         "file_version": 500,
-        "pages": 1,
+        "pages": None,
         "measure_count": 0,
         "key": 0,
         "duration": 0,
@@ -305,8 +306,15 @@ def check_cases(tools):
         "score_open": [{"document": doc, "revision": "1", "diagnostics": []}],
         "score_create": [{"document": doc, "revision": "1", "diagnostics": []}],
         "score_close": [{}],
-        "score_outline": [{"revision": "1", "outline": outline}],
+        "score_outline": [
+            {"revision": "1", "outline": {**outline, "excerpts": [{"id": "A_A", "name": "Part", "pages": None}]}},
+            {
+                "revision": "1",
+                "outline": {**outline, "pages": 1, "excerpts": [{"id": "A_A", "name": "Part", "pages": 1}]},
+            },
+        ],
         "score_query": [
+            {"mode": "page_count", "revision": "1", "pages": 1},
             {
                 "mode": "elements",
                 "revision": "1",

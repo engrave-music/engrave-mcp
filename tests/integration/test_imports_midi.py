@@ -172,7 +172,9 @@ async def run(args):
                     report["formats"][extension] = {
                         "notes": count,
                         "lyrics": lyrics,
-                        "pages": info["outline"]["pages"],
+                        "pages": (await call("score_query", {"document": doc["document"], "mode": "page_count"}))[
+                            "pages"
+                        ],
                         "parts": len(info["outline"]["parts"]),
                     }
                     await call("score_close", {"document": doc["document"]})

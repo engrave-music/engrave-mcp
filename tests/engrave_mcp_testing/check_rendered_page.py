@@ -857,8 +857,8 @@ async def capture_pages(binary, resources, soundfont, output):
                     payload = await open_fixture(session, source)
                     identity = {"document": payload["document"]}
                     try:
-                        outline = await required(session, "score_outline", identity)
-                        pages = outline["outline"]["pages"]
+                        count = await required(session, "score_query", {**identity, "mode": "page_count"})
+                        pages = count["pages"]
                         for index in range(int(pages)):
                             path = folder / f"page-{index}.svg"
                             error = await export(session, identity, "svg", path, page=index)
