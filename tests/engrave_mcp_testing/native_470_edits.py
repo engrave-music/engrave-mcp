@@ -184,6 +184,7 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                 measure = (await call("score_outline", {"document": doc}))["outline"]["measures"][0][
                                     "id"
                                 ]
+                                await call("checkpoint", {"document": doc, "name": "paired"})
                                 bad = await call(
                                     "score_edit",
                                     {
@@ -201,13 +202,18 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                     ok=False,
                                 )
                                 require(
-                                    bad["error"]["op_index"] == 1,
-                                    "batch failed at wrong operation",
+                                    bad["error"]["op_index"] == 1 and bad["error"]["applied"] == 1,
+                                    "batch failed at wrong operation or reported wrong applied count",
                                 )
+                                restored = await call(
+                                    "restore_checkpoint",
+                                    {"document": doc, "name": "paired"},
+                                )
+                                revision = restored["revision"]
                                 after = await notes()
                                 require(
-                                    after == clean,
-                                    "failed batch changed revision or queried notes",
+                                    after["elements"] == clean["elements"],
+                                    "restore_checkpoint did not revert failed batch edits",
                                 )
                                 record["failed_batch_unchanged"] = True
                             warning_ids = {e.findtext("eid") for e in tree.findall(".//Tie")}

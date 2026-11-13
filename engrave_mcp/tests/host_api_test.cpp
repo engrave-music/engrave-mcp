@@ -68,6 +68,12 @@ Json call(HostApi &host, const std::string &tool, const Json &arg) {
         out = host.describe(arg);
     } else if (tool == "score_edit") {
         out = host.edit(arg);
+    } else if (tool == "checkpoint") {
+        out = host.checkpoint(arg);
+    } else if (tool == "restore_checkpoint") {
+        out = host.restore_checkpoint(arg);
+    } else if (tool == "drop_checkpoint") {
+        out = host.drop_checkpoint(arg);
     } else if (tool == "runtime_info") {
         out = host.runtime_info(arg);
     } else {
@@ -336,12 +342,17 @@ int main(int argc, char **argv) {
            {{"document", doc},
             {"ops", music::json_array<Json>(
                         {Json{{"op", "add_spanner"}, {"type", "Slur"}, {"start", idref(first_chord)}, {"end", idref(second_chord)}}})}});
-        auto missing_slot = error(*host, "score_edit",
-                                  {{"document", doc},
-                                   {"ops", music::json_array<Json>({Json{{"op", "add_tie"}, {"note", idref(first_note)}},
-                                                                    Json{{"op", "remove"}, {"target", opref(0, 0)}}})}},
-                                  "StaleHandle");
-        require(missing_slot.at("error").at("op_index") == 1, "null OpRef slot did not identify the operation");
+        ok(*host, "checkpoint", {{"document", doc}, {"name", "before_stale_opref"}});
+        auto stale_opref = error(*host, "score_edit",
+                                 {{"document", doc},
+                                  {"ops", music::json_array<Json>({Json{{"op", "add_tie"}, {"note", idref(first_note)}},
+                                                                   Json{{"op", "remove"}, {"target", opref(0, 0)}},
+                                                                   Json{{"op", "remove"}, {"target", opref(0, 0)}}})}},
+                                 "StaleHandle");
+        require(stale_opref.at("error").at("op_index") == 2 && stale_opref.at("error").at("applied") == 2,
+                "stale OpRef did not identify the operation and applied count");
+        ok(*host, "restore_checkpoint", {{"document", doc}, {"name", "before_stale_opref"}});
+        ok(*host, "drop_checkpoint", {{"document", doc}, {"name", "before_stale_opref"}});
         auto tie = ok(*host, "score_edit",
                       {{"document", doc}, {"ops", music::json_array<Json>({Json{{"op", "add_tie"}, {"note", idref(first_note)}}})}});
         require(!tie.at("ops")[0].at("created").empty() && tie.at("ops")[0].at("created")[0].is_null(),
@@ -372,6 +383,16 @@ int main(int argc, char **argv) {
         }
         require(target.is_object(), "fixture has no linked note");
         const auto note = target.at("id").get<std::string>(), copy = target.at("links")[1].get<std::string>();
+        auto initial_note_props = ok(*host, "score_query",
+                                     {{"document", linked_doc},
+                                      {"mode", "properties"},
+                                      {"target", idref(note)},
+                                      {"props", music::json_array<Json>({"color", "pitch"})}});
+        const Json initial_color = initial_note_props.at("properties")[0].at("value");
+        const Json initial_pitch = initial_note_props.at("properties")[1].at("value");
+        require(initial_pitch != Json({{"kind", "int"}, {"value", "74"}}), "fixture note already at test pitch");
+
+        ok(*host, "checkpoint", {{"document", linked_doc}, {"name", "initial"}});
         Json color = {{"kind", "color"}, {"value", {{"r", 12}, {"g", 34}, {"b", 56}, {"a", 255}}}};
         ok(*host, "score_edit",
            {{"document", linked_doc},
@@ -383,20 +404,92 @@ int main(int argc, char **argv) {
             ok(*host, "score_query",
                {{"document", linked_doc}, {"mode", "properties"}, {"target", idref(copy)}, {"props", music::json_array<Json>({"pitch"})}});
         require(linked_prop.at("properties")[0].at("value") == Json({{"kind", "int"}, {"value", "74"}}), "linked pitch did not propagate");
-        auto before = linked_prop.at("revision").get<std::string>();
+
+        auto restored = ok(*host, "restore_checkpoint", {{"document", linked_doc}, {"name", "initial"}});
+        require(restored.at("revision") != linked_prop.at("revision"), "restore_checkpoint did not advance revision");
+        auto after_restore = ok(*host, "score_query",
+                                {{"document", linked_doc},
+                                 {"mode", "properties"},
+                                 {"target", idref(note)},
+                                 {"props", music::json_array<Json>({"color", "pitch"})}});
+        require(after_restore.at("properties")[0].at("value") == initial_color &&
+                    after_restore.at("properties")[1].at("value") == initial_pitch,
+                "restore_checkpoint did not revert note edits");
+        auto copy_after_restore =
+            ok(*host, "score_query",
+               {{"document", linked_doc}, {"mode", "properties"}, {"target", idref(copy)}, {"props", music::json_array<Json>({"pitch"})}});
+        require(copy_after_restore.at("properties")[0].at("value") == initial_pitch, "restore_checkpoint did not revert linked copy pitch");
+
+        // Preflight failures change nothing and leave the document unpoisoned.
         Json blue = {{"kind", "color"}, {"value", {{"r", 0}, {"g", 0}, {"b", 255}, {"a", 255}}}};
-        auto rolled =
+        const auto before_preflight_rev = after_restore.at("revision");
+        auto preflight_fail = error(
+            *host, "score_edit",
+            {{"document", linked_doc},
+             {"ops", music::json_array<Json>({Json{{"op", "set_property"}, {"target", idref(note)}, {"property", "color"}, {"value", blue}},
+                                              Json{{"op", "set_property"},
+                                                   {"target", idref(target.at("measure").get<std::string>())},
+                                                   {"property", "pitch"},
+                                                   {"value", {{"kind", "int"}, {"value", "72"}}}}})}},
+            "InvalidArgument");
+        require(preflight_fail.at("error").at("op_index") == 1 && !preflight_fail.at("error").contains("poisoned") &&
+                    preflight_fail.at("error").at("applied") == 0,
+                "preflight failure reported wrong state");
+        auto after_preflight =
+            ok(*host, "score_query",
+               {{"document", linked_doc}, {"mode", "properties"}, {"target", idref(note)}, {"props", music::json_array<Json>({"color"})}});
+        require(after_preflight.at("revision") == before_preflight_rev && after_preflight.at("properties")[0].at("value") == initial_color,
+                "preflight failure altered document");
+
+        // Mid-batch rejection keeps prefix ops applied; keep poisoning assertions minimal until engine S1b lands.
+        auto mid_fail =
             error(*host, "score_edit",
                   {{"document", linked_doc},
                    {"ops", music::json_array<Json>(
                                {Json{{"op", "set_property"}, {"target", idref(note)}, {"property", "color"}, {"value", blue}},
                                 Json{{"op", "set_pitch"}, {"note", idref(target.at("measure").get<std::string>())}, {"pitch", 72}}})}},
                   "InvalidArgument");
-        require(rolled.at("error").at("op_index") == 1, "failed batch omitted failing operation");
-        auto after =
+        require(mid_fail.at("error").at("op_index") == 1 && mid_fail.at("error").at("applied") == 1,
+                "mid-batch failure did not report op_index and applied count");
+        auto after_mid =
             ok(*host, "score_query",
                {{"document", linked_doc}, {"mode", "properties"}, {"target", idref(note)}, {"props", music::json_array<Json>({"color"})}});
-        require(after.at("revision") == before && after.at("properties")[0].at("value") == color, "failed batch did not roll back");
+        require(after_mid.at("revision") != before_preflight_rev && after_mid.at("properties")[0].at("value") == blue,
+                "mid-batch failure did not retain completed prefix op");
+
+        if (music::json_value<bool>(mid_fail.at("error"), "poisoned", false)) {
+            const auto mid_msg = mid_fail.at("error").at("message").get<std::string>();
+            require(mid_msg.find("restore_checkpoint") != std::string::npos && mid_msg.find("reopen") != std::string::npos,
+                    "poisoned failure omitted recovery hint");
+            auto refused_edit = error(*host, "score_edit", {{"document", linked_doc}, {"ops", music::make_array<Json>()}}, "Poisoned");
+            require(refused_edit.at("error").at("message") == "restore_checkpoint or reopen the document before editing",
+                    "poisoned edit error altered");
+            auto refused_save = host->with_document(linked_doc, {}, [](engrave::Document &d) -> music::api::Result<void> {
+                auto saved = d.export_score({.format = engrave::Format::MSCZ});
+                if (!saved) return std::unexpected(music::api::api_error(saved.error()));
+                return {};
+            });
+            require(!refused_save && refused_save.error().code == "Poisoned" &&
+                        refused_save.error().message == "restore_checkpoint or reopen the document before saving",
+                    "poisoned native save was not refused unchanged");
+        }
+
+        ok(*host, "restore_checkpoint", {{"document", linked_doc}, {"name", "initial"}});
+        auto recovered_props = ok(*host, "score_query",
+                                  {{"document", linked_doc},
+                                   {"mode", "properties"},
+                                   {"target", idref(note)},
+                                   {"props", music::json_array<Json>({"color", "pitch"})}});
+        require(recovered_props.at("properties")[0].at("value") == initial_color &&
+                    recovered_props.at("properties")[1].at("value") == initial_pitch,
+                "restore_checkpoint did not clear mid-batch edit");
+        ok(*host, "score_edit",
+           {{"document", linked_doc}, {"ops", music::json_array<Json>({Json{{"op", "set_pitch"}, {"note", idref(note)}, {"pitch", 76}}})}});
+
+        error(*host, "restore_checkpoint", {{"document", linked_doc}, {"name", "missing"}}, "NotFound");
+        error(*host, "drop_checkpoint", {{"document", linked_doc}, {"name", "missing"}}, "NotFound");
+        ok(*host, "drop_checkpoint", {{"document", linked_doc}, {"name", "initial"}});
+        error(*host, "restore_checkpoint", {{"document", linked_doc}, {"name", "initial"}}, "NotFound");
 
         auto bytes = read(input);
         auto opened_bytes = ok(*host, "score_open", {{"data", b64(bytes)}, {"format", "mscx"}});

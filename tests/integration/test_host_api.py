@@ -68,6 +68,9 @@ def main() -> int:
         "score_describe",
         "score_edit",
         "runtime_info",
+        "checkpoint",
+        "restore_checkpoint",
+        "drop_checkpoint",
     }
     if set(counts) != required or "host_api_test passed" not in result.stdout:
         raise AssertionError(f"incomplete host test output: {counts}")

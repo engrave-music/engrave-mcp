@@ -25,6 +25,9 @@ NAMES = [
     "score_edit",
     "score_export",
     "runtime_info",
+    "checkpoint",
+    "restore_checkpoint",
+    "drop_checkpoint",
 ]
 OPS = [
     "set_property",
@@ -255,6 +258,13 @@ def check_cases(tools):
         ("runtime_info", {"action": "add_font", "path": "font.ttf"}, True),
         ("runtime_info", {"action": "set_soundfonts", "files": []}, True),
         ("runtime_info", {"action": "set_soundfonts", "path": "font.sf3"}, False),
+        ("checkpoint", {"document": doc, "name": "before"}, True),
+        ("checkpoint", {"document": doc, "name": "before", "expected_revision": "3"}, True),
+        ("checkpoint", {"document": doc}, False),
+        ("restore_checkpoint", {"document": doc, "name": "before"}, True),
+        ("restore_checkpoint", {"document": "score-1", "name": "before"}, False),
+        ("drop_checkpoint", {"document": doc, "name": "before"}, True),
+        ("drop_checkpoint", {"document": doc, "name": "before", "extra": 1}, False),
     ]
     for name, value, valid in cases:
         actual = inputs[name].is_valid(value)
@@ -337,6 +347,7 @@ def check_cases(tools):
         "score_edit": [
             {
                 "revision": "2",
+                "applied": 1,
                 "ops": [{"created": [None, "A_A"]}],
                 "created": ["A_A"],
                 "removed": [],
@@ -354,6 +365,9 @@ def check_cases(tools):
                 "limits": limits,
             }
         ],
+        "checkpoint": [{"revision": "1"}],
+        "restore_checkpoint": [{"revision": "2"}],
+        "drop_checkpoint": [{"revision": "2"}],
     }
     assert set(results) == set(NAMES)
     for name, examples in results.items():
@@ -361,7 +375,13 @@ def check_cases(tools):
         validator.validate(
             {
                 "ok": False,
-                "error": {"code": "InvalidArgument", "message": "bad argument"},
+                "error": {
+                    "code": "InvalidArgument",
+                    "message": "bad argument",
+                    "op_index": 1,
+                    "applied": 1,
+                    "poisoned": True,
+                },
             }
         )
         assert not validator.is_valid({"ok": False, "error": {"code": "unknown", "message": "bad"}})

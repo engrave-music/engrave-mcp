@@ -444,7 +444,7 @@ def main() -> int:
     parser.add_argument(
         "--live-edits",
         action="store_true",
-        help="Producer companion: live tie edits and rollback",
+        help="Producer companion: live tie edits and checkpoint restore",
     )
     parser.add_argument("--host-binary", type=Path)
     parser.add_argument("--host-resources", type=Path)

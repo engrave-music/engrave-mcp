@@ -1,4 +1,4 @@
-"""Exercise edits, stable note IDs, rollback and revision conflicts over MCP."""
+"""Exercise edits, stable note IDs, checkpoints, poisoning and revision conflicts over MCP."""
 
 from __future__ import annotations
 
@@ -183,6 +183,29 @@ async def run(args):
         assert not conflict["ok"] and conflict["error"]["code"] == "RevisionConflict"
         clean = await notes(0)
         measure = (await client.tool("score_outline", {"document": doc}))["outline"]["measures"][0]["id"]
+        preflight_batch = await raw_edit(
+            {
+                "document": doc,
+                "expected_revision": clean["revision"],
+                "ops": [
+                    change(clean["elements"][0], 80),
+                    {
+                        "op": "set_property",
+                        "target": {"kind": "id", "id": measure},
+                        "property": "pitch",
+                        "value": {"kind": "int", "value": "80"},
+                    },
+                ],
+            }
+        )
+        assert not preflight_batch["ok"]
+        assert preflight_batch["error"]["op_index"] == 1
+        assert "poisoned" not in preflight_batch["error"]
+        assert preflight_batch["error"]["applied"] == 0
+        after_preflight = await notes(0)
+        assert after_preflight["elements"] == clean["elements"] and after_preflight["revision"] == clean["revision"]
+
+        await client.tool("checkpoint", {"document": doc, "name": "clean"})
         invalid_batch = await raw_edit(
             {
                 "document": doc,
@@ -197,14 +220,32 @@ async def run(args):
                 ],
             }
         )
-        assert not invalid_batch["ok"] and invalid_batch["error"]["op_index"] == 1
-        after_bad = await notes(0)
-        assert after_bad["elements"] == clean["elements"] and after_bad["revision"] == clean["revision"]
-        await client.tool(
-            "score_query",
-            {"document": doc, "mode": "elements", "query": {"measure_count": 129}},
-            error=True,
-        )
+        assert not invalid_batch["ok"]
+        assert invalid_batch["error"]["op_index"] == 1
+        assert invalid_batch["error"]["applied"] == 1
+        # Temporary guard until engine S1b stops poisoning on mid-batch rejection.
+        if invalid_batch["error"].get("poisoned"):
+            assert "restore_checkpoint" in invalid_batch["error"]["message"]
+            poisoned_edit = await raw_edit(
+                {
+                    "document": doc,
+                    "ops": [change(clean["elements"][0], 72)],
+                }
+            )
+            assert not poisoned_edit["ok"] and poisoned_edit["error"]["code"] == "Poisoned"
+            assert poisoned_edit["error"]["message"] == "restore_checkpoint or reopen the document before editing"
+            poisoned_save = await client.tool(
+                "score_export",
+                {
+                    "document": doc,
+                    "kind": "score",
+                    "options": {"format": "mscz"},
+                    "destination": {"kind": "file", "path": str(out / "poisoned.mscz")},
+                },
+                error=True,
+            )
+            assert poisoned_save["error"]["code"] == "Poisoned"
+            assert poisoned_save["error"]["message"] == "restore_checkpoint or reopen the document before saving"
         export = out / "edited.musicxml"
         await client.tool(
             "score_export",
@@ -217,6 +258,20 @@ async def run(args):
         )
         xml = ET.parse(export).getroot()
         assert len(xml.findall("./part")) == 2 and len(xml.findall("./part/measure/note")) == 16
+        await client.tool("restore_checkpoint", {"document": doc, "name": "clean"})
+        after_restore = await notes(0)
+        assert after_restore["elements"] == clean["elements"] and after_restore["revision"] != clean["revision"]
+        await client.tool("drop_checkpoint", {"document": doc, "name": "clean"})
+        await client.tool(
+            "restore_checkpoint",
+            {"document": doc, "name": "clean"},
+            error=True,
+        )
+        await client.tool(
+            "score_query",
+            {"document": doc, "mode": "elements", "query": {"measure_count": 129}},
+            error=True,
+        )
         await client.tool("score_close", {"document": doc})
         await check_dynamics_edit(client, out)
     report = {
@@ -224,7 +279,8 @@ async def run(args):
         "sequential_independent_edits": 4,
         "same_revision_winners": 1,
         "stable_note_ids": 16,
-        "invalid_batch_unchanged": True,
+        "preflight_batch_unchanged": True,
+        "mid_batch_poisoned_and_restored": True,
         "stale_revision_rejected": True,
         "dynamics_edits_survive_reopen": 2,
     }
