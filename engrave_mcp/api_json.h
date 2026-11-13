@@ -26,6 +26,10 @@ struct HostError {
     std::vector<engrave::ExportWarning> export_warnings;
     std::optional<bool> poisoned;
     std::optional<std::size_t> applied;
+    std::optional<std::uint64_t> revision;
+    std::optional<std::vector<engrave::ElementId>> created;
+    std::optional<std::vector<engrave::ElementId>> removed;
+    std::optional<std::vector<engrave::ElementId>> replaced;
 };
 
 template <class T>

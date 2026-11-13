@@ -407,8 +407,18 @@ Json HostApi::edit(const Json &j) {
                 e.current_revision = doc.revision();
             } else if (e.code != "Poisoned") {
                 e.applied = out.error().applied_ops.size();
-                if (out.error().poisoned) e.poisoned = true;
             }
+            throw detail::DecodeError{std::move(e)};
+        }
+        if (out->rejection) {
+            auto e = api_error(out->rejection->error);
+            e.document = token;
+            e.op_index = out->rejection->op_index;
+            e.applied = out->applied;
+            e.revision = out->revision;
+            e.created = std::move(out->created);
+            e.removed = std::move(out->removed);
+            e.replaced = std::move(out->replaced);
             throw detail::DecodeError{std::move(e)};
         }
         auto result = encode(*out);

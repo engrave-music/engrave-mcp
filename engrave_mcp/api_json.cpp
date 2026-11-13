@@ -490,7 +490,7 @@ Json encode(const engrave::QueryResult &q) {
 Json encode(const engrave::EditResult &r) {
     return {
         {"revision", std::to_string(r.revision)},
-        {"applied", r.ops.size()},
+        {"applied", r.applied},
         {"ops",
          mapped(r.ops, [](const auto &o) { return Json{{"created", mapped(o.created, [](const auto &id) { return eid_json(id); })}}; })},
         {"created", ids(r.created)},
@@ -612,6 +612,10 @@ Json error_envelope(const HostError &e) {
     if (e.poisoned) err["poisoned"] = *e.poisoned;
     if (e.document) err["document"] = *e.document;
     if (e.current_revision) err["current_revision"] = std::to_string(*e.current_revision);
+    if (e.revision) err["revision"] = std::to_string(*e.revision);
+    if (e.created) err["created"] = ids(*e.created);
+    if (e.removed) err["removed"] = ids(*e.removed);
+    if (e.replaced) err["replaced"] = ids(*e.replaced);
     if (!e.published_artifacts.empty()) err["published_artifacts"] = e.published_artifacts;
     if (!e.export_warnings.empty()) err["export_warnings"] = encode(e.export_warnings);
     return {{"ok", false}, {"error", err}};

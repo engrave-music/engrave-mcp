@@ -14,8 +14,8 @@ Every result is a JSON object in `structuredContent`:
 ```
 
 Failures also set the MCP `isError` flag. `error` may carry `document`,
-`current_revision`, `op_index`, `applied`, `poisoned`, `published_artifacts`
-or `export_warnings`.
+`current_revision`, `revision`, `op_index`, `applied`, `created`, `removed`,
+`replaced`, `poisoned`, `published_artifacts` or `export_warnings`.
 
 Document revisions are decimal strings. A newly opened or created document
 starts at `"1"`. A batch that changes the score increments it (including a failed
@@ -99,8 +99,9 @@ If decoding or preflight rejects operation `k`, nothing changes and the error
 reports `applied: 0`, `op_index: k`, and the rejection reason (`code` /
 `message`). If operation `k` is rejected during execution, operations `0..k-1`
 remain applied, operation `k` has no effect, the batch stops, the document is
-not poisoned, and the error reports `applied: k`, `op_index: k`, and the
-rejection reason.
+not poisoned, and the error reports `applied: k`, `op_index: k`, the applied
+prefix's `revision`, `created`, `removed`, `replaced`, and the rejection
+reason.
 
 `poisoned: true` (with a hint to call `restore_checkpoint` or reopen the file)
 occurs only if an unexpected engine failure happens after an operation has
