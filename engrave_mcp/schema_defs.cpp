@@ -198,6 +198,8 @@ Json declared_tools() {
                                       "DeadlineExceeded", "WorkerFailed"})},
                          {"message", str(65536)},
                          {"op_index", integer(0, 1023)},
+                         {"applied", integer(0, 1024)},
+                         {"poisoned", b},
                          {"document", doc},
                          {"current_revision", u},
                          {"published_artifacts", array(text)},
@@ -359,9 +361,14 @@ Json declared_tools() {
          one(json_array<J>({success({{"scope", lit("types")}, {"types", array(ref("type_info"))}}),
                             success({{"scope", lit("type")}, {"type", ref("type_info")}}),
                             success({{"scope", lit("styles")}, {"styles", array(ref("style_info"))}})})));
-    tool("score_edit", "Decode entire batch before one atomic edit. OpRefs name earlier ops only. Opaque is read-only.",
+    tool("score_edit",
+         "Decode and preflight batch, then apply operations in order as a prefix commit (each op is all-or-nothing; no implicit batch "
+         "rollback). On rejection at op_index, ops 0..op_index-1 stay applied, applied reports the count completed, and the batch stops. "
+         "Only an engine failure after writes poisons the document until restore_checkpoint or reopen. Use checkpoint/restore_checkpoint "
+         "for all-or-nothing batches. Opaque is read-only.",
          object({{"document", doc}, {"expected_revision", u}, {"ops", array(ref("op"), 1024)}}, json_array<J>({"document", "ops"})),
          success({{"revision", u},
+                  {"applied", idx},
                   {"ops", array(object({{"created", array(nullable(eid), 65536)}}), 1024)},
                   {"created", array(eid, 65536)},
                   {"removed", array(eid, 65536)},
@@ -459,6 +466,19 @@ Json declared_tools() {
                   {"templates", array(ref("template"))},
                   {"fonts", array(text)},
                   {"limits", ref("limits")}}));
+    const J checkpoint_input = object({{"document", doc}, {"name", text}, {"expected_revision", u}}, json_array<J>({"document", "name"}));
+    tool("checkpoint",
+         "Save a named in-memory checkpoint of the document (64 MiB shared checkpoint budget). In memory only; checkpoints are the only "
+         "way to undo edits apart from reopening the file.",
+         checkpoint_input, success({{"revision", u}}));
+    tool("restore_checkpoint",
+         "Restore a named in-memory checkpoint, preserving element IDs, advancing revision, dirtying layout, and clearing poison. In "
+         "memory only; this is the only way to undo edits apart from reopening the file.",
+         checkpoint_input, success({{"revision", u}}));
+    tool("drop_checkpoint",
+         "Delete a named in-memory checkpoint and free its share of the 64 MiB budget. In memory only; checkpoints are the only way to "
+         "undo edits apart from reopening the file.",
+         checkpoint_input, success({{"revision", u}}));
     return tools;
 }
 } // namespace music::api

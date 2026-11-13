@@ -490,6 +490,7 @@ Json encode(const engrave::QueryResult &q) {
 Json encode(const engrave::EditResult &r) {
     return {
         {"revision", std::to_string(r.revision)},
+        {"applied", r.ops.size()},
         {"ops",
          mapped(r.ops, [](const auto &o) { return Json{{"created", mapped(o.created, [](const auto &id) { return eid_json(id); })}}; })},
         {"created", ids(r.created)},
@@ -593,14 +594,22 @@ Json encode(const std::vector<engrave::ExportWarning> &warnings) {
 }
 
 HostError api_error(const engrave::Error &e) {
-    HostError result{std::string(engrave::to_string(e.code)), e.message, e.op_index};
+    std::string message = e.message;
+    if (e.poisoned && e.code != engrave::ErrorCode::POISONED) {
+        if (!message.empty()) message += "; ";
+        message += "document is poisoned: restore_checkpoint or reopen the file";
+    }
+    HostError result{std::string(engrave::to_string(e.code)), std::move(message), e.op_index};
     result.export_warnings = e.export_warnings;
+    if (e.poisoned) result.poisoned = true;
     return result;
 }
 
 Json error_envelope(const HostError &e) {
     Json err = {{"code", e.code}, {"message", e.message}};
     if (e.op_index) err["op_index"] = *e.op_index;
+    if (e.applied) err["applied"] = static_cast<std::uint64_t>(*e.applied);
+    if (e.poisoned) err["poisoned"] = *e.poisoned;
     if (e.document) err["document"] = *e.document;
     if (e.current_revision) err["current_revision"] = std::to_string(*e.current_revision);
     if (!e.published_artifacts.empty()) err["published_artifacts"] = e.published_artifacts;

@@ -24,6 +24,8 @@ struct HostError {
     std::optional<std::uint64_t> current_revision;
     std::vector<std::string> published_artifacts;
     std::vector<engrave::ExportWarning> export_warnings;
+    std::optional<bool> poisoned;
+    std::optional<std::size_t> applied;
 };
 
 template <class T>

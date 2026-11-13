@@ -87,6 +87,9 @@
         "error": {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "code": {
               "enum": [
                 "InvalidArgument",
@@ -128,6 +131,9 @@
             },
             "op_index": {
               "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
             },
             "published_artifacts": {
               "items": {
@@ -330,6 +336,9 @@
         "error": {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "code": {
               "enum": [
                 "InvalidArgument",
@@ -371,6 +380,9 @@
             },
             "op_index": {
               "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
             },
             "published_artifacts": {
               "items": {
@@ -514,6 +526,9 @@
         "error": {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "code": {
               "enum": [
                 "InvalidArgument",
@@ -555,6 +570,9 @@
             },
             "op_index": {
               "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
             },
             "published_artifacts": {
               "items": {
@@ -701,6 +719,9 @@
         "error": {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "code": {
               "enum": [
                 "InvalidArgument",
@@ -742,6 +763,9 @@
             },
             "op_index": {
               "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
             },
             "published_artifacts": {
               "items": {
@@ -1739,6 +1763,9 @@
         "error": {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "code": {
               "enum": [
                 "InvalidArgument",
@@ -1780,6 +1807,9 @@
             },
             "op_index": {
               "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
             },
             "published_artifacts": {
               "items": {
@@ -2428,6 +2458,9 @@
         "error": {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "code": {
               "enum": [
                 "InvalidArgument",
@@ -2469,6 +2502,9 @@
             },
             "op_index": {
               "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
             },
             "published_artifacts": {
               "items": {
@@ -3021,7 +3057,7 @@
     }
   },
   {
-    "description": "Decode entire batch before one atomic edit. OpRefs name earlier ops only. Opaque is read-only.",
+    "description": "Decode and preflight batch, then apply operations in order as a prefix commit (each op is all-or-nothing; no implicit batch rollback). On rejection at op_index, ops 0..op_index-1 stay applied, applied reports the count completed, and the batch stops. Only an engine failure after writes poisons the document until restore_checkpoint or reopen. Use checkpoint/restore_checkpoint for all-or-nothing batches. Opaque is read-only.",
     "inputSchema": {
       "$defs": {
         "address": {
@@ -4103,6 +4139,9 @@
         "error": {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "code": {
               "enum": [
                 "InvalidArgument",
@@ -4144,6 +4183,9 @@
             },
             "op_index": {
               "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
             },
             "published_artifacts": {
               "items": {
@@ -4213,6 +4255,9 @@
         {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "created": {
               "items": {
                 "maxLength": 32,
@@ -4285,6 +4330,7 @@
             }
           },
           "required": [
+            "applied",
             "created",
             "diagnostics",
             "ok",
@@ -4912,6 +4958,9 @@
         "error": {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "code": {
               "enum": [
                 "InvalidArgument",
@@ -4953,6 +5002,9 @@
             },
             "op_index": {
               "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
             },
             "published_artifacts": {
               "items": {
@@ -5217,6 +5269,9 @@
         "error": {
           "additionalProperties": false,
           "properties": {
+            "applied": {
+              "type": "integer"
+            },
             "code": {
               "enum": [
                 "InvalidArgument",
@@ -5258,6 +5313,9 @@
             },
             "op_index": {
               "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
             },
             "published_artifacts": {
               "items": {
@@ -5425,6 +5483,567 @@
             "ok",
             "templates",
             "tool_revision"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "ok": {
+              "const": false
+            }
+          },
+          "required": [
+            "error",
+            "ok"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": false
+    }
+  },
+  {
+    "description": "Save a named in-memory checkpoint of the document (64 MiB shared checkpoint budget). In memory only; checkpoints are the only way to undo edits apart from reopening the file.",
+    "inputSchema": {
+      "$defs": {},
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "maxLength": 128,
+          "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
+          "type": "string"
+        },
+        "expected_revision": {
+          "maxLength": 20,
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 4096,
+          "type": "string"
+        }
+      },
+      "required": [
+        "document",
+        "name"
+      ],
+      "type": "object",
+      "unevaluatedProperties": false
+    },
+    "name": "checkpoint",
+    "outputSchema": {
+      "$defs": {
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "InvalidArgument",
+                "InvalidInput",
+                "UnsupportedFormat",
+                "NotFound",
+                "StaleHandle",
+                "ResourceLimit",
+                "Unsupported",
+                "Io",
+                "RevisionConflict",
+                "EditRejected",
+                "Poisoned",
+                "EngineFailure",
+                "Cancelled",
+                "DeadlineExceeded",
+                "WorkerFailed"
+              ],
+              "type": "string"
+            },
+            "current_revision": {
+              "maxLength": 20,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            "document": {
+              "maxLength": 128,
+              "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
+              "type": "string"
+            },
+            "export_warnings": {
+              "items": {
+                "$ref": "#/$defs/export_warning"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            },
+            "op_index": {
+              "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
+            },
+            "published_artifacts": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "export_warning": {
+          "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "object": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "kind": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "revision": {
+              "maxLength": 20,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "ok",
+            "revision"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "ok": {
+              "const": false
+            }
+          },
+          "required": [
+            "error",
+            "ok"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": false
+    }
+  },
+  {
+    "description": "Restore a named in-memory checkpoint, preserving element IDs, advancing revision, dirtying layout, and clearing poison. In memory only; this is the only way to undo edits apart from reopening the file.",
+    "inputSchema": {
+      "$defs": {},
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "maxLength": 128,
+          "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
+          "type": "string"
+        },
+        "expected_revision": {
+          "maxLength": 20,
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 4096,
+          "type": "string"
+        }
+      },
+      "required": [
+        "document",
+        "name"
+      ],
+      "type": "object",
+      "unevaluatedProperties": false
+    },
+    "name": "restore_checkpoint",
+    "outputSchema": {
+      "$defs": {
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "InvalidArgument",
+                "InvalidInput",
+                "UnsupportedFormat",
+                "NotFound",
+                "StaleHandle",
+                "ResourceLimit",
+                "Unsupported",
+                "Io",
+                "RevisionConflict",
+                "EditRejected",
+                "Poisoned",
+                "EngineFailure",
+                "Cancelled",
+                "DeadlineExceeded",
+                "WorkerFailed"
+              ],
+              "type": "string"
+            },
+            "current_revision": {
+              "maxLength": 20,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            "document": {
+              "maxLength": 128,
+              "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
+              "type": "string"
+            },
+            "export_warnings": {
+              "items": {
+                "$ref": "#/$defs/export_warning"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            },
+            "op_index": {
+              "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
+            },
+            "published_artifacts": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "export_warning": {
+          "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "object": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "kind": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "revision": {
+              "maxLength": 20,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "ok",
+            "revision"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "ok": {
+              "const": false
+            }
+          },
+          "required": [
+            "error",
+            "ok"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": false
+    }
+  },
+  {
+    "description": "Delete a named in-memory checkpoint and free its share of the 64 MiB budget. In memory only; checkpoints are the only way to undo edits apart from reopening the file.",
+    "inputSchema": {
+      "$defs": {},
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "maxLength": 128,
+          "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
+          "type": "string"
+        },
+        "expected_revision": {
+          "maxLength": 20,
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 4096,
+          "type": "string"
+        }
+      },
+      "required": [
+        "document",
+        "name"
+      ],
+      "type": "object",
+      "unevaluatedProperties": false
+    },
+    "name": "drop_checkpoint",
+    "outputSchema": {
+      "$defs": {
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "type": "integer"
+            },
+            "code": {
+              "enum": [
+                "InvalidArgument",
+                "InvalidInput",
+                "UnsupportedFormat",
+                "NotFound",
+                "StaleHandle",
+                "ResourceLimit",
+                "Unsupported",
+                "Io",
+                "RevisionConflict",
+                "EditRejected",
+                "Poisoned",
+                "EngineFailure",
+                "Cancelled",
+                "DeadlineExceeded",
+                "WorkerFailed"
+              ],
+              "type": "string"
+            },
+            "current_revision": {
+              "maxLength": 20,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            "document": {
+              "maxLength": 128,
+              "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
+              "type": "string"
+            },
+            "export_warnings": {
+              "items": {
+                "$ref": "#/$defs/export_warning"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            },
+            "op_index": {
+              "type": "integer"
+            },
+            "poisoned": {
+              "type": "boolean"
+            },
+            "published_artifacts": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "export_warning": {
+          "additionalProperties": false,
+          "if": {
+            "properties": {
+              "code": {
+                "pattern": "^B470_"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "object": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "kind": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "then": {
+            "required": [
+              "object"
+            ]
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "revision": {
+              "maxLength": 20,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "ok",
+            "revision"
           ],
           "type": "object"
         },

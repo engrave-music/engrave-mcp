@@ -9,12 +9,18 @@
 namespace music::api {
 
 namespace {
-constexpr std::array specs = {
-    ToolSpec{"score_open", HandlerId::OPEN, Scheduling::OWNER},          ToolSpec{"score_create", HandlerId::CREATE, Scheduling::OWNER},
-    ToolSpec{"score_close", HandlerId::CLOSE, Scheduling::OWNER},        ToolSpec{"score_outline", HandlerId::OUTLINE, Scheduling::OWNER},
-    ToolSpec{"score_query", HandlerId::QUERY, Scheduling::OWNER},        ToolSpec{"score_describe", HandlerId::DESCRIBE, Scheduling::OWNER},
-    ToolSpec{"score_edit", HandlerId::EDIT, Scheduling::OWNER},          ToolSpec{"score_export", HandlerId::EXPORT, Scheduling::OWNER},
-    ToolSpec{"runtime_info", HandlerId::RUNTIME_INFO, Scheduling::OWNER}};
+constexpr std::array specs = {ToolSpec{"score_open", HandlerId::OPEN, Scheduling::OWNER},
+                              ToolSpec{"score_create", HandlerId::CREATE, Scheduling::OWNER},
+                              ToolSpec{"score_close", HandlerId::CLOSE, Scheduling::OWNER},
+                              ToolSpec{"score_outline", HandlerId::OUTLINE, Scheduling::OWNER},
+                              ToolSpec{"score_query", HandlerId::QUERY, Scheduling::OWNER},
+                              ToolSpec{"score_describe", HandlerId::DESCRIBE, Scheduling::OWNER},
+                              ToolSpec{"score_edit", HandlerId::EDIT, Scheduling::OWNER},
+                              ToolSpec{"score_export", HandlerId::EXPORT, Scheduling::OWNER},
+                              ToolSpec{"runtime_info", HandlerId::RUNTIME_INFO, Scheduling::OWNER},
+                              ToolSpec{"checkpoint", HandlerId::CHECKPOINT, Scheduling::OWNER},
+                              ToolSpec{"restore_checkpoint", HandlerId::RESTORE_CHECKPOINT, Scheduling::OWNER},
+                              ToolSpec{"drop_checkpoint", HandlerId::DROP_CHECKPOINT, Scheduling::OWNER}};
 
 consteval bool complete() {
     std::array<int, static_cast<std::size_t>(HandlerId::COUNT)> counts{};

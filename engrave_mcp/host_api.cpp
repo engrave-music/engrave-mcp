@@ -177,7 +177,6 @@ struct HostApi::Impl {
     std::unique_ptr<engrave::Engine> engine; // destroyed after documents, before assets
     std::unordered_map<std::string, std::unique_ptr<engrave::Document>> documents;
     std::unordered_set<std::string> borrowed;
-    std::unordered_set<std::string> needs_recovery_check;
 
     void check_thread() const {
         if (std::this_thread::get_id() != owner) {
@@ -189,18 +188,6 @@ struct HostApi::Impl {
         auto it = documents.find(token);
         if (it == documents.end()) throw detail::DecodeError{HostError{"NotFound", "unknown or closed document", {}, token}};
         auto &doc = *it->second;
-        // At this engine pin audio_tracks does not check the poison flag. Probe
-        // with the public read API after a thrown edit/callback before exposing
-        // the document to any subsequent call, including an export callback.
-        if (needs_recovery_check.contains(token)) {
-            auto health = doc.outline();
-            if (!health) {
-                auto error = api_error(health.error());
-                error.document = token;
-                throw detail::DecodeError{std::move(error)};
-            }
-            needs_recovery_check.erase(token);
-        }
         const auto actual = doc.revision();
         if (expected && *expected != actual) {
             throw detail::DecodeError{
@@ -303,7 +290,6 @@ Json HostApi::close(const Json &j) {
             throw detail::DecodeError{HostError{"InvalidArgument", "document is in use by with_document", {}, token}};
         }
         if (!impl_->documents.erase(token)) throw detail::DecodeError{HostError{"NotFound", "unknown or closed document", {}, token}};
-        impl_->needs_recovery_check.erase(token);
         return Json{{"ok", true}};
     });
 }
@@ -395,7 +381,13 @@ Json HostApi::edit(const Json &j) {
         auto envelope = j;
         if (envelope.is_object() && envelope.contains("ops")) envelope["ops"] = make_array<Json>();
         detail::validate_tool("score_edit", envelope);
-        auto batch = unwrap(decode_batch(j.at("ops")));
+        auto batch_res = decode_batch(j.at("ops"));
+        if (!batch_res) {
+            auto err = std::move(batch_res.error());
+            err.applied = 0;
+            throw detail::DecodeError{std::move(err)};
+        }
+        auto &batch = *batch_res;
         const auto expected = revision_arg(j);
         const auto token = j.at("document").get<std::string>();
         auto &doc = impl_->get(token, expected);
@@ -403,22 +395,68 @@ Json HostApi::edit(const Json &j) {
             try {
                 return doc.edit(batch, expected);
             } catch (const std::exception &e) {
-                impl_->needs_recovery_check.insert(token);
                 throw detail::DecodeError{HostError{"EngineFailure", e.what(), {}, token}};
             } catch (...) {
-                impl_->needs_recovery_check.insert(token);
                 throw detail::DecodeError{HostError{"EngineFailure", "unknown engine failure", {}, token}};
             }
         }();
         if (!out) {
             auto e = api_error(out.error());
             e.document = token;
-            if (e.code == "RevisionConflict") e.current_revision = doc.revision();
+            if (e.code == "RevisionConflict") {
+                e.current_revision = doc.revision();
+            } else if (e.code != "Poisoned") {
+                e.applied = out.error().applied_ops.size();
+                if (out.error().poisoned) e.poisoned = true;
+            }
             throw detail::DecodeError{std::move(e)};
         }
         auto result = encode(*out);
         result["ok"] = true;
         return result;
+    });
+}
+
+namespace {
+template <class Fn>
+Json run_checkpoint_op(const Json &j, engrave::Document &doc, std::string token, Fn &&fn) {
+    auto out = fn(doc, j.at("name").get<std::string>());
+    if (!out) {
+        auto e = api_error(out.error());
+        e.document = std::move(token);
+        throw detail::DecodeError{std::move(e)};
+    }
+    return Json{{"ok", true}, {"revision", std::to_string(doc.revision())}};
+}
+} // namespace
+
+Json HostApi::checkpoint(const Json &j) {
+    return boundary([&] {
+        impl_->check_thread();
+        detail::validate_tool("checkpoint", j);
+        const auto token = j.at("document").get<std::string>();
+        auto &doc = impl_->get(token, revision_arg(j));
+        return run_checkpoint_op(j, doc, token, [](engrave::Document &d, std::string_view name) { return d.checkpoint(name); });
+    });
+}
+
+Json HostApi::restore_checkpoint(const Json &j) {
+    return boundary([&] {
+        impl_->check_thread();
+        detail::validate_tool("restore_checkpoint", j);
+        const auto token = j.at("document").get<std::string>();
+        auto &doc = impl_->get(token, revision_arg(j));
+        return run_checkpoint_op(j, doc, token, [](engrave::Document &d, std::string_view name) { return d.restore_checkpoint(name); });
+    });
+}
+
+Json HostApi::drop_checkpoint(const Json &j) {
+    return boundary([&] {
+        impl_->check_thread();
+        detail::validate_tool("drop_checkpoint", j);
+        const auto token = j.at("document").get<std::string>();
+        auto &doc = impl_->get(token, revision_arg(j));
+        return run_checkpoint_op(j, doc, token, [](engrave::Document &d, std::string_view name) { return d.drop_checkpoint(name); });
     });
 }
 
@@ -477,7 +515,6 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<std::u
                                     const std::function<Result<void>(engrave::Document &)> &fn,
                                     const std::vector<std::string> *visible_paths) {
     const std::string key(token);
-    bool entered = false;
     auto failure = [&](HostError error) -> Result<void> {
         if (visible_paths) error.published_artifacts = *visible_paths;
         return std::unexpected(std::move(error));
@@ -496,15 +533,12 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<std::u
             ~Guard() { set.erase(key); }
         } guard{impl_->borrowed, key};
 
-        entered = true;
         return fn(doc);
     } catch (const detail::DecodeError &e) {
         return failure(e.error);
     } catch (const std::exception &e) {
-        if (entered) impl_->needs_recovery_check.insert(key);
         return failure(HostError{"EngineFailure", e.what(), {}, key});
     } catch (...) {
-        if (entered) impl_->needs_recovery_check.insert(key);
         return failure(HostError{"EngineFailure", "unknown engine failure", {}, key});
     }
 }

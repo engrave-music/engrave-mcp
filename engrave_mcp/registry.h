@@ -8,7 +8,21 @@
 
 namespace music::api {
 
-enum class HandlerId { OPEN, CREATE, CLOSE, OUTLINE, QUERY, DESCRIBE, EDIT, EXPORT, RUNTIME_INFO, COUNT };
+enum class HandlerId {
+    OPEN,
+    CREATE,
+    CLOSE,
+    OUTLINE,
+    QUERY,
+    DESCRIBE,
+    EDIT,
+    EXPORT,
+    RUNTIME_INFO,
+    CHECKPOINT,
+    RESTORE_CHECKPOINT,
+    DROP_CHECKPOINT,
+    COUNT
+};
 enum class Scheduling { OWNER };
 
 struct ToolSpec {

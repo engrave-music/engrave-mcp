@@ -53,9 +53,16 @@ Json edit(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->hos
 
 Json runtime_info(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->runtime_info(a); }
 
+Json checkpoint(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->checkpoint(a); }
+
+Json restore_checkpoint(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->restore_checkpoint(a); }
+
+Json drop_checkpoint(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->drop_checkpoint(a); }
+
 Json export_request(void *, const Json &) { throw std::logic_error("export must route through owner"); }
 
-const HandlerTable handlers{open, create, close, outline, query, describe, edit, export_request, runtime_info};
+const HandlerTable handlers{
+    open, create, close, outline, query, describe, edit, export_request, runtime_info, checkpoint, restore_checkpoint, drop_checkpoint};
 } // namespace
 
 struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {

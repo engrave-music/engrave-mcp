@@ -27,6 +27,9 @@ struct HostApi {
     Json query(const Json &);
     Json describe(const Json &);
     Json edit(const Json &);
+    Json checkpoint(const Json &);
+    Json restore_checkpoint(const Json &);
+    Json drop_checkpoint(const Json &);
     Json runtime_info(const Json &); // get, add_font(path), set_soundfonts(files)
 
     Result<void> with_document(std::string_view token, std::optional<std::uint64_t> expected_revision,
