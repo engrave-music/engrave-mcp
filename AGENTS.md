@@ -55,4 +55,10 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
   real impact, and record out-of-scope findings as non-goals instead of chasing them.
 - Do not print credentials or read credential files. Use existing CLI authentication.
 - State which claims are source-reviewed, compiled, or actually executed; never conflate them.
+- Tautological labels, tests and comments are harmful; do not add them, and remove them when
+  touching code. Comments say why or state an invariant, never restate the code or a name.
+  Tests check behaviour against an independent expectation (fixture, golden, hand-computed
+  value), never the implementation against itself (setter-then-getter, expected values
+  derived by the code under test, counts of what was just inserted). No section labels,
+  headers or doc lines that only repeat identifiers.
 - Commit each verified milestone as it is reached. Keep review fixes in small follow-up commits; do not defer all commits to the end.
