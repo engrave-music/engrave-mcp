@@ -384,6 +384,21 @@ def check_cases(tools):
                 },
             }
         )
+        validator.validate(
+            {
+                "ok": False,
+                "error": {
+                    "code": "InvalidArgument",
+                    "message": "bad argument",
+                    "op_index": 1,
+                    "applied": 1,
+                    "revision": "2",
+                    "created": ["A_A"],
+                    "removed": [],
+                    "replaced": ["B_B"],
+                },
+            }
+        )
         assert not validator.is_valid({"ok": False, "error": {"code": "unknown", "message": "bad"}})
         for example in examples:
             value = {"ok": True, **example}

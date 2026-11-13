@@ -205,13 +205,29 @@ async def run(args):
         after_preflight = await notes(0)
         assert after_preflight["elements"] == clean["elements"] and after_preflight["revision"] == clean["revision"]
 
+        before_mscx = out / "before-checkpoint.mscx"
+        await client.tool(
+            "score_export",
+            {
+                "document": doc,
+                "kind": "score",
+                "options": {"format": "mscx"},
+                "destination": {"kind": "file", "path": str(before_mscx)},
+            },
+        )
         await client.tool("checkpoint", {"document": doc, "name": "clean"})
+        blue = {"kind": "color", "value": {"r": 0, "g": 0, "b": 255, "a": 255}}
         invalid_batch = await raw_edit(
             {
                 "document": doc,
                 "expected_revision": clean["revision"],
                 "ops": [
-                    change(clean["elements"][0], 80),
+                    {
+                        "op": "set_property",
+                        "target": {"kind": "id", "id": clean["elements"][0]["id"]},
+                        "property": "color",
+                        "value": blue,
+                    },
                     {
                         "op": "set_pitch",
                         "note": {"kind": "id", "id": measure},
@@ -223,29 +239,41 @@ async def run(args):
         assert not invalid_batch["ok"]
         assert invalid_batch["error"]["op_index"] == 1
         assert invalid_batch["error"]["applied"] == 1
-        # Temporary guard until engine S1b stops poisoning on mid-batch rejection.
-        if invalid_batch["error"].get("poisoned"):
-            assert "restore_checkpoint" in invalid_batch["error"]["message"]
-            poisoned_edit = await raw_edit(
-                {
-                    "document": doc,
-                    "ops": [change(clean["elements"][0], 72)],
-                }
-            )
-            assert not poisoned_edit["ok"] and poisoned_edit["error"]["code"] == "Poisoned"
-            assert poisoned_edit["error"]["message"] == "restore_checkpoint or reopen the document before editing"
-            poisoned_save = await client.tool(
-                "score_export",
-                {
-                    "document": doc,
-                    "kind": "score",
-                    "options": {"format": "mscz"},
-                    "destination": {"kind": "file", "path": str(out / "poisoned.mscz")},
-                },
-                error=True,
-            )
-            assert poisoned_save["error"]["code"] == "Poisoned"
-            assert poisoned_save["error"]["message"] == "restore_checkpoint or reopen the document before saving"
+        assert "poisoned" not in invalid_batch["error"]
+        assert invalid_batch["error"]["revision"] == str(int(clean["revision"]) + 1)
+        assert invalid_batch["error"]["created"] == []
+        assert invalid_batch["error"]["removed"] == []
+        assert invalid_batch["error"]["replaced"] == []
+        color_after = await client.tool(
+            "score_query",
+            {
+                "document": doc,
+                "mode": "properties",
+                "target": {"kind": "id", "id": clean["elements"][0]["id"]},
+                "props": ["color"],
+            },
+        )
+        assert color_after["properties"][0]["value"] == blue
+        follow_up = await client.tool(
+            "score_edit",
+            {
+                "document": doc,
+                "expected_revision": invalid_batch["error"]["revision"],
+                "ops": [change(clean["elements"][1], 79)],
+            },
+        )
+        assert follow_up["applied"] == 1
+        during_mscx = out / "during-checkpoint.mscx"
+        await client.tool(
+            "score_export",
+            {
+                "document": doc,
+                "kind": "score",
+                "options": {"format": "mscx"},
+                "destination": {"kind": "file", "path": str(during_mscx)},
+            },
+        )
+        assert during_mscx.read_bytes() != before_mscx.read_bytes()
         export = out / "edited.musicxml"
         await client.tool(
             "score_export",
@@ -261,6 +289,17 @@ async def run(args):
         await client.tool("restore_checkpoint", {"document": doc, "name": "clean"})
         after_restore = await notes(0)
         assert after_restore["elements"] == clean["elements"] and after_restore["revision"] != clean["revision"]
+        restored_mscx = out / "restored-checkpoint.mscx"
+        await client.tool(
+            "score_export",
+            {
+                "document": doc,
+                "kind": "score",
+                "options": {"format": "mscx"},
+                "destination": {"kind": "file", "path": str(restored_mscx)},
+            },
+        )
+        assert restored_mscx.read_bytes() == before_mscx.read_bytes()
         await client.tool("drop_checkpoint", {"document": doc, "name": "clean"})
         await client.tool(
             "restore_checkpoint",
@@ -273,6 +312,99 @@ async def run(args):
             error=True,
         )
         await client.tool("score_close", {"document": doc})
+
+        # Execution-time rejection after creating elements returns the prefix's created IDs unpoisoned.
+        prefix_doc = (await client.tool("score_create", {"template_id": "Treble_Clef"}))["document"]
+        prefix_m0 = (await client.tool("score_outline", {"document": prefix_doc}))["outline"]["measures"][0]["id"]
+        prefix_rests = await client.tool(
+            "score_query",
+            {
+                "document": prefix_doc,
+                "mode": "elements",
+                "query": {"types": ["Rest"], "first_measure": 0, "measure_count": 1},
+            },
+        )
+        assert len(prefix_rests["elements"]) == 1
+        prefix_rest = prefix_rests["elements"][0]["id"]
+        prefix_fail = await raw_edit(
+            {
+                "document": prefix_doc,
+                "expected_revision": "1",
+                "ops": [
+                    {
+                        "op": "enter_notes",
+                        "at": {
+                            "kind": "segment",
+                            "measure": prefix_m0,
+                            "staff": 0,
+                            "voice": 0,
+                            "tick": {"num": "0", "den": "1"},
+                            "segment_kind": "ChordRest",
+                        },
+                        "duration": {"num": "1", "den": "4"},
+                        "pitches": [{"pitch": 60}],
+                    },
+                    {
+                        "op": "remove",
+                        "target": {"kind": "id", "id": prefix_rest},
+                    },
+                ],
+            }
+        )
+        assert not prefix_fail["ok"]
+        prefix_err = prefix_fail["error"]
+        assert prefix_err["code"] == "StaleHandle"
+        assert prefix_err["op_index"] == 1
+        assert prefix_err["applied"] == 1
+        assert "poisoned" not in prefix_err
+        assert prefix_err["revision"] == "2"
+        assert len(prefix_err["created"]) == 4
+        assert prefix_err["removed"] == []
+        assert prefix_err["replaced"] == [prefix_rest]
+        queried = await client.tool(
+            "score_query",
+            {
+                "document": prefix_doc,
+                "mode": "elements",
+                "query": {"types": ["Note"], "props": ["pitch"]},
+            },
+        )
+        assert len(queried["elements"]) == 1
+        created_note_id = queried["elements"][0]["id"]
+        assert created_note_id in prefix_err["created"]
+        assert pitch(queried["elements"][0]) == 60
+        await client.tool(
+            "score_edit",
+            {
+                "document": prefix_doc,
+                "expected_revision": prefix_err["revision"],
+                "ops": [
+                    {
+                        "op": "set_pitch",
+                        "note": {"kind": "id", "id": created_note_id},
+                        "pitch": 67,
+                    }
+                ],
+            },
+        )
+        prefix_xml = out / "prefix-followup.musicxml"
+        await client.tool(
+            "score_export",
+            {
+                "document": prefix_doc,
+                "kind": "score",
+                "options": {"format": "musicxml"},
+                "destination": {"kind": "file", "path": str(prefix_xml)},
+            },
+        )
+        xml_notes = ET.parse(prefix_xml).getroot().findall("./part/measure/note")
+        pitched_steps = [
+            (n.findtext("./pitch/step"), n.findtext("./pitch/octave"))
+            for n in xml_notes
+            if n.find("./pitch") is not None
+        ]
+        assert pitched_steps == [("G", "4")], pitched_steps
+        await client.tool("score_close", {"document": prefix_doc})
         await check_dynamics_edit(client, out)
     report = {
         "status": "passed",
@@ -280,7 +412,7 @@ async def run(args):
         "same_revision_winners": 1,
         "stable_note_ids": 16,
         "preflight_batch_unchanged": True,
-        "mid_batch_poisoned_and_restored": True,
+        "mid_batch_rejected_unpoisoned_and_restored": True,
         "stale_revision_rejected": True,
         "dynamics_edits_survive_reopen": 2,
     }

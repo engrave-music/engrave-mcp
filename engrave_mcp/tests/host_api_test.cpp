@@ -349,8 +349,11 @@ int main(int argc, char **argv) {
                                                                    Json{{"op", "remove"}, {"target", opref(0, 0)}},
                                                                    Json{{"op", "remove"}, {"target", opref(0, 0)}}})}},
                                  "StaleHandle");
-        require(stale_opref.at("error").at("op_index") == 2 && stale_opref.at("error").at("applied") == 2,
-                "stale OpRef did not identify the operation and applied count");
+        require(stale_opref.at("error").at("op_index") == 2 && stale_opref.at("error").at("applied") == 2 &&
+                    !stale_opref.at("error").contains("poisoned") && stale_opref.at("error").contains("revision") &&
+                    stale_opref.at("error").at("created").empty() && stale_opref.at("error").at("removed").empty() &&
+                    stale_opref.at("error").at("replaced").empty(),
+                "stale OpRef did not identify the operation, applied count, and prefix diff");
         ok(*host, "restore_checkpoint", {{"document", doc}, {"name", "before_stale_opref"}});
         ok(*host, "drop_checkpoint", {{"document", doc}, {"name", "before_stale_opref"}});
         auto tie = ok(*host, "score_edit",
@@ -420,6 +423,19 @@ int main(int argc, char **argv) {
                {{"document", linked_doc}, {"mode", "properties"}, {"target", idref(copy)}, {"props", music::json_array<Json>({"pitch"})}});
         require(copy_after_restore.at("properties")[0].at("value") == initial_pitch, "restore_checkpoint did not revert linked copy pitch");
 
+        auto export_mscx = [&](const std::string &token) {
+            std::vector<std::byte> out;
+            auto res = host->with_document(token, {}, [&](engrave::Document &d) -> music::api::Result<void> {
+                auto saved = d.export_score({.format = engrave::Format::MSCX});
+                if (!saved) return std::unexpected(music::api::api_error(saved.error()));
+                out = std::move(*saved);
+                return {};
+            });
+            require(bool(res), res ? "" : res.error().message);
+            return out;
+        };
+        const auto mscx_before = export_mscx(linked_doc);
+
         // Preflight failures change nothing and leave the document unpoisoned.
         Json blue = {{"kind", "color"}, {"value", {{"r", 0}, {"g", 0}, {"b", 255}, {"a", 255}}}};
         const auto before_preflight_rev = after_restore.at("revision");
@@ -441,7 +457,7 @@ int main(int argc, char **argv) {
         require(after_preflight.at("revision") == before_preflight_rev && after_preflight.at("properties")[0].at("value") == initial_color,
                 "preflight failure altered document");
 
-        // Mid-batch rejection keeps prefix ops applied; keep poisoning assertions minimal until engine S1b lands.
+        // Mid-batch rejection keeps prefix ops applied without poisoning the document.
         auto mid_fail =
             error(*host, "score_edit",
                   {{"document", linked_doc},
@@ -449,32 +465,77 @@ int main(int argc, char **argv) {
                                {Json{{"op", "set_property"}, {"target", idref(note)}, {"property", "color"}, {"value", blue}},
                                 Json{{"op", "set_pitch"}, {"note", idref(target.at("measure").get<std::string>())}, {"pitch", 72}}})}},
                   "InvalidArgument");
-        require(mid_fail.at("error").at("op_index") == 1 && mid_fail.at("error").at("applied") == 1,
-                "mid-batch failure did not report op_index and applied count");
+        require(mid_fail.at("error").at("op_index") == 1 && mid_fail.at("error").at("applied") == 1 &&
+                    !mid_fail.at("error").contains("poisoned") && mid_fail.at("error").at("created").empty() &&
+                    mid_fail.at("error").at("removed").empty() && mid_fail.at("error").at("replaced").empty(),
+                "mid-batch failure did not report op_index, applied count, and unpoisoned prefix diff");
         auto after_mid =
             ok(*host, "score_query",
                {{"document", linked_doc}, {"mode", "properties"}, {"target", idref(note)}, {"props", music::json_array<Json>({"color"})}});
-        require(after_mid.at("revision") != before_preflight_rev && after_mid.at("properties")[0].at("value") == blue,
+        require(after_mid.at("revision") != before_preflight_rev && mid_fail.at("error").at("revision") == after_mid.at("revision") &&
+                    after_mid.at("properties")[0].at("value") == blue,
                 "mid-batch failure did not retain completed prefix op");
-
-        if (music::json_value<bool>(mid_fail.at("error"), "poisoned", false)) {
-            const auto mid_msg = mid_fail.at("error").at("message").get<std::string>();
-            require(mid_msg.find("restore_checkpoint") != std::string::npos && mid_msg.find("reopen") != std::string::npos,
-                    "poisoned failure omitted recovery hint");
-            auto refused_edit = error(*host, "score_edit", {{"document", linked_doc}, {"ops", music::make_array<Json>()}}, "Poisoned");
-            require(refused_edit.at("error").at("message") == "restore_checkpoint or reopen the document before editing",
-                    "poisoned edit error altered");
-            auto refused_save = host->with_document(linked_doc, {}, [](engrave::Document &d) -> music::api::Result<void> {
-                auto saved = d.export_score({.format = engrave::Format::MSCZ});
-                if (!saved) return std::unexpected(music::api::api_error(saved.error()));
-                return {};
-            });
-            require(!refused_save && refused_save.error().code == "Poisoned" &&
-                        refused_save.error().message == "restore_checkpoint or reopen the document before saving",
-                    "poisoned native save was not refused unchanged");
-        }
+        require(export_mscx(linked_doc) != mscx_before, "mid-batch edit did not change native export");
+        ok(*host, "score_edit",
+           {{"document", linked_doc},
+            {"expected_revision", mid_fail.at("error").at("revision")},
+            {"ops", music::json_array<Json>({Json{{"op", "set_pitch"}, {"note", idref(note)}, {"pitch", 75}}})}});
+        auto after_followup =
+            ok(*host, "score_query",
+               {{"document", linked_doc}, {"mode", "properties"}, {"target", idref(note)}, {"props", music::json_array<Json>({"pitch"})}});
+        require(after_followup.at("properties")[0].at("value") == Json({{"kind", "int"}, {"value", "75"}}),
+                "follow-up edit after mid-batch rejection failed");
 
         ok(*host, "restore_checkpoint", {{"document", linked_doc}, {"name", "initial"}});
+        require(export_mscx(linked_doc) == mscx_before, "restore_checkpoint did not restore original native export bytes");
+
+        // Execution-time rejection after an op creates IDs exposes those IDs on the error for follow-up edits.
+        const auto prefix_doc =
+            ok(*host, "score_create", {{"template_id", "Treble_Clef"}, {"title", "Prefix test"}}).at("document").get<std::string>();
+        const auto prefix_m0 =
+            ok(*host, "score_outline", {{"document", prefix_doc}}).at("outline").at("measures")[0].at("id").get<std::string>();
+        auto prefix_rests = ok(*host, "score_query",
+                               {{"document", prefix_doc},
+                                {"mode", "elements"},
+                                {"query", {{"types", music::json_array<Json>({"Rest"})}, {"first_measure", 0}, {"measure_count", 1}}}});
+        require(prefix_rests.at("elements").size() == 1, "expected one initial rest in template measure");
+        const auto prefix_rest = prefix_rests.at("elements")[0].at("id").get<std::string>();
+        auto prefix_fail = error(*host, "score_edit",
+                                 {{"document", prefix_doc},
+                                  {"expected_revision", "1"},
+                                  {"ops", music::json_array<Json>({Json{{"op", "enter_notes"},
+                                                                        {"at", address(prefix_m0, "0", "1")},
+                                                                        {"duration", fraction("1", "4")},
+                                                                        {"pitches", music::json_array<Json>({Json{{"pitch", 60}}})}},
+                                                                   Json{{"op", "remove"}, {"target", idref(prefix_rest)}}})}},
+                                 "StaleHandle");
+        const auto &prefix_err = prefix_fail.at("error");
+        require(prefix_err.at("op_index") == 1 && prefix_err.at("applied") == 1 && !prefix_err.contains("poisoned") &&
+                    prefix_err.at("revision") == "2" && prefix_err.at("created").size() == 4 && prefix_err.at("removed").empty() &&
+                    prefix_err.at("replaced") == music::json_array<Json>({prefix_rest}),
+                "prefix rejection returned unexpected error metadata");
+        auto prefix_notes = ok(*host, "score_query",
+                               {{"document", prefix_doc},
+                                {"mode", "elements"},
+                                {"query", {{"types", music::json_array<Json>({"Note"})}, {"props", music::json_array<Json>({"pitch"})}}}});
+        require(prefix_notes.at("elements").size() == 1, "expected one created note in score");
+        const auto created_note = prefix_notes.at("elements")[0].at("id").get<std::string>();
+        const auto &created_ids = prefix_err.at("created").get_array();
+        require(prefix_notes.at("elements")[0].at("props")[0].at("value") == Json({{"kind", "int"}, {"value", "60"}}) &&
+                    std::ranges::find(created_ids, Json(created_note)) != created_ids.end(),
+                "created note ID or pitch missing from score after prefix rejection");
+        ok(*host, "score_edit",
+           {{"document", prefix_doc},
+            {"expected_revision", prefix_err.at("revision")},
+            {"ops", music::json_array<Json>({Json{{"op", "set_pitch"}, {"note", idref(created_note)}, {"pitch", 67}}})}});
+        auto pitched_notes = ok(*host, "score_query",
+                                {{"document", prefix_doc},
+                                 {"mode", "elements"},
+                                 {"query", {{"types", music::json_array<Json>({"Note"})}, {"props", music::json_array<Json>({"pitch"})}}}});
+        require(pitched_notes.at("elements").size() == 1 &&
+                    pitched_notes.at("elements")[0].at("props")[0].at("value") == Json({{"kind", "int"}, {"value", "67"}}),
+                "follow-up edit using prefix-created note ID did not update score");
+        ok(*host, "score_close", {{"document", prefix_doc}});
         auto recovered_props = ok(*host, "score_query",
                                   {{"document", linked_doc},
                                    {"mode", "properties"},
