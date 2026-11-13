@@ -1,6 +1,6 @@
 # Tool contract
 
-The server exposes nine tools. This page is the human-readable contract; the
+The server exposes twelve tools. This page is the human-readable contract; the
 generated [engrave_mcp/tools.json](../../engrave_mcp/tools.json) is the machine-readable
 one and is checked by the `tool_schema` lane.
 
@@ -14,13 +14,16 @@ Every result is a JSON object in `structuredContent`:
 ```
 
 Failures also set the MCP `isError` flag. `error` may carry `document`,
-`current_revision`, `op_index`, `published_artifacts` or `export_warnings`.
+`current_revision`, `op_index`, `applied`, `poisoned`, `published_artifacts`
+or `export_warnings`.
 
 Document revisions are decimal strings. A newly opened or created document
-starts at `"1"`. A committed batch that changes the score increments it; an
-empty or no-op successful batch leaves it unchanged. `expected_revision`, when supplied, is checked
-before the operation and a mismatch returns `RevisionConflict` with
-`current_revision`. Revisions are per document.
+starts at `"1"`. A batch that changes the score increments it (including a failed
+batch that wrote before failing), and `restore_checkpoint` increments it; an
+empty or no-op successful batch or preflight failure leaves it unchanged.
+`expected_revision`, when supplied, is checked before the operation and a
+mismatch returns `RevisionConflict` with `current_revision`. Revisions are per
+document.
 
 ## `score_open`
 
@@ -86,16 +89,26 @@ Three modes, selected by `mode`:
 ## `score_edit`
 
 `document` (required), `ops` (required, max 1,024), optional
-`expected_revision`. Returns `{ok, revision, ops[], created[], removed[],
-replaced[], diagnostics[]}`.
+`expected_revision`. Returns `{ok, revision, applied, ops[], created[], removed[],
+replaced[], diagnostics[]}` where `applied` is the count of executed operations.
 
-The batch is atomic: if an operation fails validation or the handler rejects it,
-the host rolls the batch back and the error carries `op_index`. If the engine
-throws during the batch, the host reloads its saved copy or undoes the recorded
-command; that recovery can move layout, and if it also fails the document
-becomes `Poisoned` and must be closed. In that exception path the error can be
-`EngineFailure` without an `op_index`, so do not rely on `op_index` for engine
-throws.
+Batches use **prefix-commit** semantics: each operation is all-or-nothing on its
+own, while the batch as a whole has no implicit rollback. The host decodes and
+preflights the batch before writing, then applies operations `0..n-1` in order.
+If decoding or preflight rejects operation `k`, nothing changes and the error
+reports `applied: 0`, `op_index: k`, and the rejection reason (`code` /
+`message`). If operation `k` is rejected during execution, operations `0..k-1`
+remain applied, operation `k` has no effect, the batch stops, the document is
+not poisoned, and the error reports `applied: k`, `op_index: k`, and the
+rejection reason.
+
+`poisoned: true` (with a hint to call `restore_checkpoint` or reopen the file)
+occurs only if an unexpected engine failure happens after an operation has
+started writing. On a poisoned document, reads, queries, and non-native exports
+still work, while write batches, `checkpoint`, and native (`mscx`/`mscz`) saves
+are refused with `Poisoned` until `restore_checkpoint` succeeds or the document
+is closed and reopened. Use `checkpoint` before a risky batch and
+`restore_checkpoint` on failure when all-or-nothing rollback is needed.
 
 There are 23 operations:
 
@@ -216,6 +229,18 @@ limits}`. `capabilities` reports `engine_version`, `import_formats`,
 string), `deadline_ms` (120,000), `cancellation` (`cooperative`) and
 `transport_request_bytes` (4 MiB).
 
+## `checkpoint`, `restore_checkpoint`, `drop_checkpoint`
+
+Named in-memory snapshots sharing a 64 MiB per-document retained-data budget.
+Checkpoints are in memory only and are the only way to undo edits apart from
+reopening the file.
+
+| Tool                 | Required           | Optional            | Returns          | Effect                                                                                                                     |
+| -------------------- | ------------------ | ------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `checkpoint`         | `document`, `name` | `expected_revision` | `{ok, revision}` | Save (or replace) a named in-memory checkpoint; replacing keeps the prior copy on budget refusal; refused when `Poisoned`. |
+| `restore_checkpoint` | `document`, `name` | `expected_revision` | `{ok, revision}` | Restore the named checkpoint, preserving public EIDs, advancing `revision`, dirtying layout, and clearing `Poisoned`.      |
+| `drop_checkpoint`    | `document`, `name` | `expected_revision` | `{ok, revision}` | Delete the named checkpoint and release its budget share.                                                                  |
+
 ## Error codes
 
 Cancellation has two layers. A request cancelled through
@@ -225,20 +250,20 @@ no `structuredContent`; the transport owns that response. The structured
 result (for example an engine callback abort). Do not treat the two as
 interchangeable.
 
-| Code                | Meaning                                                                                         |
-| ------------------- | ----------------------------------------------------------------------------------------------- |
-| `InvalidArgument`   | Malformed parameters or destination syntax.                                                     |
-| `InvalidInput`      | Corrupt or unreadable score/archive content.                                                    |
-| `UnsupportedFormat` | Unknown format, or a MuseScore file older than 4.6.                                             |
-| `Unsupported`       | Valid request the engine cannot perform.                                                        |
-| `NotFound`          | Unknown document handle, element, or path.                                                      |
-| `StaleHandle`       | An ID/address no longer resolves.                                                               |
-| `RevisionConflict`  | `expected_revision` does not match.                                                             |
-| `ResourceLimit`     | A documented byte, count or result limit was exceeded.                                          |
-| `EditRejected`      | An edit violates notation or layout constraints.                                                |
-| `Poisoned`          | The document is unusable after an engine failure; close it.                                     |
-| `EngineFailure`     | Engine-level failure with no more specific code.                                                |
-| `Io`                | Filesystem failure; check `published_artifacts`.                                                |
-| `Cancelled`         | The client cancelled before publication.                                                        |
-| `DeadlineExceeded`  | The advisory export deadline expired.                                                           |
-| `WorkerFailed`      | Retained in the advertised enum for wire compatibility; the live-only host does not produce it. |
+| Code                | Meaning                                                                                                                                                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InvalidArgument`   | Malformed parameters or destination syntax.                                                                                                                                                                      |
+| `InvalidInput`      | Corrupt or unreadable score/archive content.                                                                                                                                                                     |
+| `UnsupportedFormat` | Unknown format, or a MuseScore file older than 4.6.                                                                                                                                                              |
+| `Unsupported`       | Valid request the engine cannot perform.                                                                                                                                                                         |
+| `NotFound`          | Unknown document handle, element, or path.                                                                                                                                                                       |
+| `StaleHandle`       | An ID/address no longer resolves.                                                                                                                                                                                |
+| `RevisionConflict`  | `expected_revision` does not match.                                                                                                                                                                              |
+| `ResourceLimit`     | A documented byte, count or result limit was exceeded.                                                                                                                                                           |
+| `EditRejected`      | An edit violates notation or layout constraints.                                                                                                                                                                 |
+| `Poisoned`          | An unexpected engine failure after writes started poisoned the document; reads, queries and non-native exports still work, while edits, `checkpoint` and native saves require `restore_checkpoint` or reopening. |
+| `EngineFailure`     | Engine-level failure with no more specific code.                                                                                                                                                                 |
+| `Io`                | Filesystem failure; check `published_artifacts`.                                                                                                                                                                 |
+| `Cancelled`         | The client cancelled before publication.                                                                                                                                                                         |
+| `DeadlineExceeded`  | The advisory export deadline expired.                                                                                                                                                                            |
+| `WorkerFailed`      | Retained in the advertised enum for wire compatibility; the live-only host does not produce it.                                                                                                                  |

@@ -10,7 +10,7 @@ MCP client
    ▼
 Host layer (engrave_mcp/)
    ├─ transport: reader thread, bounded admission, writer thread, cancellation
-   ├─ registry + JSON codecs: the nine-tool contract
+   ├─ registry + JSON codecs: the twelve-tool contract
    ├─ live export: render/encode on in-memory document, staging, publication
    └─ watchdog + process-wide publication gate
    │  serialized calls
@@ -97,7 +97,7 @@ On Windows, the host executables (`engrave-mcp.exe` and test/probe binaries) and
 ## 8. Non-goals
 
 - No concurrent editing of a single document across multiple threads.
-- No multi-document transactional rollback.
+- No implicit batch rollback or multi-document transactional rollback.
 - No background task scheduling or streaming playback sessions.
 - No in-process memory isolation or crash recovery for corrupted score structures.
 - No support for MuseScore file formats older than version 4.60.
