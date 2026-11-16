@@ -57,7 +57,11 @@ class CleanupRegressions(unittest.TestCase):
                     self.assertEqual((checkout / "tests/data/sentinel").read_text(), checkout.name)
             # Reproduce the old nested operation explicitly: fail before touching data.
             with self.assertRaisesRegex(ValueError, "escapes output"):
-                run_lanes.setup_link(engines[0] / "tests/data", output / "cwd/vendor/engrave/tests/data", output)
+                run_lanes.setup_link(
+                    engines[0] / "tests/data",
+                    output / "host_api/cwd/vendor/engrave/tests/data",
+                    output,
+                )
             self.assertEqual((engines[1] / "tests/data/sentinel").read_text(), "engine-b")
 
     def test_host_rejects_fixture_and_manifest_mutation(self):

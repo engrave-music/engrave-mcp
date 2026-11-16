@@ -7,26 +7,28 @@ Acceptance is execution-based: a claim is accepted when the named lane or gate i
 Build the binaries required by the selected lanes:
 
 ```powershell
-pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
-xmake build -P . live_export_test staging_test
+pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 12
+pixi run --locked python scripts/xbuild.py --build-directory build/xmake-windows build -j 12 live_export_test staging_test
 ```
 
 Lanes require both host test targets and opt-in engine test targets. Configure with `--engrave_tests=y` and build:
 
 ```powershell
 # Configure with engine tests enabled (-P . targets the local checkout)
-xmake f -P . --engrave_tests=y
+pixi run --locked python scripts/xbuild.py --build-directory build/xmake-windows configure --engrave_tests=y
 
 # Build engine test suite (the engine_tests phony target pulls in semantic_dump, score_edit_test,
 # score_audio_test, score_positions_test, excerpts_test, archive_test, assets_test, diagnostics_test,
 # io_boundary_test, engraving_playback_tests, etc.) plus the import_export_probe runtime probe
-xmake build -P . -y -j 12 engine_tests import_export_probe
+pixi run --locked python scripts/xbuild.py --build-directory build/xmake-windows build -j 12 engine_tests import_export_probe
 
 # Build required host test targets
-xmake build -P . -y -j 12 live_export_test staging_test registry_check host_api_test
+pixi run --locked python scripts/xbuild.py --build-directory build/xmake-windows build -j 12 live_export_test staging_test registry_check host_api_test
 # On Linux:
-# xmake build -P . -y -j 12 publication_test
+# pixi run --locked python scripts/xbuild.py --build-directory build/xmake-linux build -j 8 publication_test
 ```
+
+For profile outputs (`build/release`, `build/debug`, `build/releasedbg`, `build/asan`), omit the explicit build directory and select `--profile`. Configuration is isolated under `.xmake/profiles/`; packages share `build/.packages`. See [build.md](build.md) for split xmake modules, profile databases, and clice backend commands.
 
 ### Nested checkouts and xmake `-P .`
 
@@ -79,14 +81,20 @@ $env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
   --engine-source vendor/engrave `
   --assets .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 `
-  --output notes/lanes/latest
+  --output notes/lanes/latest -j 4
 ```
+
+`--build-dir` is optional: discovery checks `build/release` before the platform native-script directory; an explicit path wins. Use `--list-lanes` with the common path arguments to print the selected schedule without preflight or execution.
+
+Functional lanes run in a thread pool (`-j` / `--jobs`, default half the CPU count bounded to 2–8). `-j 1` runs sequentially. Each lane has its own `<output>/<lane>/cwd` and `tmp`; dense-cancellation input stays under `<output>/live_dense_cancel`. Each lane writes a separate log; summary lines retain catalog order. When both are selected, `semantic_check` waits until `golden` finishes. Standalone semantic checks still require a prior golden capture.
+
+After functional work drains, `engine_audio`, `live_dense_cancel`, `live_queued_cancel`, `live_audio`, `transport_wakeup`, `archives`, `document_stress`, `live_export`, `async_session`, and `xmake_incremental` run one at a time. `live_export` contains the timing-sensitive `live_publication_cancel` and `live_report_delivery` children. Run without unrelated builds or benchmarks for measurements; scheduling cannot isolate external processes. `xmake_incremental` still requires an isolated checkout.
 
 Use `--only lane1,lane2` to execute a subset. The runner verifies line endings, native include boundaries, and required binaries before execution, writing per-lane logs and a consolidated summary.
 
 ### Windows Output Roots and Path Limits
 
-On Windows, standard `MAX_PATH` limitations (260 characters) can cause filesystem IO failures during staging and atomic publication when creating nested directories (such as `.engrave-stage-*` and `report-delivery/fault-*`). Always specify a short output root for `--output` (such as `notes/wr` or a short path near the drive root).
+On Windows, standard `MAX_PATH` limitations (260 characters) can cause filesystem IO failures during staging and atomic publication when creating nested directories (such as `.engrave-stage-*` and `report-delivery/fault-*`). Always specify a short output root for `--output` (such as `notes/wr` inside the checkout).
 
 ## Lane Inventory
 
@@ -214,7 +222,9 @@ Linux:
   --output .runtime/gate-run
 ```
 
-On Windows, use native Python (`.pixi\envs\default\python.exe`) in PowerShell 7. Pass `--mutex-wrapper scripts/xmake_mutex.ps1` when the engine build shares xmake's build lock. The wrapper passes `--pixi-manifest pixi.toml`, so the gate builds against this project's Pixi environment (the cairo and zlib in `pixi.lock`; on Linux also its conda GCC), puts the environment's `bin` on `PATH` and lets binaries find its libraries through their run path. Use a fresh `--output` directory for each run; existing capture directories are rejected.
+On Windows, use native Python (`.pixi\envs\default\python.exe`) in PowerShell 7. Pass `--mutex-wrapper scripts/xmake_mutex.ps1` when the engine build shares xmake's build lock. The host gate wrapper passes `--pixi-manifest pixi.toml`, so the gate builds against this project's Pixi environment (the cairo and zlib in `pixi.lock`; on Linux also its conda GCC), puts the environment's `bin` on `PATH` and lets binaries find its libraries through their run path. Use a fresh `--output` directory for each run; existing capture directories are rejected.
+
+The mutex wrapper accepts `-ProjectPath <checkout> -Log <file> -Command '<xmake arguments>'`, matching the engine gate contract. It runs xmake in that project under the named `Global\engrave-xmake-build` mutex, tees output to the log, and preserves the native exit code. Every competing build must use the wrapper to serialize. `-Command` is trusted PowerShell argument text; `-Executable` overrides xmake for wrapper smoke checks.
 
 The gate builds the fork's `engine_tests` target and executes the API, import, playback, and adapter suites, along with `diagnostics_test`, `io_boundary_test`, installer tests, and asset manifest verification. It compares outputs against pinned goldens using `golden.py` comparators and the platform hash allow-list (`vendor/engrave/tests/data/golden/allow.json`).
 

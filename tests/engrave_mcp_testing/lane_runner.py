@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from engrave_testing.paths import pixi_env
@@ -75,6 +76,49 @@ LANE_NAMES = [
 # The 4.7.6 oracle is a preserved Linux-only input and must be explicitly
 # selected with its pinned archive, executable and assets.
 DEFAULT_LANES = [name for name in LANE_NAMES if name not in {"native_470_oracle", *FOCUSED_OPT_IN_LANES}]
+
+
+# live_export includes live_publication_cancel and live_report_delivery children.
+# Keep their timing assertions free of contention from every functional lane.
+EXCLUSIVE_LANES = {
+    "engine_audio",
+    "live_dense_cancel",
+    "live_queued_cancel",
+    "live_audio",
+    "transport_wakeup",
+    "archives",
+    "document_stress",
+    "live_export",
+    "async_session",
+    "xmake_incremental",
+}
+
+
+def execute_schedule(lanes, jobs, execute):
+    results = {}
+    for exclusive, workers in ((False, jobs), (True, 1)):
+        pending = [lane for lane in lanes if (lane in EXCLUSIVE_LANES) == exclusive]
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            running = {}
+            while pending or running:
+                for lane in pending[:]:
+                    if len(running) >= workers:
+                        break
+                    if lane == "semantic_check" and "golden" in lanes and "golden" not in results:
+                        continue
+                    running[pool.submit(execute, lane)] = lane
+                    pending.remove(lane)
+                done, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in done:
+                    results[running.pop(future)] = future.result()
+    return results
+
+
+def discover_build_dir(repo_root: Path) -> Path:
+    legacy = "xmake-windows" if sys.platform == "win32" else "xmake-linux"
+    candidates = [repo_root / "build" / name for name in ("release", legacy)]
+    binary = "engrave-mcp.exe" if sys.platform == "win32" else "engrave-mcp"
+    return next((path for path in candidates if (path / binary).is_file()), candidates[0])
 
 
 def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str]) -> None:
@@ -258,10 +302,12 @@ def run_lane(
             if lane == "live_dense_cancel":
                 from engrave_mcp_testing.cancel_score import generate_cancel_score
 
-                score = output / "dense.musicxml"
+                score = output / lane / "dense.musicxml"
+                score.parent.mkdir(parents=True, exist_ok=True)
                 generate_cancel_score(score)
                 cmd += ["--score", str(score), "--delay-ms", "10"]
-        return subprocess.run(cmd, cwd=repo_root, env=focused_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        lane_cwd = repo_root if lane == "xmake_incremental" else testcwd
+        return subprocess.run(cmd, cwd=lane_cwd, env=focused_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     retarget_code = (
         "import runpy, sys; from pathlib import Path; "
@@ -290,7 +336,7 @@ def run_lane(
             "--output",
             str(output / "host-api"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane in ("live_export", "live_audio"):
         cmd = [
@@ -312,7 +358,7 @@ def run_lane(
                 "--soundfont",
                 str(soundfont),
             ]
-        return subprocess.run(cmd, cwd=repo_root, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "audio_budget":
         for script in ("test_audio_output_budget.py", "test_audio_repeat_budget.py"):
@@ -330,7 +376,7 @@ def run_lane(
             ]
             result = subprocess.run(
                 cmd,
-                cwd=repo_root,
+                cwd=testcwd,
                 env=base_env,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
@@ -383,7 +429,7 @@ def run_lane(
             "--output",
             str(output / "import-export-probe"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "excerpts":
         cmd = [
@@ -396,7 +442,7 @@ def run_lane(
             "--output",
             str(output / "excerpts"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "assets":
         font = (
@@ -418,7 +464,7 @@ def run_lane(
             "--output",
             str(output / "assets"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "archives":
         cmd = [
@@ -436,7 +482,7 @@ def run_lane(
             "--output",
             str(output / "archives"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "native_edit":
         cmd = [
@@ -449,7 +495,7 @@ def run_lane(
             "--output",
             str(output / "native-edit"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "linked_tie":
         cmd = [
@@ -462,7 +508,7 @@ def run_lane(
             "--output",
             str(output / "linked-tie"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "xml_text":
         cmd = [
@@ -475,7 +521,7 @@ def run_lane(
             "--output",
             str(output / "xml-text"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "audio_facade":
         cmd = [
@@ -493,7 +539,7 @@ def run_lane(
             "--output",
             str(output / "audio-facade"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "async_session":
         cmd = [
@@ -509,7 +555,7 @@ def run_lane(
             "--output",
             str(output / "async"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "imports_midi":
         cmd = [
@@ -524,7 +570,7 @@ def run_lane(
             "--output",
             str(output / "imports-midi"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "open_data":
         cmd = [
@@ -539,7 +585,7 @@ def run_lane(
             "--output",
             str(output / "open-data"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "imports_gp":
         gp_env = dict(base_env)
@@ -562,7 +608,7 @@ def run_lane(
             str(engine_source),
             str(repo_root / "tests/integration/test_imports_guitarpro.py"),
         ]
-        return subprocess.run(cmd, env=gp_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=gp_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "tool_schema":
         cmd = [
@@ -573,7 +619,7 @@ def run_lane(
             "--registry-test",
             str(build_dir / f"registry_test{exe_suffix}"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "positions":
         cmd = [
@@ -588,7 +634,7 @@ def run_lane(
             "--output",
             str(output / "positions"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "export_options":
         cmd = [
@@ -603,7 +649,7 @@ def run_lane(
             "--output",
             str(output / "export-options"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "transport":
         cmd = [
@@ -612,7 +658,7 @@ def run_lane(
             str(build_dir / f"engrave-mcp{exe_suffix}"),
             str(output / "transport.json"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "golden":
         golden_dir = repo_root / (
@@ -637,7 +683,7 @@ def run_lane(
             "--output",
             str(output / "golden"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "semantic_check":
         actual_dir = output / "golden/actual"
@@ -651,7 +697,7 @@ def run_lane(
             str(repo_root / "tests/engrave_mcp_testing/check_semantic_dump.py"),
             str(actual_dir),
         ]
-        check_proc = subprocess.run(check_cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
+        check_proc = subprocess.run(check_cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
         check_code = check_proc.returncode
 
         expected_count = 0
@@ -681,7 +727,7 @@ def run_lane(
             str(output / "native-470-oracle"),
             *native_470_args,
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "roundtrip":
         cmd = [
@@ -694,19 +740,19 @@ def run_lane(
             "--output",
             str(output / "roundtrip"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "oracle_harness":
         for test in ("test_oracle_harness.py", "test_cleanup_regressions.py"):
             cmd = [py, str(repo_root / "tests/integration" / test)]
-            result = subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
+            result = subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
             if result.returncode:
                 return result.returncode
         return 0
 
     if lane == "rendered_page":
         cmd1 = [py, str(repo_root / "tests/integration/test_rendered_page.py")]
-        proc1 = subprocess.run(cmd1, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
+        proc1 = subprocess.run(cmd1, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
         if proc1.returncode != 0:
             return proc1.returncode
         cmd2 = [
@@ -721,7 +767,7 @@ def run_lane(
             "--output",
             str(output / "rendered-page"),
         ]
-        return subprocess.run(cmd2, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd2, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "engine_audio":
         audio_args = []
@@ -746,11 +792,9 @@ def run_lane(
             str(output / "audio-cross-platform"),
             *audio_args,
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "upstream_gtest":
-        gtest_cwd = output / "gtest-cwd"
-        gtest_cwd.mkdir(parents=True, exist_ok=True)
         cmd = [
             py,
             str(repo_root / "vendor/engrave/tests/integration/test_upstream_gtest.py"),
@@ -763,7 +807,7 @@ def run_lane(
             "--output",
             str(output / "gtest"),
         ]
-        return subprocess.run(cmd, cwd=gtest_cwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "repeats":
         cmd = [
@@ -778,7 +822,7 @@ def run_lane(
             "--output",
             str(output / "repeats"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "version_info":
         cmd = [
@@ -793,13 +837,13 @@ def run_lane(
             "--output",
             str(output / "version-info"),
         ]
-        return subprocess.run(cmd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     if lane == "mcp_smoke":
         smoke_env = dict(base_env)
         smoke_env["ENGRAVE_MCP_OUTPUT"] = str(output / "smoke")
         cmd = [py, str(repo_root / "tests/integration/test_mcp_smoke.py")]
-        return subprocess.run(cmd, env=smoke_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, cwd=testcwd, env=smoke_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
     sys.stderr.write(f"Unknown lane: {lane}\n")
     return 1
@@ -813,8 +857,8 @@ def main() -> None:
     parser.add_argument(
         "--build-dir",
         type=Path,
-        required=True,
-        help="Directory containing compiled binaries",
+        default=None,
+        help="Directory containing compiled binaries (default: build/release, then platform legacy directory)",
     )
     parser.add_argument(
         "--engine-source",
@@ -840,6 +884,8 @@ def main() -> None:
         required=True,
         help="Output directory for logs and test artifacts",
     )
+    parser.add_argument("-j", "--jobs", type=int, default=min(8, max(2, (os.cpu_count() or 4) // 2)))
+    parser.add_argument("--list-lanes", action="store_true", help="Print the selected schedule without running lanes")
     parser.add_argument("--only", type=str, default=None, help="Comma-separated list of lanes to run")
     parser.add_argument("--tag", type=str, default=None, help="Optional run tag")
     parser.add_argument("--native-470-oracle-archive", type=Path, help="Pinned 4.7.6 oracle tar.gz")
@@ -875,7 +921,9 @@ def main() -> None:
     args = parser.parse_args()
 
     repo_root = REPO_ROOT
-    build_dir = args.build_dir.resolve()
+    if args.jobs < 1:
+        parser.error("--jobs must be at least 1")
+    build_dir = (args.build_dir or discover_build_dir(repo_root)).resolve()
     engine_source = args.engine_source.resolve()
     assets = args.assets.resolve()
     soundfont = args.soundfont.resolve()
@@ -883,9 +931,28 @@ def main() -> None:
 
     exe_suffix = ".exe" if sys.platform == "win32" else ""
 
-    # Pre-flight check 1: expected binaries in build dir
+    selected_lanes = DEFAULT_LANES
+    if args.only is not None:
+        requested = [item.strip() for item in args.only.split(",") if item.strip()]
+        if not requested:
+            sys.stderr.write("Error: --only selects no lanes\n")
+            sys.exit(1)
+        for name in requested:
+            if name not in LANE_NAMES:
+                sys.stderr.write(f"Error: Unknown lane: {name}\n")
+                sys.exit(1)
+        selected_lanes = [lane for lane in LANE_NAMES if lane in requested]
 
-    # Pre-flight check 2: git line endings and no UTF-8 BOM in both checkouts
+    if args.list_lanes:
+        for exclusive in (False, True):
+            for lane in selected_lanes:
+                if (lane in EXCLUSIVE_LANES) != exclusive:
+                    continue
+                phase = "exclusive" if exclusive else "parallel"
+                dependency = " (after golden)" if lane == "semantic_check" and "golden" in selected_lanes else ""
+                print(f"{phase}: {lane}{dependency}")
+        return
+
     manifest = repo_root / "sha256.json"
     if manifest.is_file():
         # A frozen runner has no Git checkout. Verify its archived bytes instead.
@@ -909,19 +976,6 @@ def main() -> None:
         if include_check.returncode:
             raise SystemExit("Error: native include boundary check failed")
     check_preflight_eol(engine_source)
-
-    # Validate --only lanes if requested
-    selected_lanes = DEFAULT_LANES
-    if args.only is not None:
-        requested = [item.strip() for item in args.only.split(",") if item.strip()]
-        if not requested:
-            sys.stderr.write("Error: --only selects no lanes\n")
-            sys.exit(1)
-        for name in requested:
-            if name not in LANE_NAMES:
-                sys.stderr.write(f"Error: Unknown lane: {name}\n")
-                sys.exit(1)
-        selected_lanes = [lane for lane in LANE_NAMES if lane in requested]
 
     native_470_args: list[str] = []
     native_470_requested = (
@@ -1020,18 +1074,7 @@ def main() -> None:
         sys.exit(2)
 
     output.mkdir(parents=True, exist_ok=True)
-    (output / "tmp").mkdir(parents=True, exist_ok=True)
-
-    testcwd = output / "cwd"
-    (testcwd / "vendor").mkdir(parents=True, exist_ok=True)
-    (testcwd / "tests").mkdir(exist_ok=True)
-    setup_link(repo_root / "vendor/engrave/tests/data/inputs", testcwd / "fixtures", output)
-    setup_link(engine_source, testcwd / "vendor/engrave", output)
-
     base_env = os.environ.copy()
-    base_env["TEMP"] = str(output / "tmp")
-    base_env["TMP"] = str(output / "tmp")
-    base_env["TMPDIR"] = str(output / "tmp")
     base_env["ENGRAVE_MCP_BINARY"] = str(build_dir / f"engrave-mcp{exe_suffix}")
     base_env["ENGRAVE_MCP_SOUNDFONT"] = str(soundfont)
     base_env["ENGRAVE_MCP_RESOURCES"] = str(assets)
@@ -1049,7 +1092,7 @@ def main() -> None:
 
     failed_count = 0
     pending_count = 0
-    selected_count = 0
+    selected_count = len(selected_lanes)
     summary_lines = []
 
     if args.only is None:
@@ -1061,12 +1104,19 @@ def main() -> None:
         print(notice, flush=True)
         summary_lines.append(notice)
 
-    for lane in selected_lanes:
-        selected_count += 1
+    def execute(lane):
         log_path = output / f"{lane}.log"
         t0 = time.perf_counter()
         with open(log_path, "wb") as log_file:
             try:
+                testcwd = output / lane / "cwd"
+                (testcwd / "vendor").mkdir(parents=True, exist_ok=True)
+                (testcwd / "tests").mkdir(exist_ok=True)
+                setup_link(repo_root / "vendor/engrave/tests/data/inputs", testcwd / "fixtures", output)
+                setup_link(engine_source, testcwd / "vendor/engrave", output)
+                tmp = output / lane / "tmp"
+                tmp.mkdir(parents=True, exist_ok=True)
+                lane_env = dict(base_env, TEMP=str(tmp), TMP=str(tmp), TMPDIR=str(tmp))
                 code = run_lane(
                     lane=lane,
                     repo_root=repo_root,
@@ -1076,7 +1126,7 @@ def main() -> None:
                     soundfont=soundfont,
                     output=output,
                     testcwd=testcwd,
-                    base_env=base_env,
+                    base_env=lane_env,
                     exe_suffix=exe_suffix,
                     log_file=log_file,
                     native_470_args=native_470_args,
@@ -1085,8 +1135,12 @@ def main() -> None:
                 log_file.write(f"Lane execution failed with exception: {e}\n".encode())
                 code = 1
 
-        elapsed = time.perf_counter() - t0
+        return code, time.perf_counter() - t0
 
+    results = execute_schedule(selected_lanes, args.jobs, execute)
+    for lane in selected_lanes:
+        code, elapsed = results[lane]
+        log_path = output / f"{lane}.log"
         if code == 0:
             status = "PASSED"
         elif lane == "engine_audio" and code == 2:

@@ -35,22 +35,24 @@ pixi run python scripts/prepare.py
 
 ## Development builds
 
-Once configured (via the build scripts or `xmake f`), build targets directly.
-
-Because host targets (`engrave_mcp`, `engrave_mcp_test`, `host_api_test`, `registry_dump`, `registry_check`, etc.) are declared with `set_default(false)` in `engrave_mcp/xmake.lua`, running `pixi run build` (which invokes `xmake build -y`) without arguments builds only default engine targets and will not compile the host server or its tools. Specify host targets explicitly or use the native build script:
+Use `scripts/xbuild.py` for independent profiles. Outputs default to `build/release`, `build/debug`, `build/releasedbg`, and `build/asan`; configuration lives under `.xmake/profiles/<platform>-<arch>-<profile>/`. All profiles share `build/.packages`. Options before the action belong to the wrapper; subsequent arguments go to xmake. `--build-directory` overrides the profile output.
 
 ```powershell
-# Build host binaries and tools directly
-pixi run build engrave_mcp engrave_mcp_test host_api_test registry_dump registry_check
-
-# Build specific engine test targets
-pixi run build engrave_mnx_import_test
+pixi run --locked python scripts/xbuild.py --profile release configure --engrave_tests=y
+pixi run --locked python scripts/xbuild.py --profile release build -j 12 engrave_mcp engrave_mcp_test host_api_test registry_dump registry_check
+pixi run --locked python scripts/xbuild.py --profile debug build -j 12 engrave_mcp
+pixi run --locked python scripts/xbuild.py --profile releasedbg compdb
+pixi run --locked python scripts/xbuild.py --profile asan build -j 12 engrave_mcp
 ```
+
+The wrapper configures automatically on first use; `configure` changes options and `--reconfigure` forces configuration. Host targets use `set_default(false)`, so name them explicitly. Native build scripts retain `build/xmake-windows` and `build/xmake-linux` for release; other profiles default to `build/<profile>`. Windows accepts `-Profile debug`; Linux accepts the profile as its fourth positional argument.
+
+Host rules live in `xmake/rules/*.lua`. The engine entry point `vendor/engrave/xmake/engrave.lua` loads split `environment.lua`, `packages.lua`, `generated.lua`, `tests.lua`, `rules/`, and `targets/` modules.
 
 ## Windows native build
 
 ```powershell
-pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
+pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 12
 ```
 
 The script enters the Visual Studio developer shell, verifies submodule status, validates xmake inputs, configures `build/xmake-windows`, and builds default host targets: `engrave_mcp`, `engrave_mcp_test`, `registry_dump`, `registry_check`, and `host_api_test`.
@@ -58,9 +60,9 @@ The script enters the Visual Studio developer shell, verifies submodule status, 
 To build additional host test targets:
 
 ```powershell
-xmake build live_export_test staging_test
+pixi run --locked python scripts/xbuild.py --build-directory build/xmake-windows build -j 12 live_export_test staging_test
 # On Linux:
-# xmake build publication_test
+# pixi run --locked python scripts/xbuild.py --build-directory build/xmake-linux build -j 8 publication_test
 ```
 
 ### Running the development binary
@@ -86,7 +88,7 @@ An optional third argument selects another engine checkout. The output binary is
 Specific lanes and tests use standalone binaries not built by default:
 
 ```powershell
-xmake build live_export_test staging_test
+pixi run --locked python scripts/xbuild.py --build-directory build/xmake-windows build -j 12 live_export_test staging_test
 ```
 
 - `live_export_test` — direct engine live export oracle
@@ -96,8 +98,8 @@ xmake build live_export_test staging_test
 The golden and semantic check suites also require the engine's `semantic_dump` tool:
 
 ```powershell
-xmake f --engrave_tests=y
-xmake build semantic_dump
+pixi run --locked python scripts/xbuild.py configure --engrave_tests=y
+pixi run --locked python scripts/xbuild.py build -j 12 semantic_dump
 ```
 
 ## Packaging
@@ -128,7 +130,7 @@ pixi run python tests/integration/test_mcp_smoke.py
 pixi run python tests/integration/test_transport.py build/xmake-windows/engrave-mcp.exe
 ```
 
-The acceptance runner and lane catalog are detailed in [validation.md](validation.md). Pass `--build-dir build/xmake-windows` (or the corresponding Linux build directory) when executing lanes.
+The acceptance runner and lane catalog are detailed in [validation.md](validation.md). Use `-j 4` for parallel functional lanes. The runner discovers `build/release` first, then the platform native-script directory; explicit `--build-dir` wins. Timing and mutation lanes run exclusively after functional lanes drain.
 
 ## Layout rules
 
@@ -148,14 +150,20 @@ pixi run lint -- --engine
 pixi run setup-hooks
 ```
 
+`scripts/format.py --backend {auto,clice,clang-format} -j N` selects the C++ formatter. Auto uses clice with a usable binary, root `clice.toml`, and compilation database, otherwise clang-format. `scripts/lint.py --backend {auto,clice,clang-tidy} -j N` selects the C++ linter: auto keeps host checks scoped through clang-tidy; explicit clice checks the entire database, including the engine. Python uses Ruff, Markdown/JSON/YAML use Prettier, and TOML uses Taplo regardless of the C++ backend.
+
+The root `clice.toml` maps profile databases (`build/release`, `build/debug`, `build/releasedbg`, `build/asan`) and excludes dependencies and generated trees. Generate a profile database with `scripts/xbuild.py --profile <profile> compdb`. Keep one root clice project for host and engine.
+
 Formatting and linting rules follow `vendor/engrave/.clang-tidy` and `.clang-format`.
 
-Full engine naming lint is required for all engine changes. Because the engine lint tool only selects translation units present in `compile_commands.json`, the compilation database must be regenerated after enabling engine tests (`--engrave_tests=y`), otherwise test and adapter translation units are omitted from linting:
+Full engine naming lint is required for all engine changes. Because the engine lint tool only selects translation units present in the compilation database, regenerate the profile database after enabling engine tests (`--engrave_tests=y`), otherwise test and adapter translation units are omitted from linting:
 
 ```powershell
-xmake f --engrave_tests=y
-xmake project -k compile_commands
+pixi run --locked python scripts/xbuild.py configure --engrave_tests=y
+pixi run --locked python scripts/xbuild.py compdb
 pixi run lint -- --engine
 ```
+
+Both `scripts/lint.py` and `vendor/engrave/tools/lint.py` automatically select the newest `compile_commands.json` across `build/<profile>/` and the repository root; explicit clice uses the profile mappings in `clice.toml`.
 
 Engine lint runs in parallel across compiled translation units and fails on naming diagnostics or empty selections. The installed pre-commit hook verifies staged changes prior to commit; full naming lint is verified at acceptance.

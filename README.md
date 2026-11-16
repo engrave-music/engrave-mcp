@@ -41,7 +41,7 @@ git submodule update --init
 pixi install --locked
 pixi run python scripts/bootstrap.py --soundfont
 pixi run python scripts/prepare.py
-pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
+pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 12
 ```
 
 Run the protocol smoke test against the build:
@@ -65,6 +65,10 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 
 A packaged build finds its sibling `assets/` directory automatically. Windows
 and Linux build, test and packaging details are in [docs/dev/build.md](docs/dev/build.md).
+
+For independent release, debug, releasedbg, and ASan builds, use `scripts/xbuild.py --profile <profile> build -j 12 engrave_mcp`. Outputs go to `build/<profile>`, configuration to `.xmake/profiles/`, and packages to the shared `build/.packages` store. Native build scripts retain their platform release directories. The root `clice.toml` selects profile compilation databases; formatting and linting support `--backend` and `-j` (see [build.md](docs/dev/build.md)).
+
+`tests/run_lanes.py -j 4` runs functional lanes concurrently, then timing and mutation lanes exclusively. `-j 1` runs sequentially; `--list-lanes` prints the schedule. Supply engine source, assets, SoundFont and output paths as shown in [validation.md](docs/dev/validation.md).
 
 ## The nine tools
 
@@ -157,7 +161,9 @@ and interactive/streaming playback. See [docs/dev/scope.md](docs/dev/scope.md) f
 ```
 engrave_mcp/     MCP transport, tool registry, JSON codecs, live export, publication
 vendor/engrave/  pinned engrave engine (submodule, pinned by commit)
-xmake.lua        host build; includes engine build from vendor/engrave
+xmake.lua        host build; includes split engine build from vendor/engrave/xmake
+xmake/rules/    host cache, sanitizer, linker and CI rules
+clice.toml      shared host/engine editor, formatting and lint configuration
 scripts/         bootstrap, build, packaging dev tools
 tests/           acceptance lane runner, integration tests, support, benchmarks, test data
 docs/dev/        design, tool contract, build, validation, engine fork guide
