@@ -1,10 +1,13 @@
 """Output-link isolation and authenticated golden provenance regressions."""
 
 import hashlib
+import io
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -91,6 +94,79 @@ class CleanupRegressions(unittest.TestCase):
                 side_effect=lambda: golden._engine_golden.verify_input_provenance(root=root),
             ):
                 self.assertEqual(golden.compare_trees(root / "baseline", root / "actual", [], root, "windows"), 1)
+
+    def test_upstream_gtest_is_isolated_from_parallel_lanes(self):
+        self.assertIn("upstream_gtest", run_lanes.DEFAULT_LANES)
+        self.assertIn("upstream_gtest", run_lanes.EXCLUSIVE_LANES)
+
+        barrier = threading.Barrier(2, timeout=2.0)
+        lock = threading.Lock()
+        active: set[str] = set()
+        overlaps: dict[str, set[str]] = {}
+        completion_order: list[str] = []
+
+        def fake_execute(lane: str):
+            with lock:
+                active.add(lane)
+                snapshot = set(active)
+                overlaps.setdefault(lane, set()).update(snapshot)
+                for other in snapshot:
+                    overlaps.setdefault(other, set()).update(snapshot)
+            try:
+                if lane in ("golden", "native_includes"):
+                    barrier.wait()
+                return 0, 0.01
+            finally:
+                with lock:
+                    active.remove(lane)
+                    completion_order.append(lane)
+
+        results = run_lanes.execute_schedule(["golden", "native_includes", "upstream_gtest"], 2, fake_execute)
+        self.assertEqual(
+            {lane: code for lane, (code, _) in results.items()},
+            {"golden": 0, "native_includes": 0, "upstream_gtest": 0},
+        )
+        self.assertEqual(overlaps["golden"], {"golden", "native_includes"})
+        self.assertEqual(overlaps["native_includes"], {"golden", "native_includes"})
+        self.assertEqual(overlaps["upstream_gtest"], {"upstream_gtest"})
+        self.assertEqual(completion_order[-1], "upstream_gtest")
+
+    def test_upstream_gtest_lane_passes_serial_jobs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "out"
+            output.mkdir()
+            recorded = []
+
+            def fake_run(cmd, **kwargs):
+                recorded.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0)
+
+            with patch.object(run_lanes.subprocess, "run", side_effect=fake_run):
+                code = run_lanes.run_lane(
+                    lane="upstream_gtest",
+                    repo_root=REPO_ROOT,
+                    build_dir=root / "build",
+                    engine_source=REPO_ROOT / "vendor/engrave",
+                    assets=root / "assets",
+                    soundfont=root / "soundfont.sf3",
+                    output=output,
+                    testcwd=root / "cwd",
+                    base_env={"PATH": ""},
+                    exe_suffix=".exe" if sys.platform == "win32" else "",
+                    log_file=io.BytesIO(),
+                    native_470_args=[],
+                )
+
+            self.assertEqual(code, 0)
+            self.assertEqual(len(recorded), 1)
+            cmd = recorded[0]
+            self.assertEqual(
+                Path(cmd[1]).resolve(),
+                (REPO_ROOT / "vendor/engrave/tests/integration/test_upstream_gtest.py").resolve(),
+            )
+            jobs_idx = cmd.index("--jobs")
+            self.assertEqual(cmd[jobs_idx + 1], "1")
 
 
 if __name__ == "__main__":

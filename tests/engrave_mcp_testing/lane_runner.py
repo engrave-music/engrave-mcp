@@ -78,7 +78,8 @@ LANE_NAMES = [
 DEFAULT_LANES = [name for name in LANE_NAMES if name not in {"native_470_oracle", *FOCUSED_OPT_IN_LANES}]
 
 
-# live_export includes live_publication_cancel and live_report_delivery children.
+# live_export includes live_publication_cancel and live_report_delivery children;
+# upstream_gtest includes FlatPlaybackStoreTests timing checks (2.5 ms budget).
 # Keep their timing assertions free of contention from every functional lane.
 EXCLUSIVE_LANES = {
     "engine_audio",
@@ -91,6 +92,7 @@ EXCLUSIVE_LANES = {
     "live_export",
     "async_session",
     "xmake_incremental",
+    "upstream_gtest",
 }
 
 
@@ -806,6 +808,8 @@ def run_lane(
             str(engine_source / "src/engraving/tests"),
             "--output",
             str(output / "gtest"),
+            "--jobs",
+            "1",
         ]
         return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
 
