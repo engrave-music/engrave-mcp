@@ -15,8 +15,6 @@
 #include <vector>
 
 #include <glaze/json/generic.hpp>
-#include <glaze/json/read.hpp>
-#include <glaze/json/write.hpp>
 
 namespace music {
 
@@ -185,77 +183,21 @@ bool operator!=(T left, const music::Json &right) {
 } // namespace glz
 
 namespace music {
-namespace json_detail {
-
-// nlohmann rejected trailing content and skipped one leading UTF-8 BOM; glaze
-// needs both behaviours opted in explicitly.
-struct ReadOpts : glz::opts {
-    bool validate_trailing_whitespace = true;
-};
-
-inline std::string_view without_bom(std::string_view text) {
-    if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
-        static_cast<unsigned char>(text[2]) == 0xBF) {
-        text.remove_prefix(3);
-    }
-    return text;
-}
-
-} // namespace json_detail
-
-// Non-throwing parse: the transport classifies errors from the result.
-template <class J = Json>
-std::optional<J> parse_json(std::string_view text) {
-    text = json_detail::without_bom(text);
-    J value{};
-    glz::context context{};
-    if (glz::read<json_detail::ReadOpts{}>(value, text, context)) return std::nullopt;
-    return std::optional<J>(std::move(value));
-}
 
 // UTF-8 validation and repair compatible with the previous wire encoder:
 // one U+FFFD per maximal invalid subsequence.
 bool valid_utf8(std::string_view text);
 std::string replace_invalid_utf8(std::string_view text);
 
-namespace json_detail {
+// Non-throwing parse: the transport classifies errors from the result.
+template <class J = Json>
+std::optional<J> parse_json(std::string_view text);
 
-struct CompactOpts : glz::opts {
-    bool escape_control_characters = true;
-};
-
-template <uint8_t Width>
-struct PrettyOpts : glz::opts {
-    bool prettify = true;
-    char indentation_char = ' ';
-    uint8_t indentation_width = Width;
-    bool escape_control_characters = true;
-};
-
-Json sanitize(const Json &value);
-
-template <class J, class Opts>
-std::string write_with(const J &value) {
-    auto text = glz::write<Opts{}>(value);
-    return text ? std::move(*text) : std::string{};
-}
-
-} // namespace json_detail
+template <>
+std::optional<Json> parse_json<Json>(std::string_view text);
 
 // Serialize with the wire UTF-8 rules; indent < 0 is compact, otherwise that
 // many spaces per level.
-template <class J>
-std::string dump_json(const J &value, int indent = -1) {
-    const Json clean = json_detail::sanitize(value);
-    if (indent < 0) return json_detail::write_with<Json, json_detail::CompactOpts>(clean);
-    switch (indent) {
-        case 0: return json_detail::write_with<Json, json_detail::PrettyOpts<0>>(clean);
-        case 1: return json_detail::write_with<Json, json_detail::PrettyOpts<1>>(clean);
-        case 2: return json_detail::write_with<Json, json_detail::PrettyOpts<2>>(clean);
-        case 3: return json_detail::write_with<Json, json_detail::PrettyOpts<3>>(clean);
-        case 4: return json_detail::write_with<Json, json_detail::PrettyOpts<4>>(clean);
-        default: return json_detail::write_with<Json, json_detail::PrettyOpts<2>>(clean);
-    }
-}
+std::string dump_json(const Json &value, int indent = -1);
 
 } // namespace music

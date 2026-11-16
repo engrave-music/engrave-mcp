@@ -3,7 +3,6 @@
 #include <set>
 #include <stdexcept>
 
-#include "api_json.h"
 #include "host_api.h"
 
 namespace music::api {

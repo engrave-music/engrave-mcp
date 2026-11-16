@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "json.h"
 
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
+
 namespace music {
 
 namespace {
@@ -86,7 +89,21 @@ std::string replace_invalid_utf8(std::string_view text) {
     return out;
 }
 
-namespace json_detail {
+namespace {
+
+// nlohmann rejected trailing content and skipped one leading UTF-8 BOM; glaze
+// needs both behaviours opted in explicitly.
+struct ReadOpts : glz::opts {
+    bool validate_trailing_whitespace = true;
+};
+
+inline std::string_view without_bom(std::string_view text) {
+    if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
+        static_cast<unsigned char>(text[2]) == 0xBF) {
+        text.remove_prefix(3);
+    }
+    return text;
+}
 
 Json sanitize(const Json &value) {
     if (value.is_string()) {
@@ -109,6 +126,46 @@ Json sanitize(const Json &value) {
     return value;
 }
 
-} // namespace json_detail
+struct CompactOpts : glz::opts {
+    bool escape_control_characters = true;
+};
+
+template <uint8_t Width>
+struct PrettyOpts : glz::opts {
+    bool prettify = true;
+    char indentation_char = ' ';
+    uint8_t indentation_width = Width;
+    bool escape_control_characters = true;
+};
+
+template <class J, class Opts>
+std::string write_with(const J &value) {
+    auto text = glz::write<Opts{}>(value);
+    return text ? std::move(*text) : std::string{};
+}
+
+} // namespace
+
+template <>
+std::optional<Json> parse_json<Json>(std::string_view text) {
+    text = without_bom(text);
+    Json value{};
+    glz::context context{};
+    if (glz::read<ReadOpts{}>(value, text, context)) return std::nullopt;
+    return std::optional<Json>(std::move(value));
+}
+
+std::string dump_json(const Json &value, int indent) {
+    const Json clean = sanitize(value);
+    if (indent < 0) return write_with<Json, CompactOpts>(clean);
+    switch (indent) {
+        case 0: return write_with<Json, PrettyOpts<0>>(clean);
+        case 1: return write_with<Json, PrettyOpts<1>>(clean);
+        case 2: return write_with<Json, PrettyOpts<2>>(clean);
+        case 3: return write_with<Json, PrettyOpts<3>>(clean);
+        case 4: return write_with<Json, PrettyOpts<4>>(clean);
+        default: return write_with<Json, PrettyOpts<2>>(clean);
+    }
+}
 
 } // namespace music

@@ -8,7 +8,8 @@
 #include <string_view>
 #include <vector>
 
-#include <engrave/engrave.h>
+#include <engrave/document.h>
+#include <engrave/engine.h>
 
 #include "schema_defs.h"
 
