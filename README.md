@@ -162,7 +162,7 @@ and interactive/streaming playback. See [docs/dev/scope.md](docs/dev/scope.md) f
 engrave_mcp/     MCP transport, tool registry, JSON codecs, live export, publication
 vendor/engrave/  pinned engrave engine (submodule, pinned by commit)
 xmake.lua        host build; includes split engine build from vendor/engrave/xmake
-xmake/rules/    host cache, sanitizer, linker and CI rules
+xmake/rules/    host cache, sanitizer and linker rules
 clice.toml      shared host/engine editor, formatting and lint configuration
 scripts/         bootstrap, build, packaging dev tools
 tests/           acceptance lane runner, integration tests, support, benchmarks, test data

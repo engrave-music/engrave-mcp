@@ -18,6 +18,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+STAMP_VERSION = 2
+
 
 def _find_msvc_bin_dir() -> Path | None:
     compiler = shutil.which("cl")
@@ -49,7 +51,38 @@ def _find_msvc_bin_dir() -> Path | None:
     return candidates[0].parent if candidates else None
 
 
-def main() -> int:
+def resolve_layout(
+    root: Path,
+    profile: str,
+    build_directory: Path | None,
+    arch: str,
+) -> tuple[Path, Path, str, list[str], dict]:
+    build = (root / (build_directory or Path("build") / profile)).resolve()
+    default_build = (root / "build" / profile).resolve()
+    plat = "windows" if os.name == "nt" else "linux"
+    # Xmake appends .xmake/<host>/<arch> to XMAKE_CONFIGDIR itself.
+    config = root / ".xmake" / "profiles" / f"{plat}-{arch}-{profile}"
+    if build != default_build:
+        config /= hashlib.sha256(str(build).encode()).hexdigest()[:12]
+    prefix = root / ".pixi/envs/default"
+    linux_tools: list[str] = []
+    if os.name != "nt":
+        cc = prefix / "bin/x86_64-conda-linux-gnu-cc"
+        cxx = prefix / "bin/x86_64-conda-linux-gnu-c++"
+        if cc.is_file() and cxx.is_file():
+            linux_tools = [f"--cc=gcc@{cc}", f"--cxx=gxx@{cxx}", f"--ld=gxx@{cxx}"]
+    stamp_payload = {
+        "version": STAMP_VERSION,
+        "profile": profile,
+        "build": str(build),
+        "plat": plat,
+        "arch": arch,
+        "compiler_options": linux_tools,
+    }
+    return build, config, plat, linux_tools, stamp_payload
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=("release", "debug", "releasedbg", "asan"), default="release")
     parser.add_argument("--build-directory", type=Path)
@@ -57,14 +90,11 @@ def main() -> int:
     parser.add_argument("--reconfigure", action="store_true", help="Force re-running xmake f before the action")
     parser.add_argument("action", choices=("configure", "build", "run", "compdb"))
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
-    build = (root / (args.build_directory or Path("build") / args.profile)).resolve()
-    plat = "windows" if os.name == "nt" else "linux"
-    # Xmake appends .xmake/<host>/<arch> to XMAKE_CONFIGDIR itself.
-    config = root / ".xmake" / "profiles" / f"{plat}-{args.arch}-{args.profile}"
-    if args.build_directory:
-        config /= hashlib.sha256(str(build).encode()).hexdigest()[:12]
+    build, config, plat, linux_tools, stamp_payload = resolve_layout(
+        root, args.profile, args.build_directory, args.arch
+    )
     env = dict(os.environ, XMAKE_CONFIGDIR=str(config), XMAKE_PKG_LOCALDIR=str(root / "build/.packages"))
     prefix = root / ".pixi/envs/default"
     extra_paths = [prefix / "Library/bin", prefix / "bin"]
@@ -80,10 +110,12 @@ def main() -> int:
         return subprocess.call(["xmake", *command], cwd=root, env=env)
 
     stamp_path = config / ".xbuild-stamp.json"
-    stamp_payload = {"profile": args.profile, "build": str(build), "plat": plat, "arch": args.arch}
+
+    def has_xmake_conf() -> bool:
+        return any(config.rglob("xmake.conf"))
 
     def is_configured() -> bool:
-        if not stamp_path.is_file() or not any(config.rglob("xmake.conf")):
+        if not stamp_path.is_file() or not has_xmake_conf():
             return False
         try:
             return json.loads(stamp_path.read_text(encoding="utf-8")) == stamp_payload
@@ -91,12 +123,21 @@ def main() -> int:
             return False
 
     def configure(extra: list[str]) -> int:
-        options = ["f", "-P", str(root), "-y", "-p", plat, "-a", args.arch, "-m", args.profile, "-o", str(build)]
-        if os.name != "nt":
-            cc = prefix / "bin/x86_64-conda-linux-gnu-cc"
-            cxx = prefix / "bin/x86_64-conda-linux-gnu-c++"
-            if cc.is_file() and cxx.is_file():
-                options += [f"--cc=gcc@{cc}", f"--cxx=gxx@{cxx}", f"--ld=gxx@{cxx}"]
+        options = [
+            "f",
+            "-P",
+            str(root),
+            "-y",
+            "-p",
+            plat,
+            "-a",
+            args.arch,
+            "-m",
+            args.profile,
+            "-o",
+            str(build),
+            *linux_tools,
+        ]
         rc = run(*options, *extra)
         if rc == 0:
             config.mkdir(parents=True, exist_ok=True)
@@ -107,9 +148,11 @@ def main() -> int:
 
     if args.action == "configure":
         return configure(args.arguments)
-    if args.reconfigure or not is_configured():
-        # Reconfigure only when unconfigured, target build directory changed, or asked.
-        result = configure([])
+    configured = is_configured()
+    if args.reconfigure or not configured:
+        # Clear stale cached config (such as early g++@ entries) when migrating an existing config.
+        extra = ["-c"] if not configured and has_xmake_conf() else []
+        result = configure(extra)
         if result:
             return result
     if args.action == "compdb":

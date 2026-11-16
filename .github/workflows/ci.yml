@@ -71,7 +71,8 @@ jobs:
             tests/integration/test_cleanup_regressions.py \
             tests/integration/test_oracle_harness.py \
             tests/integration/test_rendered_page.py \
-            tests/test_engine_gate.py; do
+            tests/test_engine_gate.py \
+            tests/test_xbuild.py; do
             echo "::group::$test"
             "$py" "$test"
             echo "::endgroup::"
@@ -175,8 +176,8 @@ jobs:
           } else {
             $config += @(
               "--cc=gcc@$env_prefix/bin/x86_64-conda-linux-gnu-cc",
-              "--cxx=g++@$env_prefix/bin/x86_64-conda-linux-gnu-c++",
-              "--ld=g++@$env_prefix/bin/x86_64-conda-linux-gnu-c++"
+              "--cxx=gxx@$env_prefix/bin/x86_64-conda-linux-gnu-c++",
+              "--ld=gxx@$env_prefix/bin/x86_64-conda-linux-gnu-c++"
             )
             pixi run --locked xmake @config
           }

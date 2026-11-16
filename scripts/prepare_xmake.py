@@ -95,10 +95,9 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
         "rules/mode.asan.lua",
         "rules/build.ccache.lua",
         "rules/toolchain.lld.lua",
-        "rules/ci.test-output.lua",
     ):
         required_files[f"engine build module {relative}"] = source_root / "xmake" / relative
-    for name in ("mode.asan", "build.ccache", "toolchain.lld", "ci.test-output"):
+    for name in ("mode.asan", "build.ccache", "toolchain.lld"):
         required_files[f"host rule {name}"] = project_root / "xmake/rules" / f"{name}.lua"
     for label, path in required_files.items():
         if not path.is_file():
