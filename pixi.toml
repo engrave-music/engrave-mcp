@@ -16,7 +16,12 @@ prettier = "==3.9.10"
 taplo = "==0.10.0"
 
 [tasks]
-build = "xmake build -y"
+build = "python scripts/xbuild.py build"
+build-release = "python scripts/xbuild.py --profile release build"
+build-debug = "python scripts/xbuild.py --profile debug build"
+build-releasedbg = "python scripts/xbuild.py --profile releasedbg build"
+build-asan = "python scripts/xbuild.py --profile asan build"
+compdb = "python scripts/xbuild.py compdb"
 setup-hooks = "python scripts/setup_hooks.py"
 format = "python scripts/format.py"
 format-check = "python scripts/format.py --check ."

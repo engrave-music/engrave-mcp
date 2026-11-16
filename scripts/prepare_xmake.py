@@ -86,6 +86,20 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
         "native env cairo header": native_root / "include" / "cairo" / "cairo.h",
         "native env zlib header": native_root / "include" / "zlib.h",
     }
+    for relative in (
+        "packages.lua",
+        "generated.lua",
+        "environment.lua",
+        "targets/modules.lua",
+        "targets/engrave.lua",
+        "rules/mode.asan.lua",
+        "rules/build.ccache.lua",
+        "rules/toolchain.lld.lua",
+        "rules/ci.test-output.lua",
+    ):
+        required_files[f"engine build module {relative}"] = source_root / "xmake" / relative
+    for name in ("mode.asan", "build.ccache", "toolchain.lld", "ci.test-output"):
+        required_files[f"host rule {name}"] = project_root / "xmake/rules" / f"{name}.lua"
     for label, path in required_files.items():
         if not path.is_file():
             errors.append(f"missing {label}: {path}")

@@ -70,6 +70,21 @@ target("registry_check")
     end)
 target_end()
 
+target("host_publication")
+    set_kind("static")
+    set_default(false)
+    add_files(path.join(host_dir, "publication.cpp"))
+    if is_plat("windows") then add_syslinks("advapi32", {public = true}) end
+target_end()
+
+target("engrave_mcp_core")
+    set_kind("static")
+    set_default(false)
+    add_deps("document_store", "host_publication")
+    add_packages("glaze")
+    add_files(path.join(host_dir, "api_output.cpp"))
+target_end()
+
 -- The stdio JSON-RPC host and the same host with async test hooks.
 local function add_host_binary(name, basename)
     target(name)
@@ -77,11 +92,14 @@ local function add_host_binary(name, basename)
         set_default(false)
         set_basename(basename)
         add_deps("muse_generated", "tool_registry", "document_store")
-        add_files(path.join(host_dir, "api_output.cpp"))
+        if name == "engrave_mcp_test" then
+            add_files(path.join(host_dir, "api_output.cpp"), path.join(host_dir, "publication.cpp"))
+        else
+            add_deps("engrave_mcp_core")
+        end
         add_files(path.join(host_dir, "async_session.cpp"))
         add_files(path.join(host_dir, "main.cpp"))
         add_files(path.join(host_dir, "mcp_transport.cpp"))
-        add_files(path.join(host_dir, "publication.cpp"))
         add_packages("asio", "glaze")
         if is_plat("windows") then
             add_defines("_WIN32_WINNT=0x0A00")
@@ -112,10 +130,9 @@ target_end()
 target("live_export_test")
     set_kind("binary")
     set_default(false)
-    add_deps("muse_generated", "document_store")
+    add_deps("muse_generated", "engrave_mcp_core")
     add_packages("glaze")
-    add_files(path.join(host_dir, "tests", "live_export_test.cpp"), path.join(host_dir, "api_output.cpp"),
-        path.join(host_dir, "publication.cpp"))
+    add_files(path.join(host_dir, "tests", "live_export_test.cpp"))
     if is_plat("windows") then
         add_files(path.join(host_dir, "utf8.manifest"))
     end
@@ -126,7 +143,8 @@ if is_plat("linux") then
     target("publication_test")
         set_kind("binary")
         set_default(false)
-        add_files(path.join(host_dir, "tests", "publication_test.cpp"), path.join(host_dir, "publication.cpp"))
+        add_deps("host_publication")
+        add_files(path.join(host_dir, "tests", "publication_test.cpp"))
         add_ldflags("-Wl,--wrap=fsync", {force = true})
     target_end()
 end
@@ -135,7 +153,8 @@ end
 target("staging_test")
     set_kind("binary")
     set_default(false)
-    add_files(path.join(host_dir, "tests", "staging_test.cpp"), path.join(host_dir, "publication.cpp"))
+    add_deps("host_publication")
+    add_files(path.join(host_dir, "tests", "staging_test.cpp"))
     if is_plat("windows") then
         add_files(path.join(host_dir, "utf8.manifest"))
         add_syslinks("advapi32")

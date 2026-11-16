@@ -1,9 +1,13 @@
 param(
     [int]$Jobs = 12,
     [string]$BuildDirectory = 'build/xmake-windows',
+    [ValidateSet('release', 'debug', 'releasedbg', 'asan')][string]$Profile = 'release',
     [string[]]$Targets = @('engrave_mcp', 'engrave_mcp_test', 'registry_dump', 'registry_check', 'host_api_test'),
     [string]$EngineSource = ''
 )
+if ($Profile -ne 'release' -and -not $PSBoundParameters.ContainsKey('BuildDirectory')) {
+    $BuildDirectory = "build/$Profile"
+}
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $projectRoot
@@ -25,8 +29,8 @@ try {
     if ($LASTEXITCODE) { throw 'Native source preparation failed' }
     & pixi run --locked python scripts/prepare_xmake.py --check --engine-source $EngineSource
     if ($LASTEXITCODE) { throw 'xmake input validation failed' }
-    & xmake f -P . -y -m release -o $BuildDirectory "--engine_source=$EngineSource"
+    & .pixi/envs/default/python.exe scripts/xbuild.py --profile $Profile --build-directory $BuildDirectory configure "--engine_source=$EngineSource"
     if ($LASTEXITCODE) { throw 'Native configuration failed' }
-    & xmake build -P . -y -j $Jobs @Targets
+    & .pixi/envs/default/python.exe scripts/xbuild.py --profile $Profile --build-directory $BuildDirectory build -j $Jobs @Targets
     if ($LASTEXITCODE) { throw 'Native build failed' }
 } finally { Pop-Location }
