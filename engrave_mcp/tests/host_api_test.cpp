@@ -356,10 +356,28 @@ int main(int argc, char **argv) {
                 "stale OpRef did not identify the operation, applied count, and prefix diff");
         ok(*host, "restore_checkpoint", {{"document", doc}, {"name", "before_stale_opref"}});
         ok(*host, "drop_checkpoint", {{"document", doc}, {"name", "before_stale_opref"}});
+        auto ephemeral_tie = ok(*host, "score_edit",
+                                {{"document", doc},
+                                 {"ops", music::json_array<Json>({Json{{"op", "add_tie"}, {"note", idref(first_note)}},
+                                                                  Json{{"op", "remove"}, {"target", opref(0, 0)}}})}});
+        require(ephemeral_tie.at("ops")[0].at("created").size() == 1 && ephemeral_tie.at("ops")[0].at("created")[0].is_null() &&
+                    ephemeral_tie.at("created").empty() && ephemeral_tie.at("removed").empty(),
+                "in-batch removal did not yield a null created slot");
         auto tie = ok(*host, "score_edit",
                       {{"document", doc}, {"ops", music::json_array<Json>({Json{{"op", "add_tie"}, {"note", idref(first_note)}}})}});
-        require(!tie.at("ops")[0].at("created").empty() && tie.at("ops")[0].at("created")[0].is_null(),
-                "tie did not preserve its null created slot");
+        require(tie.at("ops")[0].at("created").size() == 1 && tie.at("ops")[0].at("created")[0].is_string(),
+                "tie did not return a persisted created ID");
+        const auto tie_id = tie.at("ops")[0].at("created")[0].get<std::string>();
+        auto queried_ties =
+            ok(*host, "score_query", {{"document", doc}, {"mode", "elements"}, {"query", {{"types", music::json_array<Json>({"Tie"})}}}});
+        bool found_tie = false;
+        for (const auto &element : queried_ties.at("elements").get_array()) {
+            if (element.at("id") == tie_id) {
+                found_tie = true;
+                break;
+            }
+        }
+        require(found_tie, "queried ties did not include created tie ID");
         ok(*host, "score_edit",
            {{"document", doc},
             {"ops", music::json_array<Json>({Json{{"op", "add_text"}, {"at", a}, {"style", "staff"}, {"text", "hello"}}})}});
