@@ -910,7 +910,7 @@ def main() -> None:
     parser.add_argument("--host-sha256", help="Required expected producer binary SHA-256")
     parser.add_argument(
         "--native-470-oracle-ssh",
-        help="Physical Linux oracle host (linux-host); oracle paths are remote",
+        help="Physical Linux oracle host (for example, user@<linux-host>); oracle paths are remote",
     )
     parser.add_argument(
         "--native-470-baseline",

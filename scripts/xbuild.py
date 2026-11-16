@@ -10,6 +10,7 @@ Options before the action belong to this runner; subsequent arguments go to xmak
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -62,6 +63,8 @@ def main() -> int:
     plat = "windows" if os.name == "nt" else "linux"
     # Xmake appends .xmake/<host>/<arch> to XMAKE_CONFIGDIR itself.
     config = root / ".xmake" / "profiles" / f"{plat}-{args.arch}-{args.profile}"
+    if args.build_directory:
+        config /= hashlib.sha256(str(build).encode()).hexdigest()[:12]
     env = dict(os.environ, XMAKE_CONFIGDIR=str(config), XMAKE_PKG_LOCALDIR=str(root / "build/.packages"))
     prefix = root / ".pixi/envs/default"
     extra_paths = [prefix / "Library/bin", prefix / "bin"]
@@ -93,7 +96,7 @@ def main() -> int:
             cc = prefix / "bin/x86_64-conda-linux-gnu-cc"
             cxx = prefix / "bin/x86_64-conda-linux-gnu-c++"
             if cc.is_file() and cxx.is_file():
-                options += [f"--cc=gcc@{cc}", f"--cxx=g++@{cxx}", f"--ld=g++@{cxx}"]
+                options += [f"--cc=gcc@{cc}", f"--cxx=gxx@{cxx}", f"--ld=gxx@{cxx}"]
         rc = run(*options, *extra)
         if rc == 0:
             config.mkdir(parents=True, exist_ok=True)

@@ -26,7 +26,7 @@ The fork contains its own standalone xmake build and public C++ boundary:
 
 To update `vendor/engrave` to a newer commit:
 
-1. Validate the engine commit thoroughly in the fork checkout across supported formats and render/audio goldens on both native Windows and Linux (`linux-host`).
+1. Validate the engine commit thoroughly in the fork checkout across supported formats and render/audio goldens on both native Windows and Linux (`ssh user@<linux-host>`).
 2. Push the engine commit to fork `main` first (`git -C vendor/engrave push origin main`). The remote submodule pin must resolve on GitHub before or at the time the host commit is pushed.
 3. Update the gitlink in the host repository:
    ```powershell

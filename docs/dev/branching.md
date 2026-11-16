@@ -11,11 +11,11 @@ Two repositories are involved in development: the host (`engrave-mcp`) and the e
 
 ## Moving work between machines
 
-Windows and physical Linux (`linux-host`) environments exchange commits through GitHub:
+Windows and physical Linux (`ssh user@<linux-host>`) environments exchange commits through GitHub or the lab host's bare remotes (`lab`):
 
-- Topic branches needing cross-platform validation are pushed to `origin`, fetched on the other machine, and deleted on GitHub once merged. Before deleting a remote branch, verify that its commits are fully contained in `main` (for example, GitHub compare reports `ahead_by: 0`). Preserve unmerged work, and preserve the frozen `mcp/*` and `upstream/*` reference branches regardless of merge state.
-- When an engine change is required, push the engine commit to fork `main` before pushing the host commit that pins it, ensuring submodule references resolve on GitHub.
-- Linux (`linux-host`) checkout path is `~/OSS/engrave-mcp`. The host remote uses `git@github.com:Locietta/engrave-mcp.git`.
+- Topic branches needing cross-platform validation are pushed to `origin` (or `lab`), fetched on the other machine, and deleted on the remote once merged. Before deleting a remote branch, verify that its commits are fully contained in `main` (for example, GitHub compare reports `ahead_by: 0`). Preserve unmerged work, and preserve the frozen `mcp/*` and `upstream/*` reference branches regardless of merge state.
+- When an engine change is required, push the engine commit to fork `main` (`origin` / `lab`) before pushing the host commit that pins it, ensuring submodule references resolve.
+- Linux (`user@<linux-host>`) checkout path is `~/engrave/engrave-mcp` (environment loaded with `source ~/engrave/env.sh`); bare mirrors live at `user@<linux-host>:engrave/engrave-mcp.git` (`lab`) and `user@<linux-host>:engrave/engrave.git` (`lab`). The GitHub host remote is `Locietta/engrave-mcp.git`.
 
 ## Engine repository (`vendor/engrave`)
 

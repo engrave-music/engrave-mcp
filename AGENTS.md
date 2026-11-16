@@ -21,10 +21,11 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
   `xmake.lua`, which includes the engine build from `vendor/engrave`; validate Windows
   and Linux.
   Work natively on Windows (PowerShell, `.pixi/envs/default/python.exe`). Linux means the
-  physical host `ssh <linux-host>` (checkout `~/OSS/engrave-mcp`); never use WSL for this project.
-  Both repositories are on GitHub (host: `Locietta/engrave-mcp`); move commits
-  between machines by pushing and fetching branches, never git bundles or copied
-  worktrees (`docs/dev/branching.md`).
+  physical lab host `ssh user@<linux-host>` (checkout `~/engrave/engrave-mcp`, environment
+  `source ~/engrave/env.sh`); never use WSL for this project.
+  Both repositories are on GitHub (host: `Locietta/engrave-mcp`) with bare mirrors under
+  `lab` on `user@<linux-host>`; move commits between machines by pushing and fetching branches,
+  never git bundles or copied worktrees (`docs/dev/branching.md`).
   Current design and rationale: `docs/dev/design.md`; open issues: `docs/dev/defects.md`;
   branch and tag policy: `docs/dev/branching.md`; code style guide: `docs/dev/code-style-guide.md`.
   Keep only `main` as a long-lived branch: merge topic branches and delete them; tag
@@ -37,7 +38,7 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
 - Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
 - Temporary worktrees and review clones go under the ignored `.worktrees/<name>` of the checkout
-  (also on linux-host), never at drive roots, in `$TEMP` or beside the repository. Do not junction or
+  (also on the Linux lab host), never at drive roots, in `$TEMP` or beside the repository. Do not junction or
   symlink into the main checkout: call the main checkout's `.pixi/envs/default/python.exe` by path.
   Remove them when done (`git worktree remove`, then delete the clone directory).
 - Workers are not alone: edit only assigned files and never revert other workers' changes.

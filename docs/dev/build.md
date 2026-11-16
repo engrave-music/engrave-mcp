@@ -10,7 +10,7 @@ Windows:
 - Visual Studio 2022 with the x64 C++ toolchain (MSVC 14.51+).
 - xmake 3.1.1+ (available on `PATH`).
 
-Linux (validated on Linux x86_64, GCC 15.3, C++23):
+Linux (validated on Ubuntu 24.04.5 x86_64 via `ssh user@<linux-host>`, conda GCC 15.3 / Clang 22.1.8, C++23):
 
 - Git and Pixi.
 - Cairo and zlib come from the Pixi environment: the engine build requires them as `pixi::cairo` and `pixi::zlib` (an xmake package manager in `vendor/engrave/xmake/modules`), so no prefix option is needed.
@@ -46,6 +46,16 @@ pixi run --locked python scripts/xbuild.py --profile asan build -j 12 engrave_mc
 ```
 
 The wrapper configures automatically on first use; `configure` changes options and `--reconfigure` forces configuration. Host targets use `set_default(false)`, so name them explicitly. Native build scripts retain `build/xmake-windows` and `build/xmake-linux` for release; other profiles default to `build/<profile>`. Windows accepts `-Profile debug`; Linux accepts the profile as its fourth positional argument.
+
+### Optional C++23 module facade (`--engrave_modules=y`)
+
+Default builds keep `build.ccache` active and compile against public `<engrave/...>` headers (a cached no-op/single-file header consumer rebuild measured **2.511s wall** / **0.641s xmake**, 100% ccache hit). Because xmake disables `build.ccache` whenever a target enables `build.c++.modules`, the engine's C++23 `engrave` module facade (`vendor/engrave/engrave/modules/engrave.cppm`, `export import std;`) is opt-in via `--engrave_modules=y` into a separate `--build-directory`:
+
+```powershell
+pixi run --locked python scripts/xbuild.py --build-directory build/mod-pilot configure --engrave_modules=y
+pixi run --locked python scripts/xbuild.py --build-directory build/mod-pilot build -j 12 engrave_module_test
+build/mod-pilot/engrave_module_test.exe --assets .runtime/assets
+```
 
 Host rules live in `xmake/rules/*.lua`. The engine entry point `vendor/engrave/xmake/engrave.lua` loads split `environment.lua`, `packages.lua`, `generated.lua`, `tests.lua`, `rules/`, and `targets/` modules.
 

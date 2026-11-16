@@ -48,7 +48,7 @@ BINARY_SHA = "f6d9ee1e826e27074cb2a9481987ddbd9318544e9c3586dc16ab534c3fd7fe8a"
 def preflight_oracle(archive: Path, binary: Path, assets: Path) -> Path:
     require(
         sys.platform.startswith("linux"),
-        "the preserved oracle is Linux ELF; execute this lane on physical linux-host",
+        "the preserved oracle is Linux ELF; execute this lane on a physical Linux host",
     )
     require(file_sha(archive) == ARCHIVE_SHA, f"oracle archive SHA-256 mismatch: {archive}")
     binary, assets = binary.resolve(), assets.resolve()
@@ -439,7 +439,7 @@ def main() -> int:
     parser.add_argument("--current-assets", type=Path)
     parser.add_argument(
         "--oracle-ssh",
-        help="Physical Linux oracle host, e.g. linux-host; oracle paths are remote absolute paths",
+        help="Physical Linux oracle host, e.g. user@<linux-host>; oracle paths are remote absolute paths",
     )
     parser.add_argument(
         "--live-edits",
@@ -499,7 +499,7 @@ def main() -> int:
         else:
             require(
                 sys.platform.startswith("linux"),
-                "Linux ELF oracle requires --oracle-ssh <linux-host> --oracle-archive /path/to/oracles/mcp-4.7.6-4.tar.gz "
+                "Linux ELF oracle requires --oracle-ssh user@<linux-host> --oracle-archive /path/to/oracles/mcp-4.7.6-4.tar.gz "
                 "--oracle-executable /path/to/oracles/mcp-4.7.6-4/bin/semantic_dump "
                 "--oracle-assets /path/to/oracles/mcp-4.7.6-4/assets",
             )
