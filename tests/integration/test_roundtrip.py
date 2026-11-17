@@ -18,11 +18,11 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
-from engrave_mcp_testing.mscx import (
+from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_testing.mscx import (
     compare_mscz_xml,
     parse_mscx,
 )
-from engrave_mcp_testing.paths import REPO_ROOT
 from engrave_testing.paths import pixi_env
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client

@@ -659,7 +659,7 @@ LANES = (
         "semantic_check",
         _command(
             sys.executable,
-            _path("repo_root", "tests/engrave_mcp_testing/check_semantic_dump.py"),
+            _path("engine_source", "tests/engrave_testing/check_semantic_dump.py"),
             _path("output", "golden/actual"),
         ),
         binaries=(),
