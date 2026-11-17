@@ -47,15 +47,9 @@ pixi run --locked python scripts/xbuild.py --profile asan build -j 12 engrave_mc
 
 The wrapper configures automatically on first use; `configure` changes options and `--reconfigure` forces configuration. Host targets use `set_default(false)`, so name them explicitly. Native build scripts retain `build/xmake-windows` and `build/xmake-linux` for release; other profiles default to `build/<profile>`. Windows accepts `-Profile debug`; Linux accepts the profile as its fourth positional argument.
 
-### Optional C++23 module facade (`--engrave_modules=y`)
+### C++ modules: postponed
 
-Default builds keep `build.ccache` active and compile against public `<engrave/...>` headers (a cached no-op/single-file header consumer rebuild measured **2.511s wall** / **0.641s xmake**, 100% ccache hit). Because xmake disables `build.ccache` whenever a target enables `build.c++.modules`, the engine's C++23 `engrave` module facade (`vendor/engrave/engrave/modules/engrave.cppm`, `export import std;`) is opt-in via `--engrave_modules=y` into a separate `--build-directory`:
-
-```powershell
-pixi run --locked python scripts/xbuild.py --build-directory build/mod-pilot configure --engrave_modules=y
-pixi run --locked python scripts/xbuild.py --build-directory build/mod-pilot build -j 12 engrave_module_test
-build/mod-pilot/engrave_module_test.exe --assets .runtime/assets
-```
+The build uses headers only. A C++23 module facade that wrapped the public headers was tried (fork `95199efc2b`) and removed: xmake turns the compile cache off for module targets, the facade made incremental builds slower, and wrapping headers leaves the engine as it was. Adopting modules would need the engine restructured for them; that is postponed while header builds stay fast.
 
 Host rules live in `xmake/rules/*.lua`. The engine entry point `vendor/engrave/xmake/engrave.lua` loads split `environment.lua`, `packages.lua`, `generated.lua`, `tests.lua`, `rules/`, and `targets/` modules.
 
