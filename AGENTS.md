@@ -31,12 +31,15 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
   Keep only `main` as a long-lived branch: merge topic branches and delete them; tag
   formal releases instead of keeping phase branches.
 - Avoid rewriting music algorithms; preserve an executable baseline for each refactor.
-  Compare every engine change against the engine gate (`vendor/engrave/tests/gate.py`,
-  wrapped by `tests/engine_gate.py`) and goldens in `vendor/engrave/tests/data/golden`
-  (`tests/engrave_mcp_testing/golden.py`) with the explicit, hash-pinned allow-list
-  (`vendor/engrave/tests/data/golden/allow.json`).
+  Check engine changes against the engine gate (`vendor/engrave/tests/gate.py`, wrapped by
+  `tests/engine_gate.py`): `--quick` per step, the full gate at milestones and engine bumps.
+  The gate compares goldens in `vendor/engrave/tests/data/golden` with the explicit,
+  hash-pinned allow-list (`vendor/engrave/tests/data/golden/allow.json`).
+- Build with `scripts/xbuild.py --profile <release|debug|releasedbg|asan>` into `build/<profile>`;
+  do not create ad hoc build directories, which start without the shared compile cache.
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
-- Working notes and worker transcripts belong in ignored `notes/`; durable decisions in `docs/dev/`.
+- Working notes and worker transcripts belong in ignored `notes/`; gate and lane `--output`
+  directories go under `notes/runs/<name>`; durable decisions in `docs/dev/`.
 - Temporary worktrees and review clones go under the ignored `.worktrees/<name>` of the checkout
   (also on the Linux lab host), never at drive roots, in `$TEMP` or beside the repository. Do not junction or
   symlink into the main checkout: call the main checkout's `.pixi/envs/default/python.exe` by path.
