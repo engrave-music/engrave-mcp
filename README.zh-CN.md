@@ -18,7 +18,7 @@ MuseScore 的乐谱也要能被 Agent 打开并继续编辑。读取器接受 Mu
 - 打开 MSCZ/MSCX、MusicXML/MXL、MIDI、Guitar Pro（GP3–GP7/GPX/PTB）与 MNX。
 - 从引擎模板创建乐谱。
 - 读取大纲，查询元素/小节/段/属性/音轨，查询元素类型与样式目录。
-- 以原子批次执行编辑（23 种操作），并校验严格版本号；批次失败会回滚。
+- 执行编辑批次（23 种操作），并校验严格版本号。每个操作要么完整生效要么不生效；批次在第一个被拒绝的操作处停止，之前的操作保留。需要回滚时使用命名检查点。
 - 从**内存中的实时文档**直接导出乐谱文件、PDF/PNG/SVG 矢量与栅格页面、合成音频
   （WAV/FLAC/Opus/MP3/AAC）与排版位置数据，并保证持久化发布。
 - 运行时热加载字体、替换 SoundFont。
@@ -59,19 +59,22 @@ build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
 打包后的产物会自动查找同级的 `assets/` 目录。Windows 与 Linux 的构建、测试和打包
 细节见[构建指南](docs/dev/build.md)。
 
-## 九个工具
+## 工具
 
-| 工具             | 作用                                                                                           |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| `score_open`     | 从 `path` 或 base64 `data` 打开（可带 `format`、`filename_hint`、`strict_ids`）。              |
-| `score_create`   | 从 `template_id` 或 `template_path` 创建（可带 `title`、`subtitle`、`composer`、`lyricist`）。 |
-| `score_close`    | 关闭文档并释放内存。                                                                           |
-| `score_outline`  | 标题/元数据、声部、小节、拍号调号、页数、版本号。                                              |
-| `score_query`    | `mode`：`elements`、`properties` 或 `audio_tracks`。                                           |
-| `score_describe` | `scope`：`types`、`type`（需带 `type`）或 `styles`。                                           |
-| `score_edit`     | 原子 `ops` 批次，可带 `expected_revision`。                                                    |
-| `score_export`   | `kind`：`score`、`render`、`audio` 或 `positions`。                                            |
-| `runtime_info`   | `action`：`get`、`add_font` 或 `set_soundfonts`。                                              |
+| 工具                 | 作用                                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `score_open`         | 从 `path` 或 base64 `data` 打开（可带 `format`、`filename_hint`、`strict_ids`）。              |
+| `score_create`       | 从 `template_id` 或 `template_path` 创建（可带 `title`、`subtitle`、`composer`、`lyricist`）。 |
+| `score_close`        | 关闭文档并释放内存。                                                                           |
+| `score_outline`      | 标题/元数据、声部、小节、拍号调号、页数、版本号。                                              |
+| `score_query`        | `mode`：`elements`、`properties` 或 `audio_tracks`。                                           |
+| `score_describe`     | `scope`：`types`、`type`（需带 `type`）或 `styles`。                                           |
+| `score_edit`         | 前缀提交的 `ops` 批次，可带 `expected_revision`。                                              |
+| `score_export`       | `kind`：`score`、`render`、`audio` 或 `positions`。                                            |
+| `runtime_info`       | `action`：`get`、`add_font` 或 `set_soundfonts`。                                              |
+| `checkpoint`         | 保存文档的命名内存快照。                                                                       |
+| `restore_checkpoint` | 恢复命名快照，并清除中毒状态。                                                                 |
+| `drop_checkpoint`    | 删除命名快照。                                                                                 |
 
 成功结果带 `ok: true`；失败结果带 `ok: false` 与
 `error: {code, message, ...}`，并设置 MCP 的 `isError` 标志。完整契约见

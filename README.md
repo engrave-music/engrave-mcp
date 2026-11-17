@@ -22,8 +22,9 @@ is available for MuseScore 4.x interop where the score stays inside its document
 - Create a score from an engine template.
 - Read score outlines, query elements/measures/segments/properties/audio tracks,
   and describe element types and style keys.
-- Apply atomic edit batches (23 operations) with strict revisions; a failed
-  batch rolls back.
+- Apply edit batches (23 operations) with strict revisions. Each operation is
+  all-or-nothing; a batch stops at the first rejected operation and keeps the
+  operations before it. Named checkpoints give explicit rollback.
 - Export score files, PDF/PNG/SVG vector and raster pages, synthesized audio
   (WAV/FLAC/Opus/MP3/AAC) and layout position data directly from the **live**
   in-memory document, with durable publication.
@@ -70,19 +71,22 @@ For independent release, debug, releasedbg, and ASan builds, use `scripts/xbuild
 
 `tests/run_lanes.py -j 4` runs functional lanes concurrently, then timing and mutation lanes exclusively. `-j 1` runs sequentially; `--list-lanes` prints the schedule. Supply engine source, assets, SoundFont and output paths as shown in [validation.md](docs/dev/validation.md).
 
-## The nine tools
+## Tools
 
-| Tool             | What it does                                                                                  |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| `score_open`     | Open from `path` or base64 `data` (+ `format`, `filename_hint`, `strict_ids`).                |
-| `score_create`   | Create from `template_id` or `template_path` (+ `title`, `subtitle`, `composer`, `lyricist`). |
-| `score_close`    | Close a document and free its memory.                                                         |
-| `score_outline`  | Title/metadata, parts, measures, signatures, page count, revision.                            |
-| `score_query`    | `mode`: `elements`, `properties`, or `audio_tracks`.                                          |
-| `score_describe` | `scope`: `types`, `type` (with `type`), or `styles`.                                          |
-| `score_edit`     | Atomic `ops` batch with optional `expected_revision`.                                         |
-| `score_export`   | `kind`: `score`, `render`, `audio`, or `positions`.                                           |
-| `runtime_info`   | `action`: `get`, `add_font`, or `set_soundfonts`.                                             |
+| Tool                 | What it does                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------- |
+| `score_open`         | Open from `path` or base64 `data` (+ `format`, `filename_hint`, `strict_ids`).                |
+| `score_create`       | Create from `template_id` or `template_path` (+ `title`, `subtitle`, `composer`, `lyricist`). |
+| `score_close`        | Close a document and free its memory.                                                         |
+| `score_outline`      | Title/metadata, parts, measures, signatures, page count, revision.                            |
+| `score_query`        | `mode`: `elements`, `properties`, or `audio_tracks`.                                          |
+| `score_describe`     | `scope`: `types`, `type` (with `type`), or `styles`.                                          |
+| `score_edit`         | Prefix-commit `ops` batch with optional `expected_revision`.                                  |
+| `score_export`       | `kind`: `score`, `render`, `audio`, or `positions`.                                           |
+| `runtime_info`       | `action`: `get`, `add_font`, or `set_soundfonts`.                                             |
+| `checkpoint`         | Save a named in-memory snapshot of a document.                                                |
+| `restore_checkpoint` | Restore a named snapshot; clears a poisoned document.                                         |
+| `drop_checkpoint`    | Delete a named snapshot.                                                                      |
 
 Every successful result carries `ok: true`. Failures carry
 `ok: false` and `error: {code, message, ...}` and set the MCP `isError` flag.
