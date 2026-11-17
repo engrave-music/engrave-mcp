@@ -10,10 +10,10 @@ The fork is based on upstream MuseScore commit `32f0a26e5b`, with the MuseScore 
 
 The fork contains its own standalone xmake build and public C++ boundary:
 
-- `xmake.lua`, `xmake/engrave.lua` — engine library targets (`engrave` and module libraries), generated version metadata (`engrave_version.h`), and pinned third-party package dependencies under `xmake/packages/`.
+- `xmake.lua`, `xmake/engrave.lua`, `xmake/targets/*.lua` — engine module and library targets (`engrave` is a phony target over `engrave_core` and `engrave_audio`), generated version metadata (`engrave_version.h`), and pinned third-party package dependencies under `xmake/packages/`.
 - `xmake/tests.lua` — opt-in test targets (`--engrave_tests=y`), building the public API, import, playback, and adapter regression suites.
 - `engrave/include/engrave/` — public header interface (`engrave.h`, `engine.h`, `document.h`, `output.h`, `audio.h`, `edit.h`, `query.h`, `export_warning.h`, `error.h`, `version.h`). Host code includes only headers from this directory.
-- `engrave/assets.json` and `tools/install_assets.py` — SHA-256 and byte-size manifest (348 pinned files including fonts, instruments, templates, MPE profiles, and license notices) and standalone installer.
+- `engrave/assets.json` and `tools/install_assets.py` — SHA-256 and byte-size manifest (pinned fonts, instruments, templates, MPE profiles, and license notices) and standalone installer.
 
 ## Hard-fork rules
 
@@ -26,7 +26,7 @@ The fork contains its own standalone xmake build and public C++ boundary:
 
 To update `vendor/engrave` to a newer commit:
 
-1. Validate the engine commit thoroughly in the fork checkout across supported formats and render/audio goldens on both native Windows and Linux (`ssh user@<linux-host>`).
+1. Validate the engine commit with `tests/engine_gate.py --quick` (or `tests/gate.py --quick`) per step, and run the full engine gate, default host lanes, and Linux validation (`ssh user@<linux-host>`) before bumping the pin.
 2. Push the engine commit to fork `main` first (`git -C vendor/engrave push origin main`). The remote submodule pin must resolve on GitHub before or at the time the host commit is pushed.
 3. Update the gitlink in the host repository:
    ```powershell

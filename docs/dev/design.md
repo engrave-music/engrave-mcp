@@ -79,7 +79,7 @@ If a cancelled live export remains blocked on the owner thread, a watchdog timer
 | Engine/tool message text     | Up to 16 MiB             | Not separately bounded (16 MiB response cap)       |
 | Query result items           | 4,096 elements           | Engine query handler (`max_query_results`)         |
 
-The export budget (1 GiB, `ExportLimits::output_bytes`) is enforced during rendering and staging before publication. It represents the cumulative total output size across all files in a multi-file export (`api_output.cpp:406`), not a per-file quota or a hard limit on process virtual memory. Audio exports allocate half the budget (512 MiB) to the encoder intermediate file and half to the staged artifact, plus up to 1 MiB for header-rewrite traffic.
+The export budget (1 GiB, `ExportLimits::output_bytes`) is enforced during rendering and staging before publication. It represents the cumulative total output size across all files in a multi-file export (`api_output.cpp`), not a per-file quota or a hard limit on process virtual memory. Audio exports allocate half the budget (512 MiB) to the encoder intermediate file and half to the staged artifact, plus up to 1 MiB for header-rewrite traffic.
 
 The 16 KiB diagnostic limit (`k_diagnostic_limit` in `api_output.cpp`, and UTF-8 safe truncation in `mcp_transport.cpp`) applies only to export reports and transport-generated diagnostics, not to arbitrary engine or tool messages. Other messages (such as `runtime_info` error details) are not separately bounded and are subject only to the 16 MiB response cap.
 

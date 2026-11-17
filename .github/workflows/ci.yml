@@ -156,9 +156,9 @@ jobs:
           key: ccache-${{ matrix.name }}-${{ github.sha }}
           restore-keys: ccache-${{ matrix.name }}-
 
-      # Same configuration as scripts/build-native.ps1 (Windows) and
-      # scripts/build-native.sh (Linux: pinned Pixi GCC). cairo and zlib come
-      # from the Pixi environment through xmake's pixi:: packages.
+      # Raw release configure into build/ci (without --engrave_tests=y; Linux
+      # uses the pinned Pixi GCC). cairo and zlib come from the Pixi environment
+      # through xmake's pixi:: packages.
       - name: Configure (release)
         id: configure
         run: |

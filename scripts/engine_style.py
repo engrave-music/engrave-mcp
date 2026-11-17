@@ -1,4 +1,4 @@
-"""Compatibility imports for fork-owned file selection."""
+"""Default engine checkout path (`ENGINE_ROOT`) and fork-owned file selection helper."""
 
 import sys
 from pathlib import Path

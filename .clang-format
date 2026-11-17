@@ -55,13 +55,12 @@ BreakConstructorInitializersBeforeComma: false
 AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakBeforeMultilineStrings: false
 ColumnLimit: 140
-# Include settings for Liminal code style:
-# Grouping order:
+# Include grouping order:
 # 1. Own interface header of the current .cpp file
 # 2. Standard C/C++ library headers (<vector>, <string>, <cstdint>, etc.)
-# 3. Third-party and OS/system headers (<nlohmann/json.hpp>, <asio/...>, <cairo.h>, <fluidsynth.h>, <windows.h>, <gtest/...>, etc.)
+# 3. Third-party and OS/system headers (<asio/...>, <engrave/...>, <glaze/...>, <cairo.h>, <fluidsynth.h>, <windows.h>, <gtest/...>, etc.)
 #    Note: From the host's perspective, <engrave/...> is a third-party dependency.
-# 4. Project headers ("dom/note.h", "engraving/...", "global/...", "registry.h", etc.)
+# 4. Project headers ("host_api.h", "api_json_internal.h", "schema_defs.h", etc.)
 
 MainIncludeChar: Any
 IncludeBlocks: Regroup

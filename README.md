@@ -51,7 +51,7 @@ Run the protocol smoke test against the build:
 # The dev build links the Pixi native libraries; put them on PATH first.
 $env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
 
-$env:ENGRAVE_MCP_BINARY   = "$PWD/build/xmake-windows/engrave-mcp.exe"
+$env:ENGRAVE_MCP_BINARY   = "$PWD/build/release/engrave-mcp.exe"
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
 pixi run python tests/integration/test_mcp_smoke.py
@@ -60,16 +60,16 @@ pixi run python tests/integration/test_mcp_smoke.py
 To run the server manually, pass resources explicitly; `--soundfont` is optional:
 
 ```powershell
-build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
+build/release/engrave-mcp.exe --resources .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
 
 A packaged build finds its sibling `assets/` directory automatically. Windows
 and Linux build, test and packaging details are in [docs/dev/build.md](docs/dev/build.md).
 
-For independent release, debug, releasedbg, and ASan builds, use `scripts/xbuild.py --profile <profile> build -j 12 engrave_mcp`. Outputs go to `build/<profile>`, configuration to `.xmake/profiles/`, and packages to the shared `build/.packages` store. Native build scripts retain their platform release directories. The root `clice.toml` selects profile compilation databases; formatting and linting support `--backend` and `-j` (see [build.md](docs/dev/build.md)).
+For development builds across `release`, `debug`, `releasedbg`, and `asan` profiles, use `scripts/xbuild.py --profile <profile> build -j 12 engrave_mcp`. Outputs go to `build/<profile>`, configuration to `.xmake/profiles/`, packages to `build/.packages`, and the shared compile cache to `build/.build_cache`. `scripts/build-native.ps1` and `scripts/build-native.sh` also default to `build/<profile>` and reset `vendor/engrave` via `git submodule update --init`; use them only for clean builds at the pinned engine. The root `clice.toml` selects profile compilation databases; formatting and linting support `--backend` and `-j` (see [build.md](docs/dev/build.md)).
 
-`tests/run_lanes.py -j 4` runs functional lanes concurrently, then timing and mutation lanes exclusively. `-j 1` runs sequentially; `--list-lanes` prints the schedule. Supply engine source, assets, SoundFont and output paths as shown in [validation.md](docs/dev/validation.md).
+`tests/run_lanes.py` builds the targets selected lanes need and runs them (`--no-build` skips the build, `--profile` selects `build/<profile>`, `--list-lanes` prints the schedule). Supply `--engine-source`, `--assets`, `--soundfont`, and `--output` under `notes/runs/<name>` as shown in [validation.md](docs/dev/validation.md).
 
 ## Tools
 

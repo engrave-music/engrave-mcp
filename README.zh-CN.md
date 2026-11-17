@@ -34,7 +34,7 @@ git submodule update --init
 pixi install --locked
 pixi run python scripts/bootstrap.py --soundfont
 pixi run python scripts/prepare.py
-pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
+pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 12
 ```
 
 对构建产物运行协议冒烟测试：
@@ -43,7 +43,7 @@ pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 8
 # 开发构建依赖 Pixi 原生库，先把它们加入 PATH。
 $env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
 
-$env:ENGRAVE_MCP_BINARY   = "$PWD/build/xmake-windows/engrave-mcp.exe"
+$env:ENGRAVE_MCP_BINARY   = "$PWD/build/release/engrave-mcp.exe"
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
 pixi run python tests/integration/test_mcp_smoke.py
@@ -52,12 +52,16 @@ pixi run python tests/integration/test_mcp_smoke.py
 手动启动服务时显式传入资源目录；`--soundfont` 可选：
 
 ```powershell
-build/xmake-windows/engrave-mcp.exe --resources .runtime/assets `
+build/release/engrave-mcp.exe --resources .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
 
 打包后的产物会自动查找同级的 `assets/` 目录。Windows 与 Linux 的构建、测试和打包
 细节见[构建指南](docs/dev/build.md)。
+
+日常在 `release`、`debug`、`releasedbg` 和 `asan` 配置下开发构建时，使用 `scripts/xbuild.py --profile <profile> build -j 12 engrave_mcp`。构建产物输出到 `build/<profile>`，配置存放在 `.xmake/profiles/`，包缓存共享在 `build/.packages`，编译缓存共享在 `build/.build_cache`。`scripts/build-native.ps1` 与 `scripts/build-native.sh` 同样默认输出到 `build/<profile>`，并会运行 `git submodule update --init` 重置 `vendor/engrave`；仅在固定引擎提交上做干净构建时使用它们。根目录 `clice.toml` 选择各配置的编译数据库，格式化与静态检查支持 `--backend` 和 `-j`（详见[构建指南](docs/dev/build.md)）。
+
+`tests/run_lanes.py` 会先构建所选测试道需要的目标再执行（`--no-build` 跳过构建，`--profile` 选择 `build/<profile>`，`--list-lanes` 打印调度列表）。按[验证测试道与规范](docs/dev/validation.md)传入 `--engine-source`、`--assets`、`--soundfont`，并将 `--output` 指向 `notes/runs/<name>`。
 
 ## 工具
 

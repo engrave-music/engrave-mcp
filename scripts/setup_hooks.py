@@ -34,7 +34,7 @@ def main():
         print(f"error: {src_dir} not found", file=sys.stderr)
         return 1
 
-    hooks = [f for f in os.listdir(src_dir) if not f.startswith(".") and f != "engine-pre-commit"]
+    hooks = [f for f in os.listdir(src_dir) if not f.startswith(".")]
     if not hooks:
         print("No hooks to install.")
         return 0
