@@ -8,10 +8,7 @@
 # There is deliberately no vendor/engrave/clice.toml. clice treats a
 # directory holding its own clice.toml as an isolated nested project, so an
 # engine-level file would take every engine translation unit out of this
-# project's database, index, lint and format runs.
-#
-# `index` is recognized by clice 0.1.0+; clice 1.0+ also supports
-# `skip_function_body` and `background_index` if upgraded later.
+# project's database, index, lint and format runs. Requires clice 1.0+.
 
 # scripts/build-native.* and scripts/xbuild.py default to build/release;
 # the other configurations are for debugging and sanitizer work.
@@ -34,7 +31,7 @@ patterns = [
   ".upstream/**",
   ".worktrees/**",
 ]
-index = false
+background_index = false
 lint = false
 format = false
 
