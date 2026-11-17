@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,8 +27,6 @@ class CleanupRegressions(unittest.TestCase):
             for engine in engines:
                 (engine / "tests/data").mkdir(parents=True)
                 (engine / "tests/data/sentinel").write_text(engine.name)
-            # Exercise main's workspace setup twice with the same --output.
-            # Stop immediately after setup, before starting any lane subprocess.
             for engine in engines:
                 argv = [
                     "run_lanes",
@@ -95,10 +94,7 @@ class CleanupRegressions(unittest.TestCase):
             ):
                 self.assertEqual(golden.compare_trees(root / "baseline", root / "actual", [], root, "windows"), 1)
 
-    def test_upstream_gtest_is_isolated_from_parallel_lanes(self):
-        self.assertIn("upstream_gtest", run_lanes.DEFAULT_LANES)
-        self.assertIn("upstream_gtest", run_lanes.EXCLUSIVE_LANES)
-
+    def test_parallel_lanes_precede_exclusive_and_semantic_follows_golden(self):
         barrier = threading.Barrier(2, timeout=2.0)
         lock = threading.Lock()
         active: set[str] = set()
@@ -115,23 +111,68 @@ class CleanupRegressions(unittest.TestCase):
             try:
                 if lane in ("golden", "native_includes"):
                     barrier.wait()
-                return 0, 0.01
+                return (7 if lane == "golden" else 0), 0.01
             finally:
                 with lock:
                     active.remove(lane)
                     completion_order.append(lane)
 
-        results = run_lanes.execute_schedule(["golden", "native_includes", "upstream_gtest"], 2, fake_execute)
+        results = run_lanes.execute_schedule(
+            ["golden", "native_includes", "semantic_check", "archives"], 2, fake_execute
+        )
         self.assertEqual(
             {lane: code for lane, (code, _) in results.items()},
-            {"golden": 0, "native_includes": 0, "upstream_gtest": 0},
+            {"golden": 7, "native_includes": 0, "semantic_check": 0, "archives": 0},
         )
-        self.assertEqual(overlaps["golden"], {"golden", "native_includes"})
-        self.assertEqual(overlaps["native_includes"], {"golden", "native_includes"})
-        self.assertEqual(overlaps["upstream_gtest"], {"upstream_gtest"})
-        self.assertEqual(completion_order[-1], "upstream_gtest")
+        self.assertIn("native_includes", overlaps["golden"])
+        self.assertNotIn("golden", overlaps["semantic_check"])
+        self.assertEqual(overlaps["archives"], {"archives"})
+        self.assertLess(completion_order.index("golden"), completion_order.index("semantic_check"))
+        self.assertEqual(completion_order[-1], "archives")
 
-    def test_upstream_gtest_lane_passes_serial_jobs(self):
+    def test_selected_schedule_and_binary_requirements(self):
+        argv = [
+            "run_lanes",
+            "--engine-source",
+            "engine",
+            "--assets",
+            "assets",
+            "--soundfont",
+            "font",
+            "--output",
+            "output",
+            "--list-lanes",
+            "--only",
+            "archives,semantic_check,golden,native_includes",
+        ]
+        output = io.StringIO()
+        with patch.object(sys, "argv", argv), redirect_stdout(output):
+            run_lanes.main()
+        self.assertEqual(
+            output.getvalue().splitlines(),
+            [
+                "parallel: native_includes",
+                "parallel: golden",
+                "parallel: semantic_check (after golden)",
+                "exclusive: archives",
+            ],
+        )
+        self.assertEqual(
+            run_lanes.required_binaries(
+                ["native_includes", "host_api", "tool_schema", "archives", "audio_budget", "golden", "semantic_check"]
+            ),
+            {
+                "host_api_test",
+                "registry_dump",
+                "registry_test",
+                "archive_test",
+                "engrave-mcp",
+                "engrave-mcp-test",
+                "semantic_dump",
+            },
+        )
+
+    def test_audio_budget_stops_after_first_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             output = root / "out"
@@ -140,11 +181,11 @@ class CleanupRegressions(unittest.TestCase):
 
             def fake_run(cmd, **kwargs):
                 recorded.append(cmd)
-                return subprocess.CompletedProcess(cmd, 0)
+                return subprocess.CompletedProcess(cmd, 13)
 
             with patch.object(run_lanes.subprocess, "run", side_effect=fake_run):
                 code = run_lanes.run_lane(
-                    lane="upstream_gtest",
+                    lane="audio_budget",
                     repo_root=REPO_ROOT,
                     build_dir=root / "build",
                     engine_source=REPO_ROOT / "vendor/engrave",
@@ -158,15 +199,69 @@ class CleanupRegressions(unittest.TestCase):
                     native_470_args=[],
                 )
 
-            self.assertEqual(code, 0)
+            self.assertEqual(code, 13)
             self.assertEqual(len(recorded), 1)
-            cmd = recorded[0]
             self.assertEqual(
-                Path(cmd[1]).resolve(),
-                (REPO_ROOT / "vendor/engrave/tests/integration/test_upstream_gtest.py").resolve(),
+                Path(recorded[0][1]).resolve(),
+                (REPO_ROOT / "tests/integration/test_audio_output_budget.py").resolve(),
             )
-            jobs_idx = cmd.index("--jobs")
-            self.assertEqual(cmd[jobs_idx + 1], "1")
+
+    def test_removed_lane_names_are_rejected(self):
+        for lane in ("score_edit", "score_audio", "score_positions", "excerpts", "assets", "upstream_gtest"):
+            with self.subTest(lane=lane):
+                argv = [
+                    "run_lanes",
+                    "--engine-source",
+                    "engine",
+                    "--assets",
+                    "assets",
+                    "--soundfont",
+                    "font",
+                    "--output",
+                    "output",
+                    "--only",
+                    lane,
+                ]
+                errors = io.StringIO()
+                with patch.object(sys, "argv", argv), redirect_stderr(errors), self.assertRaises(SystemExit) as stopped:
+                    run_lanes.main()
+                self.assertEqual(stopped.exception.code, 1)
+                self.assertEqual(errors.getvalue(), f"Error: Unknown lane: {lane}\n")
+
+    def test_semantic_coverage_and_checker_failure_are_both_enforced(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            platform = "windows" if sys.platform == "win32" else "linux"
+            expected = root / "repo/vendor/engrave/tests/data/golden" / platform / "one"
+            actual = root / "out/golden/actual/one"
+            for fixture in (expected, actual):
+                fixture.mkdir(parents=True)
+                (fixture / "score.mscx").write_text("score")
+                (fixture / "semantic.json").write_text("{}")
+
+            def check(exit_code):
+                log = io.BytesIO()
+                result = subprocess.CompletedProcess([], exit_code)
+                with patch.object(run_lanes.subprocess, "run", return_value=result):
+                    code = run_lanes.run_lane(
+                        lane="semantic_check",
+                        repo_root=root / "repo",
+                        build_dir=root / "build",
+                        engine_source=root / "engine",
+                        assets=root / "assets",
+                        soundfont=root / "font",
+                        output=root / "out",
+                        testcwd=root / "cwd",
+                        base_env={},
+                        exe_suffix="",
+                        log_file=log,
+                        native_470_args=[],
+                    )
+                return code, log.getvalue().decode()
+
+            self.assertEqual(check(17), (17, "semantic coverage: 1 of 1 baseline fixtures\n"))
+            (actual / "semantic.json").unlink()
+            self.assertEqual(check(0), (1, "semantic coverage: 0 of 1 baseline fixtures\n"))
 
 
 if __name__ == "__main__":

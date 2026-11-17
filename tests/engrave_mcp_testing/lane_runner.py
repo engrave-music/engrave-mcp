@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Unified acceptance test lane runner for engrave-mcp.
-
-Builds an isolated working directory and runs the current acceptance lanes.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -15,87 +10,16 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from pathlib import Path
 
 from engrave_testing.paths import pixi_env
 
 from engrave_mcp_testing.paths import REPO_ROOT
 
-FOCUSED_DEFAULT_LANES = ["native_includes", "native_inputs", "windows_manifest"]
 BUILD_PROFILES = ("release", "debug", "releasedbg", "asan")
-FOCUSED_OPT_IN_LANES = [
-    "output_schema_boundaries",
-    "document_stress",
-    "live_dense_cancel",
-    "live_queued_cancel",
-    "native_470_conversion_cancel",
-    "native_470_serialization_cancel",
-    "transport_wakeup",
-    "xmake_incremental",
-]
-
-LANE_NAMES = [
-    *FOCUSED_DEFAULT_LANES,
-    *FOCUSED_OPT_IN_LANES,
-    "host_api",
-    "live_export",
-    "live_audio",
-    "audio_budget",
-    "runtime_assets",
-    "score_edit",
-    "score_audio",
-    "score_positions",
-    "import_export_probe",
-    "excerpts",
-    "assets",
-    "archives",
-    "native_edit",
-    "linked_tie",
-    "xml_text",
-    "audio_facade",
-    "async_session",
-    "imports_midi",
-    "open_data",
-    "imports_gp",
-    "tool_schema",
-    "positions",
-    "export_options",
-    "transport",
-    "golden",
-    "semantic_check",
-    "native_470_oracle",
-    "roundtrip",
-    "oracle_harness",
-    "rendered_page",
-    "engine_audio",
-    "upstream_gtest",
-    "repeats",
-    "version_info",
-    "mcp_smoke",
-]
-
-# The 4.7.6 oracle is a preserved Linux-only input and must be explicitly
-# selected with its pinned archive, executable and assets.
-DEFAULT_LANES = [name for name in LANE_NAMES if name not in {"native_470_oracle", *FOCUSED_OPT_IN_LANES}]
-
-
-# live_export includes live_publication_cancel and live_report_delivery children;
-# upstream_gtest includes FlatPlaybackStoreTests timing checks (2.5 ms budget).
-# Keep their timing assertions free of contention from every functional lane.
-EXCLUSIVE_LANES = {
-    "engine_audio",
-    "live_dense_cancel",
-    "live_queued_cancel",
-    "live_audio",
-    "transport_wakeup",
-    "archives",
-    "document_stress",
-    "live_export",
-    "async_session",
-    "xmake_incremental",
-    "upstream_gtest",
-}
 
 
 def execute_schedule(lanes, jobs, execute):
@@ -108,7 +32,9 @@ def execute_schedule(lanes, jobs, execute):
                 for lane in pending[:]:
                     if len(running) >= workers:
                         break
-                    if lane == "semantic_check" and "golden" in lanes and "golden" not in results:
+                    if any(
+                        dependency in lanes and dependency not in results for dependency in LANES_BY_NAME[lane].after
+                    ):
                         continue
                     running[pool.submit(execute, lane)] = lane
                     pending.remove(lane)
@@ -130,36 +56,7 @@ def build_profile(repo_root: Path, build_dir: Path, fallback: str) -> str:
 
 
 def required_binaries(lanes: list[str]) -> set[str]:
-    requirements = {
-        "native_includes": [],
-        "windows_manifest": ["engrave-mcp", "engrave-mcp-test", "engrave_output_test"]
-        if sys.platform == "win32"
-        else [],
-        "native_470_conversion_cancel": ["engrave-mcp-test"],
-        "native_470_serialization_cancel": ["engrave-mcp-test"],
-        "xmake_incremental": ["engrave-mcp", "registry_dump"],
-        "host_api": ["host_api_test"],
-        "live_export": ["live_export_test", "engrave-mcp-test"],
-        "live_audio": ["engrave-mcp", "engrave-mcp-test"],
-        "audio_budget": ["engrave-mcp-test"],
-        "runtime_assets": ["engrave-mcp-test"],
-        "score_edit": ["score_edit_test"],
-        "score_audio": ["score_audio_test"],
-        "score_positions": ["score_positions_test"],
-        "import_export_probe": ["import_export_probe"],
-        "excerpts": ["excerpts_test"],
-        "assets": ["assets_test"],
-        "archives": ["archive_test", "engrave-mcp"],
-        "async_session": ["engrave-mcp-test"],
-        "golden": ["engrave-mcp", "semantic_dump"],
-        "semantic_check": [],
-        "oracle_harness": [],
-        "native_470_oracle": [],
-        "upstream_gtest": ["engraving_playback_tests", "mpe_tests"],
-        "engine_audio": ["engine_audio_probe", "engrave-mcp"],
-        "tool_schema": ["registry_dump", "registry_test"],
-    }
-    return {binary for lane in lanes for binary in requirements.get(lane, ["engrave-mcp"])}
+    return {binary for lane in lanes for binary in LANES_BY_NAME[lane].binaries}
 
 
 def build_required_binaries(repo_root: Path, build_dir: Path, profile: str, binaries: set[str]) -> None:
@@ -302,6 +199,539 @@ def setup_link(target: Path, link: Path, output: Path) -> None:
         os.symlink(str(target), str(link), target_is_directory=True)
 
 
+@dataclass(frozen=True)
+class LaneContext:
+    repo_root: Path
+    build_dir: Path
+    engine_source: Path
+    assets: Path
+    soundfont: Path
+    output: Path
+    testcwd: Path
+    exe_suffix: str
+    native_470_args: list[str]
+
+
+@dataclass(frozen=True)
+class Command:
+    argv: list[str]
+    cwd: Path
+    env: dict[str, str]
+
+
+type Argument = str | Callable[[LaneContext], str | list[str]]
+type Builder = Callable[[LaneContext], list[Command]]
+type Finish = Callable[[LaneContext, object, int], int]
+
+
+@dataclass(frozen=True)
+class Lane:
+    name: str
+    build: Builder
+    binaries: tuple[str, ...] = ("engrave-mcp",)
+    default: bool = True
+    exclusive: bool = False
+    after: tuple[str, ...] = ()
+    finish: Finish | None = None
+
+
+def _path(attribute: str, *parts: str) -> Argument:
+    return lambda context: str(getattr(context, attribute).joinpath(*parts))
+
+
+def _binary(name: str) -> Argument:
+    return lambda context: str(context.build_dir / f"{name}{context.exe_suffix}")
+
+
+def _arguments(context: LaneContext, arguments: tuple[Argument, ...]) -> list[str]:
+    result = []
+    for argument in arguments:
+        value = argument(context) if callable(argument) else argument
+        result.extend(value if isinstance(value, list) else [value])
+    return result
+
+
+def _command(
+    *arguments: Argument,
+    cwd: str = "testcwd",
+    env: dict[str, Argument] | None = None,
+) -> Builder:
+    def build(context: LaneContext) -> list[Command]:
+        extra_env = {key: _arguments(context, (value,))[0] for key, value in (env or {}).items()}
+        return [Command(_arguments(context, arguments), getattr(context, cwd), extra_env)]
+
+    return build
+
+
+def _script(name: str, *arguments: Argument, **options) -> Builder:
+    return _command(sys.executable, _path("repo_root", "tests/integration", f"test_{name}.py"), *arguments, **options)
+
+
+def _host(
+    name: str,
+    output: str,
+    *,
+    binary: str = "engrave-mcp",
+    soundfont: bool = False,
+    upstream: bool = False,
+    before_soundfont: tuple[Argument, ...] = (),
+    extra: tuple[Argument, ...] = (),
+) -> Builder:
+    arguments: list[Argument] = ["--binary", _binary(binary), "--resources", _path("assets"), *before_soundfont]
+    if soundfont:
+        arguments += ["--soundfont", _path("soundfont")]
+    if upstream:
+        arguments += ["--upstream", _path("engine_source")]
+    arguments += [*extra, "--output", _path("output", output)]
+    return _script(name, *arguments)
+
+
+def _sequence(*builders: Builder) -> Builder:
+    return lambda context: [command for build in builders for command in build(context)]
+
+
+def _retarget_code() -> str:
+    # These scripts resolve fixture paths from REPO_ROOT, which must use the lane's linked engine.
+    return (
+        "import runpy, sys; from pathlib import Path; "
+        "test_root = Path(sys.argv.pop(1)).resolve(); "
+        "script = Path(sys.argv.pop(1)).resolve(); "
+        "sys.argv[0] = str(script); "
+        "module = runpy.run_path(str(script), run_name='__main__retargeted'); "
+        "main = module['main']; "
+        "main.__globals__['REPO_ROOT'] = test_root; "
+        "res = main(); "
+        "sys.exit(res if isinstance(res, int) else 0)"
+    )
+
+
+def _retargeted(name: str, *arguments: Argument) -> Builder:
+    return _command(
+        sys.executable,
+        "-c",
+        _retarget_code(),
+        _path("testcwd"),
+        _path("repo_root", "tests/integration", f"test_{name}.py"),
+        *arguments,
+    )
+
+
+def _cancel_score(context: LaneContext) -> str:
+    from engrave_mcp_testing.cancel_score import generate_cancel_score
+
+    score = context.output / "live_dense_cancel/dense.musicxml"
+    score.parent.mkdir(parents=True, exist_ok=True)
+    generate_cancel_score(score)
+    return str(score)
+
+
+def _test_binary_hash(context: LaneContext) -> str:
+    return hashlib.sha256((context.build_dir / f"engrave-mcp-test{context.exe_suffix}").read_bytes()).hexdigest()
+
+
+def _golden_dir(context: LaneContext) -> str:
+    platform = "windows" if sys.platform == "win32" else "linux"
+    return str(context.repo_root / "vendor/engrave/tests/data/golden" / platform)
+
+
+def _semantic_result(context: LaneContext, log_file, check_code: int) -> int:
+    def count(directory: Path) -> int:
+        if not directory.is_dir():
+            return 0
+        return sum(
+            child.is_dir() and (child / "score.mscx").is_file() and (child / "semantic.json").is_file()
+            for child in directory.iterdir()
+        )
+
+    expected_count = count(Path(_golden_dir(context)))
+    actual_count = count(context.output / "golden/actual")
+    log_file.write(f"semantic coverage: {actual_count} of {expected_count} baseline fixtures\n".encode("utf-8"))
+    log_file.flush()
+    if expected_count == 0 or actual_count != expected_count:
+        return 1
+    return check_code
+
+
+def _deferred_audio(context: LaneContext) -> list[str]:
+    return ["--defer-dense-performance"] if os.environ.get("ENGRAVE_DEFER_DENSE_PERFORMANCE") == "1" else []
+
+
+def _native_470_arguments(context: LaneContext) -> list[str]:
+    return context.native_470_args
+
+
+GP_CODE = (
+    "import asyncio, os, runpy, sys; from pathlib import Path; "
+    "engine = Path(sys.argv.pop(1)).resolve(); "
+    "script = Path(sys.argv.pop(1)).resolve(); "
+    "sys.argv[0] = str(script); "
+    "module = runpy.run_path(str(script), run_name='__main__gp'); "
+    "main = module['main']; "
+    "main.__globals__['FIXTURES'] = engine / 'src/importexport/guitarpro/tests/data'; "
+    "res = asyncio.run(asyncio.wait_for(main(), timeout=600)); "
+    "sys.exit(res if isinstance(res, int) else 0)"
+)
+
+
+LANES = (
+    Lane("native_includes", _script("native_includes"), binaries=()),
+    Lane("native_inputs", _script("native_inputs", "--output", _path("output", "native_inputs"))),
+    Lane(
+        "windows_manifest",
+        _script("windows_manifest", "--build-dir", _path("build_dir")),
+        binaries=("engrave-mcp", "engrave-mcp-test", "engrave_output_test") if sys.platform == "win32" else (),
+    ),
+    Lane(
+        "output_schema_boundaries",
+        _script(
+            "output_schema_boundaries",
+            "--binary",
+            _binary("engrave-mcp"),
+            "--output",
+            _path("output", "output_schema_boundaries"),
+            "--resources",
+            _path("assets"),
+            "--soundfont",
+            _path("soundfont"),
+        ),
+        default=False,
+    ),
+    Lane(
+        "document_stress",
+        _script("document_stress", env={"ENGRAVE_MCP_STRESS_OUTPUT": _path("output", "document_stress")}),
+        default=False,
+        exclusive=True,
+    ),
+    Lane(
+        "live_dense_cancel",
+        _script(
+            "live_dense_cancel",
+            "--binary",
+            _binary("engrave-mcp"),
+            "--output",
+            _path("output", "live_dense_cancel"),
+            "--resources",
+            _path("assets"),
+            "--soundfont",
+            _path("soundfont"),
+            "--score",
+            _cancel_score,
+            "--delay-ms",
+            "10",
+        ),
+        default=False,
+        exclusive=True,
+    ),
+    Lane(
+        "live_queued_cancel",
+        _script(
+            "live_queued_cancel",
+            "--binary",
+            _binary("engrave-mcp"),
+            "--output",
+            _path("output", "live_queued_cancel"),
+            "--resources",
+            _path("assets"),
+            "--soundfont",
+            _path("soundfont"),
+        ),
+        default=False,
+        exclusive=True,
+    ),
+    Lane(
+        "native_470_conversion_cancel",
+        _script(
+            "native_470_conversion_cancel",
+            "--binary",
+            _binary("engrave-mcp-test"),
+            "--output",
+            _path("output", "native_470_conversion_cancel"),
+            "--host-sha256",
+            _test_binary_hash,
+            "--resources",
+            _path("assets"),
+        ),
+        binaries=("engrave-mcp-test",),
+        default=False,
+    ),
+    Lane(
+        "native_470_serialization_cancel",
+        _script(
+            "native_470_serialization_cancel",
+            "--binary",
+            _binary("engrave-mcp-test"),
+            "--output",
+            _path("output", "native_470_serialization_cancel"),
+            "--resources",
+            _path("assets"),
+        ),
+        binaries=("engrave-mcp-test",),
+        default=False,
+    ),
+    Lane(
+        "transport_wakeup",
+        _script(
+            "transport_wakeup",
+            "--binary",
+            _binary("engrave-mcp"),
+            "--output",
+            _path("output", "transport_wakeup"),
+            "--resources",
+            _path("assets"),
+        ),
+        default=False,
+        exclusive=True,
+    ),
+    Lane(
+        "xmake_incremental",
+        _script(
+            "xmake_incremental",
+            "--binary",
+            _binary("engrave-mcp"),
+            "--output",
+            _path("output", "xmake_incremental"),
+            "--assets",
+            _path("assets"),
+            cwd="repo_root",
+        ),
+        binaries=("engrave-mcp", "registry_dump"),
+        default=False,
+        exclusive=True,
+    ),
+    Lane(
+        "host_api",
+        _host(
+            "host_api",
+            "host-api",
+            binary="host_api_test",
+            soundfont=True,
+            extra=("--replacement-soundfont", _path("repo_root", "vendor/engrave/tests/data/engine_audio/sine.sf2")),
+        ),
+        binaries=("host_api_test",),
+    ),
+    # Cancellation and delivery deadlines require isolation from other lanes.
+    Lane(
+        "live_export",
+        _script(
+            "live_export",
+            "--binary",
+            _binary("engrave-mcp-test"),
+            "--resources",
+            _path("assets"),
+            "--output",
+            _path("output", "live_export"),
+            "--direct-binary",
+            _binary("live_export_test"),
+            "--soundfont",
+            _path("soundfont"),
+        ),
+        binaries=("live_export_test", "engrave-mcp-test"),
+        exclusive=True,
+    ),
+    Lane(
+        "live_audio",
+        _script(
+            "live_audio",
+            "--binary",
+            _binary("engrave-mcp"),
+            "--resources",
+            _path("assets"),
+            "--output",
+            _path("output", "live_audio"),
+            "--test-binary",
+            _binary("engrave-mcp-test"),
+            "--soundfont",
+            _path("soundfont"),
+        ),
+        binaries=("engrave-mcp", "engrave-mcp-test"),
+        exclusive=True,
+    ),
+    Lane(
+        "audio_budget",
+        _sequence(
+            _host("audio_output_budget", "test_audio_output_budget", binary="engrave-mcp-test", soundfont=True),
+            _host("audio_repeat_budget", "test_audio_repeat_budget", binary="engrave-mcp-test", soundfont=True),
+        ),
+        binaries=("engrave-mcp-test",),
+    ),
+    Lane(
+        "runtime_assets",
+        _host("runtime_assets_mcp", "runtime-assets", binary="engrave-mcp-test", soundfont=True),
+        binaries=("engrave-mcp-test",),
+    ),
+    Lane(
+        "import_export_probe",
+        _script(
+            "import_export_probe",
+            "--binary",
+            _binary("import_export_probe"),
+            "--assets",
+            _path("assets"),
+            "--input",
+            _path("repo_root", "vendor/engrave/tests/data/inputs/evening.musicxml"),
+            "--output",
+            _path("output", "import-export-probe"),
+        ),
+        binaries=("import_export_probe",),
+    ),
+    Lane(
+        "archives",
+        _retargeted(
+            "archives",
+            "--binary",
+            _binary("archive_test"),
+            "--server",
+            _binary("engrave-mcp"),
+            "--resources",
+            _path("assets"),
+            "--output",
+            _path("output", "archives"),
+        ),
+        binaries=("archive_test", "engrave-mcp"),
+        exclusive=True,
+    ),
+    Lane("native_edit", _host("native_edit", "native-edit")),
+    Lane("linked_tie", _host("linked_tie", "linked-tie")),
+    Lane("xml_text", _host("xml_text", "xml-text")),
+    Lane(
+        "audio_facade",
+        _retargeted(
+            "audio_facade",
+            "--binary",
+            _binary("engrave-mcp"),
+            "--resources",
+            _path("assets"),
+            "--soundfont",
+            _path("soundfont"),
+            "--output",
+            _path("output", "audio-facade"),
+        ),
+    ),
+    Lane(
+        "async_session",
+        _host("async_session", "async", binary="engrave-mcp-test", soundfont=True, before_soundfont=("--test-hooks",)),
+        binaries=("engrave-mcp-test",),
+        exclusive=True,
+    ),
+    Lane("imports_midi", _host("imports_midi", "imports-midi", upstream=True)),
+    Lane("open_data", _host("open_data", "open-data", upstream=True)),
+    Lane(
+        "imports_gp",
+        _command(
+            sys.executable,
+            "-c",
+            GP_CODE,
+            _path("engine_source"),
+            _path("repo_root", "tests/integration/test_imports_guitarpro.py"),
+            env={"ENGRAVE_MCP_OUTPUT": _path("output", "imports-guitarpro")},
+        ),
+    ),
+    Lane(
+        "tool_schema",
+        _script("tool_schema", "--dump", _binary("registry_dump"), "--registry-test", _binary("registry_test")),
+        binaries=("registry_dump", "registry_test"),
+    ),
+    Lane("positions", _host("positions", "positions", upstream=True)),
+    Lane("export_options", _host("export_options", "export-options", soundfont=True)),
+    Lane("transport", _script("transport", _binary("engrave-mcp"), _path("output", "transport.json"))),
+    Lane(
+        "golden",
+        _command(
+            sys.executable,
+            _path("repo_root", "tests/engrave_mcp_testing/golden.py"),
+            "compare",
+            "--binary",
+            _binary("engrave-mcp"),
+            "--resources",
+            _path("assets"),
+            "--soundfont",
+            _path("soundfont"),
+            "--golden",
+            _golden_dir,
+            "--allow",
+            _path("repo_root", "vendor/engrave/tests/data/golden/allow.json"),
+            "--output",
+            _path("output", "golden"),
+        ),
+        binaries=("engrave-mcp", "semantic_dump"),
+    ),
+    Lane(
+        "semantic_check",
+        _command(
+            sys.executable,
+            _path("repo_root", "tests/engrave_mcp_testing/check_semantic_dump.py"),
+            _path("output", "golden/actual"),
+        ),
+        binaries=(),
+        after=("golden",),
+        finish=_semantic_result,
+    ),
+    # The preserved 4.7.6 oracle requires pinned Linux-only inputs.
+    Lane(
+        "native_470_oracle",
+        _script("native_470_oracle", "--output", _path("output", "native-470-oracle"), _native_470_arguments),
+        binaries=(),
+        default=False,
+    ),
+    Lane("roundtrip", _host("roundtrip", "roundtrip")),
+    Lane(
+        "oracle_harness",
+        _sequence(_script("oracle_harness"), _script("cleanup_regressions")),
+        binaries=(),
+    ),
+    Lane(
+        "rendered_page",
+        _sequence(
+            _script("rendered_page"),
+            _command(
+                sys.executable,
+                _path("repo_root", "tests/engrave_mcp_testing/check_rendered_page.py"),
+                "--binary",
+                _binary("engrave-mcp"),
+                "--resources",
+                _path("assets"),
+                "--soundfont",
+                _path("soundfont"),
+                "--output",
+                _path("output", "rendered-page"),
+            ),
+        ),
+    ),
+    Lane(
+        "engine_audio",
+        _script(
+            "engine_audio",
+            "--bin-dir",
+            _path("build_dir"),
+            "--binary",
+            _binary("engrave-mcp"),
+            "--resources",
+            _path("assets"),
+            "--soundfont",
+            _path("soundfont"),
+            "--engine-source",
+            _path("engine_source"),
+            "--output",
+            _path("output", "engine-audio"),
+            "--cross-platform-captures",
+            _path("output", "audio-cross-platform"),
+            _deferred_audio,
+        ),
+        binaries=("engine_audio_probe", "engrave-mcp"),
+        exclusive=True,
+    ),
+    Lane("repeats", _host("repeats", "repeats", upstream=True)),
+    Lane("version_info", _host("version_info", "version-info", upstream=True)),
+    Lane("mcp_smoke", _script("mcp_smoke", env={"ENGRAVE_MCP_OUTPUT": _path("output", "smoke")})),
+)
+
+LANES_BY_NAME = {lane.name: lane for lane in LANES}
+LANE_NAMES = list(LANES_BY_NAME)
+DEFAULT_LANES = [lane.name for lane in LANES if lane.default]
+FOCUSED_OPT_IN_LANES = [lane.name for lane in LANES if not lane.default and lane.name != "native_470_oracle"]
+EXCLUSIVE_LANES = {lane.name for lane in LANES if lane.exclusive}
+
+
 def run_lane(
     lane: str,
     repo_root: Path,
@@ -316,578 +746,22 @@ def run_lane(
     log_file,
     native_470_args: list[str],
 ) -> int:
-    py = sys.executable
-
-    if lane in FOCUSED_DEFAULT_LANES + FOCUSED_OPT_IN_LANES:
-        cmd = [py, str(repo_root / "tests/integration" / f"test_{lane}.py")]
-        focused_env = dict(base_env)
-        if lane == "document_stress":
-            focused_env["ENGRAVE_MCP_STRESS_OUTPUT"] = str(output / lane)
-        elif lane == "native_inputs":
-            cmd += ["--output", str(output / lane)]
-        elif lane == "windows_manifest":
-            cmd += ["--build-dir", str(build_dir)]
-        elif lane not in ("native_includes", "windows_manifest"):
-            test_binary = "engrave-mcp-test" if lane.startswith("native_470_") else "engrave-mcp"
-            cmd += ["--binary", str(build_dir / f"{test_binary}{exe_suffix}"), "--output", str(output / lane)]
-            if lane == "native_470_conversion_cancel":
-                cmd += [
-                    "--host-sha256",
-                    hashlib.sha256((build_dir / f"{test_binary}{exe_suffix}").read_bytes()).hexdigest(),
-                ]
-            cmd += ["--assets" if lane == "xmake_incremental" else "--resources", str(assets)]
-            if lane in ("live_dense_cancel", "live_queued_cancel", "output_schema_boundaries"):
-                cmd += ["--soundfont", str(soundfont)]
-            if lane == "live_dense_cancel":
-                from engrave_mcp_testing.cancel_score import generate_cancel_score
-
-                score = output / lane / "dense.musicxml"
-                score.parent.mkdir(parents=True, exist_ok=True)
-                generate_cancel_score(score)
-                cmd += ["--score", str(score), "--delay-ms", "10"]
-        lane_cwd = repo_root if lane == "xmake_incremental" else testcwd
-        return subprocess.run(cmd, cwd=lane_cwd, env=focused_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    retarget_code = (
-        "import runpy, sys; from pathlib import Path; "
-        "test_root = Path(sys.argv.pop(1)).resolve(); "
-        "script = Path(sys.argv.pop(1)).resolve(); "
-        "sys.argv[0] = str(script); "
-        "module = runpy.run_path(str(script), run_name='__main__retargeted'); "
-        "main = module['main']; "
-        "main.__globals__['REPO_ROOT'] = test_root; "
-        "res = main(); "
-        "sys.exit(res if isinstance(res, int) else 0)"
+    spec = LANES_BY_NAME.get(lane)
+    if spec is None:
+        sys.stderr.write(f"Unknown lane: {lane}\n")
+        return 1
+    context = LaneContext(
+        repo_root, build_dir, engine_source, assets, soundfont, output, testcwd, exe_suffix, native_470_args
     )
-
-    if lane == "host_api":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_host_api.py"),
-            "--binary",
-            str(build_dir / f"host_api_test{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--soundfont",
-            str(soundfont),
-            "--replacement-soundfont",
-            str(repo_root / "vendor/engrave/tests/data/engine_audio/sine.sf2"),
-            "--output",
-            str(output / "host-api"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane in ("live_export", "live_audio"):
-        cmd = [
-            py,
-            str(repo_root / ("tests/integration/test_" + lane + ".py")),
-            "--binary",
-            str(build_dir / f"{'engrave-mcp-test' if lane == 'live_export' else 'engrave-mcp'}{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--output",
-            str(output / lane),
-        ]
-        if lane == "live_export":
-            cmd += ["--direct-binary", str(build_dir / f"live_export_test{exe_suffix}"), "--soundfont", str(soundfont)]
-        else:
-            cmd += [
-                "--test-binary",
-                str(build_dir / f"engrave-mcp-test{exe_suffix}"),
-                "--soundfont",
-                str(soundfont),
-            ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "audio_budget":
-        for script in ("test_audio_output_budget.py", "test_audio_repeat_budget.py"):
-            cmd = [
-                py,
-                str(repo_root / "tests/integration" / script),
-                "--binary",
-                str(build_dir / f"engrave-mcp-test{exe_suffix}"),
-                "--resources",
-                str(assets),
-                "--soundfont",
-                str(soundfont),
-                "--output",
-                str(output / script.removesuffix(".py")),
-            ]
-            result = subprocess.run(
-                cmd,
-                cwd=testcwd,
-                env=base_env,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-            ).returncode
-            if result:
-                return result
-        return 0
-
-    if lane == "runtime_assets":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_runtime_assets_mcp.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp-test{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--soundfont",
-            str(soundfont),
-            "--output",
-            str(output / "runtime-assets"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "score_edit":
-        cmd = [str(build_dir / f"score_edit_test{exe_suffix}"), str(assets)]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "score_audio":
-        cmd = [
-            str(build_dir / f"score_audio_test{exe_suffix}"),
-            str(assets),
-            str(engine_source),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "score_positions":
-        cmd = [str(build_dir / f"score_positions_test{exe_suffix}"), str(assets)]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "import_export_probe":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_import_export_probe.py"),
-            "--binary",
-            str(build_dir / f"import_export_probe{exe_suffix}"),
-            "--assets",
-            str(assets),
-            "--input",
-            str(repo_root / "vendor/engrave/tests/data/inputs/evening.musicxml"),
-            "--output",
-            str(output / "import-export-probe"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "excerpts":
-        cmd = [
-            py,
-            str(repo_root / "vendor/engrave/tests/integration/test_excerpts.py"),
-            "--binary",
-            str(build_dir / f"excerpts_test{exe_suffix}"),
-            "--assets",
-            str(assets),
-            "--output",
-            str(output / "excerpts"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "assets":
-        font = (
-            Path("C:/Windows/Fonts/arial.ttf")
-            if sys.platform == "win32"
-            else (pixi_env(repo_root) / "fonts/DejaVuSans.ttf")
-        )
-        cmd = [
-            py,
-            str(repo_root / "vendor/engrave/tests/integration/test_assets.py"),
-            "--binary",
-            str(build_dir / f"assets_test{exe_suffix}"),
-            "--assets",
-            str(assets),
-            "--font",
-            str(font),
-            "--soundfont",
-            str(soundfont),
-            "--output",
-            str(output / "assets"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "archives":
-        cmd = [
-            py,
-            "-c",
-            retarget_code,
-            str(testcwd),
-            str(repo_root / "tests/integration/test_archives.py"),
-            "--binary",
-            str(build_dir / f"archive_test{exe_suffix}"),
-            "--server",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--output",
-            str(output / "archives"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "native_edit":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_native_edit.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--output",
-            str(output / "native-edit"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "linked_tie":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_linked_tie.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--output",
-            str(output / "linked-tie"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "xml_text":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_xml_text.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--output",
-            str(output / "xml-text"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "audio_facade":
-        cmd = [
-            py,
-            "-c",
-            retarget_code,
-            str(testcwd),
-            str(repo_root / "tests/integration/test_audio_facade.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--soundfont",
-            str(soundfont),
-            "--output",
-            str(output / "audio-facade"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "async_session":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_async_session.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp-test{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--test-hooks",
-            "--soundfont",
-            str(soundfont),
-            "--output",
-            str(output / "async"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "imports_midi":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_imports_midi.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--upstream",
-            str(engine_source),
-            "--output",
-            str(output / "imports-midi"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "open_data":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_open_data.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--upstream",
-            str(engine_source),
-            "--output",
-            str(output / "open-data"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "imports_gp":
-        gp_env = dict(base_env)
-        gp_env["ENGRAVE_MCP_OUTPUT"] = str(output / "imports-guitarpro")
-        gp_code = (
-            "import asyncio, os, runpy, sys; from pathlib import Path; "
-            "engine = Path(sys.argv.pop(1)).resolve(); "
-            "script = Path(sys.argv.pop(1)).resolve(); "
-            "sys.argv[0] = str(script); "
-            "module = runpy.run_path(str(script), run_name='__main__gp'); "
-            "main = module['main']; "
-            "main.__globals__['FIXTURES'] = engine / 'src/importexport/guitarpro/tests/data'; "
-            "res = asyncio.run(asyncio.wait_for(main(), timeout=600)); "
-            "sys.exit(res if isinstance(res, int) else 0)"
-        )
-        cmd = [
-            py,
-            "-c",
-            gp_code,
-            str(engine_source),
-            str(repo_root / "tests/integration/test_imports_guitarpro.py"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=gp_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "tool_schema":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_tool_schema.py"),
-            "--dump",
-            str(build_dir / f"registry_dump{exe_suffix}"),
-            "--registry-test",
-            str(build_dir / f"registry_test{exe_suffix}"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "positions":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_positions.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--upstream",
-            str(engine_source),
-            "--output",
-            str(output / "positions"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "export_options":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_export_options.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--soundfont",
-            str(soundfont),
-            "--output",
-            str(output / "export-options"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "transport":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_transport.py"),
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            str(output / "transport.json"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "golden":
-        golden_dir = repo_root / (
-            "vendor/engrave/tests/data/golden/windows"
-            if sys.platform == "win32"
-            else "vendor/engrave/tests/data/golden/linux"
-        )
-        cmd = [
-            py,
-            str(repo_root / "tests/engrave_mcp_testing/golden.py"),
-            "compare",
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--soundfont",
-            str(soundfont),
-            "--golden",
-            str(golden_dir),
-            "--allow",
-            str(repo_root / "vendor/engrave/tests/data/golden/allow.json"),
-            "--output",
-            str(output / "golden"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "semantic_check":
-        actual_dir = output / "golden/actual"
-        golden_dir = repo_root / (
-            "vendor/engrave/tests/data/golden/windows"
-            if sys.platform == "win32"
-            else "vendor/engrave/tests/data/golden/linux"
-        )
-        check_cmd = [
-            py,
-            str(repo_root / "tests/engrave_mcp_testing/check_semantic_dump.py"),
-            str(actual_dir),
-        ]
-        check_proc = subprocess.run(check_cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
-        check_code = check_proc.returncode
-
-        expected_count = 0
-        if golden_dir.is_dir():
-            for p in golden_dir.iterdir():
-                if p.is_dir() and (p / "score.mscx").is_file() and (p / "semantic.json").is_file():
-                    expected_count += 1
-
-        actual_count = 0
-        if actual_dir.is_dir():
-            for p in actual_dir.iterdir():
-                if p.is_dir() and (p / "score.mscx").is_file() and (p / "semantic.json").is_file():
-                    actual_count += 1
-
-        msg = f"semantic coverage: {actual_count} of {expected_count} baseline fixtures\n"
-        log_file.write(msg.encode("utf-8"))
-        log_file.flush()
-        if expected_count == 0 or actual_count != expected_count:
-            return 1
-        return check_code
-
-    if lane == "native_470_oracle":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_native_470_oracle.py"),
-            "--output",
-            str(output / "native-470-oracle"),
-            *native_470_args,
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "roundtrip":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_roundtrip.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--output",
-            str(output / "roundtrip"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "oracle_harness":
-        for test in ("test_oracle_harness.py", "test_cleanup_regressions.py"):
-            cmd = [py, str(repo_root / "tests/integration" / test)]
-            result = subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
-            if result.returncode:
-                return result.returncode
-        return 0
-
-    if lane == "rendered_page":
-        cmd1 = [py, str(repo_root / "tests/integration/test_rendered_page.py")]
-        proc1 = subprocess.run(cmd1, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT)
-        if proc1.returncode != 0:
-            return proc1.returncode
-        cmd2 = [
-            py,
-            str(repo_root / "tests/engrave_mcp_testing/check_rendered_page.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--soundfont",
-            str(soundfont),
-            "--output",
-            str(output / "rendered-page"),
-        ]
-        return subprocess.run(cmd2, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "engine_audio":
-        audio_args = []
-        if os.environ.get("ENGRAVE_DEFER_DENSE_PERFORMANCE") == "1":
-            audio_args.append("--defer-dense-performance")
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_engine_audio.py"),
-            "--bin-dir",
-            str(build_dir),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--soundfont",
-            str(soundfont),
-            "--engine-source",
-            str(engine_source),
-            "--output",
-            str(output / "engine-audio"),
-            "--cross-platform-captures",
-            str(output / "audio-cross-platform"),
-            *audio_args,
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "upstream_gtest":
-        cmd = [
-            py,
-            str(repo_root / "vendor/engrave/tests/integration/test_upstream_gtest.py"),
-            "--bin-dir",
-            str(build_dir),
-            "--assets",
-            str(assets),
-            "--engraving-data",
-            str(engine_source / "src/engraving/tests"),
-            "--output",
-            str(output / "gtest"),
-            "--jobs",
-            "1",
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "repeats":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_repeats.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--upstream",
-            str(engine_source),
-            "--output",
-            str(output / "repeats"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "version_info":
-        cmd = [
-            py,
-            str(repo_root / "tests/integration/test_version_info.py"),
-            "--binary",
-            str(build_dir / f"engrave-mcp{exe_suffix}"),
-            "--resources",
-            str(assets),
-            "--upstream",
-            str(engine_source),
-            "--output",
-            str(output / "version-info"),
-        ]
-        return subprocess.run(cmd, cwd=testcwd, env=base_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    if lane == "mcp_smoke":
-        smoke_env = dict(base_env)
-        smoke_env["ENGRAVE_MCP_OUTPUT"] = str(output / "smoke")
-        cmd = [py, str(repo_root / "tests/integration/test_mcp_smoke.py")]
-        return subprocess.run(cmd, cwd=testcwd, env=smoke_env, stdout=log_file, stderr=subprocess.STDOUT).returncode
-
-    sys.stderr.write(f"Unknown lane: {lane}\n")
-    return 1
+    code = 0
+    for command in spec.build(context):
+        env = dict(base_env, **command.env) if command.env else base_env
+        code = subprocess.run(
+            command.argv, cwd=command.cwd, env=env, stdout=log_file, stderr=subprocess.STDOUT
+        ).returncode
+        if code:
+            break
+    return spec.finish(context, log_file, code) if spec.finish else code
 
 
 def main() -> None:
@@ -999,7 +873,8 @@ def main() -> None:
                 if (lane in EXCLUSIVE_LANES) != exclusive:
                     continue
                 phase = "exclusive" if exclusive else "parallel"
-                dependency = " (after golden)" if lane == "semantic_check" and "golden" in selected_lanes else ""
+                dependencies = [name for name in LANES_BY_NAME[lane].after if name in selected_lanes]
+                dependency = f" (after {', '.join(dependencies)})" if dependencies else ""
                 print(f"{phase}: {lane}{dependency}")
         return
 
