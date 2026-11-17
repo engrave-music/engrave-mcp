@@ -88,24 +88,11 @@ COMPOSITION_FIXTURE = REPO_ROOT / "vendor/engrave/tests/engrave_testing/composit
 
 
 def find_probe_binary(bin_dir: Path | None) -> Path:
+    binary_name = "engine_audio_probe.exe" if os.name == "nt" else "engine_audio_probe"
     candidates = []
     if bin_dir:
-        candidates.extend(
-            [
-                bin_dir / "engine_audio_probe.exe",
-                bin_dir / "engine_audio_probe",
-            ]
-        )
-    candidates.extend(
-        [
-            REPO_ROOT / "build" / "xmake-windows" / "engine_audio_probe.exe",
-            REPO_ROOT / "build" / "xmake-windows" / "engine_audio_probe",
-            REPO_ROOT / "build" / "xmake-linux" / "engine_audio_probe",
-            REPO_ROOT / "build" / "xmake-linux" / "engine_audio_probe.exe",
-            REPO_ROOT / "build" / "windows" / "engine_audio_probe.exe",
-            REPO_ROOT / "build" / "linux" / "engine_audio_probe",
-        ]
-    )
+        candidates.append(bin_dir / binary_name)
+    candidates.append(REPO_ROOT / "build" / "release" / binary_name)
     for c in candidates:
         if c.is_file():
             return c.resolve()

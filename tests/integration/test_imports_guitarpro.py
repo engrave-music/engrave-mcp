@@ -348,7 +348,8 @@ async def _export(session, document, fmt, path):
 
 async def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    binary = Path(os.environ.get("ENGRAVE_MCP_BINARY", REPO_ROOT / "build/xmake-windows/engrave-mcp.exe"))
+    binary_name = "engrave-mcp.exe" if os.name == "nt" else "engrave-mcp"
+    binary = Path(os.environ.get("ENGRAVE_MCP_BINARY", REPO_ROOT / "build/release" / binary_name))
     resources = Path(os.environ.get("ENGRAVE_MCP_RESOURCES", REPO_ROOT / ".runtime/assets"))
     params = StdioServerParameters(
         command=str(binary),

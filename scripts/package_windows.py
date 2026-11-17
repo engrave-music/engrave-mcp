@@ -179,7 +179,7 @@ def main():
         queue.append(destination)
 
     copy(
-        args.binary or ROOT / "build/xmake-windows/engrave-mcp.exe",
+        args.binary or ROOT / "build/release/engrave-mcp.exe",
         output / "engrave-mcp.exe",
     )
     if not args.no_qt:

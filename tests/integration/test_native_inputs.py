@@ -39,9 +39,7 @@ async def main():
             archive.writestr("score.xml", score)
     binary = os.environ.get(
         "ENGRAVE_MCP_BINARY",
-        str(
-            REPO_ROOT / ("build/xmake-windows/engrave-mcp.exe" if os.name == "nt" else "build/xmake-linux/engrave-mcp")
-        ),
+        str(REPO_ROOT / ("build/release/engrave-mcp.exe" if os.name == "nt" else "build/release/engrave-mcp")),
     )
     resources = os.environ.get("ENGRAVE_MCP_RESOURCES", str(REPO_ROOT / ".runtime/assets"))
     params = StdioServerParameters(command=binary, args=["--resources", resources], env=dict(os.environ))

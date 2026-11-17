@@ -2,12 +2,11 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 jobs="${1:-8}"
-build_directory="${2:-build/xmake-linux}"
 # Third positional argument optionally selects a custom engine checkout.
 # cairo and zlib come from the Pixi environment (pixi::cairo, pixi::zlib).
 engine_source="${3:-$PWD/vendor/engrave}"
 profile="${4:-release}"
-if [[ "$profile" != release && -z "${2:-}" ]]; then build_directory="build/$profile"; fi
+build_directory="${2:-build/$profile}"
 # The pixi environment installs vendor/engrave as an editable package, so the
 # submodule must exist before the first pixi command.
 git submodule update --init --depth 1 -- vendor/engrave

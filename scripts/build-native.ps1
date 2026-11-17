@@ -1,11 +1,11 @@
 param(
     [int]$Jobs = 12,
-    [string]$BuildDirectory = 'build/xmake-windows',
+    [string]$BuildDirectory,
     [ValidateSet('release', 'debug', 'releasedbg', 'asan')][string]$Profile = 'release',
     [string[]]$Targets = @('engrave_mcp', 'engrave_mcp_test', 'registry_dump', 'registry_check', 'host_api_test'),
     [string]$EngineSource = ''
 )
-if ($Profile -ne 'release' -and -not $PSBoundParameters.ContainsKey('BuildDirectory')) {
+if (-not $PSBoundParameters.ContainsKey('BuildDirectory')) {
     $BuildDirectory = "build/$Profile"
 }
 $ErrorActionPreference = 'Stop'

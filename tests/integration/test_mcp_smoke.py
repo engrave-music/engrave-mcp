@@ -31,9 +31,7 @@ async def main():
 
     logging.getLogger("mcp.client.stdio").addHandler(ProtocolLog())
     OUT.mkdir(parents=True, exist_ok=True)
-    default_binary = REPO_ROOT / (
-        "build/xmake-windows/engrave-mcp.exe" if os.name == "nt" else "build/xmake-linux/engrave-mcp"
-    )
+    default_binary = REPO_ROOT / ("build/release/engrave-mcp.exe" if os.name == "nt" else "build/release/engrave-mcp")
     binary = Path(os.environ.get("ENGRAVE_MCP_BINARY", default_binary)).resolve()
     soundfont = Path(
         os.environ.get("ENGRAVE_MCP_SOUNDFONT", REPO_ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3")

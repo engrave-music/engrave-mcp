@@ -366,7 +366,7 @@ def main():
         raise SystemExit("Linux packaging must run on Linux")
 
     output = args.output.resolve()
-    binary = (args.binary or ROOT / "build/xmake-linux/engrave-mcp").resolve()
+    binary = (args.binary or ROOT / "build/release/engrave-mcp").resolve()
     assets = (ROOT / ".runtime/assets").resolve()
 
     if output.is_relative_to(assets):

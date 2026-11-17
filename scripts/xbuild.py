@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Run xmake with independent profile configuration and a shared package store.
-
-Examples: xbuild.py --profile debug build -j 12 engrave_mcp
-          xbuild.py --profile releasedbg compdb
-          xbuild.py --profile asan configure --engrave_tests=y
-Options before the action belong to this runner; subsequent arguments go to xmake.
-"""
+"""Run xmake with per-profile configurations and shared package and compile caches."""
 
 from __future__ import annotations
 
@@ -18,7 +12,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-STAMP_VERSION = 2
+STAMP_VERSION = 3
 
 
 def _find_msvc_bin_dir() -> Path | None:
@@ -78,6 +72,7 @@ def resolve_layout(
         "plat": plat,
         "arch": arch,
         "compiler_options": linux_tools,
+        "default_options": [f"--ccachedir={root / 'build/.build_cache'}", "--engrave_tests=y"],
     }
     return build, config, plat, linux_tools, stamp_payload
 
@@ -123,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
             return False
 
     def configure(extra: list[str]) -> int:
+        supplied_options = {arg.partition("=")[0] for arg in extra if arg.startswith("--")}
+        default_options = [
+            option for option in stamp_payload["default_options"] if option.partition("=")[0] not in supplied_options
+        ]
         options = [
             "f",
             "-P",
@@ -137,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
             "-o",
             str(build),
             *linux_tools,
+            *default_options,
         ]
         rc = run(*options, *extra)
         if rc == 0:

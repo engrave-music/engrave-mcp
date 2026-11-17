@@ -13,7 +13,7 @@ from pathlib import Path
 from engrave_mcp_testing.paths import REPO_ROOT
 from jsonschema import Draft202012Validator
 
-BUILD = REPO_ROOT / ("build/xmake-windows" if os.name == "nt" else "build/xmake-linux")
+BUILD = REPO_ROOT / "build/release"
 SUFFIX = ".exe" if os.name == "nt" else ""
 NAMES = [
     "score_open",

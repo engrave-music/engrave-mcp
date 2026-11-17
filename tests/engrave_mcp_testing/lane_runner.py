@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import runpy
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from engrave_testing.paths import pixi_env
 from engrave_mcp_testing.paths import REPO_ROOT
 
 FOCUSED_DEFAULT_LANES = ["native_includes", "native_inputs", "windows_manifest"]
+BUILD_PROFILES = ("release", "debug", "releasedbg", "asan")
 FOCUSED_OPT_IN_LANES = [
     "output_schema_boundaries",
     "document_stress",
@@ -116,21 +118,23 @@ def execute_schedule(lanes, jobs, execute):
     return results
 
 
-def discover_build_dir(repo_root: Path) -> Path:
-    legacy = "xmake-windows" if sys.platform == "win32" else "xmake-linux"
-    candidates = [repo_root / "build" / name for name in ("release", legacy)]
-    binary = "engrave-mcp.exe" if sys.platform == "win32" else "engrave-mcp"
-    return next((path for path in candidates if (path / binary).is_file()), candidates[0])
+def discover_build_dir(repo_root: Path, profile: str = "release") -> Path:
+    return repo_root / "build" / profile
 
 
-def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str]) -> None:
-    if not build_dir.is_dir():
-        sys.stderr.write(f"Error: build dir does not exist or is not a directory: {build_dir}\n")
-        sys.exit(2)
-    missing = []
+def build_profile(repo_root: Path, build_dir: Path, fallback: str) -> str:
+    return next(
+        (profile for profile in BUILD_PROFILES if build_dir == discover_build_dir(repo_root, profile).resolve()),
+        fallback,
+    )
+
+
+def required_binaries(lanes: list[str]) -> set[str]:
     requirements = {
         "native_includes": [],
-        "windows_manifest": [],
+        "windows_manifest": ["engrave-mcp", "engrave-mcp-test", "engrave_output_test"]
+        if sys.platform == "win32"
+        else [],
         "native_470_conversion_cancel": ["engrave-mcp-test"],
         "native_470_serialization_cancel": ["engrave-mcp-test"],
         "xmake_incremental": ["engrave-mcp", "registry_dump"],
@@ -155,8 +159,41 @@ def check_preflight_binaries(build_dir: Path, exe_suffix: str, lanes: list[str])
         "engine_audio": ["engine_audio_probe", "engrave-mcp"],
         "tool_schema": ["registry_dump", "registry_test"],
     }
-    selected = {binary for lane in lanes for binary in requirements.get(lane, ["engrave-mcp"])}
-    for binary_name in sorted(selected):
+    return {binary for lane in lanes for binary in requirements.get(lane, ["engrave-mcp"])}
+
+
+def build_required_binaries(repo_root: Path, build_dir: Path, profile: str, binaries: set[str]) -> None:
+    if not binaries:
+        return
+    profile = build_profile(repo_root, build_dir, profile)
+    build_options = (
+        [] if build_dir == discover_build_dir(repo_root, profile).resolve() else ["--build-directory", str(build_dir)]
+    )
+    target_names = {"engrave-mcp": "engrave_mcp", "engrave-mcp-test": "engrave_mcp_test"}
+    targets = sorted(target_names.get(binary, binary) for binary in binaries)
+    print(f"Building {', '.join(targets)} in {build_dir} ({profile})", flush=True)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(repo_root / "scripts/xbuild.py"),
+            "--profile",
+            profile,
+            *build_options,
+            "build",
+            *targets,
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode:
+        raise SystemExit(f"Error: target build failed with exit code {result.returncode}")
+
+
+def check_preflight_binaries(build_dir: Path, exe_suffix: str, binaries: set[str]) -> None:
+    if not build_dir.is_dir():
+        sys.stderr.write(f"Error: build dir does not exist or is not a directory: {build_dir}\n")
+        sys.exit(2)
+    missing = []
+    for binary_name in sorted(binaries):
         target = build_dir / f"{binary_name}{exe_suffix}"
         if not target.is_file():
             missing.append(target.name)
@@ -862,7 +899,16 @@ def main() -> None:
         "--build-dir",
         type=Path,
         default=None,
-        help="Directory containing compiled binaries (default: build/release, then platform legacy directory)",
+        help="Directory containing compiled binaries (default: build/<profile>)",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=BUILD_PROFILES,
+        default="release",
+        help="Profile for the default or a custom build directory (default: release)",
+    )
+    parser.add_argument(
+        "--no-build", action="store_true", help="Skip the preflight build; some lanes build as part of their checks"
     )
     parser.add_argument(
         "--engine-source",
@@ -927,7 +973,7 @@ def main() -> None:
     repo_root = REPO_ROOT
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
-    build_dir = (args.build_dir or discover_build_dir(repo_root)).resolve()
+    build_dir = (args.build_dir or discover_build_dir(repo_root, args.profile)).resolve()
     engine_source = args.engine_source.resolve()
     assets = args.assets.resolve()
     soundfont = args.soundfont.resolve()
@@ -1055,8 +1101,6 @@ def main() -> None:
             ]
         if not args.native_470_producer:
             current_dump = build_dir / f"semantic_dump{exe_suffix}"
-            if not current_dump.is_file():
-                parser.error(f"baseline/writer-results current-reader control is missing: {current_dump}")
             native_470_args += [
                 "--current-binary",
                 str(current_dump),
@@ -1064,7 +1108,17 @@ def main() -> None:
                 str(assets),
             ]
 
-    check_preflight_binaries(build_dir, exe_suffix, selected_lanes)
+    binaries = required_binaries(selected_lanes)
+    if "native_470_oracle" in selected_lanes:
+        if not args.native_470_producer:
+            binaries.add("semantic_dump")
+        elif args.host_binary.resolve() == build_dir / f"engrave-mcp{exe_suffix}":
+            binaries.update(("engrave-mcp", "semantic_dump"))
+        elif not args.no_build:
+            parser.error("an external oracle producer requires --no-build")
+    if not args.no_build:
+        build_required_binaries(repo_root, build_dir, args.profile, binaries)
+    check_preflight_binaries(build_dir, exe_suffix, binaries)
 
     if (
         "semantic_check" in selected_lanes
@@ -1085,6 +1139,15 @@ def main() -> None:
     base_env["MUSESCORE_ENGINE_SOURCE"] = str(engine_source)
     base_env["ENGRAVING_TESTS_DATA_ROOT"] = str(engine_source / "src/engraving/tests")
     base_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    if "xmake_incremental" in selected_lanes:
+        # The lane invokes xmake directly after changing source, so it needs the
+        # same configuration and package store as the preflight build.
+        xbuild = runpy.run_path(str(repo_root / "scripts/xbuild.py"))
+        profile = build_profile(repo_root, build_dir, args.profile)
+        arch = "x64" if os.name == "nt" else xbuild["platform"].machine()
+        config = xbuild["resolve_layout"](repo_root, profile, build_dir, arch)[1]
+        base_env["XMAKE_CONFIGDIR"] = str(config)
+        base_env["XMAKE_PKG_LOCALDIR"] = str(repo_root / "build/.packages")
 
     native_env = pixi_env(repo_root)
     for extra in (native_env / "Library/bin", native_env / "bin"):

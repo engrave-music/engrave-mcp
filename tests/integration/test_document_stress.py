@@ -57,10 +57,7 @@ def main():
         command = [
             os.environ.get(
                 "ENGRAVE_MCP_BINARY",
-                str(
-                    REPO_ROOT
-                    / ("build/xmake-windows/engrave-mcp.exe" if os.name == "nt" else "build/xmake-linux/engrave-mcp")
-                ),
+                str(REPO_ROOT / ("build/release/engrave-mcp.exe" if os.name == "nt" else "build/release/engrave-mcp")),
             )
         ]
         if os.environ.get("ENGRAVE_MCP_RESOURCES"):

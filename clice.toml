@@ -13,8 +13,8 @@
 # `index` is recognized by clice 0.1.0+; clice 1.0+ also supports
 # `skip_function_body` and `background_index` if upgraded later.
 
-# `release` is what scripts/build-native.* and CI build; the other three
-# exist for local debugging and sanitizer work.
+# scripts/build-native.* and scripts/xbuild.py default to build/release;
+# the other configurations are for debugging and sanitizer work.
 default_configuration = "release"
 
 # Code that is not ours to format, lint or index: vendored dependencies

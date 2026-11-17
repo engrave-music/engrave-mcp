@@ -55,9 +55,14 @@ class XBuildTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             self.assertIn("-c", calls[0])
             self.assertEqual(calls[0][1], "f")
+            self.assertIn(f"--ccachedir={root / 'build/.build_cache'}", calls[0])
+            self.assertIn("--engrave_tests=y", calls[0])
             self.assertEqual(calls[1][1], "build")
             new_stamp = json.loads((config / ".xbuild-stamp.json").read_text(encoding="utf-8"))
-            self.assertEqual(new_stamp["version"], xbuild.STAMP_VERSION)
+            self.assertEqual(new_stamp["version"], 3)
+            self.assertEqual(
+                new_stamp["default_options"], [f"--ccachedir={root / 'build/.build_cache'}", "--engrave_tests=y"]
+            )
 
             # Second invocation with current stamp skips configure.
             calls.clear()
@@ -70,6 +75,28 @@ class XBuildTests(unittest.TestCase):
             self.assertEqual(rc2, 0)
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[0][1], "build")
+
+    def test_configure_respects_option_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            cases = [
+                (["--ccachedir=custom-cache"], ["--ccachedir=custom-cache", "--engrave_tests=y"]),
+                (["--engrave_tests=n"], [f"--ccachedir={root / 'build/.build_cache'}", "--engrave_tests=n"]),
+                (["--ccachedir", "custom-cache", "--engrave_tests", "n"], ["--ccachedir", "--engrave_tests"]),
+            ]
+            for supplied, expected in cases:
+                with self.subTest(supplied=supplied):
+                    with (
+                        patch.object(xbuild, "__file__", str(root / "scripts/xbuild.py")),
+                        patch.object(xbuild.subprocess, "call", return_value=0) as call,
+                    ):
+                        rc = xbuild.main(["configure", *supplied])
+                    self.assertEqual(rc, 0)
+                    self.assertEqual(call.call_args.args[0][-len(supplied) :], supplied)
+                    options = [
+                        arg for arg in call.call_args.args[0] if arg.startswith(("--ccachedir", "--engrave_tests"))
+                    ]
+                    self.assertCountEqual(options, expected)
 
 
 if __name__ == "__main__":
