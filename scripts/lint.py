@@ -124,59 +124,9 @@ def clice_project_root(path: Path) -> Path | None:
     return None
 
 
-def extension_roots() -> list[Path]:
-    """Directories holding editor extensions, in the order to search them."""
-    roots = []
-    configured = os.environ.get("VSCODE_EXTENSIONS")
-    if configured:
-        roots.append(Path(configured))
-    home = Path.home()
-    for edition in (
-        ".vscode",
-        ".vscode-insiders",
-        ".vscode-server",
-        ".antigravity",
-        ".antigravity-ide",
-        ".cursor",
-        ".windsurf",
-    ):
-        roots.append(home / edition / "extensions")
-    # Portable and Scoop-style installs keep the extension tree inside the
-    # install's data directory; the editor's own executable says where that
-    # install is, which also covers an install on another drive.
-    for editor in ("code", "code-insiders", "codium", "antigravity", "antigravity-ide", "windsurf"):
-        executable = shutil.which(editor)
-        if not executable:
-            continue
-        for ancestor in Path(executable).resolve().parents:
-            roots.append(ancestor / "data" / "extensions")
-            roots += sorted((ancestor / "persist").glob("*/data/extensions"))
-    for variable in ("SCOOP", "SCOOP_GLOBAL"):
-        scoop = os.environ.get(variable)
-        if scoop:
-            for edition in ("vscode", "vscode-insiders", "antigravity", "cursor"):
-                roots.append(Path(scoop) / "persist" / edition / "data" / "extensions")
-    for variable in ("LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)"):
-        base = os.environ.get(variable)
-        if base:
-            roots += sorted((Path(base) / "Programs").glob("*/data/extensions"))
-    return list(dict.fromkeys(roots))
-
-
-def clice_extension_binaries() -> list[Path]:
-    """The clice servers shipped inside editor extensions, newest first."""
-    if sys.platform != "win32":
-        return []
-    found: list[Path] = []
-    for root in extension_roots():
-        if not root.is_dir():
-            continue
-        for pattern in ("clice-io.clice-*/clice/bin/clice.exe", "clice-io.clice-*/clice/bin/clice"):
-            found += [path for path in root.glob(pattern) if path.is_file()]
-    return sorted(found, key=lambda path: path.parent.parent.parent.name, reverse=True)
-
-
 def find_clice() -> Path | None:
+    """A standalone clice: CLICE_BIN, else PATH. clice.toml needs clice 1.0+,
+    newer than the servers editor extensions bundle, so those are not searched."""
     configured = os.environ.get("CLICE_BIN")
     if configured:
         binary = Path(configured).expanduser()
@@ -184,11 +134,7 @@ def find_clice() -> Path | None:
             return binary
         print(f"lint: CLICE_BIN={configured} is not a file", file=sys.stderr)
     on_path = shutil.which("clice")
-    if on_path:
-        return Path(on_path)
-    for binary in clice_extension_binaries():
-        return binary
-    return None
+    return Path(on_path) if on_path else None
 
 
 def declared_databases(workspace: Path) -> list[Path] | None:
@@ -271,7 +217,7 @@ def resolve_backend(args: argparse.Namespace, repo_root: Path) -> tuple[str, Pat
     workspace = clice_project_root(repo_root)
     if binary is None or workspace is None:
         if args.backend == "clice":
-            print("lint: no clice binary and clice.toml above the project; using clang-tidy", file=sys.stderr)
+            print("lint: no clice binary (CLICE_BIN or PATH) or no clice.toml; using clang-tidy", file=sys.stderr)
         return "clang-tidy", None, None
     # clice lint checks every translation unit of the compilation database (both
     # host and engine), so auto keeps host lint runs fast and scoped to tracked
