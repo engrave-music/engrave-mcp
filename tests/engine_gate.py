@@ -3,6 +3,7 @@
 
 Unless --pixi-manifest is given, the gate builds against this project's Pixi
 environment (pixi.lock), the cairo and zlib builds the goldens were made with.
+Unless --ccachedir is given, the gate shares this project's build/.build_cache.
 """
 
 import argparse
@@ -18,10 +19,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--engine-source", type=Path, default=root)
     parser.add_argument("--pixi-manifest", type=Path)
+    parser.add_argument("--ccachedir", type=Path)
     parsed, _ = parser.parse_known_args(args)
     root = parsed.engine_source.resolve()
+    prefix = []
     if parsed.pixi_manifest is None:
-        args = ["--pixi-manifest", str(project / "pixi.toml"), *args]
+        prefix += ["--pixi-manifest", str(project / "pixi.toml")]
+    if parsed.ccachedir is None:
+        prefix += ["--ccachedir", str(project / "build/.build_cache")]
+    args = [*prefix, *args]
     os.environ["PYTHONPATH"] = os.pathsep.join(
         (str(root / "tests"), str(root / "tools"), os.environ.get("PYTHONPATH", ""))
     )
