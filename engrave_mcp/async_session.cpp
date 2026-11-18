@@ -117,16 +117,12 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                                 std::shared_ptr<std::atomic<bool>> running_cancel = {}, bool preserve_completed = false,
                                 std::shared_ptr<RequestExecution> execution = {}) {
         if (closing) throw asio::system_error(asio::error::operation_aborted);
-        {
-            // Never block the session's cancellation/timer loop behind stdout.
-            std::unique_lock admission(publication_gate.mutex, std::try_to_lock);
-            if (admission.owns_lock() && publication_gate.closing) {
-                if (test_hooks_enabled()) {
-                    std::fprintf(stderr, "ADMISSION_REFUSED_CLOSING\n");
-                    std::fflush(stderr);
-                }
-                throw asio::system_error(asio::error::operation_aborted);
+        if (publication_gate.closing.load(std::memory_order_acquire)) {
+            if (test_hooks_enabled()) {
+                std::fprintf(stderr, "ADMISSION_REFUSED_CLOSING\n");
+                std::fflush(stderr);
             }
+            throw asio::system_error(asio::error::operation_aborted);
         }
         if (owner_task && owner_pending >= 64) throw ToolCallError("ResourceLimit", "Engine queue full (limit 64)");
         auto self = shared_from_this();

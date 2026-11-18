@@ -777,11 +777,11 @@ private:
             if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_CLOSING_BARRIER")) {
                 std::fprintf(stderr, "CLOSING_REGISTERED\n");
                 std::fflush(stderr);
+                lock.unlock();
                 while (!std::filesystem::exists(barrier)) {
-                    lock.unlock();
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    lock.lock();
                 }
+                lock.lock();
             }
         }
         {
