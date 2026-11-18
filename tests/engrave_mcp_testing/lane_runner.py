@@ -290,32 +290,6 @@ def _sequence(*builders: Builder) -> Builder:
     return lambda context: [command for build in builders for command in build(context)]
 
 
-def _retarget_code() -> str:
-    # These scripts resolve fixture paths from REPO_ROOT, which must use the lane's linked engine.
-    return (
-        "import runpy, sys; from pathlib import Path; "
-        "test_root = Path(sys.argv.pop(1)).resolve(); "
-        "script = Path(sys.argv.pop(1)).resolve(); "
-        "sys.argv[0] = str(script); "
-        "module = runpy.run_path(str(script), run_name='__main__retargeted'); "
-        "main = module['main']; "
-        "main.__globals__['REPO_ROOT'] = test_root; "
-        "res = main(); "
-        "sys.exit(res if isinstance(res, int) else 0)"
-    )
-
-
-def _retargeted(name: str, *arguments: Argument) -> Builder:
-    return _command(
-        sys.executable,
-        "-c",
-        _retarget_code(),
-        _path("testcwd"),
-        _path("repo_root", "tests/integration", f"test_{name}.py"),
-        *arguments,
-    )
-
-
 def _cancel_score(context: LaneContext) -> str:
     from engrave_mcp_testing.cancel_score import generate_cancel_score
 
@@ -358,19 +332,6 @@ def _deferred_audio(context: LaneContext) -> list[str]:
 
 def _native_470_arguments(context: LaneContext) -> list[str]:
     return context.native_470_args
-
-
-GP_CODE = (
-    "import asyncio, os, runpy, sys; from pathlib import Path; "
-    "engine = Path(sys.argv.pop(1)).resolve(); "
-    "script = Path(sys.argv.pop(1)).resolve(); "
-    "sys.argv[0] = str(script); "
-    "module = runpy.run_path(str(script), run_name='__main__gp'); "
-    "main = module['main']; "
-    "main.__globals__['FIXTURES'] = engine / 'src/importexport/guitarpro/tests/data'; "
-    "res = asyncio.run(asyncio.wait_for(main(), timeout=600)); "
-    "sys.exit(res if isinstance(res, int) else 0)"
-)
 
 
 LANES = (
@@ -445,7 +406,7 @@ LANES = (
             "--binary",
             _binary("engrave-mcp-test"),
             "--output",
-            _path("output", "native_470_conversion_cancel"),
+            _path("output", "native_470_conversion_cancel/run"),
             "--host-sha256",
             _test_binary_hash,
             "--resources",
@@ -461,7 +422,7 @@ LANES = (
             "--binary",
             _binary("engrave-mcp-test"),
             "--output",
-            _path("output", "native_470_serialization_cancel"),
+            _path("output", "native_470_serialization_cancel/run"),
             "--resources",
             _path("assets"),
         ),
@@ -475,7 +436,7 @@ LANES = (
             "--binary",
             _binary("engrave-mcp"),
             "--output",
-            _path("output", "transport_wakeup"),
+            _path("output", "transport_wakeup.json"),
             "--resources",
             _path("assets"),
         ),
@@ -576,7 +537,7 @@ LANES = (
     ),
     Lane(
         "archives",
-        _retargeted(
+        _script(
             "archives",
             "--binary",
             _binary("archive_test"),
@@ -584,6 +545,8 @@ LANES = (
             _binary("engrave-mcp"),
             "--resources",
             _path("assets"),
+            "--upstream",
+            _path("engine_source"),
             "--output",
             _path("output", "archives"),
         ),
@@ -595,17 +558,7 @@ LANES = (
     Lane("xml_text", _host("xml_text", "xml-text")),
     Lane(
         "audio_facade",
-        _retargeted(
-            "audio_facade",
-            "--binary",
-            _binary("engrave-mcp"),
-            "--resources",
-            _path("assets"),
-            "--soundfont",
-            _path("soundfont"),
-            "--output",
-            _path("output", "audio-facade"),
-        ),
+        _host("audio_facade", "audio-facade", soundfont=True, upstream=True),
     ),
     Lane(
         "async_session",
@@ -617,14 +570,7 @@ LANES = (
     Lane("open_data", _host("open_data", "open-data", upstream=True)),
     Lane(
         "imports_gp",
-        _command(
-            sys.executable,
-            "-c",
-            GP_CODE,
-            _path("engine_source"),
-            _path("repo_root", "tests/integration/test_imports_guitarpro.py"),
-            env={"ENGRAVE_MCP_OUTPUT": _path("output", "imports-guitarpro")},
-        ),
+        _host("imports_guitarpro", "imports-guitarpro", upstream=True),
     ),
     Lane(
         "tool_schema",
@@ -787,25 +733,21 @@ def main() -> None:
     parser.add_argument(
         "--engine-source",
         type=Path,
-        required=True,
         help="Path to engine source repository",
     )
     parser.add_argument(
         "--assets",
         type=Path,
-        required=True,
         help="Path to assets-50 resources directory",
     )
     parser.add_argument(
         "--soundfont",
         type=Path,
-        required=True,
         help="Path to FluidR3Mono_GM.sf3 soundfont",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        required=True,
         help="Output directory for logs and test artifacts",
     )
     parser.add_argument("-j", "--jobs", type=int, default=min(8, max(2, (os.cpu_count() or 4) // 2)))
@@ -847,11 +789,6 @@ def main() -> None:
     repo_root = REPO_ROOT
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
-    build_dir = (args.build_dir or discover_build_dir(repo_root, args.profile)).resolve()
-    engine_source = args.engine_source.resolve()
-    assets = args.assets.resolve()
-    soundfont = args.soundfont.resolve()
-    output = args.output.resolve()
 
     exe_suffix = ".exe" if sys.platform == "win32" else ""
 
@@ -877,6 +814,25 @@ def main() -> None:
                 dependency = f" (after {', '.join(dependencies)})" if dependencies else ""
                 print(f"{phase}: {lane}{dependency}")
         return
+
+    missing_args = [
+        flag
+        for flag, value in (
+            ("--engine-source", args.engine_source),
+            ("--assets", args.assets),
+            ("--soundfont", args.soundfont),
+            ("--output", args.output),
+        )
+        if value is None
+    ]
+    if missing_args:
+        parser.error(f"the following arguments are required: {', '.join(missing_args)}")
+
+    build_dir = (args.build_dir or discover_build_dir(repo_root, args.profile)).resolve()
+    engine_source = args.engine_source.resolve()
+    assets = args.assets.resolve()
+    soundfont = args.soundfont.resolve()
+    output = args.output.resolve()
 
     manifest = repo_root / "sha256.json"
     if manifest.is_file():

@@ -7,6 +7,7 @@ Run with:
     python tests/integration/test_imports_guitarpro.py
 """
 
+import argparse
 import asyncio
 import json
 import os
@@ -264,8 +265,8 @@ def _patch_zip_declared_size(path, size):
     path.write_bytes(data)
 
 
-def build_malformed_cases():
-    OUT.mkdir(parents=True, exist_ok=True)
+def build_malformed_cases(fixtures: Path, out: Path):
+    out.mkdir(parents=True, exist_ok=True)
     cases = {}
 
     for lane, name in [
@@ -275,43 +276,43 @@ def build_malformed_cases():
         ("gpx", "sforzato.gpx"),
         ("gp", "sforzato.gp"),
     ]:
-        target = OUT / f"truncated-{lane}.{name.rsplit('.', 1)[1]}"
-        _write_truncated(FIXTURES / name, target, 40)
+        target = out / f"truncated-{lane}.{name.rsplit('.', 1)[1]}"
+        _write_truncated(fixtures / name, target, 40)
         cases[f"truncated-{lane}"] = target
 
-    target = OUT / "truncated-ptb.ptb"
-    _write_truncated(FIXTURES / "ptb-baseline.ptb", target, 12)
+    target = out / "truncated-ptb.ptb"
+    _write_truncated(fixtures / "ptb-baseline.ptb", target, 12)
     cases["truncated-ptb"] = target
 
     # The old ss[l] write indexed a 30-byte stack buffer with an arbitrary
     # length byte. It must now be rejected before that write.
-    target = OUT / "old-header-oob.gp4"
+    target = out / "old-header-oob.gp4"
     target.write_bytes(b"?FIC" + bytes([250]) + b"A" * 30 + b"\0" * 16)
     cases["old-header-oob"] = target
 
     # GPX/BCFZ decompression with a declared length far past the input.
-    target = OUT / "truncated-bcfz.gpx"
+    target = out / "truncated-bcfz.gpx"
     target.write_bytes(b"BCFZ" + struct.pack("<i", 4096) + b"\0" * 16)
     cases["truncated-bcfz"] = target
 
-    target = OUT / "missing-score-gpif.gp"
+    target = out / "missing-score-gpif.gp"
     _write_zip(target, [("Content/PartConfiguration", b"\0" * 8)])
     cases["missing-score-gpif"] = target
 
-    target = OUT / "declared-entry-cap.gp"
+    target = out / "declared-entry-cap.gp"
     _write_zip(target, [("Content/score.gpif", b"<GPIF/>")])
     _patch_zip_declared_size(target, 64 * 1024 * 1024 + 1)
     cases["declared-entry-cap"] = target
 
-    target = OUT / "too-many-entries.gp"
+    target = out / "too-many-entries.gp"
     _write_zip(target, [(f"f{index}", b"") for index in range(4097)])
     cases["too-many-entries"] = target
 
-    target = OUT / "oversized.gp4"
+    target = out / "oversized.gp4"
     target.write_bytes(b"?FIC" + b"\0" * (8 * 1024 * 1024))
     cases["oversized"] = target
 
-    target = OUT / "empty.gp4"
+    target = out / "empty.gp4"
     target.write_bytes(b"")
     cases["empty"] = target
     return cases
@@ -347,25 +348,42 @@ async def _export(session, document, fmt, path):
 
 
 async def main():
-    OUT.mkdir(parents=True, exist_ok=True)
+    parser = argparse.ArgumentParser(description=__doc__)
     binary_name = "engrave-mcp.exe" if os.name == "nt" else "engrave-mcp"
-    binary = Path(os.environ.get("ENGRAVE_MCP_BINARY", REPO_ROOT / "build/release" / binary_name))
-    resources = Path(os.environ.get("ENGRAVE_MCP_RESOURCES", REPO_ROOT / ".runtime/assets"))
+    parser.add_argument(
+        "--binary",
+        type=Path,
+        default=Path(os.environ.get("ENGRAVE_MCP_BINARY", REPO_ROOT / "build/release" / binary_name)),
+    )
+    parser.add_argument(
+        "--resources",
+        type=Path,
+        default=Path(os.environ.get("ENGRAVE_MCP_RESOURCES", REPO_ROOT / ".runtime/assets")),
+    )
+    parser.add_argument("--upstream", type=Path, default=REPO_ROOT / "vendor/engrave")
+    parser.add_argument("--output", type=Path, default=OUT)
+    args = parser.parse_args()
+    upstream = args.upstream.resolve()
+    fixtures = upstream / "src/importexport/guitarpro/tests/data"
+    out = args.output.resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    binary = args.binary.resolve()
+    resources = args.resources.resolve()
     params = StdioServerParameters(
         command=str(binary),
         args=["--resources", str(resources)],
         env=dict(os.environ),
-        cwd=str(OUT),
+        cwd=str(out),
     )
 
     report = {"cases": [], "malformed": [], "recovered": False}
-    with (OUT / "stderr.log").open("w", encoding="utf-8") as errors:
+    with (out / "stderr.log").open("w", encoding="utf-8") as errors:
         async with stdio_client(params, errlog=errors) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 for case in CASES:
-                    path = FIXTURES / case["file"]
+                    path = fixtures / case["file"]
                     assert path.is_file(), path
                     document_id = await _open(session, path)
                     try:
@@ -378,8 +396,8 @@ async def main():
                         assert metadata["duration"] > 0, metadata
                         assert len(metadata["parts"]) > 0, metadata
 
-                        musicxml_path = OUT / f"{case['lane']}.musicxml"
-                        midi_path = OUT / f"{case['lane']}.mid"
+                        musicxml_path = out / f"{case['lane']}.musicxml"
+                        midi_path = out / f"{case['lane']}.mid"
                         for output_format, target in (
                             ("musicxml", musicxml_path),
                             ("midi", midi_path),
@@ -389,7 +407,7 @@ async def main():
                         xml_events = musicxml_note_events(musicxml_path)
                         midi_events = midi_note_events(midi_path)
                         if case.get("reference"):
-                            reference_events = mscx_note_events(FIXTURES / case["reference"])
+                            reference_events = mscx_note_events(fixtures / case["reference"])
                             expected = Counter(reference_events)
                         else:
                             expected = Counter((pitch, duration) for pitch, duration in case["expected"])
@@ -397,9 +415,9 @@ async def main():
                         midi_counter = Counter(midi_events)
                         expected_midi = None
                         if case.get("reference"):
-                            reference_id = await _open(session, FIXTURES / case["reference"])
+                            reference_id = await _open(session, fixtures / case["reference"])
                             try:
-                                reference_midi = OUT / f"{case['lane']}-reference.mid"
+                                reference_midi = out / f"{case['lane']}-reference.mid"
                                 await _export(session, reference_id, "midi", reference_midi)
                                 expected_midi = Counter(midi_note_events(reference_midi))
                             finally:
@@ -437,7 +455,7 @@ async def main():
                     finally:
                         await _close(session, document_id)
 
-                malformed = build_malformed_cases()
+                malformed = build_malformed_cases(fixtures, out)
                 for name, path in malformed.items():
                     response = await session.call_tool("score_open", {"path": str(path)})
                     if not response.is_error:
@@ -449,7 +467,7 @@ async def main():
 
                 # The same server session must still import a valid file after
                 # every rejection above.
-                recovered_id = await _open(session, FIXTURES / "sforzato.gp4")
+                recovered_id = await _open(session, fixtures / "sforzato.gp4")
                 try:
                     recovered = await session.call_tool("score_outline", {"document": recovered_id})
                     if recovered.is_error:
@@ -458,7 +476,7 @@ async def main():
                 finally:
                     await _close(session, recovered_id)
 
-                musicxml_fixture = REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml"
+                musicxml_fixture = upstream / "tests/data/inputs/evening.musicxml"
                 if musicxml_fixture.is_file():
                     musicxml_id = await _open(session, musicxml_fixture)
                     await _close(session, musicxml_id)
@@ -466,7 +484,7 @@ async def main():
                 report["recovered"] = True
 
     report["status"] = "passed"
-    (OUT / "validation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (out / "validation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({key: value for key, value in report.items() if key != "cases"}))
 
 

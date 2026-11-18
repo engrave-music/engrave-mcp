@@ -13,11 +13,11 @@ from engrave_mcp_testing.paths import REPO_ROOT
 from engrave_testing.archives import run_probe
 
 
-async def valid_score_imports(binary, resources, out):
+async def valid_score_imports(binary, resources, out, upstream):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
-    xml = (REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml").read_bytes()
+    xml = (upstream / "tests/data/inputs/evening.musicxml").read_bytes()
     with zipfile.ZipFile(out / "valid.mxl", "w", compression=zipfile.ZIP_DEFLATED) as target:
         target.writestr(
             "META-INF/container.xml",
@@ -53,7 +53,7 @@ async def valid_score_imports(binary, resources, out):
                 for path, label in [
                     (out / "valid.mscz", "mscz"),
                     (
-                        REPO_ROOT / "vendor/engrave/src/importexport/guitarpro/tests/data/sforzato.gp",
+                        upstream / "src/importexport/guitarpro/tests/data/sforzato.gp",
                         "gp",
                     ),
                 ]:
@@ -74,6 +74,7 @@ def main():
     parser.add_argument("--binary", type=Path, required=True, help="archive_test native probe")
     parser.add_argument("--server", type=Path, help="Optional MCP executable for valid score formats")
     parser.add_argument("--resources", type=Path, default=REPO_ROOT / ".runtime/assets")
+    parser.add_argument("--upstream", type=Path, default=REPO_ROOT / "vendor/engrave")
     parser.add_argument("--output", type=Path, default=REPO_ROOT / "artifacts/archive-bounds")
     args = parser.parse_args()
     out = args.output.resolve()
@@ -81,7 +82,7 @@ def main():
     report = run_probe(args.binary.resolve(), out)
     if args.server:
         report["valid_score_imports"] = asyncio.run(
-            valid_score_imports(args.server.resolve(), args.resources.resolve(), out)
+            valid_score_imports(args.server.resolve(), args.resources.resolve(), out, args.upstream.resolve())
         )
     (out / "evidence.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report))

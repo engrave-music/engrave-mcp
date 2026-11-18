@@ -319,11 +319,10 @@ async def run(args):
         )
         await client.tool("score_close", {"document": doc})
 
-        mix_doc = (
-            await client.tool(
-                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/audio/mix.mscz")}
-            )
-        )["document"]
+        upstream = args.upstream.resolve()
+        mix_doc = (await client.tool("score_open", {"path": str(upstream / "tests/data/inputs/audio/mix.mscz")}))[
+            "document"
+        ]
         mix_tracks = (await tracks(mix_doc))["tracks"]
         assert len(mix_tracks) == 3
         cello = next(t for t in mix_tracks if t["part_name"] == "Cello")
@@ -350,9 +349,7 @@ async def run(args):
         await client.tool("score_close", {"document": mix_doc})
 
         parts_doc = (
-            await client.tool(
-                "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/audio/mix_parts.mscz")}
-            )
+            await client.tool("score_open", {"path": str(upstream / "tests/data/inputs/audio/mix_parts.mscz")})
         )["document"]
         saved_excerpts = {e["name"]: e["id"] for e in (await outline(parts_doc))["outline"]["excerpts"]}
         for name, expected_mute in (("Violin", False), ("Cello", True)):
@@ -368,7 +365,7 @@ async def run(args):
         await client.tool("score_close", {"document": parts_doc})
         evidence["checks"].extend(["saved_master_mix", "saved_excerpt_mix"])
 
-        source = REPO_ROOT / "vendor/engrave/src/engraving/tests/instrumentchange_data/change-ref.mscx"
+        source = upstream / "src/engraving/tests/instrumentchange_data/change-ref.mscx"
         changed_doc = (await client.tool("score_open", {"path": str(source)}))["document"]
         changed_tracks = (await tracks(changed_doc))["tracks"]
         assert len(changed_tracks) == 3 and len({t["track"] for t in changed_tracks}) == 3
@@ -402,6 +399,7 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--resources", type=Path, required=True)
     parser.add_argument("--soundfont", type=Path, required=True)
+    parser.add_argument("--upstream", type=Path, default=REPO_ROOT / "vendor/engrave")
     parser.add_argument("--output", type=Path, required=True)
     asyncio.run(run(parser.parse_args()))
 

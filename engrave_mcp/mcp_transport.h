@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -14,9 +13,9 @@
 
 #include "json.h"
 #include "publication_gate.h"
+#include "types.h"
 
 namespace music {
-using Json = music::Json;
 
 // Structured, transport-independent failure raised by AsyncSession (or any
 // tool implementation) when a call has a stable machine-readable code. The
@@ -27,7 +26,7 @@ struct ToolCallError : std::runtime_error {
     std::string code;
 };
 
-using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std::shared_ptr<RequestExecution>)>;
+using AsyncToolCall = UniqueFn<asio::awaitable<Json>(std::string, Json, std::shared_ptr<RequestExecution>)>;
 
 // Asynchronous MCP stdio server. The local io_context is run on the caller's
 // SESSION thread; list_tools, tool_exists, call_tool and shutdown are invoked
@@ -50,7 +49,7 @@ using AsyncToolCall = std::function<asio::awaitable<Json>(std::string, Json, std
 // result. The server keeps draining the io_context until all engine completion
 // handlers have returned; it never calls io_context::stop() from a transport
 // failure path.
-int serve_stdio_async(const std::function<Json()> &list_tools, const std::function<bool(std::string_view)> &tool_exists,
-                      const AsyncToolCall &call_tool, const std::function<void()> &shutdown);
+int serve_stdio_async(UniqueFn<Json()> list_tools, UniqueFn<bool(std::string_view)> tool_exists, AsyncToolCall call_tool,
+                      UniqueFn<void()> shutdown);
 
 } // namespace music

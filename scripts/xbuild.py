@@ -86,6 +86,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("action", choices=("configure", "build", "run", "compdb"))
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
+    passthrough = []
+    for item in args.arguments:
+        if item == "--reconfigure":
+            args.reconfigure = True
+        else:
+            passthrough.append(item)
+    args.arguments = passthrough
     root = Path(__file__).resolve().parents[1]
     build, config, plat, linux_tools, stamp_payload = resolve_layout(
         root, args.profile, args.build_directory, args.arch

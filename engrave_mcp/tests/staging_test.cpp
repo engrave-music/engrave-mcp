@@ -4,11 +4,12 @@
 #include <fstream>
 #include <iostream>
 #include <random>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <vector>
+
+#include <ankerl/unordered_dense.h>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -32,7 +33,7 @@ static void require(bool condition, const char *message) {
 }
 
 #ifdef _WIN32
-static std::set<std::wstring> dacl_sids(const fs::path &path, bool *protected_dacl = nullptr) {
+static ankerl::unordered_dense::set<std::wstring> dacl_sids(const fs::path &path, bool *protected_dacl = nullptr) {
     PACL dacl = nullptr;
     PSECURITY_DESCRIPTOR descriptor = nullptr;
     const auto result =
@@ -56,7 +57,7 @@ static std::set<std::wstring> dacl_sids(const fs::path &path, bool *protected_da
 
     ACL_SIZE_INFORMATION size{};
     require(GetAclInformation(dacl, &size, sizeof(size), AclSizeInformation) != FALSE, "GetAclInformation failed");
-    std::set<std::wstring> sids;
+    ankerl::unordered_dense::set<std::wstring> sids;
     for (DWORD i = 0; i < size.AceCount; ++i) {
         LPVOID ace = nullptr;
         require(GetAce(dacl, i, &ace) != FALSE, "GetAce failed");

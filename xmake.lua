@@ -20,10 +20,11 @@ set_policy("package.precompiled", false)
 add_repositories("engrave-mcp-pinned xmake", {rootdir = os.scriptdir()})
 add_requires("asio 1.36.0", {system = false})
 
--- JSON: host targets add_packages("glaze") explicitly. The engine build pins
--- and requires the same glaze release; declaring it here keeps the host's
--- dependency visible in the host project.
+-- Host-used engine-pinned header libraries, declared explicitly in the host project.
+add_requires("amc v2.8.1", {system = false})
 add_requires("glaze 9.1.0", {system = false})
+add_requires("ngcpp-proxy 4.1.0", {system = false})
+add_requires("unordered_dense v5.3.3", {system = false})
 
 option("engine_source")
     set_default("")

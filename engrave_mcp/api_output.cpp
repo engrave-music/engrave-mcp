@@ -8,14 +8,12 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
-#include <set>
 #include <sstream>
 #include <thread>
 #include <tuple>
 
-#ifdef MUSIC_ASYNC_TEST_HOOKS
+#include <ankerl/unordered_dense.h>
 #include <engrave/testing/write470.h>
-#endif
 
 #include "api_json_internal.h"
 #include "audio_budget.h"
@@ -23,6 +21,7 @@
 #include "publication.h"
 #include "publication_gate.h"
 #include "terminal_diagnostic.h"
+#include "test_hooks.h"
 #include "tool_result.h"
 #include "utf8_text.h"
 
@@ -168,7 +167,7 @@ engrave::AudioOptions effective_mix(engrave::Document &document, const ExportReq
     if (defaults.tracks.size() > 256) throw detail::DecodeError{HostError{"ResourceLimit", "audio track count exceeds 256"}};
     result.master_volume_db = result.master_volume_db.value_or(defaults.master.volume_db);
     result.master_balance = result.master_balance.value_or(defaults.master.balance);
-    std::set<std::int32_t> seen;
+    ankerl::unordered_dense::set<i32> seen;
     for (const auto &track : result.tracks) {
         if (!seen.insert(track.track).second) invalid("duplicate audio track");
         if (std::none_of(defaults.tracks.begin(), defaults.tracks.end(), [&](const auto &t) { return t.track == track.track; })) {
@@ -292,30 +291,28 @@ Json encode(const Artifact &artifact) {
     return {{"mime", artifact.mime}, {"path", detail::path_text(artifact.path)}, {"size", std::to_string(artifact.size)}};
 }
 
-Result<Json> live_export(engrave::Document &document, const ExportRequest &request, const ExportLimits &limits,
-                         const std::function<bool()> &cancelled, std::chrono::steady_clock::time_point submitted, ExportTiming &timing,
-                         const engrave::EngineOptions &runtime, const std::function<bool()> &begin_publication,
-                         std::vector<std::string> *visible_paths) {
+Result<Json> live_export(engrave::Document &document, const ExportRequest &request, const ExportLimits &limits, FnRef<bool()> cancelled,
+                         std::chrono::steady_clock::time_point submitted, ExportTiming &timing, const engrave::EngineOptions &runtime,
+                         FnRef<bool()> begin_publication, std::vector<std::string> *visible_paths) {
     namespace fs = std::filesystem;
+    const bool hooks = test_hooks_enabled();
 
     struct Cleanup {
         fs::path destination, stage;
+        bool hooks = false;
 
         ~Cleanup() {
             std::error_code ec;
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-            if (!stage.empty()) {
+            if (hooks && !stage.empty()) {
                 if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_CLEANUP_BARRIER")) {
                     std::fprintf(stderr, "CLEANUP_BLOCKED\n");
                     std::fflush(stderr);
                     while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
             }
-            if (!stage.empty() && std::getenv("ENGRAVE_MCP_TEST_FAIL_CLEANUP")) {
+            if (hooks && !stage.empty() && std::getenv("ENGRAVE_MCP_TEST_FAIL_CLEANUP")) {
                 ec = std::make_error_code(std::errc::permission_denied);
-            } else
-#endif
-                if (!stage.empty()) {
+            } else if (!stage.empty()) {
                 fs::remove_all(stage, ec);
             }
             if (ec) {
@@ -328,7 +325,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                 } catch (...) {}
             }
         }
-    } cleanup;
+    } cleanup{.destination = {}, .stage = {}, .hooks = hooks};
 
     std::vector<Artifact> artifacts;
     std::vector<engrave::ExportWarning> warnings;
@@ -390,11 +387,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         } catch (const std::invalid_argument &e) {
             invalid(destination_message(request.destination.requested_path, e.what()));
         }
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING")) {
+        if (hooks && std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING")) {
             throw std::system_error(EIO, std::generic_category(), "Injected staging directory failure");
         }
-#endif
         cleanup.stage = create_private_directory(request.destination.directory ? cleanup.destination : cleanup.destination.parent_path());
         std::uint64_t total = 0;
 
@@ -427,50 +422,49 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         };
         engrave::CaptureOptions capture;
         capture.max_bytes = limits.output_bytes;
-#ifdef MUSIC_ASYNC_TEST_HOOKS
         int cancellation_polls = 0;
         bool conversion_entered = false;
-#endif
         capture.cancelled = [&] {
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-            const auto test_path = request.destination.path.string();
-            if (test_path.find(".test-470-") != std::string::npos && !conversion_entered) {
-                const bool converting = test_path.find("converting") != std::string::npos;
-                const auto progress = engrave::testing::write470_progress();
-                if (progress.stage == (converting ? engrave::testing::Write470Progress::Stage::CONVERTING :
-                                                    engrave::testing::Write470Progress::Stage::SERIALIZING) &&
-                    progress.units >= 2) {
-                    conversion_entered = true;
-                    std::fprintf(stderr, "WRITE470_%s units=%llu\n", converting ? "CONVERTING" : "SERIALIZING",
-                                 static_cast<unsigned long long>(progress.units));
+            if (hooks) {
+                const auto test_path = request.destination.path.string();
+                if (test_path.find(".test-470-") != std::string::npos && !conversion_entered) {
+                    const bool converting = test_path.find("converting") != std::string::npos;
+                    const auto progress = engrave::testing::write470_progress();
+                    if (progress.stage == (converting ? engrave::testing::Write470Progress::Stage::CONVERTING :
+                                                        engrave::testing::Write470Progress::Stage::SERIALIZING) &&
+                        progress.units >= 2) {
+                        conversion_entered = true;
+                        std::fprintf(stderr, "WRITE470_%s units=%llu\n", converting ? "CONVERTING" : "SERIALIZING",
+                                     static_cast<unsigned long long>(progress.units));
+                        std::fflush(stderr);
+                        test_deadline = test_path.find("deadline") != std::string::npos;
+                        while (!test_deadline && !cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        std::fprintf(stderr, "WRITE470_RETURN units=%llu error=Cancelled\n",
+                                     static_cast<unsigned long long>(progress.units));
+                        std::fflush(stderr);
+                    }
+                }
+                if (test_path.find(".test-live-noncooperative") != std::string::npos) {
+                    std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n");
                     std::fflush(stderr);
-                    test_deadline = test_path.find("deadline") != std::string::npos;
-                    while (!test_deadline && !cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    std::fprintf(stderr, "WRITE470_RETURN units=%llu error=Cancelled\n", static_cast<unsigned long long>(progress.units));
+                    if (std::getenv("ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE")) {
+                        std::unique_lock lock(publication_gate.mutex);
+                        publication_gate.changed.wait(lock, [] { return publication_gate.closing; });
+                        std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n");
+                        std::fflush(stderr);
+                    } else if (const auto *delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS")) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(std::stoul(delay)));
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::seconds(30));
+                    }
+                }
+                if (test_path.find(".test-live-cancel") != std::string::npos &&
+                    ++cancellation_polls == (request.kind == ExportKind::RENDER ? 2 : 8)) {
+                    std::fprintf(stderr, "LIVE_CANCEL_POLL\n");
                     std::fflush(stderr);
+                    while (!cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
             }
-            if (request.destination.path.string().find(".test-live-noncooperative") != std::string::npos) {
-                std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n");
-                std::fflush(stderr);
-                if (std::getenv("ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE")) {
-                    std::unique_lock lock(publication_gate.mutex);
-                    publication_gate.changed.wait(lock, [] { return publication_gate.closing; });
-                    std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n");
-                    std::fflush(stderr);
-                } else if (const auto *delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS")) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(std::stoul(delay)));
-                } else {
-                    std::this_thread::sleep_for(std::chrono::seconds(30));
-                }
-            }
-            if (request.destination.path.string().find(".test-live-cancel") != std::string::npos &&
-                ++cancellation_polls == (request.kind == ExportKind::RENDER ? 2 : 8)) {
-                std::fprintf(stderr, "LIVE_CANCEL_POLL\n");
-                std::fflush(stderr);
-                while (!cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
-#endif
             return test_deadline || cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline;
         };
         if (request.kind == ExportKind::SCORE) {
@@ -605,12 +599,12 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         const auto report_start = ExportTiming::Clock::now();
         const auto report_bytes = std::max(export_report_bound(success), export_report_bound(partial));
         timing.add("report_preflight", report_start);
-        std::size_t report_limit = 16u * 1024u * 1024u;
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (const auto *limit = std::getenv("ENGRAVE_MCP_TEST_REPORT_LIMIT")) report_limit = std::stoull(limit);
-        std::fprintf(stderr, "PUBLICATION_REPORT_BOUND %zu\n", report_bytes);
-        std::fflush(stderr);
-#endif
+        usize report_limit = 16u * 1024u * 1024u;
+        if (hooks) {
+            if (const auto *limit = std::getenv("ENGRAVE_MCP_TEST_REPORT_LIMIT")) report_limit = std::stoull(limit);
+            std::fprintf(stderr, "PUBLICATION_REPORT_BOUND %zu\n", report_bytes);
+            std::fflush(stderr);
+        }
         if (report_bytes > report_limit) {
             throw detail::DecodeError{HostError{"ResourceLimit", "export artifact report exceeds transport budget"}};
         }
@@ -618,13 +612,13 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
         check();
         // Atomically exclude watchdog termination before the first visible file.
         // Once committed, even slow publication must finish and report its subset.
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_ADMISSION_BARRIER")) {
-            std::fprintf(stderr, "PUBLICATION_READY\n");
-            std::fflush(stderr);
-            while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (hooks) {
+            if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_ADMISSION_BARRIER")) {
+                std::fprintf(stderr, "PUBLICATION_READY\n");
+                std::fflush(stderr);
+                while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         }
-#endif
         if (begin_publication && !begin_publication()) {
             throw detail::DecodeError{HostError{"Cancelled", "watchdog claimed export before publication"}};
         }
@@ -642,11 +636,11 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     static_assert(std::is_nothrow_move_constructible_v<Artifact>);
                     artifacts.push_back(std::move(file.artifact));
                     if (visible_paths) visible_paths->push_back(std::move(prepared_paths[artifacts.size() - 1]));
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-                    if (const auto *after = std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_RENAME")) {
-                        if (artifacts.size() == std::stoul(after)) throw std::runtime_error("Injected post-rename failure");
+                    if (hooks) {
+                        if (const auto *after = std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_RENAME")) {
+                            if (artifacts.size() == std::stoul(after)) throw std::runtime_error("Injected post-rename failure");
+                        }
                     }
-#endif
                 });
             } catch (const std::exception &e) {
                 throw detail::DecodeError{HostError{"Io", e.what()}};
@@ -660,11 +654,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     {"artifacts", std::move(encoded)},
                     {"export_warnings", encode(warnings)}};
     } catch (const detail::DecodeError &e) {
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (!artifacts.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_ERROR_REPORT")) {
+        if (hooks && !artifacts.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_ERROR_REPORT")) {
             throw std::runtime_error("Injected error report construction failure");
         }
-#endif
         auto error = e.error;
         if (error.code == "Io") {
             error = with_destination(std::move(error), request.destination.requested_path);

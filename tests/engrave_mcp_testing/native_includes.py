@@ -73,7 +73,6 @@ SYSTEM_HEADERS = frozenset(
         "limits",
         "list",
         "locale",
-        "map",
         "mdspan",
         "memory",
         "memory_resource",
@@ -91,7 +90,6 @@ SYSTEM_HEADERS = frozenset(
         "regex",
         "scoped_allocator",
         "semaphore",
-        "set",
         "shared_mutex",
         "source_location",
         "span",
@@ -113,8 +111,6 @@ SYSTEM_HEADERS = frozenset(
         "typeindex",
         "typeinfo",
         "type_traits",
-        "unordered_map",
-        "unordered_set",
         "utility",
         "valarray",
         "variant",
@@ -185,6 +181,9 @@ def audit(native: Path, public: Path) -> list[str]:
                     or name == "asio.hpp"
                     or name.startswith("asio/")
                     or name.startswith("glaze/")
+                    or name.startswith("proxy/")
+                    or name.startswith("ankerl/")
+                    or name.startswith("amc/")
                 )
             if not allowed:
                 errors.append(f"{source}:{number}: forbidden or unknown include {name!r}")

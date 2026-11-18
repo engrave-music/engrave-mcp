@@ -14,11 +14,9 @@
 # the other configurations are for debugging and sanitizer work.
 default_configuration = "release"
 
-# Code that is not ours to format, lint or index: vendored dependencies
-# (engine-declared packages and FetchContent clones), xmake build trees, the
-# Pixi environment (whose headers a JavaScript or zlib include reaches with a
-# plain -I, which would otherwise make `clice format` rewrite them), runtime
-# assets, upstream checkouts and reviewer worktrees.
+# Code that is not ours to format, lint or index: vendored third-party trees,
+# xmake build and package caches, the Pixi environment (whose headers zlib or
+# cairo includes reach via -I), runtime assets, upstream checkouts and worktrees.
 [[rules]]
 patterns = [
   "vendor/engrave/**/thirdparty/**",

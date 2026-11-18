@@ -32,7 +32,6 @@ This document records active defects and known limitations for the engine and ho
 - **Windows path length limitations**: Paths approaching or exceeding Windows `MAX_PATH` require short output directories or short temporary roots to prevent staging and atomic move failures.
 - **Filesystem scope**: Complex DACLs, SMB authentication, and multi-file transaction guarantees are explicit non-goals (see [scope.md](scope.md)).
 - **No in-process isolation**: Engine faults in rendering or synthesis terminate the server process. Operational isolation requires running disposable server processes per file or task.
-- **Full-tree engine naming lint (`pixi run lint -- --engine`)**: Running full-tree engine naming lint has pre-existing naming findings in untouched upstream code and clang compile errors under Windows MSVC emulation (`ngcpp-proxy`'s `[[msvc::no_unique_address]]` static assert and `simdtypes_sse2.h`), still to be fixed or scoped. Host lint (`scripts/lint.py`) and touched owned engine files without those headers pass.
 - **Complex MusicXML dynamics round trips**: Combinations of conflicting dynamic markings and pseudo-markup may be normalized to standardized dynamic types upon import and export.
 
 ## Reporting a new issue

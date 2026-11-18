@@ -1,11 +1,11 @@
 #pragma once
 
-#include <cstdint>
 #include <filesystem>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <system_error>
+
+#include "types.h"
 
 namespace music {
 
@@ -38,8 +38,7 @@ struct PublicationError : std::system_error {
 };
 
 // POSIX: sync staged contents, rename, then sync destination directory.
-void publish_output(const std::filesystem::path &staged, const std::filesystem::path &destination,
-                    const std::function<void()> &on_visible = {});
+void publish_output(const std::filesystem::path &staged, const std::filesystem::path &destination, FnRef<void()> on_visible = {});
 
 // Creates a fresh directory under parent with an unpredictable name (and
 // owner-only permissions on POSIX).

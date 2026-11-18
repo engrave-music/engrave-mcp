@@ -2,9 +2,9 @@
 #include "publication.h"
 
 #include <cerrno>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <stdexcept>
 #ifndef _WIN32
 #include <sys/stat.h>
@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
         std::ifstream(dest) >> contents;
         require(contents == (failure == 1 ? "old" : "new"));
     }
-    std::cout << "publication sync ordering, pre-rename and post-rename failures passed\n";
+    std::puts("publication sync ordering, pre-rename and post-rename failures passed");
 }
 #else
 int main() { return 0; }

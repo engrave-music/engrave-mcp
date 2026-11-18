@@ -7,6 +7,8 @@
 
 #include "json.h"
 #include "runtime_limits.h"
+#include "test_hooks.h"
+#include "types.h"
 
 namespace music {
 
@@ -16,10 +18,9 @@ namespace music {
 // fits. Above this threshold the legacy text becomes a short pointer to
 // structuredContent, keeping the authoritative structured result intact.
 inline Json make_tool_result(Json payload, bool publication = false) {
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-    if (publication && std::getenv("ENGRAVE_MCP_TEST_THROW_WRAPPER"))
+    if (test_hooks_enabled() && publication && std::getenv("ENGRAVE_MCP_TEST_THROW_WRAPPER")) {
         throw std::runtime_error("Injected failure inside completed export wrapper");
-#endif
+    }
     std::string text = dump_json(payload);
     if (text.size() > (4u * 1024u * 1024u)) {
         text = "Tool result is available in structuredContent; its "
@@ -37,7 +38,7 @@ inline Json make_tool_result(Json payload, bool publication = false) {
 }
 
 // Reserve the entire request-line budget for a string RPC id, plus envelope.
-inline std::size_t export_report_bound(const Json &payload) {
+inline usize export_report_bound(const Json &payload) {
     // Always budget legacy duplication, even above its cutoff. This keeps the
     // bound monotonic when a smaller visible subset falls below that cutoff.
     auto result = make_tool_result(payload);

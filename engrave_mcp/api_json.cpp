@@ -4,9 +4,10 @@
 #include <charconv>
 #include <cmath>
 #include <limits>
-#include <map>
 #include <regex>
 #include <type_traits>
+
+#include <ankerl/unordered_dense.h>
 
 #include "api_json_internal.h"
 #include "registry.h"
@@ -41,7 +42,7 @@ bool base64_shape(std::string_view s) {
 // Input-schema patterns are fixed, so compile each one once per thread rather
 // than rebuilding a std::regex for every string field of every request.
 const std::regex &compiled_pattern(const std::string &pattern) {
-    static thread_local std::map<std::string, std::regex> cache;
+    static thread_local ankerl::unordered_dense::map<std::string, std::regex> cache;
     auto it = cache.find(pattern);
     if (it == cache.end()) {
         // Construct before inserting so a throwing pattern leaves the cache

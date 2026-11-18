@@ -1,7 +1,8 @@
 #include "registry.h"
 
-#include <set>
 #include <stdexcept>
+
+#include <ankerl/unordered_dense.h>
 
 #include "host_api.h"
 
@@ -73,18 +74,18 @@ void validate_handlers(const HandlerTable &handlers) {
 void validate_registry() {
     auto tools = tools_json();
     if (schemas().size() != specs.size()) throw std::logic_error("tool count mismatch");
-    std::set<std::string> names;
+    ankerl::unordered_dense::set<std::string> names;
     for (const auto &tool : schemas().get_array()) {
         const auto name = tool.at("name").get<std::string>();
         if (!names.insert(name).second || !find_tool(name)) throw std::logic_error("duplicate or unknown schema definition");
     }
     names.clear();
-    for (std::size_t i = 0; i < specs.size(); ++i) {
+    for (usize i = 0; i < specs.size(); ++i) {
         if (tools[i].at("name").get<std::string>() != specs[i].name || !names.insert(std::string(specs[i].name)).second) {
             throw std::logic_error("tool table mismatch");
         }
     }
-    std::set<std::string> declared;
+    ankerl::unordered_dense::set<std::string> declared;
     for (auto &op : tools[6]["inputSchema"]["$defs"]["op"]["oneOf"].get_array()) {
         if (!declared.insert(op["properties"]["op"]["const"].get<std::string>()).second) throw std::logic_error("duplicate op");
     }

@@ -65,8 +65,8 @@ def parse_args() -> argparse.Namespace:
         choices=BACKENDS,
         default="auto",
         help=(
-            "'clice' when its binary, clice.toml and a compilation database are usable, 'clang-tidy' always: "
-            "clice checks every unit of the database (the engine included), clang-tidy only the requested files "
+            "'auto' uses scoped parallel clang-tidy on the requested files; explicit 'clice' checks every "
+            "translation unit in the compilation database (host and engine); 'clang-tidy' forces clang-tidy "
             "(default: auto)"
         ),
     )
@@ -79,6 +79,7 @@ def parse_args() -> argparse.Namespace:
         default=max(1, os.cpu_count() or 1),
         help="lint processes to run at once (default: CPU count)",
     )
+    parser.add_argument("-q", "--quiet", action="store_true", help="suppress progress messages when checks pass")
     return parser.parse_args()
 
 
@@ -354,11 +355,12 @@ def run_clang_tidy(args: argparse.Namespace, repo_root: Path, cpp_files: list[Pa
         workers = 1
         print("lint: --fix runs clang-tidy one file at a time", file=sys.stderr)
 
-    print(
-        f"Running clang-tidy on {len(jobs)} file(s) from {len(units)} translation unit entry/entries "
-        f"({duplicates} duplicate collapsed, {variants} distinct variant(s) retained) with {workers} job(s)...",
-        flush=True,
-    )
+    if not args.quiet:
+        print(
+            f"Running clang-tidy on {len(jobs)} file(s) from {len(units)} translation unit entry/entries "
+            f"({duplicates} duplicate collapsed, {variants} distinct variant(s) retained) with {workers} job(s)...",
+            flush=True,
+        )
 
     # clang-tidy re-parses a file once per database entry naming it, so the
     # selected entries are handed over as a database of their own. Every entry
@@ -377,7 +379,16 @@ def run_clang_tidy(args: argparse.Namespace, repo_root: Path, cpp_files: list[Pa
                 temporary.cleanup()
                 temporary = None
 
-    command = ["clang-tidy", "-p", str(package)]
+    command = ["clang-tidy", "--quiet", "-p", str(package)]
+    if sys.platform == "win32":
+        # MSVC vector algorithms use intrinsics unsupported by clang-tidy;
+        # clang-tidy's MSVC-compat frontend also trips ngcpp-proxy's clang-cl
+        # [[msvc::no_unique_address]] layout guard (llvm/llvm-project#143245),
+        # whereas cl.exe compiles the actual binary.
+        command += [
+            "--extra-arg=-D_USE_STD_VECTOR_ALGORITHMS=0",
+            "--extra-arg=-DMSFT_PROXY_V4_DETAIL_COMPATIBILITY_CHECK_H_",
+        ]
     if args.fix:
         command += ["--fix-errors", "--format-style=file"]
 
@@ -393,14 +404,20 @@ def run_clang_tidy(args: argparse.Namespace, repo_root: Path, cpp_files: list[Pa
             temporary.cleanup()
 
     returncode = 0
+    failed = 0
     for path, code, stdout, stderr in outcomes:
-        print(f"{path}: exit {code}", flush=True)
-        if stdout:
-            print(stdout, end="", flush=True)
-        if stderr:
-            print(stderr, end="", file=sys.stderr, flush=True)
-        if returncode == 0:
-            returncode = code
+        if code != 0 or stdout.strip():
+            print(f"{path}: exit {code}", flush=True)
+            if stdout:
+                print(stdout, end="", flush=True)
+            if stderr:
+                print(stderr, end="", file=sys.stderr, flush=True)
+        if code != 0:
+            failed += 1
+            if returncode == 0:
+                returncode = code
+    if not args.quiet or failed:
+        print(f"Checked {len(outcomes)} C++ file(s), {failed} failed.", flush=True)
     return returncode
 
 
@@ -428,14 +445,6 @@ def lint_cpp(args: argparse.Namespace, repo_root: Path, cpp_files: list[Path]) -
         if not covers_project(args.paths, repo_root):
             print(
                 "lint: clice lint checks the project's whole compilation database; the path list does not narrow it",
-                file=sys.stderr,
-            )
-        elif args.backend == "auto":
-            # clice is the faster way to check every unit, but that is a wider
-            # set than the tracked files clang-tidy is given.
-            print(
-                "lint: clice lint checks every unit of the compilation database, the engine's included; "
-                "pass --backend clang-tidy for the tracked C++ files only",
                 file=sys.stderr,
             )
         returncode = lint_clice(binary, workspace, args.jobs)
@@ -472,8 +481,11 @@ def main() -> int:
     total_returncode = int(bool(layout_errors))
 
     if py_files:
-        print(f"Running ruff check on {len(py_files)} Python file(s)...", flush=True)
+        if not args.quiet:
+            print(f"Running ruff check on {len(py_files)} Python file(s)...", flush=True)
         command = ["ruff", "check"]
+        if args.quiet:
+            command.append("--quiet")
         if args.fix:
             command.append("--fix")
         command.extend(map(str, py_files))

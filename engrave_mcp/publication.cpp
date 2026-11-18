@@ -25,6 +25,8 @@
 #include <unistd.h>
 #endif
 
+#include "test_hooks.h"
+
 namespace music {
 namespace {
 #ifdef _WIN32
@@ -259,16 +261,17 @@ std::filesystem::path normalize_output_path(const std::filesystem::path &path) {
     return std::filesystem::weakly_canonical(std::filesystem::absolute(path));
 }
 
-void publish_output(const std::filesystem::path &staged, const std::filesystem::path &destination,
-                    const std::function<void()> &on_visible) {
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-    if (std::getenv("ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH") && staged.filename() == "page-0002.svg") {
-        std::fprintf(stderr, "PUBLICATION_SECOND_FLUSH\n");
-        std::fflush(stderr);
-        std::this_thread::sleep_for(std::chrono::seconds(7));
+void publish_output(const std::filesystem::path &staged, const std::filesystem::path &destination, FnRef<void()> on_visible) {
+    if (test_hooks_enabled()) {
+        if (std::getenv("ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH") && staged.filename() == "page-0002.svg") {
+            std::fprintf(stderr, "PUBLICATION_SECOND_FLUSH\n");
+            std::fflush(stderr);
+            std::this_thread::sleep_for(std::chrono::seconds(7));
+        }
+        if (std::getenv("ENGRAVE_MCP_TEST_FAIL_FILE_FLUSH")) {
+            throw PublicationError(EIO, "Injected staged file flush failure", false);
+        }
     }
-    if (std::getenv("ENGRAVE_MCP_TEST_FAIL_FILE_FLUSH")) throw PublicationError(EIO, "Injected staged file flush failure", false);
-#endif
 #ifdef _WIN32
     // on_visible moves the Artifact that owns [destination]; keep a stable copy.
     const auto destination_path = destination;

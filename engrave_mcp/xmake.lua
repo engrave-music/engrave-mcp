@@ -23,7 +23,7 @@ target("tool_registry")
     set_kind("static")
     set_default(false)
     add_deps("native_include_check")
-    add_packages("glaze")
+    add_packages("glaze", "ngcpp-proxy", "unordered_dense", "amc", {public = true})
     add_includedirs(path.join(source_root, "engrave", "include"))
     add_files(path.join(host_dir, "json.cpp"), path.join(host_dir, "registry.cpp"), path.join(host_dir, "schema_defs.cpp"))
 target_end()
@@ -32,8 +32,8 @@ target_end()
 target("document_store")
     set_kind("static")
     set_default(false)
-    add_deps("engrave", "tool_registry")
-    add_packages("glaze")
+    add_deps("engrave", "tool_registry", {public = true})
+    add_packages("glaze", "ngcpp-proxy", "unordered_dense", "amc", {public = true})
     add_includedirs(path.join(source_root, "engrave", "include"))
     add_files(path.join(host_dir, "api_json.cpp"), path.join(host_dir, "api_edit_json.cpp"),
         path.join(host_dir, "host_api.cpp"))
@@ -43,7 +43,6 @@ target("registry_dump")
     set_kind("binary")
     set_default(false)
     add_deps("tool_registry")
-    add_packages("glaze")
     add_files(path.join(host_dir, "tools", "registry_dump.cpp"))
 target_end()
 
@@ -51,7 +50,6 @@ target("registry_test")
     set_kind("binary")
     set_default(false)
     add_deps("tool_registry")
-    add_packages("glaze")
     add_files(path.join(host_dir, "tests", "registry_test.cpp"))
 target_end()
 
@@ -73,6 +71,8 @@ target_end()
 target("host_publication")
     set_kind("static")
     set_default(false)
+    add_deps("native_include_check")
+    add_packages("ngcpp-proxy", "unordered_dense", "amc", {public = true})
     add_files(path.join(host_dir, "publication.cpp"))
     if is_plat("windows") then add_syslinks("advapi32", {public = true}) end
 target_end()
@@ -80,39 +80,35 @@ target_end()
 target("engrave_mcp_core")
     set_kind("static")
     set_default(false)
-    add_deps("document_store", "host_publication")
-    add_packages("glaze")
-    add_files(path.join(host_dir, "api_output.cpp"))
+    add_deps("document_store", "host_publication", {public = true})
+    add_packages("asio", "glaze", "ngcpp-proxy", "unordered_dense", "amc", {public = true})
+    add_files(
+        path.join(host_dir, "api_output.cpp"),
+        path.join(host_dir, "async_session.cpp"),
+        path.join(host_dir, "mcp_transport.cpp"),
+        path.join(host_dir, "server_main.cpp")
+    )
+    if is_plat("windows") then
+        add_defines("_WIN32_WINNT=0x0A00", {public = true})
+        add_syslinks("ws2_32", "mswsock", {public = true})
+    end
 target_end()
 
--- The stdio JSON-RPC host and the same host with async test hooks.
-local function add_host_binary(name, basename)
+-- Production stdio JSON-RPC host and test-hook entrypoint sharing engrave_mcp_core.
+local function add_host_binary(name, basename, entry_source)
     target(name)
         set_kind("binary")
         set_default(false)
         set_basename(basename)
-        add_deps("muse_generated", "tool_registry", "document_store")
-        if name == "engrave_mcp_test" then
-            add_files(path.join(host_dir, "api_output.cpp"), path.join(host_dir, "publication.cpp"))
-        else
-            add_deps("engrave_mcp_core")
-        end
-        add_files(path.join(host_dir, "async_session.cpp"))
-        add_files(path.join(host_dir, "main.cpp"))
-        add_files(path.join(host_dir, "mcp_transport.cpp"))
-        add_packages("asio", "glaze")
+        add_deps("muse_generated", "engrave_mcp_core")
+        add_files(path.join(host_dir, entry_source))
         if is_plat("windows") then
-            add_defines("_WIN32_WINNT=0x0A00")
-            add_syslinks("ws2_32", "mswsock")
             add_files(path.join(host_dir, "utf8.manifest"))
         end
     target_end()
 end
-add_host_binary("engrave_mcp", "engrave-mcp")
-add_host_binary("engrave_mcp_test", "engrave-mcp-test")
-target("engrave_mcp_test")
-    add_defines("MUSIC_ASYNC_TEST_HOOKS")
-target_end()
+add_host_binary("engrave_mcp", "engrave-mcp", "main.cpp")
+add_host_binary("engrave_mcp_test", "engrave-mcp-test", "tests/main_test.cpp")
 
 target("host_api_test")
     set_kind("binary")

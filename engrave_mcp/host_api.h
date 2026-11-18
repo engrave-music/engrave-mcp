@@ -1,11 +1,11 @@
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <thread>
 
 #include "api_json.h"
 #include "runtime_limits.h"
+#include "types.h"
 
 namespace music::api {
 
@@ -32,8 +32,7 @@ struct HostApi {
     Json drop_checkpoint(const Json &);
     Json runtime_info(const Json &); // get, add_font(path), set_soundfonts(files)
 
-    Result<void> with_document(std::string_view token, std::optional<std::uint64_t> expected_revision,
-                               const std::function<Result<void>(engrave::Document &)> &,
+    Result<void> with_document(std::string_view token, std::optional<u64> expected_revision, FnRef<Result<void>(engrave::Document &)> fn,
                                const std::vector<std::string> *visible_paths = nullptr);
 
     // Current private asset paths; valid until the next owner-thread runtime change.

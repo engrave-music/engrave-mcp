@@ -13,8 +13,6 @@
 #include <cstring>
 #include <deque>
 #include <exception>
-#include <functional>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -67,6 +65,7 @@
 #include "publication_gate.h"
 #include "runtime_limits.h"
 #include "terminal_diagnostic.h"
+#include "test_hooks.h"
 #include "tool_result.h"
 #include "utf8_text.h"
 
@@ -146,8 +145,6 @@ struct CallState {
     bool cancel_requested = false;
     bool response_started = false;
     bool live_export = false;
-    // 0 queued, 1 executing, 2 cancelled queued, 3 finished,
-    // 4 publishing, 5 watchdog owns termination.
     std::shared_ptr<RequestExecution> execution = std::make_shared<RequestExecution>();
     bool tool_finished = false;
     std::shared_ptr<asio::steady_timer> watchdog;
@@ -159,26 +156,27 @@ struct OutputMessage {
     std::string wire;
 };
 
-// A type-erased suspended coroutine completion handler. The use_awaitable
-// handler is move-only, so it cannot live directly in std::function.
-struct OutputWaiter {
-    virtual ~OutputWaiter() = default;
-    virtual void resume() noexcept = 0;
-};
+using OutputWaiterFacade = CallableFacade<void() && noexcept>;
+using OutputWaiter = pro::proxy<OutputWaiterFacade>;
 
-template <typename Handler>
-struct TypedOutputWaiter final : OutputWaiter {
-    explicit TypedOutputWaiter(Handler handler) : handler_(std::move(handler)) {}
+struct ArmedWaiter {
+    OutputWaiter waiter;
+    bool invoked = false;
 
-    void resume() noexcept override {
-        try {
-            auto handler = std::move(handler_);
-            handler();
-        } catch (...) {}
+    explicit ArmedWaiter(OutputWaiter w) noexcept : waiter(std::move(w)) {}
+
+    ArmedWaiter(ArmedWaiter &&other) noexcept : waiter(std::move(other.waiter)), invoked(std::exchange(other.invoked, true)) {}
+
+    ArmedWaiter &operator=(ArmedWaiter &&) = delete;
+
+    ~ArmedWaiter() {
+        if (!invoked && waiter.has_value()) (*std::move(waiter))();
     }
 
-private:
-    Handler handler_;
+    void operator()() noexcept {
+        invoked = true;
+        if (waiter.has_value()) (*std::move(waiter))();
+    }
 };
 
 bool is_operation_aborted_code(const std::system_error &error) noexcept {
@@ -199,10 +197,10 @@ bool is_operation_aborted(const std::exception_ptr &error) noexcept {
 }
 
 struct Session : std::enable_shared_from_this<Session> {
-    Session(asio::io_context &ioc, const std::function<Json()> &list_tools, const std::function<bool(std::string_view)> &tool_exists,
-            const AsyncToolCall &call_tool, const std::function<void()> &shutdown)
-        : ioc_(ioc), list_tools_(list_tools), tool_exists_(tool_exists), call_tool_(call_tool), shutdown_(shutdown),
-          work_(asio::make_work_guard(ioc)) {
+    Session(asio::io_context &ioc, UniqueFn<Json()> list_tools, UniqueFn<bool(std::string_view)> tool_exists, AsyncToolCall call_tool,
+            UniqueFn<void()> shutdown)
+        : ioc_(ioc), list_tools_(std::move(list_tools)), tool_exists_(std::move(tool_exists)), call_tool_(std::move(call_tool)),
+          shutdown_(std::move(shutdown)), work_(asio::make_work_guard(ioc)) {
         inflight_.reserve(k_max_inflight_calls);
 #if !defined(_WIN32)
         if (::pipe2(reader_wake_, O_CLOEXEC | O_NONBLOCK) != 0) {
@@ -652,17 +650,17 @@ private:
     }
 
     bool write_report_bytes(const std::string &message) {
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_WRITE_BARRIER")) {
-            const std::filesystem::path arm = std::string(barrier) + ".arm";
-            if (std::filesystem::exists(arm)) {
-                std::filesystem::remove(arm);
-                std::fprintf(stderr, "WRITE_REGISTERED\n");
-                std::fflush(stderr);
-                while (!std::filesystem::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (test_hooks_enabled()) {
+            if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_WRITE_BARRIER")) {
+                const std::filesystem::path arm = std::string(barrier) + ".arm";
+                if (std::filesystem::exists(arm)) {
+                    std::filesystem::remove(arm);
+                    std::fprintf(stderr, "WRITE_REGISTERED\n");
+                    std::fflush(stderr);
+                    while (!std::filesystem::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
             }
         }
-#endif
         return write_all(message.data(), message.size());
     }
 
@@ -775,17 +773,17 @@ private:
         std::unique_lock lock(publication_gate.mutex);
         publication_gate.closing = true; // fences both admission and queued owner starts
         publication_gate.changed.notify_all();
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_CLOSING_BARRIER")) {
-            std::fprintf(stderr, "CLOSING_REGISTERED\n");
-            std::fflush(stderr);
-            while (!std::filesystem::exists(barrier)) {
-                lock.unlock();
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                lock.lock();
+        if (test_hooks_enabled()) {
+            if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_CLOSING_BARRIER")) {
+                std::fprintf(stderr, "CLOSING_REGISTERED\n");
+                std::fflush(stderr);
+                while (!std::filesystem::exists(barrier)) {
+                    lock.unlock();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    lock.lock();
+                }
             }
         }
-#endif
         {
             std::lock_guard output_lock(out_mutex_);
             out_abort_ = true;
@@ -905,20 +903,25 @@ private:
         }
         auto token = asio::use_awaitable;
         co_await asio::async_initiate<decltype(token), void()>(
-            [this](auto handler) { output_waiters_.push_back(std::make_unique<TypedOutputWaiter<decltype(handler)>>(std::move(handler))); },
+            [this](auto handler) {
+                output_waiters_.push_back(pro::make_proxy<OutputWaiterFacade>([h = std::move(handler)]() mutable noexcept {
+                    try {
+                        auto fn = std::move(h);
+                        fn();
+                    } catch (...) {}
+                }));
+            },
             token);
     }
 
     void resume_output_waiters() noexcept {
         while (!output_waiters_.empty()) {
-            auto waiter = std::move(output_waiters_.front());
+            ArmedWaiter armed(std::move(output_waiters_.front()));
             output_waiters_.pop_front();
             try {
-                asio::post(ioc_.get_executor(), [waiter = std::move(waiter)]() mutable { waiter->resume(); });
+                asio::post(ioc_.get_executor(), std::move(armed));
             } catch (...) {
-                // Never abandon a suspended coroutine merely because posting
-                // its wake-up failed; resume inline instead.
-                waiter->resume();
+                // ArmedWaiter's destructor resumes the suspended coroutine inline if post threw before moving.
             }
         }
     }
@@ -1084,8 +1087,9 @@ private:
 
             case ReaderEvent::Kind::OVERSIZE: co_return co_await send_error(nullptr, -32700, "Parse error: line exceeds 4 MiB limit");
 
-            case ReaderEvent::Kind::ERROR: try { std::cerr << "stdin read error: " << event.data << '\n';
-                } catch (...) {}
+            case ReaderEvent::Kind::ERROR:
+                std::fprintf(stderr, "stdin read error: %s\n", event.data.c_str());
+                std::fflush(stderr);
                 fatal_shutdown("stdin read error: " + event.data);
                 co_return false;
 
@@ -1231,7 +1235,7 @@ private:
                 bool list_tools_failed = false;
                 std::string list_tools_error;
                 try {
-                    tools_raw = list_tools_();
+                    tools_raw = (*list_tools_)();
                 } catch (const std::exception &e) {
                     list_tools_failed = true;
                     list_tools_error = std::string("Tool list callback error: ") + e.what();
@@ -1272,7 +1276,7 @@ private:
                     co_return co_await send_error(id, -32000, "Server overload: 64 outstanding tool calls already in flight");
                 }
 
-                if (!tool_exists_(tool_name)) {
+                if (!(*tool_exists_)(tool_name)) {
                     co_return co_await send_error(id, -32602, "Unknown tool: " + tool_name);
                 }
 
@@ -1325,37 +1329,44 @@ private:
                 const bool first = !target->cancel_requested;
                 target->cancel_requested = true;
                 target->cancel->emit(asio::cancellation_type::terminal);
-                if (first && target->live_export && !target->tool_finished && target->execution->load(std::memory_order_acquire) == 1) {
+                if (first && target->live_export && !target->tool_finished &&
+                    target->execution->state.load(std::memory_order_acquire) == ExecutionState::EXECUTING) {
                     auto timer = std::make_shared<asio::steady_timer>(ioc_, std::chrono::seconds(5));
                     target->watchdog = timer;
                     auto self = shared_from_this();
                     timer->async_wait([self, target, timer](const asio::error_code &error) {
                         if (error || target->tool_finished || target->response_started ||
-                            target->execution->load(std::memory_order_acquire) != 1) {
+                            target->execution->state.load(std::memory_order_acquire) != ExecutionState::EXECUTING) {
                             return;
                         }
-                        int running = 1;
-                        if (!target->execution->compare_exchange_strong(running, 5, std::memory_order_acq_rel)) return;
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-                        std::fprintf(stderr, "WATCHDOG_CLAIMED\n");
-                        std::fflush(stderr);
-#endif
+                        auto running = ExecutionState::EXECUTING;
+                        if (!target->execution->state.compare_exchange_strong(running, ExecutionState::WATCHDOG_TERMINATING,
+                                                                              std::memory_order_acq_rel)) {
+                            return;
+                        }
+                        if (test_hooks_enabled()) {
+                            std::fprintf(stderr, "WATCHDOG_CLAIMED\n");
+                            std::fflush(stderr);
+                        }
                         target->response_started = true;
                         // Decoupled exit waits for all committed reports. The
                         // identity check still prevents an old exit killing new work.
                         std::thread([execution = target->execution] {
                             std::this_thread::sleep_for(std::chrono::milliseconds(250));
                             std::unique_lock lock(publication_gate.mutex, std::defer_lock);
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-                            if (!lock.try_lock()) {
-                                std::fprintf(stderr, "WATCHDOG_LOCK_WAITING\n");
-                                std::fflush(stderr);
+                            if (test_hooks_enabled()) {
+                                if (!lock.try_lock()) {
+                                    std::fprintf(stderr, "WATCHDOG_LOCK_WAITING\n");
+                                    std::fflush(stderr);
+                                    lock.lock();
+                                }
+                            } else {
                                 lock.lock();
                             }
-#else
-                            lock.lock();
-#endif
-                            if (!publication_gate.closing && execution->load(std::memory_order_acquire) == 5) std::_Exit(70);
+                            if (!publication_gate.closing &&
+                                execution->state.load(std::memory_order_acquire) == ExecutionState::WATCHDOG_TERMINATING) {
+                                std::_Exit(70);
+                            }
                         }).detach();
                         asio::co_spawn(
                             self->ioc_,
@@ -1385,7 +1396,8 @@ private:
             call->live_export = name == "score_export";
             call->cancel = std::make_shared<asio::cancellation_signal>();
             if (call->live_export) {
-                call->execution->report = [self = shared_from_this(), id](Json payload) { self->publish_report(id, std::move(payload)); };
+                call->execution->report = make_unique_fn<void(Json)>(
+                    [self = shared_from_this(), id](Json payload) { self->publish_report(id, std::move(payload)); });
             }
             inflight_.push_back(call);
         } catch (...) {
@@ -1437,7 +1449,7 @@ private:
         std::string error_message;
 
         try {
-            Json payload = co_await call_tool_(std::move(name), std::move(arguments), call->execution);
+            Json payload = co_await (*call_tool_)(std::move(name), std::move(arguments), call->execution);
             call->tool_finished = true;
             if (call->watchdog) call->watchdog->cancel();
 
@@ -1675,9 +1687,9 @@ private:
             return;
         }
         shutdown_called_ = true;
-        if (shutdown_) {
+        if (shutdown_.has_value()) {
             try {
-                shutdown_();
+                (*shutdown_)();
             } catch (...) {}
         }
     }
@@ -1689,7 +1701,7 @@ private:
         failed_.store(true, std::memory_order_relaxed);
         if (!reason.empty()) {
             try {
-                std::cerr << "mcp transport failure: " << reason << '\n';
+                terminal_diagnostic("mcp transport failure: " + reason + "\n");
             } catch (...) {}
         }
 
@@ -1717,15 +1729,11 @@ private:
     }
 #endif
 
-    // ---------------------------------------------------------------------
-    // State
-    // ---------------------------------------------------------------------
-
     asio::io_context &ioc_;
-    std::function<Json()> list_tools_;
-    std::function<bool(std::string_view)> tool_exists_;
+    UniqueFn<Json()> list_tools_;
+    UniqueFn<bool(std::string_view)> tool_exists_;
     AsyncToolCall call_tool_;
-    std::function<void()> shutdown_;
+    UniqueFn<void()> shutdown_;
     asio::executor_work_guard<asio::io_context::executor_type> work_;
 
     ServerState state_ = ServerState::UNINITIALIZED;
@@ -1736,7 +1744,7 @@ private:
     std::mutex queue_mutex_;
     std::condition_variable queue_cv_;
     std::deque<ReaderEvent> queue_;
-    std::size_t queued_bytes_ = 0;
+    usize queued_bytes_ = 0;
     bool drain_scheduled_ = false;
     std::atomic<bool> stop_reader_{false};
 
@@ -1745,14 +1753,14 @@ private:
     std::mutex out_mutex_;
     std::condition_variable out_cv_;
     std::deque<OutputMessage> out_messages_;
-    std::size_t out_budget_used_ = 0;
-    std::size_t out_message_slots_ = 0;
+    usize out_budget_used_ = 0;
+    usize out_message_slots_ = 0;
     bool out_abort_ = false;
     bool out_graceful_stop_ = false;
     bool writer_stop_requested_ = false;
     std::atomic<bool> writer_abort_{false};
     std::atomic<bool> output_progress_pending_{false};
-    std::deque<std::unique_ptr<OutputWaiter>> output_waiters_; // session thread only
+    std::deque<OutputWaiter> output_waiters_; // session thread only
 
     std::atomic<bool> fatal_{false};
     std::atomic<bool> failed_{false};
@@ -1771,8 +1779,8 @@ private:
 
 } // namespace
 
-int serve_stdio_async(const std::function<Json()> &list_tools, const std::function<bool(std::string_view)> &tool_exists,
-                      const AsyncToolCall &call_tool, const std::function<void()> &shutdown) {
+int serve_stdio_async(UniqueFn<Json()> list_tools, UniqueFn<bool(std::string_view)> tool_exists, AsyncToolCall call_tool,
+                      UniqueFn<void()> shutdown) {
 #if !defined(_WIN32)
     std::signal(SIGPIPE, SIG_IGN);
 #endif
@@ -1781,7 +1789,8 @@ int serve_stdio_async(const std::function<Json()> &list_tools, const std::functi
         asio::io_context ioc;
         std::shared_ptr<Session> session;
         try {
-            session = std::make_shared<Session>(ioc, list_tools, tool_exists, call_tool, shutdown);
+            session =
+                std::make_shared<Session>(ioc, std::move(list_tools), std::move(tool_exists), std::move(call_tool), std::move(shutdown));
             session->start_threads();
         } catch (...) {
             if (session) {

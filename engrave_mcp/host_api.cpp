@@ -5,8 +5,8 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
-#include <unordered_map>
-#include <unordered_set>
+
+#include <ankerl/unordered_dense.h>
 
 #include "api_json_internal.h"
 
@@ -175,8 +175,8 @@ struct HostApi::Impl {
     ExportLimits limits;
     std::shared_ptr<const RuntimeAssets> assets;
     std::unique_ptr<engrave::Engine> engine; // destroyed after documents, before assets
-    std::unordered_map<std::string, std::unique_ptr<engrave::Document>> documents;
-    std::unordered_set<std::string> borrowed;
+    ankerl::unordered_dense::map<std::string, std::unique_ptr<engrave::Document>> documents;
+    ankerl::unordered_dense::set<std::string> borrowed;
 
     void check_thread() const {
         if (std::this_thread::get_id() != owner) {
@@ -521,8 +521,7 @@ Json HostApi::runtime_info(const Json &j) {
     });
 }
 
-Result<void> HostApi::with_document(std::string_view token, std::optional<std::uint64_t> expected,
-                                    const std::function<Result<void>(engrave::Document &)> &fn,
+Result<void> HostApi::with_document(std::string_view token, std::optional<u64> expected, FnRef<Result<void>(engrave::Document &)> fn,
                                     const std::vector<std::string> *visible_paths) {
     const std::string key(token);
     auto failure = [&](HostError error) -> Result<void> {
@@ -537,7 +536,7 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<std::u
         }
 
         struct Guard {
-            std::unordered_set<std::string> &set;
+            ankerl::unordered_dense::set<std::string> &set;
             const std::string &key;
 
             ~Guard() { set.erase(key); }

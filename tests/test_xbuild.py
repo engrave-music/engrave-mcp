@@ -98,6 +98,18 @@ class XBuildTests(unittest.TestCase):
                     ]
                     self.assertCountEqual(options, expected)
 
+    def test_reconfigure_accepted_after_action(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with (
+                patch.object(xbuild, "__file__", str(root / "scripts/xbuild.py")),
+                patch.object(xbuild.subprocess, "call", return_value=0) as call,
+            ):
+                rc = xbuild.main(["--profile", "asan", "configure", "--reconfigure", "-c"])
+            self.assertEqual(rc, 0)
+            self.assertNotIn("--reconfigure", call.call_args.args[0])
+            self.assertIn("-c", call.call_args.args[0])
+
 
 if __name__ == "__main__":
     sys.exit(unittest.main())

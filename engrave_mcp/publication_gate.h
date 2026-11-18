@@ -2,11 +2,10 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <cstddef>
-#include <functional>
 #include <mutex>
 
 #include "json.h"
+#include "types.h"
 
 namespace music {
 
@@ -14,20 +13,28 @@ namespace music {
 // Recursive only so staging cleanup can record failures in that same scope.
 struct PublicationGate {
     std::recursive_mutex mutex;
-    std::size_t owner_tasks = 0;
+    usize owner_tasks = 0;
     bool closing = false;
-    std::size_t cleanup_failures = 0;
+    usize cleanup_failures = 0;
     std::condition_variable_any changed;
 };
 
 inline PublicationGate publication_gate;
 
-// Execution states cover queued/running/cancelled/finished/publishing/watchdog.
-// Report delivery is synchronous on the owner; it has no execution state.
-struct RequestExecution : std::atomic<int> {
-    RequestExecution() : std::atomic<int>(0) {}
+enum class ExecutionState : i32 {
+    QUEUED = 0,
+    EXECUTING = 1,
+    CANCELLED_QUEUED = 2,
+    FINISHED = 3,
+    PUBLISHING = 4,
+    WATCHDOG_TERMINATING = 5,
+};
 
-    std::function<void(Json)> report;
+struct RequestExecution {
+    std::atomic<ExecutionState> state{ExecutionState::QUEUED};
+    UniqueFn<void(Json)> report;
+    mutable std::mutex response_mutex;
+    bool report_sent = false;
 
     void mark_report_sent() {
         std::lock_guard lock(response_mutex);
@@ -38,9 +45,6 @@ struct RequestExecution : std::atomic<int> {
         std::lock_guard lock(response_mutex);
         return report_sent;
     }
-private:
-    mutable std::mutex response_mutex;
-    bool report_sent = false;
 };
 
 } // namespace music

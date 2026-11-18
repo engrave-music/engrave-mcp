@@ -65,9 +65,9 @@ $env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
   --output notes/runs/lanes -j 4
 ```
 
-`--profile` selects `build/<profile>` (default: `release`); `--build-dir` overrides it, and `--no-build` skips building the targets the selected lanes need. Pass `--list-lanes` to print the catalogue, parallel vs. exclusive scheduling, and dependencies.
+`--profile` selects `build/<profile>` (default: `release`); `--build-dir` overrides it, and `--no-build` skips building the targets the selected lanes need. Pass `--list-lanes` (no runtime/asset paths required) to print the catalogue, parallel vs. exclusive scheduling, and dependencies.
 
-Parallel lanes run in a thread pool (`-j` / `--jobs`, default half the CPU count bounded to 2–8; `-j 1` runs sequentially). Each lane gets its own `<output>/<lane>/cwd` and `tmp`, and writes `<output>/<lane>.log`; `semantic_check` waits for `golden` or requires a prior golden capture in `<output>/golden/actual`. After parallel work drains, timing, stress, and mutating lanes run exclusively one at a time so concurrent runs do not skew latency measurements or share working state; run without unrelated builds or benchmarks when measuring timing.
+Parallel lanes run in a thread pool (`-j` / `--jobs`, default half the CPU count bounded to 2–8; `-j 1` runs sequentially). Each lane gets its own `<output>/<lane>/cwd` and `tmp`, and writes `<output>/<lane>.log`; `semantic_check` waits for `golden` or requires a prior golden capture in `<output>/golden/actual`. After parallel work drains, exclusive lanes (default: `live_export`, `live_audio`, `archives`, `async_session`, `engine_audio`; opt-in: `document_stress`, `live_dense_cancel`, `live_queued_cancel`, `transport_wakeup`, `xmake_incremental`) run one at a time so concurrent runs do not skew latency measurements or share working state; run without unrelated builds or benchmarks when measuring timing.
 
 Use `--only lane1,lane2` to run a subset (including opt-in lanes). The runner verifies line endings, native include boundaries, and required binaries before execution.
 

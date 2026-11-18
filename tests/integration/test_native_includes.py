@@ -19,7 +19,8 @@ class IncludeBoundaryTest(unittest.TestCase):
             (native / "local.h").touch()
             source = native / "test.cpp"
             source.write_text(
-                '#include "local.h"\n#include <engrave/engine.h>\n#include <vector>\n#include <asio/awaitable.hpp>\n'
+                '#include "local.h"\n#include <engrave/engine.h>\n#include <vector>\n'
+                "#include <asio/awaitable.hpp>\n#include <proxy/proxy.h>\n#include <ankerl/unordered_dense.h>\n"
             )
             self.assertEqual(audit(native, public), [])
             for include in (
@@ -29,6 +30,8 @@ class IncludeBoundaryTest(unittest.TestCase):
                 '"../internal.h"',
                 "<engrave/../internal.h>",
                 "<global/types.h>",
+                "<unordered_map>",
+                "<set>",
                 "HEADER_MACRO",
             ):
                 source.write_text(f"#include {include}\n")

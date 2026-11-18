@@ -1,6 +1,6 @@
 """Fail-closed, stage-synchronized 4.70 conversion interruption.
 
-Requires engrave-mcp-test (MUSIC_ASYNC_TEST_HOOKS); the release host must fail.
+Requires engrave-mcp-test (test hooks enabled); the release host must fail.
 The callback pauses at Converting unit 2 for a real MCP cancel notification,
 or expires the real reservation there for the deadline variant.
 """

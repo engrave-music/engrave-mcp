@@ -146,7 +146,7 @@ The root `clice.toml` maps profile databases (`build/release`, `build/debug`, `b
 
 Host formatting and linting follow the root `.clang-format` and `.clang-tidy`; engine checks via `--engine` follow `vendor/engrave/.clang-format` and `vendor/engrave/.clang-tidy`.
 
-Per step, lint the touched files (`pixi run lint -- <paths>`, or `pixi run lint -- --engine <paths>` for engine files; regenerate `compdb` if translation units changed). Full-tree engine naming lint (`pixi run lint -- --engine`) runs at milestones (see [defects.md](defects.md) for pre-existing baseline findings).
+Per step, lint the touched files (`pixi run lint -- <paths>`, or `pixi run lint -- --engine <paths>` for engine files; regenerate `compdb` if translation units changed). Full-tree engine naming lint (`pixi run lint -- --engine`) runs at milestones.
 
 Both `scripts/lint.py` and `vendor/engrave/tools/lint.py` automatically select the newest `compile_commands.json` across `build/<profile>/` and the repository root; explicit clice uses the profile mappings in `clice.toml`.
 

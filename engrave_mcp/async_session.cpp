@@ -2,10 +2,8 @@
 
 #include <atomic>
 #include <chrono>
-#ifdef MUSIC_ASYNC_TEST_HOOKS
 #include <cstdio>
 #include <cstdlib>
-#endif
 #include <future>
 #include <optional>
 #include <thread>
@@ -27,6 +25,7 @@
 #include "mcp_transport.h"
 #include "publication_gate.h"
 #include "registry.h"
+#include "test_hooks.h"
 
 namespace music {
 
@@ -72,17 +71,15 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     std::unique_ptr<HostApi> host;
     std::jthread owner_thread;
     std::thread::id session_thread = std::this_thread::get_id();
-    std::size_t owner_pending = 0;
+    usize owner_pending = 0;
     bool closing = false;
     std::atomic<bool> stopping{false};
-#ifdef MUSIC_ASYNC_TEST_HOOKS
     std::atomic<bool> test_owner_busy{false};
-#endif
 
     explicit Impl(engrave::EngineOptions options) {
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (const auto *bytes = std::getenv("ENGRAVE_MCP_TEST_OUTPUT_BYTES")) limits.output_bytes = std::stoull(bytes);
-#endif
+        if (test_hooks_enabled()) {
+            if (const auto *bytes = std::getenv("ENGRAVE_MCP_TEST_OUTPUT_BYTES")) limits.output_bytes = std::stoull(bytes);
+        }
         validate_registry();
         validate_handlers(handlers);
         std::promise<void> ready;
@@ -124,10 +121,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             // Never block the session's cancellation/timer loop behind stdout.
             std::unique_lock admission(publication_gate.mutex, std::try_to_lock);
             if (admission.owns_lock() && publication_gate.closing) {
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-                std::fprintf(stderr, "ADMISSION_REFUSED_CLOSING\n");
-                std::fflush(stderr);
-#endif
+                if (test_hooks_enabled()) {
+                    std::fprintf(stderr, "ADMISSION_REFUSED_CLOSING\n");
+                    std::fflush(stderr);
+                }
                 throw asio::system_error(asio::error::operation_aborted);
             }
         }
@@ -163,8 +160,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     slot.assign([state, task, complete, running_cancel](asio::cancellation_type type) mutable {
                         if (type == asio::cancellation_type::none) return;
                         if (running_cancel) running_cancel->store(true, std::memory_order_release);
-                        int queued = 0;
-                        if (state->compare_exchange_strong(queued, 2)) {
+                        auto queued = ExecutionState::QUEUED;
+                        if (state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED)) {
                             task->reset();
                             complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), T{});
                         }
@@ -173,20 +170,20 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 if (owner_task) ++self->owner_pending;
                 try {
                     asio::post(target, [self, task, complete, state, running_cancel, preserve_completed]() mutable {
-                        int queued = 0;
+                        auto queued = ExecutionState::QUEUED;
                         {
                             std::lock_guard lock(publication_gate.mutex);
                             if (publication_gate.closing) {
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-                                std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n");
-                                std::fflush(stderr);
-#endif
-                                if (!state->compare_exchange_strong(queued, 2)) return;
+                                if (test_hooks_enabled()) {
+                                    std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n");
+                                    std::fflush(stderr);
+                                }
+                                if (!state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED)) return;
                                 task->reset();
                                 complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), T{});
                                 return;
                             }
-                            if (!state->compare_exchange_strong(queued, 1)) return;
+                            if (!state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) return;
                             ++publication_gate.owner_tasks;
                         }
                         std::exception_ptr error;
@@ -205,17 +202,15 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         {
                             std::lock_guard lock(publication_gate.mutex);
                             --publication_gate.owner_tasks;
-                            state->store(3, std::memory_order_release);
+                            state->state.store(ExecutionState::FINISHED, std::memory_order_release);
                         }
                         publication_gate.changed.notify_all();
                         complete(error, std::move(result));
                     });
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-                    if (owner_task) {
+                    if (test_hooks_enabled() && owner_task) {
                         std::fprintf(stderr, "OWNER_ENQUEUED\n");
                         std::fflush(stderr);
                     }
-#endif
                 } catch (...) {
                     if (owner_task) --self->owner_pending;
                     if (slot.is_connected()) slot.clear();
@@ -238,20 +233,20 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
     auto self = impl_;
     if (std::this_thread::get_id() != self->session_thread) throw std::logic_error("AsyncSession called from non-session thread");
     if (self->closing) throw asio::system_error(asio::error::operation_aborted);
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-    if (name == "test_owner_state") co_return Json{{"ok", true}, {"busy", self->test_owner_busy.load()}};
-    if (name == "test_owner_sleep") {
-        co_return co_await self->dispatch<Json>(
-            self->owner_io,
-            [self] {
-                self->test_owner_busy.store(true);
-                std::this_thread::sleep_for(std::chrono::seconds(2));
-                self->test_owner_busy.store(false);
-                return Json{{"ok", true}, {"slept_ms", 2000}};
-            },
-            true);
+    if (test_hooks_enabled()) {
+        if (name == "test_owner_state") co_return Json{{"ok", true}, {"busy", self->test_owner_busy.load()}};
+        if (name == "test_owner_sleep") {
+            co_return co_await self->dispatch<Json>(
+                self->owner_io,
+                [self] {
+                    self->test_owner_busy.store(true);
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                    self->test_owner_busy.store(false);
+                    return Json{{"ok", true}, {"slept_ms", 2000}};
+                },
+                true);
+        }
     }
-#endif
     const auto *spec = find_tool(name);
     if (!spec) throw ToolCallError("InvalidArgument", "Unknown tool");
     const auto handler = handlers[static_cast<std::size_t>(spec->handler)];
@@ -283,32 +278,31 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                                 submitted, *timing, *runtime,
                                 [execution, &publication] {
                                     if (!execution) return true;
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-                                    if (!publication.try_lock()) {
-                                        std::fprintf(stderr, "PUBLICATION_LOCK_WAITING\n");
-                                        std::fflush(stderr);
+                                    if (test_hooks_enabled()) {
+                                        if (!publication.try_lock()) {
+                                            std::fprintf(stderr, "PUBLICATION_LOCK_WAITING\n");
+                                            std::fflush(stderr);
+                                            publication.lock();
+                                        }
+                                    } else {
                                         publication.lock();
                                     }
-#else
-                                    publication.lock();
-#endif
                                     if (publication_gate.closing) {
                                         publication.unlock();
                                         return false;
                                     }
-                                    int running = 1;
-                                    if (!execution->compare_exchange_strong(running, 4, std::memory_order_acq_rel)) {
+                                    auto running = ExecutionState::EXECUTING;
+                                    if (!execution->state.compare_exchange_strong(running, ExecutionState::PUBLISHING,
+                                                                                  std::memory_order_acq_rel)) {
                                         publication.unlock();
                                         return false;
                                     }
                                     return true;
                                 },
                                 &visible_paths);
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-                            if (!visible_paths.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
+                            if (test_hooks_enabled() && !visible_paths.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
                                 throw 42; // exercise the non-standard exception boundary too
                             }
-#endif
                             if (!output) return std::unexpected(output.error());
                             payload = std::move(*output);
                             return {};
@@ -318,25 +312,24 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                         if (result.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
                         payload = error_envelope(result.error());
                     }
-                    if (publication.owns_lock() && execution && execution->report) {
-                        execution->report(std::move(payload));
+                    if (publication.owns_lock() && execution && execution->report.has_value()) {
+                        (*execution->report)(std::move(payload));
                         execution->mark_report_sent();
                         return Json{};
                     }
                     return payload;
                 } catch (...) {
-                    if (publication.owns_lock() && execution && execution->load() == 4 && execution->report) {
-                        execution->report(Json{}); // terminal: trustworthy report unavailable
+                    if (publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING &&
+                        execution->report.has_value()) {
+                        (*execution->report)(Json{}); // terminal: trustworthy report unavailable
                     }
                     throw;
                 }
             },
             true, request_cancel, true, execution);
-#ifdef MUSIC_ASYNC_TEST_HOOKS
-        if (execution && execution->was_reported() && std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_REPORT")) {
+        if (test_hooks_enabled() && execution && execution->was_reported() && std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_REPORT")) {
             throw std::runtime_error("Injected post-report completion failure");
         }
-#endif
         timing->finish();
         co_return payload;
     }
