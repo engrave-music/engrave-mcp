@@ -357,6 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     common_flags = [
         f"--config={args.profile}",
         f"--repository_cache={repo_cache}",
+        "--repo_contents_cache=",
         f"--disk_cache={disk_cache}",
         f"--repo_env=ENGRAVE_PIXI_PREFIX={pixi_prefix}",
         f"--repo_env=ENGRAVE_GIT_REVISION={rev}",
