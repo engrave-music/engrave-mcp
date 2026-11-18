@@ -24,6 +24,10 @@ CheckOptions:
     value: lower_case
   - key: readability-identifier-naming.FunctionIgnoredRegexp
     value: "^__(real|wrap)_"
+  - key: readability-identifier-naming.GlobalFunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.GlobalFunctionIgnoredRegexp
+    value: "^__(real|wrap)_"
   - key: readability-identifier-naming.MemberCase
     value: lower_case
   - key: readability-identifier-naming.ClassMemberCase
