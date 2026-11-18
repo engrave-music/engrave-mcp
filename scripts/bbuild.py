@@ -258,6 +258,12 @@ def generate_compdb(
             if tok.startswith("-frandom-seed="):
                 i += 1
                 continue
+            if tok == "-include-pch" and i + 1 < len(raw_args):
+                i += 2
+                continue
+            if tok == "-Xclang" and i + 1 < len(raw_args) and raw_args[i + 1] == "-fno-validate-pch":
+                i += 2
+                continue
             if tok.startswith("--config="):
                 rel_cfg = tok[len("--config=") :]
                 if rel_cfg not in cfg_cache:
@@ -381,10 +387,7 @@ def main(argv: list[str] | None = None) -> int:
         return subprocess.call([bazel, "fetch", *common_flags, *labels], cwd=root, env=env)
 
     if args.action == "compdb":
-        compdb_flags = [f for f in build_flags if not f.startswith("--@engrave//bazel:pch")] + [
-            "--@engrave//bazel:pch=false"
-        ]
-        return generate_compdb(bazel, root, env, compdb_flags, common_flags, labels, out_dir)
+        return generate_compdb(bazel, root, env, build_flags, common_flags, labels, out_dir)
 
     # Check native includes boundary before building host targets.
     py = pixi_prefix / ("python.exe" if os.name == "nt" else "bin/python")
