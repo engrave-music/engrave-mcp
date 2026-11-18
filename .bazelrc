@@ -1,0 +1,2 @@
+import %workspace%/bazel/engrave_mcp.bazelrc
+try-import %workspace%/user.bazelrc

@@ -1,0 +1,241 @@
+load("@engrave//bazel:defs.bzl", "win_manifest_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["engrave_mcp/utf8.manifest"])
+
+HOST_DEFINES = select({
+    "@platforms//os:windows": [
+        "WIN32",
+        "NOMINMAX",
+        "WIN32_LEAN_AND_MEAN",
+        "NOGDI",
+        "_USE_MATH_DEFINES",
+        "_UNICODE",
+        "UNICODE",
+    ],
+    "//conditions:default": [],
+})
+
+HOST_COPTS = [
+    "-Wno-deprecated-declarations",
+] + select({
+    "@platforms//os:windows": [],
+    "//conditions:default": [
+        "-fPIC",
+        "-pthread",
+    ],
+})
+
+HOST_LINKOPTS = select({
+    "@platforms//os:windows": ["-Wl,--stack,16777216"],
+    "//conditions:default": ["-pthread"],
+})
+
+win_manifest_library(
+    name = "utf8_manifest",
+    manifest = "engrave_mcp/utf8.manifest",
+)
+
+WIN_MANIFEST_DEPS = select({
+    "@platforms//os:windows": [":utf8_manifest"],
+    "//conditions:default": [],
+})
+
+cc_library(
+    name = "host_headers",
+    hdrs = glob(["engrave_mcp/*.h"]),
+    defines = HOST_DEFINES,
+    includes = ["engrave_mcp"],
+)
+
+cc_library(
+    name = "tool_registry",
+    srcs = [
+        "engrave_mcp/json.cpp",
+        "engrave_mcp/registry.cpp",
+        "engrave_mcp/schema_defs.cpp",
+    ],
+    copts = HOST_COPTS,
+    deps = [
+        ":host_headers",
+        "@amc",
+        "@engrave//:public_headers",
+        "@glaze",
+        "@ngcpp_proxy",
+        "@unordered_dense",
+    ],
+)
+
+cc_library(
+    name = "document_store",
+    srcs = [
+        "engrave_mcp/api_edit_json.cpp",
+        "engrave_mcp/api_json.cpp",
+        "engrave_mcp/host_api.cpp",
+    ],
+    copts = HOST_COPTS,
+    deps = [
+        ":host_headers",
+        ":tool_registry",
+        "@amc",
+        "@engrave//:engrave",
+        "@glaze",
+        "@ngcpp_proxy",
+        "@unordered_dense",
+    ],
+)
+
+cc_binary(
+    name = "registry_dump",
+    srcs = ["engrave_mcp/tools/registry_dump.cpp"],
+    copts = HOST_COPTS,
+    linkopts = HOST_LINKOPTS,
+    deps = [":tool_registry"],
+)
+
+cc_binary(
+    name = "registry_test",
+    srcs = ["engrave_mcp/tests/registry_test.cpp"],
+    copts = HOST_COPTS,
+    linkopts = HOST_LINKOPTS,
+    deps = [":tool_registry"],
+)
+
+cc_library(
+    name = "host_publication",
+    srcs = ["engrave_mcp/publication.cpp"],
+    copts = HOST_COPTS,
+    linkopts = select({
+        "@platforms//os:windows": ["-ladvapi32"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":host_headers",
+        "@amc",
+        "@ngcpp_proxy",
+        "@unordered_dense",
+    ],
+)
+
+cc_library(
+    name = "engrave_mcp_core",
+    srcs = [
+        "engrave_mcp/api_output.cpp",
+        "engrave_mcp/async_session.cpp",
+        "engrave_mcp/mcp_transport.cpp",
+        "engrave_mcp/server_main.cpp",
+    ],
+    copts = HOST_COPTS,
+    defines = select({
+        "@platforms//os:windows": ["_WIN32_WINNT=0x0A00"],
+        "//conditions:default": [],
+    }),
+    linkopts = HOST_LINKOPTS + select({
+        "@platforms//os:windows": [
+            "-lws2_32",
+            "-lmswsock",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":document_store",
+        ":host_headers",
+        ":host_publication",
+        "@amc",
+        "@asio",
+        "@glaze",
+        "@ngcpp_proxy",
+        "@unordered_dense",
+    ],
+)
+
+cc_binary(
+    name = "engrave-mcp",
+    srcs = ["engrave_mcp/main.cpp"],
+    copts = HOST_COPTS,
+    linkopts = HOST_LINKOPTS,
+    deps = [":engrave_mcp_core"] + WIN_MANIFEST_DEPS,
+)
+
+alias(
+    name = "engrave_mcp",
+    actual = ":engrave-mcp",
+)
+
+cc_binary(
+    name = "engrave-mcp-test",
+    srcs = ["engrave_mcp/tests/main_test.cpp"],
+    copts = HOST_COPTS,
+    linkopts = HOST_LINKOPTS,
+    deps = [":engrave_mcp_core"] + WIN_MANIFEST_DEPS,
+)
+
+alias(
+    name = "engrave_mcp_test",
+    actual = ":engrave-mcp-test",
+)
+
+cc_binary(
+    name = "host_api_test",
+    srcs = ["engrave_mcp/tests/host_api_test.cpp"],
+    copts = HOST_COPTS,
+    linkopts = HOST_LINKOPTS,
+    deps = [
+        ":document_store",
+        "@glaze",
+    ] + WIN_MANIFEST_DEPS,
+)
+
+cc_binary(
+    name = "live_export_test",
+    srcs = ["engrave_mcp/tests/live_export_test.cpp"],
+    copts = HOST_COPTS,
+    linkopts = HOST_LINKOPTS,
+    deps = [
+        ":engrave_mcp_core",
+        "@glaze",
+    ] + WIN_MANIFEST_DEPS,
+)
+
+cc_binary(
+    name = "staging_test",
+    srcs = ["engrave_mcp/tests/staging_test.cpp"],
+    copts = HOST_COPTS,
+    linkopts = HOST_LINKOPTS,
+    deps = [":host_publication"],
+)
+
+cc_binary(
+    name = "publication_test",
+    srcs = ["engrave_mcp/tests/publication_test.cpp"],
+    copts = HOST_COPTS,
+    linkopts = HOST_LINKOPTS + ["-Wl,--wrap=fsync"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [":host_publication"],
+)
+
+filegroup(
+    name = "host_binaries",
+    srcs = [
+        ":engrave-mcp",
+        ":engrave-mcp-test",
+        ":host_api_test",
+        ":live_export_test",
+        ":registry_dump",
+        ":registry_test",
+        ":staging_test",
+    ] + select({
+        "@platforms//os:linux": [":publication_test"],
+        "//conditions:default": [],
+    }),
+)
+
+filegroup(
+    name = "all_binaries",
+    srcs = [
+        ":host_binaries",
+        "@engrave//:engine_tests",
+    ],
+)

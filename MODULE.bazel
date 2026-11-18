@@ -1,0 +1,27 @@
+module(
+    name = "engrave_mcp",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_cc", version = "0.2.28")
+bazel_dep(name = "xclang", version = "23.1.5.2")
+
+bazel_dep(name = "engrave", version = "0.1.0")
+local_path_override(
+    module_name = "engrave",
+    path = "vendor/engrave",
+)
+
+engrave_deps = use_extension("@engrave//bazel:deps.bzl", "engrave_deps")
+use_repo(
+    engrave_deps,
+    "amc",
+    "glaze",
+    "ngcpp_proxy",
+    "unordered_dense",
+)
+
+host_deps = use_extension("//bazel:deps.bzl", "host_deps")
+use_repo(host_deps, "asio")
