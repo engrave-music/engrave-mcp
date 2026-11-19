@@ -28,7 +28,7 @@ pixi run python scripts/bootstrap.py --soundfont
 pixi run python scripts/prepare.py
 ```
 
-`bootstrap.py` verifies the submodule status and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies a clean, pinned `vendor/engrave` checkout (refusing a modified engine) and stages its hash-pinned asset manifest into `.runtime/assets`. `scripts/check_build_inputs.py` verifies `.bazelversion` and `pixi.lock` native package parity (`cairo`, `zlib`, `libzlib`) between the host and `vendor/engrave`.
+`bootstrap.py` verifies the submodule status and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies a clean, pinned `vendor/engrave` checkout (refusing a modified engine) and stages its asset manifest from committed Git blobs into `.runtime/assets`. `scripts/check_build_inputs.py` verifies `.bazelversion` and `pixi.lock` native package parity (`cairo`, `zlib`, `libzlib`) between the host and `vendor/engrave`.
 
 ## Development builds
 

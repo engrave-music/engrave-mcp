@@ -13,7 +13,7 @@ The fork contains its own standalone Bazel (`MODULE.bazel`, `BUILD.bazel`) build
 - `MODULE.bazel`, `BUILD.bazel`, `bazel/` — engine library targets (`//:engrave` over `//:engrave_core` and `//:engrave_audio`), isolated version metadata (`@engrave_config//:muse_generated`), relocatable Clang binary PCH (`bazel/pch/engraving_pch.h`), and hash-pinned third-party dependencies (`bazel/deps.bzl`, `bazel/third_party/*.BUILD.bazel`).
 - `//:engine_tests` (`BUILD.bazel`) — test and probe filegroup building the public API, import, playback, and adapter regression suites.
 - `engrave/include/engrave/` — public header interface (`engrave.h`, `engine.h`, `document.h`, `output.h`, `audio.h`, `edit.h`, `query.h`, `export_warning.h`, `error.h`, `version.h`). Host code includes only headers from this directory.
-- `engrave/assets.json` and `tools/install_assets.py` — SHA-256 and byte-size manifest (pinned fonts, instruments, templates, MPE profiles, and license notices) and standalone installer.
+- `engrave/assets.json` and `tools/install_assets.py` — runtime asset path manifest (fonts, instruments, templates, MPE profiles, and license notices) and standalone installer reading committed Git blobs via `git cat-file --batch`.
 
 ## Hard-fork rules
 
