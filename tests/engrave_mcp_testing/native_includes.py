@@ -181,6 +181,7 @@ def audit(native: Path, public: Path) -> list[str]:
                     or name == "asio.hpp"
                     or name.startswith("asio/")
                     or name.startswith("glaze/")
+                    or name.startswith("gtest/")
                     or name.startswith("proxy/")
                     or name.startswith("ankerl/")
                     or name.startswith("amc/")

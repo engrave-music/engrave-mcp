@@ -140,7 +140,10 @@ cc_binary(
     additional_compiler_inputs = HOST_PCH_INPUTS,
     copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS,
-    deps = [":tool_registry"],
+    deps = [
+        ":tool_registry",
+        "@gtest",
+    ],
 )
 
 cc_library(
@@ -225,6 +228,7 @@ cc_binary(
     deps = [
         ":document_store",
         "@glaze",
+        "@gtest",
     ] + WIN_MANIFEST_DEPS,
 )
 
@@ -245,7 +249,10 @@ cc_binary(
     srcs = ["engrave_mcp/tests/staging_test.cpp"],
     copts = HOST_COPTS,
     linkopts = HOST_LINKOPTS,
-    deps = [":host_publication"],
+    deps = [
+        ":host_publication",
+        "@gtest",
+    ],
 )
 
 cc_binary(
@@ -254,7 +261,10 @@ cc_binary(
     copts = HOST_COPTS,
     linkopts = HOST_LINKOPTS + ["-Wl,--wrap=fsync"],
     target_compatible_with = ["@platforms//os:linux"],
-    deps = [":host_publication"],
+    deps = [
+        ":host_publication",
+        "@gtest",
+    ],
 )
 
 filegroup(

@@ -1,5 +1,5 @@
+#include <cstdio>
 #include <fstream>
-#include <iostream>
 
 #include "api_output.h"
 #include "export_timing.h"
@@ -92,10 +92,10 @@ int main(int argc, char **argv) {
                 }
             }
         }
-        std::cout << "partial: no content comparison for PDF/MSCZ; run tests/integration/test_live_export.py\n";
+        std::fputs("partial: no content comparison for PDF/MSCZ; run tests/integration/test_live_export.py\n", stdout);
         return 3;
     } catch (const std::exception &e) {
-        std::cerr << e.what() << '\n';
+        std::fprintf(stderr, "%s\n", e.what());
         return 1;
     }
 }

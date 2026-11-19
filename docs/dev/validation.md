@@ -186,14 +186,14 @@ and `build/.bazel_disk_cache`:
   --output notes/runs/gate --quick
 ```
 
-- `--quick` skips the exclusive timing checks (`output-timing` and
-  `dense-cancellation`) for per-step verification; omit `--quick` at milestones
-  and engine bumps.
+- `--quick` skips the `engine-audio` corpus check for faster per-step
+  verification; omit `--quick` at milestones and engine bumps.
 - Always pass a fresh `--output` directory under `notes/runs/<name>`; existing
   capture directories are rejected.
-- The gate executes the API, import, playback, and adapter suites, plus
-  `diagnostics_test`, `io_boundary_test`, installer tests, asset manifest
-  verification, and golden comparisons (`golden.py` +
+- The gate executes `engrave_core_tests` (API, handles, describe, read, ops,
+  import, MNX, diagnostics, and I/O boundary suites across GTest shards),
+  `engrave_output_test`, upstream playback/MPE suites, installer tests, asset
+  manifest verification, and golden comparisons (`golden.py` +
   `vendor/engrave/tests/data/golden/allow.json`).
 
 ## CI

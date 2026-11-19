@@ -19,6 +19,7 @@ use_repo(
     engrave_deps,
     "amc",
     "glaze",
+    "gtest",
     "ngcpp_proxy",
     "unordered_dense",
 )
