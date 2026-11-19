@@ -20,7 +20,7 @@ class HostBazelServerMcpTests(unittest.TestCase):
             self.assertEqual(projects["host"], root)
             self.assertEqual(projects["engine"], (root / "vendor/engrave").resolve())
 
-    def test_mcp_start_status_stop_all(self):
+    def test_mcp_start_status_and_rewarm_no_stop_tool(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             host_dir = root / "host"
@@ -35,19 +35,21 @@ class HostBazelServerMcpTests(unittest.TestCase):
             manager = mcp.BazelServerManager({"host": host_dir, "engine": eng_dir})
             self.assertEqual(manager.default_project, "host")
 
+            listed = mcp.handle_request(manager, {"jsonrpc": "2.0", "id": 0, "method": "tools/list"})
+            self.assertEqual(
+                [t["name"] for t in listed["result"]["tools"]], ["bazel_server_start", "bazel_server_status"]
+            )
+
             def fake_run(cmd, **kwargs):
                 res = MagicMock()
                 res.returncode = 0
                 res.stderr = ""
-                if cmd[1] == "info":
-                    res.stdout = f"server_pid: {pid}\noutput_base: {out_base}\n"
-                else:
-                    res.stdout = ""
+                res.stdout = f"server_pid: {pid}\noutput_base: {out_base}\n"
                 return res
 
             with (
                 patch.object(mcp, "find_bazel", return_value="bazel"),
-                patch.object(mcp.subprocess, "run", side_effect=fake_run),
+                patch.object(mcp.subprocess, "run", side_effect=fake_run) as run_mock,
             ):
                 start_resp = mcp.handle_request(
                     manager,
@@ -57,23 +59,18 @@ class HostBazelServerMcpTests(unittest.TestCase):
                 self.assertEqual(start_resp["result"]["structuredContent"]["project"], "host")
                 self.assertEqual(start_resp["result"]["structuredContent"]["server_pid"], pid)
 
-                stop_all = mcp.handle_request(
-                    manager,
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 2,
-                        "method": "tools/call",
-                        "params": {"name": "bazel_server_stop", "arguments": {"project": "all"}},
-                    },
-                )
-                self.assertFalse(stop_all["result"]["isError"])
-                self.assertEqual(len(stop_all["result"]["structuredContent"]["stopped"]), 2)
+                self.assertIsNone(manager.ensure_warm("host"))
+                self.assertEqual(run_mock.call_count, 1)
+
+                (out_base / "server/server.pid.txt").unlink()
+                self.assertIsNotNone(manager.ensure_warm("host"))
+                self.assertEqual(run_mock.call_count, 2)
 
                 bad = mcp.handle_request(
                     manager,
                     {
                         "jsonrpc": "2.0",
-                        "id": 3,
+                        "id": 2,
                         "method": "tools/call",
                         "params": {"name": "bazel_server_start", "arguments": {"project": "missing"}},
                     },

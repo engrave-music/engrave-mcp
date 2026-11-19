@@ -74,13 +74,16 @@ On Windows, agent command runners typically execute each shell call inside a Job
 Object with `KILL_ON_JOB_CLOSE`, which terminates any Bazel JVM spawned inside
 that call. `scripts/bazel_server_mcp.py` (and
 `vendor/engrave/tools/bazel_server_mcp.py` for standalone engine checkouts) is a
-zero-dependency stdio MCP server exposing `bazel_server_start`,
-`bazel_server_stop`, and `bazel_server_status` over a configurable project map
-(defaulting to `host` + `engine`, extensible via `--project NAME=PATH` or
-`--config projects.json`). Because the IDE/agent host keeps the MCP process
-alive outside per-command Job Objects, subsequent `scripts/bbuild.py`,
-`tests/engine_gate.py`, and `bazelisk` commands automatically connect to the
-same warm Bazel JVM:
+zero-dependency stdio MCP server exposing `bazel_server_start` and
+`bazel_server_status` over a configurable project map (defaulting to `host` +
+`engine`, extensible via `--project NAME=PATH` or `--config projects.json`).
+Passing `--warm host` warms the Bazel JVM in the background immediately on IDE
+startup and re-warms it automatically if Bazel ever exits after its idle timeout
+(`--keepalive-secs`, default 60s). Because the IDE/agent host keeps the MCP
+process alive outside per-command Job Objects, subsequent `scripts/bbuild.py`,
+`tests/run_lanes.py`, `tests/engine_gate.py`, and `bazelisk` commands
+automatically connect to the same warm Bazel JVM even if the agent never invokes
+an MCP tool:
 
 ```json
 {
