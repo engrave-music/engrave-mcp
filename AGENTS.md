@@ -16,10 +16,10 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
   and validation evidence in the host bump commit message, no pin tags).
   Native compilation is the target; do not introduce Node.js or WASM as runtime dependencies.
 - No computer use, screenshots, simulated input, or dependence on a desktop MuseScore install.
-- The build is xmake (no Qt): the engine build lives in the fork (`xmake/engrave.lua`
-  with folder globs, pinned engine package recipes), the host build in this repository's
-  `xmake.lua`, which includes the engine build from `vendor/engrave`; validate Windows
-  and Linux.
+- The build is Bazel + hermetic `xclang` (no Qt): the engine build lives in the fork
+  (`MODULE.bazel`, `BUILD.bazel`, and pinned package archives under `bazel/`), the host
+  build in this repository's `MODULE.bazel` and `BUILD.bazel`, which consume `@engrave`
+  from `vendor/engrave`; validate Windows and Linux.
   Work natively on Windows (PowerShell, `.pixi/envs/default/python.exe`). Linux means the
   physical lab host `ssh user@<linux-host>` (checkout `~/engrave/engrave-mcp`, environment
   `source ~/engrave/env.sh`); never use WSL for this project.
@@ -35,8 +35,8 @@ as a hard fork (cherry-picks only, no bulk upstream merges).
   `tests/engine_gate.py`): `--quick` per step, the full gate at milestones and engine bumps.
   The gate compares goldens in `vendor/engrave/tests/data/golden` with the explicit,
   hash-pinned allow-list (`vendor/engrave/tests/data/golden/allow.json`).
-- Build with `scripts/xbuild.py --profile <release|debug|releasedbg|asan>` into `build/<profile>`;
-  do not create ad hoc build directories, which start without the shared compile cache.
+- Build with `scripts/bbuild.py --profile <release|debug|releasedbg|asan>` into `build/<profile>`;
+  do not bypass `scripts/bbuild.py`'s shared Bazel caches (`build/.bazel_repo_cache` and `build/.bazel_disk_cache`).
 - Pin upstream revisions. Keep downloads in ignored `.upstream/` and runtime assets in `.runtime/`.
 - Working notes and worker transcripts belong in ignored `notes/`; gate and lane `--output`
   directories go under `notes/runs/<name>`; durable decisions in `docs/dev/`.

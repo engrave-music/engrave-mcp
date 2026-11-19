@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Run Bazel (xclang) builds with shared caches and stage binaries into build/bazel-<profile>."""
+"""Run Bazel (xclang) builds with shared caches and stage binaries into build/<profile>."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -17,51 +16,36 @@ from pathlib import Path
 
 PROFILES = ("release", "debug", "releasedbg", "asan")
 
-HOST_TARGETS = {
-    "engrave_mcp": "//:engrave-mcp",
-    "engrave-mcp": "//:engrave-mcp",
-    "engrave_mcp_test": "//:engrave-mcp-test",
-    "engrave-mcp-test": "//:engrave-mcp-test",
-    "host_api_test": "//:host_api_test",
-    "live_export_test": "//:live_export_test",
-    "staging_test": "//:staging_test",
-    "publication_test": "//:publication_test",
-    "registry_dump": "//:registry_dump",
-    "registry_test": "//:registry_test",
-    "host_binaries": "//:host_binaries",
-    "all_binaries": "//:all_binaries",
+HOST_TARGETS: dict[str, list[str]] = {
+    "engrave_mcp": ["//:engrave-mcp"],
+    "engrave-mcp": ["//:engrave-mcp"],
+    "engrave_mcp_test": ["//:engrave-mcp-test"],
+    "engrave-mcp-test": ["//:engrave-mcp-test"],
+    "host_api_test": ["//:host_api_test"],
+    "live_export_test": ["//:live_export_test"],
+    "staging_test": ["//:staging_test"],
+    "publication_test": ["//:publication_test"],
+    "registry_dump": ["//:registry_dump"],
+    "registry_test": ["//:registry_test"],
+    "registry_check": ["//:registry_dump", "//:registry_test"],
+    "host_binaries": ["//:host_binaries"],
+    "all_binaries": ["//:all_binaries"],
 }
 
 
-def resolve_target(name: str) -> str:
-    if name.startswith(("//", "@", ":")):
-        return name
-    if name in HOST_TARGETS:
-        return HOST_TARGETS[name]
-    return f"@engrave//:{name}"
-
-
-def seed_repo_cache_from_xmake(repo_cache: Path) -> None:
-    stamp = repo_cache / ".seeded_from_xmake"
-    if stamp.is_file():
-        return
-    cas = repo_cache / "content_addressable" / "sha256"
-    candidates = [
-        Path.home() / "AppData/Local/.xmake/cache/packages",
-        Path.home() / ".xmake/cache/packages",
-    ]
-    for base in candidates:
-        if not base.is_dir():
-            continue
-        for archive in base.rglob("*"):
-            if not archive.is_file() or archive.suffix not in {".gz", ".xz", ".zip"}:
-                continue
-            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-            slot = cas / digest / "file"
-            if not slot.is_file():
-                slot.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(archive, slot)
-    stamp.write_text("1\n", encoding="utf-8")
+def resolve_targets(names: list[str]) -> list[str]:
+    labels: list[str] = []
+    for name in names:
+        if name.startswith(("//", "@", ":")):
+            expanded = [name]
+        elif name in HOST_TARGETS:
+            expanded = HOST_TARGETS[name]
+        else:
+            expanded = [f"@engrave//:{name}"]
+        for label in expanded:
+            if label not in labels:
+                labels.append(label)
+    return labels
 
 
 def engine_git_revision(engine_dir: Path) -> str:
@@ -77,6 +61,9 @@ def engine_git_revision(engine_dir: Path) -> str:
 
 
 def find_bazel(pixi_prefix: Path) -> str:
+    found_bazel = shutil.which("bazel")
+    if found_bazel:
+        return found_bazel
     candidates = [
         pixi_prefix / "Library/bin/bazelisk.exe",
         pixi_prefix / "bin/bazelisk",
@@ -86,9 +73,9 @@ def find_bazel(pixi_prefix: Path) -> str:
     for cand in candidates:
         if cand.is_file():
             return str(cand)
-    found = shutil.which("bazelisk") or shutil.which("bazel")
-    if found:
-        return found
+    found_bazelisk = shutil.which("bazelisk")
+    if found_bazelisk:
+        return found_bazelisk
     raise SystemExit("bazelisk/bazel not found; run `pixi install`")
 
 
@@ -339,9 +326,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--build-directory", type=Path)
     parser.add_argument("-j", "--jobs", type=int)
     parser.add_argument("--no-pch", action="store_true", help="Disable precompiled headers")
+    parser.add_argument("--playback-harness", action="store_true", help="Enable ENGRAVE_PLAYBACK_HARNESS")
     parser.add_argument("action", choices=("build", "compdb", "fetch", "clean"))
     parser.add_argument("targets", nargs="*")
-    args = parser.parse_args(argv)
+    args = parser.parse_intermixed_args(argv)
 
     root = Path(__file__).resolve().parents[1]
     pixi_prefix = root / ".pixi/envs/default"
@@ -351,9 +339,8 @@ def main(argv: list[str] | None = None) -> int:
     disk_cache = root / "build/.bazel_disk_cache"
     repo_cache.mkdir(parents=True, exist_ok=True)
     disk_cache.mkdir(parents=True, exist_ok=True)
-    seed_repo_cache_from_xmake(repo_cache)
 
-    out_dir = (root / (args.build_directory or Path("build") / f"bazel-{args.profile}")).resolve()
+    out_dir = (root / (args.build_directory or Path("build") / args.profile)).resolve()
     rev = engine_git_revision(root / "vendor/engrave")
 
     env = dict(os.environ)
@@ -370,6 +357,8 @@ def main(argv: list[str] | None = None) -> int:
     ]
     if args.no_pch:
         common_flags.append("--@engrave//bazel:pch=false")
+    if args.playback_harness:
+        common_flags.append("--@engrave//bazel:playback_harness=true")
 
     build_flags = [
         *common_flags,
@@ -381,7 +370,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.action == "clean":
         return subprocess.call([bazel, "clean"], cwd=root, env=env)
 
-    labels = [resolve_target(t) for t in (args.targets or ["all_binaries"])]
+    requested_targets = args.targets or ["all_binaries"]
+    labels = resolve_targets(requested_targets)
 
     if args.action == "fetch":
         return subprocess.call([bazel, "fetch", *common_flags, *labels], cwd=root, env=env)
@@ -389,16 +379,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.action == "compdb":
         return generate_compdb(bazel, root, env, build_flags, common_flags, labels, out_dir)
 
-    # Check native includes boundary before building host targets.
     py = pixi_prefix / ("python.exe" if os.name == "nt" else "bin/python")
-    if py.is_file():
-        rc = subprocess.call(
-            [str(py), str(root / "scripts/check_native_includes.py"), "--engine-source", str(root / "vendor/engrave")],
-            cwd=root,
-            env=env,
-        )
-        if rc != 0:
-            return rc
+    py_exe = str(py) if py.is_file() else sys.executable
+    rc = subprocess.call(
+        [py_exe, str(root / "scripts/check_native_includes.py"), "--engine-source", str(root / "vendor/engrave")],
+        cwd=root,
+        env=env,
+    )
+    if rc != 0:
+        return rc
 
     with tempfile.NamedTemporaryFile(dir=root / "build", prefix=".bep-", suffix=".json", delete=False) as tf:
         bep_path = Path(tf.name)
@@ -410,9 +399,30 @@ def main(argv: list[str] | None = None) -> int:
         )
         if rc != 0:
             return rc
-        return stage_bep_outputs(bep_path, out_dir)
+        rc = stage_bep_outputs(bep_path, out_dir)
+        if rc != 0:
+            return rc
     finally:
         bep_path.unlink(missing_ok=True)
+
+    if "registry_check" in requested_targets:
+        ext = ".exe" if os.name == "nt" else ""
+        check_env = dict(env)
+        if os.name != "nt" and (pixi_prefix / "lib").is_dir():
+            check_env["LD_LIBRARY_PATH"] = str(pixi_prefix / "lib") + os.pathsep + check_env.get("LD_LIBRARY_PATH", "")
+        return subprocess.call(
+            [
+                py_exe,
+                str(root / "tests/integration/test_tool_schema.py"),
+                "--dump",
+                str(out_dir / f"registry_dump{ext}"),
+                "--registry-test",
+                str(out_dir / f"registry_test{ext}"),
+            ],
+            cwd=root,
+            env=check_env,
+        )
+    return 0
 
 
 if __name__ == "__main__":

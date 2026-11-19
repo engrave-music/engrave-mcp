@@ -4,9 +4,8 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shutil
-import subprocess
+import struct
 from pathlib import Path
 
 from engrave_testing.paths import pixi_env
@@ -50,6 +49,46 @@ STAGED_FONT_DIRS = (
     "musejazz",
     "petaluma",
 )
+
+
+def _pe_imported_dlls(binary: Path) -> list[str]:
+    data = binary.read_bytes()
+    if len(data) < 0x40 or data[:2] != b"MZ":
+        raise RuntimeError(f"Not a valid PE binary: {binary}")
+    pe_off = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe_off : pe_off + 4] != b"PE\x00\x00":
+        raise RuntimeError(f"Invalid PE signature: {binary}")
+    num_sec = struct.unpack_from("<H", data, pe_off + 6)[0]
+    opt_size = struct.unpack_from("<H", data, pe_off + 20)[0]
+    opt_off = pe_off + 24
+    magic = struct.unpack_from("<H", data, opt_off)[0]
+    imp_dir_off = opt_off + (120 if magic == 0x20B else 104)
+    imp_rva, imp_sz = struct.unpack_from("<II", data, imp_dir_off)
+    if imp_rva == 0 or imp_sz == 0:
+        return []
+    sec_off = opt_off + opt_size
+    secs = [struct.unpack_from("<8sIIIIIIHHI", data, sec_off + i * 40) for i in range(num_sec)]
+
+    def rva_to_off(rva: int) -> int:
+        for _, vsz, va, rsz, rptr, *_ in secs:
+            span = max(vsz, rsz)
+            if va <= rva < va + span:
+                return rptr + (rva - va)
+        return 0
+
+    off = rva_to_off(imp_rva)
+    names: list[str] = []
+    while off and off + 20 <= len(data):
+        _, _, _, name_rva, _ = struct.unpack_from("<IIIII", data, off)
+        if not name_rva:
+            break
+        noff = rva_to_off(name_rva)
+        if not noff:
+            break
+        end = data.index(0, noff)
+        names.append(data[noff:end].decode("ascii", errors="replace"))
+        off += 20
+    return names
 
 
 def resolve_engine_root(root: Path, override: Path | None = None) -> Path:
@@ -166,8 +205,12 @@ def main():
         raise SystemExit("Package output must be empty; choose a new --output directory")
     environment = pixi_env(ROOT)
     library = environment / "Library"
-    redist = Path(os.environ["VCToolsRedistDir"]) / "x64"
-    available = {p.name.lower(): p for p in redist.rglob("*.dll") if "debug" not in str(p).lower()}
+    available: dict[str, Path] = {}
+    vc_redist = os.environ.get("VCToolsRedistDir")
+    if vc_redist:
+        redist = Path(vc_redist) / "x64"
+        if redist.is_dir():
+            available.update({p.name.lower(): p for p in redist.rglob("*.dll") if "debug" not in str(p).lower()})
     available.update({p.name.lower(): p for p in (library / "bin").glob("*.dll")})
     queue = []
     origins = {}
@@ -190,12 +233,7 @@ def main():
     system = Path(os.environ["SystemRoot"]) / "System32"
     while queue:
         binary = queue.pop()
-        result = subprocess.run(["dumpbin", "/dependents", str(binary)], capture_output=True, check=True)
-        for name in re.findall(
-            r"^\s+([A-Za-z0-9_.-]+\.dll)\s*$",
-            result.stdout.decode("utf-8", errors="replace"),
-            re.MULTILINE | re.IGNORECASE,
-        ):
+        for name in _pe_imported_dlls(binary):
             key = name.lower()
             if args.no_qt and key.startswith(("qt5", "qt6")):
                 raise RuntimeError(f"Qt dependency found in Qt-free package: {name}")

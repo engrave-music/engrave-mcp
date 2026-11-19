@@ -25,7 +25,7 @@ MuseScore 的乐谱也要能被 Agent 打开并继续编辑。读取器接受 Mu
 
 ## 快速开始（Windows）
 
-环境要求：Git、[Pixi](https://pixi.sh/) 与 Visual Studio C++ x64 工具链（MSVC 14.51+）。
+环境要求：Git 与 [Pixi](https://pixi.sh/)（Bazelisk 与隔离的 `xclang` C++23 工具链会自动配置）。
 
 克隆时使用 `--recursive`，或者在安装前初始化引擎子模块：
 
@@ -59,7 +59,7 @@ build/release/engrave-mcp.exe --resources .runtime/assets `
 打包后的产物会自动查找同级的 `assets/` 目录。Windows 与 Linux 的构建、测试和打包
 细节见[构建指南](docs/dev/build.md)。
 
-日常在 `release`、`debug`、`releasedbg` 和 `asan` 配置下开发构建时，使用 `scripts/xbuild.py --profile <profile> build -j 12 engrave_mcp`。构建产物输出到 `build/<profile>`，配置存放在 `.xmake/profiles/`，包缓存共享在 `build/.packages`，编译缓存共享在 `build/.build_cache`。`scripts/build-native.ps1` 与 `scripts/build-native.sh` 同样默认输出到 `build/<profile>`，并会运行 `git submodule update --init` 重置 `vendor/engrave`；仅在固定引擎提交上做干净构建时使用它们。根目录 `clice.toml` 选择各配置的编译数据库，格式化与静态检查支持 `--backend` 和 `-j`（详见[构建指南](docs/dev/build.md)）。
+日常在 `release`、`debug`、`releasedbg` 和 `asan` 配置下开发构建时，使用 `scripts/bbuild.py --profile <profile> -j 12 build engrave_mcp`。构建产物输出到 `build/<profile>`，外部归档缓存共享在 `build/.bazel_repo_cache`，编译产物缓存共享在 `build/.bazel_disk_cache`。`scripts/build-native.ps1` 与 `scripts/build-native.sh` 同样默认输出到 `build/<profile>`，并会运行 `git submodule update --init` 重置 `vendor/engrave`；仅在固定引擎提交上做干净构建时使用它们。根目录 `clice.toml` 选择各配置的编译数据库，格式化与静态检查支持 `--backend` 和 `-j`（详见[构建指南](docs/dev/build.md)）。
 
 `tests/run_lanes.py` 会先构建所选测试道需要的目标再执行（`--no-build` 跳过构建，`--profile` 选择 `build/<profile>`，`--list-lanes` 打印调度列表）。按[验证测试道与规范](docs/dev/validation.md)传入 `--engine-source`、`--assets`、`--soundfont`，并将 `--output` 指向 `notes/runs/<name>`。
 
@@ -149,8 +149,9 @@ DACL 与 ACL 合并、SMB 网络共享认证、设备命名空间与超长路径
 ```
 engrave_mcp/     MCP 传输、工具注册表、JSON 编解码、实时导出、发布
 vendor/engrave/  固定的 engrave 引擎（子模块，按提交固定）
-xmake.lua        宿主构建；从 vendor/engrave 引入引擎构建
-scripts/         引导、构建、打包等开发工具
+MODULE.bazel     Bzlmod 依赖与 xclang 工具链配置
+BUILD.bazel      宿主构建目标；从 vendor/engrave 引入 @engrave
+scripts/         引导、Bazel 构建封装、打包等开发工具
 tests/           验收测试道、集成测试、支持库、性能基准、测试数据
 docs/dev/        架构设计、工具契约、构建指南、测试验证、分叉指南
 ```

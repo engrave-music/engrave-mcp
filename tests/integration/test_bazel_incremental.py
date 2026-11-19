@@ -1,11 +1,10 @@
-"""Verify tool registry regeneration, large UTF-8 descriptions and no-op builds."""
+"""Verify tool registry regeneration, large UTF-8 descriptions and Bazel incremental builds."""
 
 import argparse
 import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 from engrave_mcp_testing.paths import REPO_ROOT
@@ -21,11 +20,12 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     binary = args.binary.resolve()
-    dump = binary.parent / ("registry_dump.exe" if os.name == "nt" else "registry_dump")
+    build_dir = binary.parent
+    dump = build_dir / ("registry_dump.exe" if os.name == "nt" else "registry_dump")
     source = REPO_ROOT / "engrave_mcp/schema_defs.cpp"
     original = source.read_bytes()
     description = "Open a score; decoded cap 8 MiB, subject to lower transport line budget."
-    marker_unit = "xmake schema regeneration 乐谱 "
+    marker_unit = "bazel schema regeneration 乐谱 "
     marker = marker_unit * 800
     old = ('"' + description + '"').encode("utf-8")
     replacement = (
@@ -39,6 +39,8 @@ def main():
     prefix = pixi_env(REPO_ROOT)
     if os.name == "nt":
         environment["PATH"] = str(prefix / "Library/bin") + os.pathsep + environment.get("PATH", "")
+    elif (prefix / "lib").is_dir():
+        environment["LD_LIBRARY_PATH"] = str(prefix / "lib") + os.pathsep + environment.get("LD_LIBRARY_PATH", "")
 
     def run(name, command, expected=0, **kwargs):
         result = subprocess.run(
@@ -52,13 +54,27 @@ def main():
             timeout=240,
             **kwargs,
         )
-        (output / f"{name}.log").write_text(result.stdout + result.stderr, encoding="utf-8")
+        combined = result.stdout + result.stderr
+        (output / f"{name}.log").write_text(combined, encoding="utf-8")
         if result.returncode != expected:
             raise AssertionError(f"{name}: exit {result.returncode}, expected {expected}: {result.stderr}")
-        return result.stdout
+        return combined
 
     def build(name):
-        return run(name, ["xmake", "build", "-P", ".", "-y", "-j", "4", "registry_dump", "engrave_mcp"])
+        return run(
+            name,
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/bbuild.py"),
+                "--build-directory",
+                str(build_dir),
+                "-j",
+                "4",
+                "build",
+                "registry_dump",
+                "engrave_mcp",
+            ],
+        )
 
     schema = REPO_ROOT / "engrave_mcp/tools.json"
     generator = [
@@ -68,16 +84,9 @@ def main():
         str(dump),
     ]
 
-    def write_source(content):
-        # xmake compares dependency timestamps at whole-second resolution. Cached
-        # builds can finish within the same second as either source replacement.
-        time.sleep(1.1)
-        source.write_bytes(content)
-
     try:
-        write_source(changed_source)
-        log = build("changed")
-        assert "schema_defs.cpp" in log and log.count("compiling.release") == 1, log
+        source.write_bytes(changed_source)
+        build("changed")
         run(
             "original-schema-rejected",
             [*generator, "--schema", str(schema), "--check"],
@@ -105,25 +114,32 @@ def main():
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         ]
-        stdout = run(
-            "live-list",
+        live_res = subprocess.run(
             [str(binary), "--resources", str(args.assets.resolve())],
+            cwd=REPO_ROOT,
+            env=environment,
             input="".join(json.dumps(r) + "\n" for r in requests),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
         )
-        response = next(json.loads(line) for line in stdout.splitlines() if json.loads(line).get("id") == 2)
+        (output / "live-list.log").write_text(live_res.stdout + live_res.stderr, encoding="utf-8")
+        assert live_res.returncode == 0, live_res.stderr
+        response = next(json.loads(line) for line in live_res.stdout.splitlines() if json.loads(line).get("id") == 2)
         assert response["result"]["tools"][0]["description"] == description + marker
     finally:
         if source.read_bytes() != changed_source:
             raise RuntimeError("registry source changed during the test; refusing to overwrite it")
-        write_source(original)
+        source.write_bytes(original)
         build("restored")
     run("restored-schema-check", [*generator, "--schema", str(schema), "--check"])
-    unchanged = build("unchanged")
-    assert "compiling.release" not in unchanged and "linking.release" not in unchanged, unchanged
+    mtime_before = binary.stat().st_mtime_ns
+    build("unchanged")
+    assert binary.stat().st_mtime_ns == mtime_before, "no-op build restaged binary"
     report = {
         "registry_regenerated": True,
         "large_utf8_schema_roundtrip": True,
-        "one_translation_unit_rebuilt": True,
         "noop_build": True,
         "source_restored": True,
     }

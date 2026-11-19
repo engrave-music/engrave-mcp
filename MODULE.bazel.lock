@@ -387,7 +387,7 @@
     },
     "@@engrave+//bazel:deps.bzl%engrave_deps": {
       "general": {
-        "bzlTransitiveDigest": "xqJCEu+ou8GLy+WI2VFxq7zrE07oRC6WtWnJdAd/7OQ=",
+        "bzlTransitiveDigest": "5Z4b9FqAk8DVKqj5Ya+/LCu/fDoruWq4oen17FycYKY=",
         "usagesDigest": "WMxc8k0UvBO9+4o7aO5aqexMOB2kvxYRYce8DehBGVc=",
         "recordedInputs": [
           "REPO_MAPPING:engrave+,bazel_tools bazel_tools"

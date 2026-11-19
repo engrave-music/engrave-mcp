@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
-"""Validate the pinned engine checkout and the checked-in xmake inputs.
-
-The file intentionally does not invoke CMake, Ninja or xmake.  It checks that
-the engine checkout has the layout the build expects, that the
-engine carries its own xmake build (``xmake/engrave.lua`` and the pinned package
-recipes), that the local native package environment provides what engrave_mcp/ needs,
-and that the host's own package recipe is present.
+"""Validate the pinned engine checkout, Bazel build inputs, and Pixi native pins.
 
 Usage:
-    python scripts/prepare_xmake.py --check [--engine-source PATH]
+    python scripts/check_build_inputs.py [--check] [--engine-source PATH]
 """
 
 from __future__ import annotations
@@ -20,34 +14,14 @@ from pathlib import Path
 
 from engrave_testing.paths import pixi_env
 
-ENGINE_PACKAGE_RECIPES = (
-    "freetype",
-    "harfbuzz",
-    "libflac",
-    "lame",
-    "libopus",
-    "libopusenc",
-    "fdk-aac",
-    "pugixml",
-    "utfcpp",
-    "picojson",
-)
+NATIVE_PINNED_PACKAGES = ("cairo", "zlib", "libzlib")
+_LOCKED_PACKAGE = re.compile(r"^- conda: (\S+/(win-64|linux-64)/([A-Za-z0-9_.-]+?)-\d\S*\.conda)$", re.MULTILINE)
 
 
 def _find_native_root(project_root: Path) -> Path:
     env = pixi_env(project_root)
     library = env / "Library"
     return library if library.is_dir() else env
-
-
-def _engine_source_root(project_root: Path) -> Path:
-    return project_root / "vendor" / "engrave"
-
-
-# Packages whose builds the render goldens and archive bytes depend on; the
-# host and the engine checkout must lock the same ones.
-NATIVE_PINNED_PACKAGES = ("cairo", "zlib", "libzlib")
-_LOCKED_PACKAGE = re.compile(r"^- conda: (\S+/(win-64|linux-64)/([A-Za-z0-9_.-]+?)-\d\S*\.conda)$", re.MULTILINE)
 
 
 def _locked_native_packages(lock: Path) -> dict[tuple[str, str], str]:
@@ -76,32 +50,31 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
     errors: list[str] = []
     native_root = _find_native_root(project_root)
 
-    # The fork's xmake build generates its version header directly; it no
-    # longer consumes the removed Qt-era framework config template.
     required_files = {
-        "engine version file": source_root / "version.cmake",
-        "engine xmake build": source_root / "xmake" / "engrave.lua",
+        "host MODULE.bazel": project_root / "MODULE.bazel",
+        "host BUILD.bazel": project_root / "BUILD.bazel",
+        "host .bazelversion": project_root / ".bazelversion",
         "tool schema source": project_root / "engrave_mcp" / "tools.json",
-        "host asio recipe": project_root / "xmake" / "packages" / "a" / "asio" / "xmake.lua",
+        "engine version file": source_root / "version.cmake",
+        "engine MODULE.bazel": source_root / "MODULE.bazel",
+        "engine BUILD.bazel": source_root / "BUILD.bazel",
+        "engine .bazelversion": source_root / ".bazelversion",
+        "engine bazel defs": source_root / "bazel" / "defs.bzl",
+        "engine bazel deps": source_root / "bazel" / "deps.bzl",
         "native env cairo header": native_root / "include" / "cairo" / "cairo.h",
         "native env zlib header": native_root / "include" / "zlib.h",
     }
-    for relative in (
-        "packages.lua",
-        "generated.lua",
-        "environment.lua",
-        "targets/modules.lua",
-        "targets/engrave.lua",
-        "rules/mode.asan.lua",
-        "rules/build.ccache.lua",
-        "rules/toolchain.lld.lua",
-    ):
-        required_files[f"engine build module {relative}"] = source_root / "xmake" / relative
-    for name in ("mode.asan", "build.ccache", "toolchain.lld"):
-        required_files[f"host rule {name}"] = project_root / "xmake/rules" / f"{name}.lua"
     for label, path in required_files.items():
         if not path.is_file():
             errors.append(f"missing {label}: {path}")
+
+    host_ver = project_root / ".bazelversion"
+    eng_ver = source_root / ".bazelversion"
+    if host_ver.is_file() and eng_ver.is_file():
+        hv = host_ver.read_text(encoding="utf-8").strip()
+        ev = eng_ver.read_text(encoding="utf-8").strip()
+        if hv != ev:
+            errors.append(f".bazelversion mismatch: host {hv!r} != engine {ev!r}")
 
     library_dir = native_root / "lib"
     if not library_dir.is_dir():
@@ -113,13 +86,6 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
                 errors.append(f"missing native link library: {library_dir / name}")
 
     errors += _check_native_pins(project_root / "pixi.lock", source_root / "pixi.lock")
-
-    # The engine's third-party dependencies are pinned recipes in the engine
-    # checkout's xmake package repository, not trees in the superproject.
-    for recipe in ENGINE_PACKAGE_RECIPES:
-        path = source_root / "xmake" / "packages" / recipe[0] / recipe / "xmake.lua"
-        if not path.is_file():
-            errors.append(f"missing engine package recipe: {path}")
     return errors
 
 
@@ -128,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="only validate the checked-in inputs (default)",
+        help="validate checked-in Bazel and Pixi build inputs (default)",
     )
     parser.add_argument(
         "--engine-source",
@@ -140,14 +106,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     project_root = Path(__file__).resolve().parents[1]
-    source_root = (args.source_root or _engine_source_root(project_root)).resolve()
+    source_root = (args.source_root or (project_root / "vendor" / "engrave")).resolve()
 
     errors = validate(project_root, source_root)
     if errors:
         for error in errors:
             print(f"error: {error}", file=sys.stderr)
         return 1
-    print("xmake inputs are present; parent runs `xmake` to configure/build")
+    print("Bazel and Pixi build inputs verified")
     return 0
 
 

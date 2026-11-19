@@ -32,8 +32,7 @@ is available for MuseScore 4.x interop where the score stays inside its document
 
 ## Quick start (Windows)
 
-Prerequisites: Git, [Pixi](https://pixi.sh/), and the Visual Studio C++ x64
-toolchain (MSVC 14.51+).
+Prerequisites: Git and [Pixi](https://pixi.sh/) (Bazelisk and the hermetic `xclang` C++23 toolchain are provisioned automatically).
 
 Clone with `--recursive`, or initialize the submodule before installing:
 
@@ -67,7 +66,7 @@ build/release/engrave-mcp.exe --resources .runtime/assets `
 A packaged build finds its sibling `assets/` directory automatically. Windows
 and Linux build, test and packaging details are in [docs/dev/build.md](docs/dev/build.md).
 
-For development builds across `release`, `debug`, `releasedbg`, and `asan` profiles, use `scripts/xbuild.py --profile <profile> build -j 12 engrave_mcp`. Outputs go to `build/<profile>`, configuration to `.xmake/profiles/`, packages to `build/.packages`, and the shared compile cache to `build/.build_cache`. `scripts/build-native.ps1` and `scripts/build-native.sh` also default to `build/<profile>` and reset `vendor/engrave` via `git submodule update --init`; use them only for clean builds at the pinned engine. The root `clice.toml` selects profile compilation databases; formatting and linting support `--backend` and `-j` (see [build.md](docs/dev/build.md)).
+For development builds across `release`, `debug`, `releasedbg`, and `asan` profiles, use `scripts/bbuild.py --profile <profile> -j 12 build engrave_mcp`. Outputs are staged to `build/<profile>`, external archives are cached in `build/.bazel_repo_cache`, and Bazel action outputs are shared in `build/.bazel_disk_cache`. `scripts/build-native.ps1` and `scripts/build-native.sh` also default to `build/<profile>` and reset `vendor/engrave` via `git submodule update --init`; use them only for clean builds at the pinned engine. The root `clice.toml` selects profile compilation databases; formatting and linting support `--backend` and `-j` (see [build.md](docs/dev/build.md)).
 
 `tests/run_lanes.py` builds the targets selected lanes need and runs them (`--no-build` skips the build, `--profile` selects `build/<profile>`, `--list-lanes` prints the schedule). Supply `--engine-source`, `--assets`, `--soundfont`, and `--output` under `notes/runs/<name>` as shown in [validation.md](docs/dev/validation.md).
 
@@ -165,10 +164,10 @@ and interactive/streaming playback. See [docs/dev/scope.md](docs/dev/scope.md) f
 ```
 engrave_mcp/     MCP transport, tool registry, JSON codecs, live export, publication
 vendor/engrave/  pinned engrave engine (submodule, pinned by commit)
-xmake.lua        host build; includes split engine build from vendor/engrave/xmake
-xmake/rules/    host cache, sanitizer and linker rules
-clice.toml      shared host/engine editor, formatting and lint configuration
-scripts/         bootstrap, build, packaging dev tools
+MODULE.bazel     Bzlmod dependencies and hermetic xclang toolchain
+BUILD.bazel      host targets; consumes @engrave from vendor/engrave
+clice.toml       shared host/engine editor, formatting and lint configuration
+scripts/         bootstrap, Bazel build wrapper, packaging dev tools
 tests/           acceptance lane runner, integration tests, support, benchmarks, test data
 docs/dev/        design, tool contract, build, validation, engine fork guide
 ```

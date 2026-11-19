@@ -2,9 +2,9 @@ name: CI
 
 # Build and unit-test lane for the engrave-mcp host.
 #
-# Runs on Windows (MSVC) and Linux (the pinned Pixi GCC): builds the host and
-# its C++ tests against the pinned engine submodule, runs the host C++ tests
-# and the fast Python checks. The engine gate (tests/engine_gate.py), the
+# Runs on Windows and Linux using Bazel + hermetic xclang 23: builds the host
+# and its C++ tests against the pinned engine submodule, runs the host C++
+# tests and the fast Python checks. The engine gate (tests/engine_gate.py), the
 # golden comparisons, the audio corpus and every lane that needs a SoundFont
 # stay manual (docs/dev/validation.md).
 
@@ -22,12 +22,7 @@ permissions:
   contents: read
 
 env:
-  # docs/dev/build.md: xmake 3.1.1+; 3.1.2 is the release the recipes were
-  # last exercised with.
-  XMAKE_VERSION: "3.1.2"
   PIXI_VERSION: v0.84.1
-  # Windows runners use the cp1252 ANSI code page for Python's stdout, so tests
-  # that print non-ASCII score text crash. Developer machines use UTF-8.
   PYTHONUTF8: "1"
 
 jobs:
@@ -48,10 +43,10 @@ jobs:
           locked: true
           cache: true
 
-      - name: Verify submodule pin and checked-in xmake inputs
+      - name: Verify submodule pin and checked-in Bazel inputs
         run: |
           pixi run --locked python scripts/bootstrap.py
-          pixi run --locked python scripts/prepare_xmake.py --check
+          pixi run --locked python scripts/check_build_inputs.py --check
           pixi run --locked python scripts/check_native_includes.py --engine-source vendor/engrave
 
       - name: Formatting
@@ -72,7 +67,7 @@ jobs:
             tests/integration/test_oracle_harness.py \
             tests/integration/test_rendered_page.py \
             tests/test_engine_gate.py \
-            tests/test_xbuild.py; do
+            tests/test_bbuild.py; do
             echo "::group::$test"
             "$py" "$test"
             echo "::endgroup::"
@@ -81,49 +76,26 @@ jobs:
   build-test:
     name: build-test (${{ matrix.name }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 150
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          # windows-latest is the Windows Server 2025 + Visual Studio 2026 image
-          # (MSVC 14.51); docs/dev/build.md requires MSVC 14.51+.
-          - name: windows-msvc
+          - name: windows-xclang
             runner: windows-latest
-          # Linux builds with the conda-forge GCC from the Pixi environment
-          # (the validated toolchain, scripts/build-native.sh), so the image's
-          # own GCC is irrelevant.
-          - name: linux-gcc-pixi
+          - name: linux-xclang
             runner: ubuntu-latest
     defaults:
       run:
         shell: pwsh
     env:
       BUILD_DIR: build/ci
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 2G
-      CCACHE_COMPRESS: "1"
+      REPO_CACHE: build/.bazel_repo_cache
+      DISK_CACHE: build/.bazel_disk_cache
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          # nasm: the LAME recipe; cmake, ninja, make and autotools ship with
-          # the image (cmake and ninja also come from Pixi). cairo and zlib come
-          # from the Pixi environment.
-          sudo apt-get install -y --no-install-recommends nasm ccache
-
-      - name: Install Windows build dependencies
-        if: runner.os == 'Windows'
-        run: choco install ccache --no-progress -y
-
-      - uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: ${{ env.XMAKE_VERSION }}
 
       - uses: prefix-dev/setup-pixi@v0
         with:
@@ -131,67 +103,29 @@ jobs:
           locked: true
           cache: true
 
-      - name: Verify submodule, stage runtime assets, check xmake inputs
+      - name: Verify submodule, stage runtime assets, check Bazel inputs
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           pixi run --locked python scripts/bootstrap.py
           pixi run --locked python scripts/prepare.py
-          pixi run --locked python scripts/prepare_xmake.py --check
+          pixi run --locked python scripts/check_build_inputs.py --check
 
-      # Packages are built from source into <build dir>/.packages
-      # (package.install_locally); cache them on the recipes and build files.
-      - name: Restore xmake package cache
-        id: packages
+      - name: Restore Bazel repository cache
+        id: repo-cache
         uses: actions/cache/restore@v6
         with:
-          path: ${{ env.BUILD_DIR }}/.packages
-          key: xmake-packages-${{ matrix.name }}-${{ hashFiles('xmake.lua', 'xmake/**', 'vendor/engrave/xmake/**') }}
-          restore-keys: xmake-packages-${{ matrix.name }}-
+          path: ${{ env.REPO_CACHE }}
+          key: bazel-repo-${{ matrix.name }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
+          restore-keys: bazel-repo-${{ matrix.name }}-
 
-      - name: Restore compiler cache
+      - name: Restore Bazel disk cache
         uses: actions/cache/restore@v6
         with:
-          path: .ccache
-          key: ccache-${{ matrix.name }}-${{ github.sha }}
-          restore-keys: ccache-${{ matrix.name }}-
+          path: ${{ env.DISK_CACHE }}
+          key: bazel-disk-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: bazel-disk-${{ matrix.name }}-
 
-      # Raw release configure into build/ci (without --engrave_tests=y; Linux
-      # uses the pinned Pixi GCC). cairo and zlib come from the Pixi environment
-      # through xmake's pixi:: packages.
-      - name: Configure (release)
-        id: configure
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-          $root = $PWD.Path
-          $env_prefix = Join-Path $root '.pixi/envs/default'
-          $config = @(
-            'f', '-P', '.', '-y', '-m', 'release', '-o', $env:BUILD_DIR,
-            "--engine_source=$root/vendor/engrave",
-            '--ccache=y', "--ccachedir=$env:CCACHE_DIR"
-          )
-          if ($IsWindows) {
-            xmake @config
-          } else {
-            $config += @(
-              "--cc=gcc@$env_prefix/bin/x86_64-conda-linux-gnu-cc",
-              "--cxx=gxx@$env_prefix/bin/x86_64-conda-linux-gnu-c++",
-              "--ld=gxx@$env_prefix/bin/x86_64-conda-linux-gnu-c++"
-            )
-            pixi run --locked xmake @config
-          }
-
-      - name: Save xmake package cache
-        if: ${{ !cancelled() && steps.configure.outcome == 'success' && steps.packages.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ env.BUILD_DIR }}/.packages
-          key: xmake-packages-${{ matrix.name }}-${{ hashFiles('xmake.lua', 'xmake/**', 'vendor/engrave/xmake/**') }}
-
-      # The host targets are set_default(false). registry_check also runs the
-      # tool-schema test (tests/integration/test_tool_schema.py) as part of its
-      # build. live_export_test is not built: its lane needs a SoundFont.
       - name: Build host and host test targets
         id: build
         run: |
@@ -202,15 +136,21 @@ jobs:
             'host_api_test', 'staging_test'
           )
           if ($IsLinux) { $targets += 'publication_test' }
-          $build = @('build', '-P', '.', '-y', '-j', '4') + $targets
-          if ($IsWindows) { xmake @build } else { pixi run --locked xmake @build }
+          pixi run --locked python scripts/bbuild.py --profile release --build-directory $env:BUILD_DIR -j 4 build @targets
 
-      - name: Save compiler cache
+      - name: Save Bazel repository cache
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.repo-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.REPO_CACHE }}
+          key: bazel-repo-${{ matrix.name }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
+
+      - name: Save Bazel disk cache
         if: ${{ !cancelled() && steps.build.outcome != 'skipped' }}
         uses: actions/cache/save@v6
         with:
-          path: .ccache
-          key: ccache-${{ matrix.name }}-${{ github.sha }}
+          path: ${{ env.DISK_CACHE }}
+          key: bazel-disk-${{ matrix.name }}-${{ github.sha }}
 
       - name: Run host C++ tests
         run: |
@@ -220,15 +160,11 @@ jobs:
           $build = Join-Path $root $env:BUILD_DIR
           $py = Join-Path $root ($IsWindows ? '.pixi/envs/default/python.exe' : '.pixi/envs/default/bin/python')
           $out = Join-Path $env:RUNNER_TEMP 'host-tests'
-          # Runtime libraries of the Pixi environment (cairo, zlib).
           if ($IsWindows) {
             $env:PATH = (Join-Path $root '.pixi/envs/default/Library/bin') + [IO.Path]::PathSeparator + $env:PATH
           } else {
             $env:LD_LIBRARY_PATH = (Join-Path $root '.pixi/envs/default/lib') + ($env:LD_LIBRARY_PATH ? ":$env:LD_LIBRARY_PATH" : '')
           }
-          # The in-repository sine SoundFont (16 KiB) stands in for the base
-          # SoundFont, so no SoundFont is downloaded: host_api_test only
-          # copies the startup SoundFont and compares the replacement's bytes.
           $sine = Join-Path $root 'vendor/engrave/tests/data/engine_audio/sine.sf2'
           $steps = [ordered]@{
             staging_test = @("$build/staging_test$ext")
@@ -257,8 +193,6 @@ jobs:
           }
           if ($failed) { throw "failed: $($failed -join ', ')" }
 
-      # Integration scripts that need only the built server and the staged
-      # engine assets (no SoundFont, no golden corpus).
       - name: Run host integration checks
         env:
           ENGRAVE_MCP_OUTPUT: ${{ runner.temp }}/host-tests/imports-guitarpro
@@ -290,8 +224,6 @@ jobs:
             transport = @('tests/integration/test_transport.py', $binary, "$out/transport.json")
           }
           if ($IsWindows) {
-            # Segment Heap, UTF-8 and asInvoker in the embedded manifests (mt.exe
-            # ships with the Windows SDK on the runner image).
             $checks['windows_manifest'] = @('tests/integration/test_windows_manifest.py', $binary, "$build/engrave-mcp-test$ext")
           }
           $failed = @()

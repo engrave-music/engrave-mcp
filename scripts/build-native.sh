@@ -2,8 +2,6 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 jobs="${1:-8}"
-# Third positional argument optionally selects a custom engine checkout.
-# cairo and zlib come from the Pixi environment (pixi::cairo, pixi::zlib).
 engine_source="${3:-$PWD/vendor/engrave}"
 profile="${4:-release}"
 build_directory="${2:-build/$profile}"
@@ -12,6 +10,5 @@ build_directory="${2:-build/$profile}"
 git submodule update --init --depth 1 -- vendor/engrave
 pixi run --locked python scripts/bootstrap.py
 pixi run --locked python scripts/prepare.py
-pixi run --locked python scripts/prepare_xmake.py --check --engine-source "$engine_source"
-pixi run --locked python scripts/xbuild.py --profile "$profile" --build-directory "$build_directory" configure --engine_source="$engine_source"
-pixi run --locked python scripts/xbuild.py --profile "$profile" --build-directory "$build_directory" build -j "$jobs" engrave_mcp engrave_mcp_test registry_dump registry_check host_api_test
+pixi run --locked python scripts/check_build_inputs.py --check --engine-source "$engine_source"
+pixi run --locked python scripts/bbuild.py --profile "$profile" --build-directory "$build_directory" -j "$jobs" build engrave_mcp engrave_mcp_test registry_dump registry_check host_api_test
