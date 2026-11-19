@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cctype>
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -13,11 +14,13 @@
 #include <cstring>
 #include <deque>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
 #include <tuple>
@@ -99,6 +102,18 @@ constexpr int k_read_stopped = -2;
 enum class ServerState { UNINITIALIZED, INITIALIZED_PENDING, READY };
 
 enum class WireStatus { OK, TOO_LARGE, FAILED };
+
+// Lets tests shorten the live-export watchdog; production always uses fallback.
+std::chrono::milliseconds test_hook_ms(const char *name, std::int64_t minimum, std::chrono::milliseconds fallback) {
+    if (!test_hooks_enabled()) return fallback;
+    const char *text = std::getenv(name);
+    if (!text) return fallback;
+    const std::string_view value(text);
+    std::int64_t ms = 0;
+    const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), ms);
+    if (ec != std::errc{} || end != value.data() + value.size() || ms < minimum) return fallback;
+    return std::chrono::milliseconds(ms);
+}
 
 bool json_nesting_exceeds(std::string_view text, int max_depth) {
     int depth = 0;
@@ -1331,7 +1346,8 @@ private:
                 target->cancel->emit(asio::cancellation_type::terminal);
                 if (first && target->live_export && !target->tool_finished &&
                     target->execution->state.load(std::memory_order_acquire) == ExecutionState::EXECUTING) {
-                    auto timer = std::make_shared<asio::steady_timer>(ioc_, std::chrono::seconds(5));
+                    auto timer = std::make_shared<asio::steady_timer>(
+                        ioc_, test_hook_ms("ENGRAVE_MCP_TEST_WATCHDOG_MS", 1, std::chrono::seconds(5)));
                     target->watchdog = timer;
                     auto self = shared_from_this();
                     timer->async_wait([self, target, timer](const asio::error_code &error) {
@@ -1351,8 +1367,18 @@ private:
                         target->response_started = true;
                         // Decoupled exit waits for all committed reports. The
                         // identity check still prevents an old exit killing new work.
-                        std::thread([execution = target->execution] {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                        const char *barrier = test_hooks_enabled() ? std::getenv("ENGRAVE_MCP_TEST_WATCHDOG_BARRIER") : nullptr;
+                        std::thread([execution = target->execution, barrier = std::string(barrier ? barrier : ""),
+                                     settle = test_hook_ms("ENGRAVE_MCP_TEST_WATCHDOG_SETTLE_MS", 0, std::chrono::milliseconds(250))] {
+                            // The barrier replaces the settle delay so tests can order the
+                            // lock attempt after another request's publication starts.
+                            if (barrier.empty()) {
+                                std::this_thread::sleep_for(settle);
+                            } else {
+                                while (!std::filesystem::exists(std::filesystem::u8path(barrier))) {
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                }
+                            }
                             std::unique_lock lock(publication_gate.mutex, std::defer_lock);
                             if (test_hooks_enabled()) {
                                 if (!lock.try_lock()) {
@@ -1378,6 +1404,10 @@ private:
                             },
                             asio::detached);
                     });
+                }
+                if (test_hooks_enabled()) {
+                    std::fprintf(stderr, "CANCEL_HANDLED\n");
+                    std::fflush(stderr);
                 }
             }
         } catch (...) {}

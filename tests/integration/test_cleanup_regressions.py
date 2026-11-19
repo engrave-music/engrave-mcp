@@ -11,11 +11,113 @@ import threading
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from engrave_mcp_testing import golden
 from engrave_mcp_testing import lane_runner as run_lanes
 from engrave_mcp_testing.paths import REPO_ROOT
+
+
+class GoldenAudioReuseTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.actual = root / "actual"
+        self.audio = self.actual / "fixture.mscx/audio.json"
+        self.audio.parent.mkdir(parents=True)
+        self.audio.write_text('{"frames": 1}', encoding="utf-8")
+        self.index = self.actual / "index.json"
+        golden.build_index(self.actual)
+
+        self.resources = root / "resources"
+        self.resource = self.resources / "styles/default.mss"
+        self.resource.parent.mkdir(parents=True)
+        self.resource.write_bytes(b"style A")
+        self.binary = root / "binary"
+        self.binary.write_bytes(b"host binary")
+        self.soundfont = root / "soundfont.sf3"
+        self.soundfont.write_bytes(b"soundfont")
+        fixture = root / "fixture.mscx"
+        fixture.write_bytes(b"score fixture")
+        self.fixtures = {fixture.name: fixture}
+        self.provenance = golden.audio_capture_provenance(self.binary, self.resources, self.soundfont, self.fixtures)
+        self.provenance_path = root / "provenance.json"
+        self.write_provenance()
+        self.assertEqual(self.reuse(), {fixture.name: self.audio})
+
+    def write_provenance(self):
+        self.provenance["indexSha256"] = hashlib.sha256(self.index.read_bytes()).hexdigest()
+        golden.write_json(self.provenance_path, self.provenance)
+
+    def reuse(self):
+        return golden.reusable_golden_audio(self.actual, self.fixtures, self.binary, self.resources, self.soundfont)
+
+    def test_golden_audio_rejects_swapped_index_and_tree(self):
+        replacement = self.actual.with_name("replacement")
+        audio = replacement / self.audio.relative_to(self.actual)
+        audio.parent.mkdir(parents=True)
+        audio.write_text('{"frames": 2}', encoding="utf-8")
+        index = golden.build_index(replacement)
+        self.assertEqual(golden.verify_golden_index(replacement, index), [])
+        self.actual.rename(self.actual.with_name("original"))
+        replacement.rename(self.actual)
+        self.assertIsNone(self.reuse())
+
+    def test_golden_audio_rejects_resource_content_change(self):
+        self.resource.write_bytes(b"style B")
+        self.assertIsNone(self.reuse())
+
+    def test_golden_audio_rejects_extractor_digest_change(self):
+        real_hash = golden._file_sha256
+        extractor_files = (
+            Path(golden.__file__),
+            Path(golden.inspect.getfile(golden.describe_audio)),
+            Path(golden.inspect.getfile(golden.composition_musicxml)),
+            Path(golden.inspect.getfile(golden._engine_audio.CapturePolicy)),
+        )
+        for target in extractor_files:
+            with self.subTest(extractor=target.name):
+                resolved = target.resolve()
+
+                def altered(path: Path, *, _target=resolved):
+                    return "0" * 64 if path.resolve() == _target else real_hash(path)
+
+                with patch.object(golden, "_file_sha256", side_effect=altered):
+                    self.assertIsNone(self.reuse())
+
+    def test_golden_audio_treats_bad_metadata_as_cache_miss(self):
+        nested = b"[" * 2000 + b"]" * 2000
+        for path in (self.provenance_path, self.index):
+            original = path.read_bytes()
+            for invalid in (b"{", b"[]", b"{}", b"\xff", nested):
+                with self.subTest(path=path.name, invalid=invalid[:16]):
+                    path.write_bytes(invalid)
+                    if path == self.index:
+                        self.write_provenance()
+                    self.assertIsNone(self.reuse())
+            path.write_bytes(original)
+            self.write_provenance()
+        self.index.unlink()
+        self.assertIsNone(self.reuse())
+
+    def test_interrupted_golden_capture_clears_old_provenance(self):
+        args = SimpleNamespace(
+            allow=self.actual.parent / "allow.json",
+            output=self.actual.parent,
+            binary=self.binary,
+            resources=self.resources,
+            soundfont=self.soundfont,
+        )
+        with (
+            patch.object(golden, "fixture_files", return_value=list(self.fixtures.values())),
+            patch.object(golden, "mnx_fixture_files", return_value=[]),
+            patch.object(golden, "capture_tree", side_effect=OSError("capture interrupted")),
+            self.assertRaisesRegex(OSError, "capture interrupted"),
+        ):
+            golden.command_compare(args)
+        self.assertFalse(self.provenance_path.exists())
 
 
 class CleanupRegressions(unittest.TestCase):
@@ -101,7 +203,9 @@ class CleanupRegressions(unittest.TestCase):
         overlaps: dict[str, set[str]] = {}
         completion_order: list[str] = []
 
-        def fake_execute(lane: str):
+        def fake_execute(lane: str, completed):
+            if lane == "semantic_check":
+                self.assertEqual(completed["golden"][0], 7)
             with lock:
                 active.add(lane)
                 snapshot = set(active)
@@ -129,6 +233,54 @@ class CleanupRegressions(unittest.TestCase):
         self.assertEqual(overlaps["archives"], {"archives"})
         self.assertLess(completion_order.index("golden"), completion_order.index("semantic_check"))
         self.assertEqual(completion_order[-1], "archives")
+
+    def test_audio_lane_only_reuses_successful_golden_from_same_run(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "golden/actual").mkdir(parents=True)
+            (root / "golden/actual/index.json").touch()
+            (root / "golden/provenance.json").touch()
+            for lanes, golden_exit, reuse_expected in (
+                ("engine_audio", 0, False),
+                ("golden,engine_audio", 1, False),
+                ("golden,engine_audio", 0, True),
+            ):
+                with self.subTest(lanes=lanes, golden_exit=golden_exit):
+                    audio_commands = []
+
+                    def fake_run(cmd, **kwargs):
+                        script = Path(cmd[1]).name
+                        if script == "test_engine_audio.py":
+                            audio_commands.append(cmd)
+                        return subprocess.CompletedProcess(cmd, golden_exit if script == "golden.py" else 0)
+
+                    argv = [
+                        "run_lanes",
+                        "--engine-source",
+                        str(root),
+                        "--assets",
+                        str(root),
+                        "--soundfont",
+                        str(root / "soundfont"),
+                        "--output",
+                        str(root),
+                        "--only",
+                        lanes,
+                        "--no-build",
+                    ]
+                    with (
+                        patch.object(sys, "argv", argv),
+                        patch.object(run_lanes, "check_preflight_eol"),
+                        patch.object(run_lanes, "check_preflight_binaries"),
+                        patch.object(run_lanes, "setup_link"),
+                        patch.object(run_lanes.subprocess, "run", side_effect=fake_run),
+                        redirect_stdout(io.StringIO()),
+                        self.assertRaises(SystemExit) as stopped,
+                    ):
+                        run_lanes.main()
+                    self.assertEqual(stopped.exception.code, golden_exit)
+                    self.assertEqual(len(audio_commands), 1)
+                    self.assertEqual("--reuse-golden-actual" in audio_commands[0], reuse_expected)
 
     def test_selected_schedule_and_binary_requirements(self):
         argv = [

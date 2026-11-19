@@ -229,17 +229,31 @@ def main():
         assert r["error"]["published_artifacts"] == [str((partial / "page-0001.svg").resolve()).replace("\\", "/")], r
         assert not list(partial.glob(".engrave-stage-*"))
         c.tool("score_export", export_args(doc, "pdf", out / "multi.pdf", True))
-        # Queue an export behind a known running owner task, cancel before engine use.
-        sleeper = c.send("tools/call", {"name": "test_owner_sleep", "arguments": {}})
-        time.sleep(0.05)
-        dest = out / "cancel.pdf"
-        ident = c.send(
-            "tools/call",
-            {"name": "score_export", "arguments": export_args(doc, "pdf", dest)},
-        )
-        c.send("notifications/cancelled", {"requestId": ident}, True)
-        c.receive(sleeper)
-        assert c.receive(ident)["error"]["code"] == -32800
+        # Queue an export behind a barrier-held owner task, cancel before engine use.
+        owner_barrier = out / "release-owner"
+        owner_barrier.unlink(missing_ok=True)
+        sleeper = c.send("tools/call", {"name": "test_owner_sleep", "arguments": {"barrier": str(owner_barrier)}})
+        try:
+            deadline = time.monotonic() + 30
+            while not c.tool("test_owner_state", {})["busy"]:
+                assert time.monotonic() < deadline, "owner sleep did not start"
+                time.sleep(0.001)
+            dest = out / "cancel.pdf"
+            ident = c.send(
+                "tools/call",
+                {"name": "score_export", "arguments": export_args(doc, "pdf", dest)},
+            )
+            c.send("notifications/cancelled", {"requestId": ident}, True)
+            deadline = time.monotonic() + 30
+            while "CANCEL_HANDLED" not in c.log_path.read_text(encoding="utf-8", errors="replace"):
+                assert time.monotonic() < deadline, "queued export cancellation not handled"
+                time.sleep(0.001)
+            assert c.receive(ident)["error"]["code"] == -32800
+        finally:
+            owner_barrier.touch()
+        sleeper_msg = c.receive(sleeper)
+        assert "result" in sleeper_msg, sleeper_msg
+        assert sleeper_msg["result"]["structuredContent"] == {"ok": True, "barrier": str(owner_barrier)}, sleeper_msg
         assert not dest.exists()
         phases = c.close()
         modes = {x["mode"] for x in phases}
@@ -269,7 +283,6 @@ def main():
                 assert dest.read_bytes() == b"old destination" if existing else not dest.exists()
                 assert not list(dest.parent.glob(".engrave-stage-*"))
             c.close()
-    (a.output / "comparison.json").write_text(json.dumps(results, indent=2))
     (a.output / "comparison.json").write_text(json.dumps(results, indent=2))
     print(
         f"complete: live export passed; {len(folders)} PDF/MSCZ pairs compared; render hash differences retained in comparison.json"

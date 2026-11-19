@@ -1,6 +1,7 @@
 #include "publication.h"
 
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -263,10 +264,28 @@ std::filesystem::path normalize_output_path(const std::filesystem::path &path) {
 
 void publish_output(const std::filesystem::path &staged, const std::filesystem::path &destination, FnRef<void()> on_visible) {
     if (test_hooks_enabled()) {
-        if (std::getenv("ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH") && staged.filename() == "page-0002.svg") {
-            std::fprintf(stderr, "PUBLICATION_SECOND_FLUSH\n");
-            std::fflush(stderr);
-            std::this_thread::sleep_for(std::chrono::seconds(7));
+        if (staged.filename() == "page-0002.svg") {
+            const char *barrier = std::getenv("ENGRAVE_MCP_TEST_SECOND_FLUSH_BARRIER");
+            if (barrier && *barrier) {
+                std::fprintf(stderr, "PUBLICATION_SECOND_FLUSH\n");
+                std::fflush(stderr);
+                while (!std::filesystem::exists(std::filesystem::u8path(barrier))) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            } else if (std::getenv("ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH")) {
+                std::fprintf(stderr, "PUBLICATION_SECOND_FLUSH\n");
+                std::fflush(stderr);
+                auto delay = std::chrono::milliseconds(7000);
+                if (const char *ms = std::getenv("ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH_MS")) {
+                    const std::string_view text(ms);
+                    long long value = 0;
+                    const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+                    if (ec == std::errc{} && end == text.data() + text.size() && value > 0) {
+                        delay = std::chrono::milliseconds(value);
+                    }
+                }
+                std::this_thread::sleep_for(delay);
+            }
         }
         if (std::getenv("ENGRAVE_MCP_TEST_FAIL_FILE_FLUSH")) {
             throw PublicationError(EIO, "Injected staged file flush failure", false);

@@ -60,8 +60,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
-
-# The fork owns the shared artifact representations and comparison policy.
+import hashlib
+import inspect
 import json
 import os
 import shutil
@@ -71,6 +71,7 @@ import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
 
+from engrave_testing import engine_audio as _engine_audio
 from engrave_testing import golden as _engine_golden
 from engrave_testing.musicxml_semantic import musicxml_semantic
 from mcp import ClientSession, StdioServerParameters
@@ -391,14 +392,59 @@ async def capture_master(session, identity, raw, out_dir, roots):
         roots,
     )
     # Format-independent content of the saved file (musical content).
-    semantic_dump(raw / "score.mscz", out_dir / "semantic.json", roots)
+    await semantic_dump_async(raw / "score.mscz", out_dir / "semantic.json", roots)
 
 
 SEMANTIC_DUMP: dict = {}
 
+_SLOW_GOLDEN_FIRST = (
+    "chordline_path.mscx",
+    "graceArps.mnx",
+    "evening.musicxml",
+    "slurs.mscz",
+    "layout_elements.mscx",
+    "pedal.mscx",
+    "repeat_with_2_voltas.mscx",
+    "bends.mid",
+)
+
 
 def semantic_dump(source: Path, dest: Path, roots, *extra: str) -> None:
     _engine_golden.semantic_dump(source, dest, roots, *extra, config=SEMANTIC_DUMP)
+
+
+async def semantic_dump_async(source: Path, dest: Path, roots, *extra: str) -> None:
+    if not source.is_file():
+        write_text(dest.with_suffix(".error.txt"), "source export missing\n")
+        return
+    config = SEMANTIC_DUMP
+    proc = await asyncio.create_subprocess_exec(
+        str(config["binary"]),
+        str(config["resources"]),
+        str(source),
+        *extra,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+    except TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        write_text(dest.with_suffix(".error.txt"), "semantic_dump timed out after 120s\n")
+        return
+    except BaseException:
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+        raise
+    if proc.returncode != 0:
+        write_text(
+            dest.with_suffix(".error.txt"),
+            sanitize(stderr.decode("utf-8", "replace"), roots) + "\n",
+        )
+        return
+    write_json(dest, json.loads(stdout.decode("utf-8")))
 
 
 def verify_input_provenance(*, root=None, sources=None, fixture_dir=None) -> list[str]:
@@ -489,7 +535,7 @@ async def capture_fixture(
     if source.name != "created.json" and source.suffix.lower() != ".mnx":
         # The fixture as the engine reads it, before any save.
         # semantic_dump does not accept MNX; its exported MSCZ is still checked.
-        semantic_dump(
+        await semantic_dump_async(
             source,
             out_dir / "semantic-source.json",
             roots,
@@ -551,7 +597,7 @@ async def capture_edit(session, name, scenario, raw_root, out_dir, roots):
         if error:
             write_text(out_dir / "mscz.error.txt", sanitize(error, roots) + "\n")
         else:
-            semantic_dump(raw / "score.mscz", out_dir / "semantic.json", roots)
+            await semantic_dump_async(raw / "score.mscz", out_dir / "semantic.json", roots)
     finally:
         await call_tool(session, "score_close", identity)
 
@@ -713,48 +759,76 @@ async def capture_tree(
         raise SystemExit(f"semantic_dump not found next to the server binary: {dump}")
     SEMANTIC_DUMP.update(binary=dump.resolve(), resources=Path(resources).resolve())
     reset_root(target)
-    with tempfile.TemporaryDirectory(prefix="golden-raw-") as temporary:
+    priority = {name: idx for idx, name in enumerate(_SLOW_GOLDEN_FIRST)}
+    fixture_tasks = sorted(
+        (("fixture", source) for source in fixture_files() + mnx_fixture_files()),
+        key=lambda item: (priority.get(item[1].name, len(priority)), -item[1].stat().st_size, item[1].name),
+    )
+    edit_tasks = [("edit", (name, scenario)) for name, scenario in EDIT_SCENARIOS.items()]
+    work_items: list[tuple[str, object]] = [*fixture_tasks, *edit_tasks]
+    queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+    for item in work_items:
+        queue.put_nowait(item)
+    worker_count = min(4, max(1, (os.cpu_count() or 2) // 2), len(work_items))
+    with (
+        tempfile.TemporaryDirectory(prefix="golden-raw-") as temporary,
+        tempfile.TemporaryDirectory(prefix="golden-logs-") as log_temporary,
+    ):
         raw_root = Path(temporary)
+        log_root = Path(log_temporary)
         params = StdioServerParameters(
             command=str(binary),
             args=["--resources", str(resources), "--soundfont", str(soundfont)],
             cwd=str(raw_root),
             env=dict(os.environ),
         )
-        with log_path.open("w", encoding="utf-8") as log:
-            async with stdio_client(params, errlog=log) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    for source in fixture_files() + mnx_fixture_files():
-                        try:
-                            await capture_fixture(
-                                session,
-                                source.name,
-                                source,
-                                raw_root,
-                                target / source.name,
-                                [raw_root, target],
-                            )
-                        except Exception as exc:  # noqa: BLE001 - keep other fixtures going
-                            write_text(
-                                target / source.name / "capture.error.txt",
-                                f"{type(exc).__name__}: {sanitize(str(exc), [raw_root, target])}\n",
-                            )
-                    for name, scenario in EDIT_SCENARIOS.items():
-                        try:
-                            await capture_edit(
-                                session,
-                                name,
-                                scenario,
-                                raw_root,
-                                target / name,
-                                [raw_root, target],
-                            )
-                        except Exception as exc:  # noqa: BLE001
-                            write_text(
-                                target / name / "capture.error.txt",
-                                f"{type(exc).__name__}: {sanitize(str(exc), [raw_root, target])}\n",
-                            )
+
+        async def run_worker(idx: int) -> None:
+            worker_log_path = log_root / f"worker-{idx}-stderr.log"
+            with worker_log_path.open("w", encoding="utf-8") as worker_log:
+                async with stdio_client(params, errlog=worker_log) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        while True:
+                            try:
+                                kind, payload = queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                            item_name = payload.name if kind == "fixture" else payload[0]
+                            try:
+                                if kind == "fixture":
+                                    await capture_fixture(
+                                        session,
+                                        payload.name,
+                                        payload,
+                                        raw_root,
+                                        target / payload.name,
+                                        [raw_root, target],
+                                    )
+                                else:
+                                    name, scenario = payload
+                                    await capture_edit(
+                                        session,
+                                        name,
+                                        scenario,
+                                        raw_root,
+                                        target / name,
+                                        [raw_root, target],
+                                    )
+                            except Exception as exc:  # noqa: BLE001 - keep other fixtures going
+                                write_text(
+                                    target / item_name / "capture.error.txt",
+                                    f"{type(exc).__name__}: {sanitize(str(exc), [raw_root, target])}\n",
+                                )
+                            finally:
+                                queue.task_done()
+
+        await asyncio.gather(*(run_worker(idx) for idx in range(worker_count)))
+        with log_path.open("w", encoding="utf-8") as combined:
+            for idx in range(worker_count):
+                worker_log_path = log_root / f"worker-{idx}-stderr.log"
+                if worker_log_path.is_file():
+                    combined.write(worker_log_path.read_text(encoding="utf-8", errors="replace"))
     return build_index(target)
 
 
@@ -785,10 +859,82 @@ def command_capture(args) -> int:
     return 0
 
 
+def _file_sha256(path: Path) -> str:
+    with path.open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def _resources_sha256(resources: Path) -> str:
+    def fail(error: OSError) -> None:
+        raise error
+
+    files = (folder / name for folder, _, names in resources.walk(on_error=fail) for name in names)
+    entries = sorted((path.relative_to(resources).as_posix(), _file_sha256(path)) for path in files)
+    return sha256(json.dumps(entries).encode("utf-8"))
+
+
+def _extractor_sha256() -> str:
+    # Fixed roles and order keep the digest independent of checkout paths.
+    sources = (
+        Path(__file__),
+        Path(inspect.getfile(describe_audio)),
+        Path(inspect.getfile(composition_musicxml)),
+        Path(inspect.getfile(_engine_audio.CapturePolicy)),
+    )
+    return sha256("".join(_file_sha256(path) for path in sources).encode("ascii"))
+
+
+def audio_capture_provenance(binary: Path, resources: Path, soundfont: Path, fixtures: dict[str, Path]) -> dict:
+    return {
+        "schema": 2,
+        "binary_sha256": _file_sha256(binary),
+        "soundfont_sha256": _file_sha256(soundfont),
+        "resourcesSha256": _resources_sha256(resources),
+        "extractorSha256": _extractor_sha256(),
+        "fixture_sha256": {name: _file_sha256(path) for name, path in fixtures.items()},
+    }
+
+
+def reusable_golden_audio(
+    actual: Path | None,
+    fixtures: dict[str, Path],
+    binary: Path,
+    resources: Path,
+    soundfont: Path,
+) -> dict[str, Path] | None:
+    if actual is None:
+        return None
+    try:
+        provenance = json.loads((actual.parent / "provenance.json").read_text(encoding="utf-8"))
+        index_bytes = (actual / "index.json").read_bytes()
+        if not isinstance(provenance, dict) or provenance.get("indexSha256") != sha256(index_bytes):
+            return None
+        index = json.loads(index_bytes)
+        if not isinstance(index, dict):
+            return None
+        expected = audio_capture_provenance(binary, resources, soundfont, fixtures)
+        if any(provenance.get(key) != value for key, value in expected.items()):
+            return None
+        matched: dict[str, Path] = {}
+        for name in fixtures:
+            entry = index[name]
+            audio_path = actual / name / "audio.json"
+            if not isinstance(entry, dict) or _file_sha256(audio_path) != entry["audio.json"]:
+                return None
+            matched[name] = audio_path
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError, RecursionError):
+        return None
+    return matched
+
+
 def command_compare(args) -> int:
     allow = load_allow(args.allow)
     args.output.mkdir(parents=True, exist_ok=True)
+    provenance_path = args.output / "provenance.json"
+    provenance_path.unlink(missing_ok=True)
     actual = args.output / "actual"
+    fixtures = {path.name: path for path in fixture_files() + mnx_fixture_files()}
+    provenance = audio_capture_provenance(args.binary, args.resources, args.soundfont, fixtures)
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
         asyncio.run(
             asyncio.wait_for(
@@ -804,6 +950,8 @@ def command_compare(args) -> int:
         )
         # Keep a copy of the server log for debugging (outside the compared tree).
         shutil.copyfile(Path(temporary) / "server-stderr.log", args.output / "server-stderr.log")
+    provenance["indexSha256"] = _file_sha256(actual / "index.json")
+    write_json(provenance_path, provenance)
     return compare_trees(args.golden, actual, allow, args.output, args.platform)
 
 

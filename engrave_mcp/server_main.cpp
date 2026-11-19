@@ -54,7 +54,12 @@ int run_server(int argc, char **argv) {
                                                                {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
                                          json_push(tools, Json{{"name", "test_owner_sleep"},
                                                                {"description", "Test-only owner-thread stall"},
-                                                               {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
+                                                               {"inputSchema",
+                                                                {{"type", "object"},
+                                                                 {"properties",
+                                                                  {{"ms", {{"type", "integer"}, {"minimum", 1}, {"maximum", 60000}}},
+                                                                   {"barrier", {{"type", "string"}}}}},
+                                                                 {"additionalProperties", false}}}});
                                      }
                                      return tools;
                                  }),

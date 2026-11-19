@@ -47,12 +47,31 @@ def main():
         p.add_argument("--" + k, type=Path, required=True)
     a = p.parse_args()
     a.output = a.output.resolve()
-    os.environ["ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS"] = "5100"
-    os.environ["ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH"] = "1"
     results = []
     for partial in (False, True):
         out = a.output / ("partial" if partial else "complete")
-        c = Client(a.binary, a.resources, out)
+        out.mkdir(parents=True, exist_ok=True)
+        release_noncoop = out / "release-noncoop"
+        release_watchdog = out / "release-watchdog"
+        release_flush = out / "release-second-flush"
+        release_noncoop.unlink(missing_ok=True)
+        release_watchdog.unlink(missing_ok=True)
+        release_flush.unlink(missing_ok=True)
+        # Hold the first export at the noncooperative barrier until the watchdog
+        # claims it, then release it so the second export reaches publication
+        # before the watchdog attempts to acquire the publication lock.
+        env = dict(
+            ENGRAVE_MCP_TEST_WATCHDOG_MS="150",
+            ENGRAVE_MCP_TEST_NONCOOPERATIVE_BARRIER=str(release_noncoop),
+            ENGRAVE_MCP_TEST_WATCHDOG_BARRIER=str(release_watchdog),
+            ENGRAVE_MCP_TEST_SECOND_FLUSH_BARRIER=str(release_flush),
+        )
+        os.environ.update(env)
+        try:
+            c = Client(a.binary, a.resources, out)
+        finally:
+            for key in env:
+                os.environ.pop(key, None)
         try:
             doc = prepare(c)
             (out / ".test-live-noncooperative").mkdir(exist_ok=True)
@@ -79,8 +98,11 @@ def main():
             response1 = c.receive(first)
             assert response1["error"]["code"] == -32603, response1
             wait_log(c, "WATCHDOG_CLAIMED")
+            release_noncoop.touch()
             wait_log(c, "PUBLICATION_SECOND_FLUSH")
+            release_watchdog.touch()
             wait_log(c, "WATCHDOG_LOCK_WAITING")
+            release_flush.touch()
             response2 = c.receive(second)["result"]["structuredContent"]
             if partial:
                 assert response2["error"]["code"] == "Io", response2
@@ -94,9 +116,10 @@ def main():
             assert c.tool("score_outline", {"document": doc})["ok"]
             results.append(dict(partial=partial, first=response1, second=response2))
         finally:
+            release_noncoop.touch()
+            release_watchdog.touch()
+            release_flush.touch()
             c.close()
-    os.environ.pop("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS")
-    os.environ.pop("ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH")
     # Same real two-page export, injected report budget immediately on either
     # side of its computed bound. No thousands-page rendering is necessary.
     target = a.output / "boundary-pages"
