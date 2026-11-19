@@ -8,28 +8,18 @@
 # There is deliberately no vendor/engrave/clice.toml. clice treats a
 # directory holding its own clice.toml as an isolated nested project, so an
 # engine-level file would take every engine translation unit out of this
-# project's database, index, lint and format runs. Requires clice 1.0+.
+# project's database, index, lint and format runs.
 
 # scripts/build-native.* and scripts/bbuild.py default to build/release;
 # the other configurations are for debugging and sanitizer work.
 default_configuration = "release"
 
-# Code that is not ours to format, lint or index: vendored third-party trees,
-# Bazel build and package caches, the Pixi environment (whose headers zlib or
-# cairo includes reach via -I), runtime assets, upstream checkouts and worktrees.
+# Vendored third-party code and Pixi environment headers (reached via plain -I
+# for zlib/cairo): keep indexed as part of the build, but out of lint and
+# format. Worktrees under .worktrees/ carry their own clice.toml and are
+# isolated as nested projects automatically.
 [[rules]]
-patterns = [
-  "vendor/engrave/**/thirdparty/**",
-  "vendor/engrave/vendor/**",
-  "build/**",
-  "bazel-*/**",
-  ".pixi/**",
-  ".runtime/**",
-  ".clice/**",
-  ".upstream/**",
-  ".worktrees/**",
-]
-background_index = false
+patterns = ["vendor/engrave/**/thirdparty/**", ".pixi/**"]
 lint = false
 format = false
 

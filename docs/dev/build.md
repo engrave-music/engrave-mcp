@@ -211,9 +211,9 @@ pixi run setup-hooks
   Prettier, and TOML uses Taplo regardless of the C++ backend.
 - **Compilation databases**: Root `clice.toml` maps profile databases
   (`build/release`, `build/debug`, `build/releasedbg`, `build/asan`) and
-  excludes dependencies and generated trees. Generate a profile database with
-  `scripts/bbuild.py --profile <profile> compdb` (via `bazel aquery` with inline
-  `xclang` flags). Both `scripts/lint.py` and `vendor/engrave/tools/lint.py`
+  excludes vendored third-party code and `.pixi/` headers from lint and format.
+  Generate a profile database with `scripts/bbuild.py --profile <profile> compdb`
+  (via `bazel aquery` with inline `xclang` flags). Both `scripts/lint.py` and `vendor/engrave/tools/lint.py`
   auto-select the newest `compile_commands.json` across `build/<profile>/` and
   the repo root. Keep one root `clice` project for host and engine.
 - **Config scope & cadence**: Host checks follow root `.clang-format` /
