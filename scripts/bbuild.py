@@ -146,7 +146,18 @@ def stage_bep_outputs(bep_path: Path, out_dir: Path) -> int:
     return 0
 
 
-def _expand_clang_cfg(cfg_path: Path, execroot: Path) -> list[str]:
+def _resolve_bazel_path(rel: str, execroot: Path, output_base: Path) -> Path:
+    if rel.startswith("external/"):
+        ext_cand = output_base / rel
+        if ext_cand.exists():
+            return ext_cand.resolve()
+    cand = execroot / rel
+    if cand.exists():
+        return cand.resolve()
+    return cand
+
+
+def _expand_clang_cfg(cfg_path: Path, execroot: Path, output_base: Path) -> list[str]:
     out: list[str] = []
     for raw_line in cfg_path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw_line.strip()
@@ -158,15 +169,13 @@ def _expand_clang_cfg(cfg_path: Path, execroot: Path) -> list[str]:
             tok = tokens[i]
             if tok in {"-stdlib++-isystem", "-isystem", "-idirafter", "-I"} and i + 1 < len(tokens):
                 rel = tokens[i + 1]
-                cand = execroot / rel
-                out.extend([tok, str(cand.resolve() if cand.exists() else cand).replace("\\", "/")])
+                out.extend([tok, str(_resolve_bazel_path(rel, execroot, output_base)).replace("\\", "/")])
                 i += 2
                 continue
             for prefix in ("--sysroot=", "-resource-dir="):
                 if tok.startswith(prefix):
                     rel = tok[len(prefix) :]
-                    cand = execroot / rel
-                    tok = prefix + str(cand.resolve() if cand.exists() else cand).replace("\\", "/")
+                    tok = prefix + str(_resolve_bazel_path(rel, execroot, output_base)).replace("\\", "/")
                     break
             out.append(tok)
             i += 1
@@ -197,6 +206,7 @@ def generate_compdb(
         sys.stderr.write(info_res.stderr)
         return info_res.returncode
     execroot = Path(info_res.stdout.strip())
+    output_base = execroot.parent.parent if execroot.parent.name == "execroot" else execroot
     root_resolved = root.resolve()
     root_posix = str(root_resolved).replace("\\", "/")
 
@@ -231,13 +241,13 @@ def generate_compdb(
             continue
         if out_arg and "-exec" in out_arg:
             continue
-        real_src = (execroot / src_arg).resolve()
+        real_src = _resolve_bazel_path(src_arg, execroot, output_base)
         if not real_src.is_file() or not real_src.is_relative_to(root_resolved):
             continue
 
         cooked: list[str] = []
-        compiler_path = execroot / raw_args[0]
-        cooked.append(str(compiler_path.resolve() if compiler_path.exists() else raw_args[0]).replace("\\", "/"))
+        compiler_path = _resolve_bazel_path(raw_args[0], execroot, output_base)
+        cooked.append(str(compiler_path if compiler_path.exists() else raw_args[0]).replace("\\", "/"))
 
         i = 1
         while i < len(raw_args):
@@ -254,29 +264,30 @@ def generate_compdb(
             if tok.startswith("--config="):
                 rel_cfg = tok[len("--config=") :]
                 if rel_cfg not in cfg_cache:
-                    cfg_file = execroot / rel_cfg
-                    cfg_cache[rel_cfg] = _expand_clang_cfg(cfg_file, execroot) if cfg_file.is_file() else [tok]
+                    cfg_file = _resolve_bazel_path(rel_cfg, execroot, output_base)
+                    cfg_cache[rel_cfg] = (
+                        _expand_clang_cfg(cfg_file, execroot, output_base) if cfg_file.is_file() else [tok]
+                    )
                 cooked.extend(cfg_cache[rel_cfg])
                 i += 1
                 continue
             if tok in {"-I", "-iquote", "-isystem"} and i + 1 < len(raw_args):
                 inc = raw_args[i + 1]
-                cand = execroot / inc
-                if cand.exists():
-                    resolved_inc = cand.resolve()
-                    if resolved_inc.is_relative_to(root_resolved) and "thirdparty" not in resolved_inc.parts:
-                        out_flag = "-I" if tok == "-isystem" else tok
-                        cooked.extend([out_flag, str(resolved_inc).replace("\\", "/")])
-                    else:
-                        cooked.extend([tok, str(resolved_inc).replace("\\", "/")])
+                resolved_inc = _resolve_bazel_path(inc, execroot, output_base)
+                if (
+                    resolved_inc.exists()
+                    and resolved_inc.is_relative_to(root_resolved)
+                    and "thirdparty" not in resolved_inc.parts
+                ):
+                    out_flag = "-I" if tok == "-isystem" else tok
+                    cooked.extend([out_flag, str(resolved_inc).replace("\\", "/")])
                 else:
-                    cooked.extend([tok, str(cand).replace("\\", "/")])
+                    cooked.extend([tok, str(resolved_inc).replace("\\", "/")])
                 i += 2
                 continue
             if tok.startswith("-I") and len(tok) > 2:
                 inc = tok[2:]
-                cand = execroot / inc
-                resolved_inc = cand.resolve() if cand.exists() else cand
+                resolved_inc = _resolve_bazel_path(inc, execroot, output_base)
                 cooked.append("-I" + str(resolved_inc).replace("\\", "/"))
                 i += 1
                 continue

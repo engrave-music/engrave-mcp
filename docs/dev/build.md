@@ -32,7 +32,24 @@ pixi run python scripts/prepare.py
 
 ## Development builds
 
-Use `scripts/bbuild.py` (or `pixi run build`) for development builds across `release`, `debug`, `releasedbg`, and `asan` profiles. Outputs are staged to `build/<profile>`, external archives are cached in `build/.bazel_repo_cache`, and Bazel action outputs (including relocatable Clang binary precompiled headers for `engraving`) are shared across builds in `build/.bazel_disk_cache`. `--build-directory` overrides the staged output path, and `--no-pch` disables precompiled headers.
+Use `scripts/bbuild.py` (or `pixi run build`) for development builds across `release`, `debug`, `releasedbg`, and `asan` profiles. Outputs are staged to `build/<profile>`, external archives are cached in `build/.bazel_repo_cache`, and Bazel action outputs (including relocatable Clang binary precompiled headers for `engraving` and the Glaze-using host targets via `bazel/pch/host_pch.h`) are shared across builds in `build/.bazel_disk_cache`. `--build-directory` overrides the staged output path, and `--no-pch` disables precompiled headers.
+
+### Precompiled headers vs C++23 modules
+
+Both the engine (`vendor/engrave/bazel/pch/engraving_pch.h`) and Ring 2 host (`bazel/pch/host_pch.h`) use relocatable Clang binary PCH (`-fpch-instantiate-templates`, `-Xclang -fno-pch-timestamp`, `-Xclang -fmodule-file-home-is-cwd`) containing only stable STL and third-party headers (`@glaze`, `@ngcpp_proxy`, `@unordered_dense` for the host), so edits to project headers never invalidate the PCH.
+
+A module-first C++23 prototype (`export module music.json` / `music.registry` with `import std;` via `@xclang//bazel:std` and zero consumer `#include`s) was benchmarked against raw headers and `host_pch` on the 5-TU Glaze-heavy `tool_registry` + `registry_dump` + `registry_test` slice (`-c opt`, warm Bazel server, `xclang 23.1.5.2`):
+
+| Metric                                 | Raw headers        | C++23 modules (`import std;`) | Clang binary PCH (`host_pch`) |
+| -------------------------------------- | ------------------ | ----------------------------- | ----------------------------- |
+| Windows clean 5-TU                     | 16.61s (CP 13.80s) | 20.18s (CP 17.45s)            | **12.18s (CP 9.20s)**         |
+| Windows 1-TU inc (`schema_defs.cpp`)   | 14.15s (CP 11.66s) | 10.56s (CP 8.09s)             | **10.51s (CP 7.69s)**         |
+| Windows 1-TU inc (`registry_test.cpp`) | 7.63s (CP 5.22s)   | 5.45s (CP 3.03s)              | **4.51s (CP 1.73s)**          |
+| Linux clean 5-TU                       | 6.58s (CP 6.35s)   | 8.69s (CP 8.41s)              | **4.85s (CP 4.63s)**          |
+| Linux 1-TU inc (`schema_defs.cpp`)     | 6.33s (CP 6.12s)   | 4.86s (CP 4.61s)              | **4.69s (CP 4.47s)**          |
+| Linux 1-TU inc (`registry_test.cpp`)   | 2.76s (CP 2.54s)   | 1.82s (CP 1.58s)              | **1.03s (CP 0.82s)**          |
+
+Across the full Ring 2 host (`//:host_binaries`), `host_pch` cut clean rebuilds from `33.74s` to `23.79s` on Windows (-29.5%, CP `29.77s` -> `18.57s`) and `10.78s` to `7.84s` on Linux (-27.3%, CP `9.79s` -> `7.20s`), with one-time cold PCH builds of `7.27s` (Windows) and `2.60s` (Linux). Beyond beating C++23 modules on every compile metric (no `CppModuleDepsScanning` or serialized `.pcm` chains), binary PCH preserves full `clang-tidy` compatibility: `scripts/bbuild.py compdb` strips `-include-pch`, whereas Clang `.pcm` files embed the exact LLVM commit SHA and are rejected by external `clang-tidy` binaries whose LLVM revision differs from `xclang`.
 
 ```powershell
 pixi run --locked python scripts/bbuild.py --profile release -j 12 build engrave_mcp engrave_mcp_test host_api_test registry_dump registry_check

@@ -1,6 +1,6 @@
 #include "registry.h"
 
-#include <iostream>
+#include <cstdio>
 #include <stdexcept>
 #include <utility>
 
@@ -80,9 +80,9 @@ int main() {
         const auto under = report(low), over = report(high);
         require(under <= limit && over > limit, "publication boundary incorrect");
         require(music::dump_json(music::make_tool_result(payload)).size() < over, "wire exceeds bound");
-        std::cout << "synthetic publication boundary: " << under << " <= " << limit << " < " << over << " bytes\n";
+        std::fprintf(stdout, "synthetic publication boundary: %zu <= %zu < %zu bytes\n", under, limit, over);
         utf8_replacement();
-        std::cout << "invalid UTF-8 replacement checks passed\n";
+        std::fputs("invalid UTF-8 replacement checks passed\n", stdout);
         validate_registry();
         auto bound = handlers(std::make_index_sequence<static_cast<std::size_t>(HandlerId::COUNT)>{});
         validate_handlers(bound);
@@ -101,9 +101,9 @@ int main() {
             require(find_tool(spec.name) == &spec, "registry lookup failed");
             if (spec.handler != HandlerId::EXPORT) require(spec.scheduling == Scheduling::OWNER, "wrong owner scheduling");
         }
-        std::cout << "registry handler and scheduling checks passed\n";
+        std::fputs("registry handler and scheduling checks passed\n", stdout);
     } catch (const std::exception &error) {
-        std::cerr << error.what() << '\n';
+        std::fprintf(stderr, "%s\n", error.what());
         return 1;
     }
 }

@@ -1,5 +1,6 @@
+#include <cstdio>
 #include <exception>
-#include <iostream>
+#include <string>
 
 #ifdef _WIN32
 #include <fcntl.h>
@@ -14,10 +15,11 @@ int main() {
 #endif
     try {
         music::api::validate_registry();
-        std::cout << music::dump_json(music::api::tools_json(), 2) << '\n';
-        if (!std::cout) return 1;
+        const std::string text = music::dump_json(music::api::tools_json(), 2) + '\n';
+        if (std::fwrite(text.data(), 1, text.size(), stdout) != text.size()) return 1;
+        if (std::fflush(stdout) != 0) return 1;
     } catch (const std::exception &error) {
-        std::cerr << error.what() << '\n';
+        std::fprintf(stderr, "%s\n", error.what());
         return 1;
     }
 }
