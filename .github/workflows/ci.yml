@@ -67,7 +67,8 @@ jobs:
             tests/integration/test_oracle_harness.py \
             tests/integration/test_rendered_page.py \
             tests/test_engine_gate.py \
-            tests/test_bbuild.py; do
+            tests/test_bbuild.py \
+            tests/test_bazel_server_mcp.py; do
             echo "::group::$test"
             "$py" "$test"
             echo "::endgroup::"

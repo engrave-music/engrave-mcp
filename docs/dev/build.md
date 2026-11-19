@@ -68,6 +68,35 @@ binaries plus `@engrave//:engine_tests`). `registry_check` builds
 `registry_dump` and `registry_test` and runs
 `tests/integration/test_tool_schema.py` against `engrave_mcp/tools.json`.
 
+### Persistent Bazel JVM for Agent Sessions (`bazel_server_mcp.py`)
+
+On Windows, agent command runners typically execute each shell call inside a Job
+Object with `KILL_ON_JOB_CLOSE`, which terminates any Bazel JVM spawned inside
+that call. `scripts/bazel_server_mcp.py` (and
+`vendor/engrave/tools/bazel_server_mcp.py` for standalone engine checkouts) is a
+zero-dependency stdio MCP server exposing `bazel_server_start`,
+`bazel_server_stop`, and `bazel_server_status` over a configurable project map
+(defaulting to `host` + `engine`, extensible via `--project NAME=PATH` or
+`--config projects.json`). Because the IDE/agent host keeps the MCP process
+alive outside per-command Job Objects, subsequent `scripts/bbuild.py`,
+`tests/engine_gate.py`, and `bazelisk` commands automatically connect to the
+same warm Bazel JVM:
+
+```json
+{
+  "mcpServers": {
+    "bazel-server": {
+      "command": "C:/path/to/engrave-mcp/.pixi/envs/default/python.exe",
+      "args": [
+        "C:/path/to/engrave-mcp/scripts/bazel_server_mcp.py",
+        "--warm",
+        "host"
+      ]
+    }
+  }
+}
+```
+
 ### Precompiled Headers vs. C++23 Modules
 
 Both the engine (`vendor/engrave/bazel/pch/engraving_pch.h`) and Ring 2 host
