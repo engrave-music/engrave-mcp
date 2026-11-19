@@ -248,10 +248,10 @@ def main():
             while "CANCEL_HANDLED" not in c.log_path.read_text(encoding="utf-8", errors="replace"):
                 assert time.monotonic() < deadline, "queued export cancellation not handled"
                 time.sleep(0.001)
+            assert c.receive(ident)["error"]["code"] == -32800
         finally:
             owner_barrier.touch()
         c.receive(sleeper)
-        assert c.receive(ident)["error"]["code"] == -32800
         assert not dest.exists()
         phases = c.close()
         modes = {x["mode"] for x in phases}

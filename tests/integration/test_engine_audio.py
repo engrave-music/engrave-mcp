@@ -20,6 +20,7 @@ from typing import Any
 import numpy as np
 from engrave_mcp_testing import golden as golden
 from engrave_mcp_testing.golden import describe_midi
+from engrave_mcp_testing.golden import reusable_golden_audio as _reusable_golden_audio
 from engrave_mcp_testing.mcp_client import Client
 from engrave_mcp_testing.paths import REPO_ROOT
 from engrave_testing import engine_audio as audio
@@ -59,46 +60,6 @@ _SLOW_AUDIO_FIRST = (
     "layout_elements.mscx",
     "pedal.mscx",
 )
-
-
-def _reusable_golden_audio(
-    reuse_golden_actual: Path | None,
-    fixtures: dict[str, Path],
-    binary: Path,
-    resources: Path,
-    soundfont: Path,
-) -> dict[str, Path] | None:
-    if reuse_golden_actual is None:
-        return None
-    index_path = reuse_golden_actual / "index.json"
-    provenance_path = reuse_golden_actual.parent / "provenance.json"
-    if not index_path.is_file() or not provenance_path.is_file():
-        return None
-    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
-    expected_fixtures = {name: audio.file_sha256(path) for name, path in fixtures.items()}
-    if (
-        not isinstance(provenance, dict)
-        or provenance.get("schema") != 1
-        or provenance.get("binary_sha256") != audio.file_sha256(binary)
-        or provenance.get("soundfont_sha256") != audio.file_sha256(soundfont)
-        or provenance.get("resources") != str(resources.resolve())
-        or provenance.get("extractor_sha256") != audio.file_sha256(REPO_ROOT / "tests/engrave_mcp_testing/golden.py")
-        or provenance.get("fixture_sha256") != expected_fixtures
-    ):
-        return None
-    index = json.loads(index_path.read_text(encoding="utf-8"))
-    if not isinstance(index, dict):
-        return None
-    matched: dict[str, Path] = {}
-    for name in fixtures:
-        entry = index.get(name)
-        audio_path = reuse_golden_actual / name / "audio.json"
-        if not isinstance(entry, dict) or not audio_path.is_file():
-            return None
-        if audio.file_sha256(audio_path) != entry.get("audio.json"):
-            return None
-        matched[name] = audio_path
-    return matched
 
 
 async def capture_current_audio(
@@ -164,6 +125,7 @@ async def capture_current_audio(
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(src, dst)
             shutil.copyfile(proof_log, target / "server-stderr.log")
+            print(f"  Reused {len(reusable)} audio descriptors from {reuse_golden_actual}")
             return
 
         priority = {name: idx for idx, name in enumerate(_SLOW_AUDIO_FIRST)}

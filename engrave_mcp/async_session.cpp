@@ -245,15 +245,27 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
             co_return co_await self->dispatch<Json>(
                 self->owner_io,
                 [self, ms, barrier = std::move(barrier)] {
+                    struct ClearBusy {
+                        std::atomic<bool> &busy;
+                        ~ClearBusy() { busy.store(false); }
+                    };
                     self->test_owner_busy.store(true);
+                    const ClearBusy clear_busy{self->test_owner_busy};
                     if (!barrier.empty()) {
                         const auto barrier_path = std::filesystem::u8path(barrier);
-                        while (!std::filesystem::exists(barrier_path)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                        self->test_owner_busy.store(false);
+                        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+                        while (!std::filesystem::exists(barrier_path)) {
+                            if (self->stopping.load(std::memory_order_acquire)) {
+                                throw asio::system_error(asio::error::operation_aborted);
+                            }
+                            if (std::chrono::steady_clock::now() >= deadline) {
+                                throw std::runtime_error("test owner barrier timed out");
+                            }
+                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        }
                         return Json{{"ok", true}, {"barrier", barrier}};
                     }
                     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-                    self->test_owner_busy.store(false);
                     return Json{{"ok", true}, {"slept_ms", ms}};
                 },
                 true);

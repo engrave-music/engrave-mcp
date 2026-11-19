@@ -485,21 +485,24 @@ def main():
         functools.partial(artifact_fault, a, after=1, boundary="ERROR_REPORT"),
         functools.partial(artifact_fault, a, boundary="DOCUMENT_CALLBACK"),
         functools.partial(after_report, a),
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda case: case(), cases))
+
+    # Process-exit deadlines require the other hosts to have finished.
+    timed_cases = [
+        functools.partial(barrier, a, dead, report) for dead, report in ((False, True), (True, True), (True, False))
+    ]
+    timed_cases += [
         functools.partial(refused_cleanup, a),
         functools.partial(refused_cleanup, a, True),
         functools.partial(regular_diagnostic, a),
-    ]
-    cases += [
-        functools.partial(barrier, a, dead, report) for dead, report in ((False, True), (True, True), (True, False))
-    ]
-    cases += [
         functools.partial(watchdog_barrier, a),
         functools.partial(diagnostic_cycles, a),
         functools.partial(after_closing, a),
         functools.partial(after_closing, a, True),
     ]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(lambda case: case(), cases))
+    results.extend(case() for case in timed_cases)
     (a.output / "results.json").write_text(json.dumps(results, indent=2))
     print("PASS: visible paths, real wrapper faults, queued fencing, publication/watchdog lock, 80 bounded diagnostics")
 

@@ -35,7 +35,7 @@ def execute_schedule(lanes, jobs, execute):
                         dependency in lanes and dependency not in results for dependency in LANES_BY_NAME[lane].after
                     ):
                         continue
-                    running[pool.submit(execute, lane)] = lane
+                    running[pool.submit(execute, lane, results.copy())] = lane
                     pending.remove(lane)
                 done, _ = wait(running, return_when=FIRST_COMPLETED)
                 for future in done:
@@ -209,7 +209,7 @@ class LaneContext:
     testcwd: Path
     exe_suffix: str
     native_470_args: list[str]
-    golden_selected: bool = False
+    golden_passed: bool = False
 
 
 @dataclass(frozen=True)
@@ -333,7 +333,7 @@ def _deferred_audio(context: LaneContext) -> list[str]:
 def _reuse_golden(context: LaneContext) -> list[str]:
     return (
         ["--reuse-golden-actual", str(context.output / "golden/actual")]
-        if context.golden_selected
+        if context.golden_passed
         and (context.output / "golden/actual/index.json").is_file()
         and (context.output / "golden/provenance.json").is_file()
         else []
@@ -676,6 +676,7 @@ LANES = (
         ),
         binaries=("engine_audio_probe", "engrave-mcp"),
         exclusive=True,
+        after=("golden",),
     ),
     Lane("repeats", _host("repeats", "repeats", upstream=True)),
     Lane("version_info", _host("version_info", "version-info", upstream=True)),
@@ -702,7 +703,7 @@ def run_lane(
     exe_suffix: str,
     log_file,
     native_470_args: list[str],
-    golden_selected: bool = False,
+    golden_passed: bool = False,
 ) -> int:
     spec = LANES_BY_NAME.get(lane)
     if spec is None:
@@ -718,7 +719,7 @@ def run_lane(
         testcwd,
         exe_suffix,
         native_470_args,
-        golden_selected,
+        golden_passed,
     )
     code = 0
     for command in spec.build(context):
@@ -1014,7 +1015,7 @@ def main() -> None:
         print(notice, flush=True)
         summary_lines.append(notice)
 
-    def execute(lane):
+    def execute(lane, completed):
         log_path = output / f"{lane}.log"
         t0 = time.perf_counter()
         with open(log_path, "wb") as log_file:
@@ -1040,7 +1041,7 @@ def main() -> None:
                     exe_suffix=exe_suffix,
                     log_file=log_file,
                     native_470_args=native_470_args,
-                    golden_selected="golden" in selected_lanes,
+                    golden_passed="golden" in completed and completed["golden"][0] == 0,
                 )
             except Exception as e:
                 log_file.write(f"Lane execution failed with exception: {e}\n".encode())

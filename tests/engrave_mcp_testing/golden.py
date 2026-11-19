@@ -60,8 +60,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
-
-# The fork owns the shared artifact representations and comparison policy.
+import hashlib
+import inspect
 import json
 import os
 import shutil
@@ -71,6 +71,7 @@ import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
 
+from engrave_testing import engine_audio as _engine_audio
 from engrave_testing import golden as _engine_golden
 from engrave_testing.musicxml_semantic import musicxml_semantic
 from mcp import ClientSession, StdioServerParameters
@@ -413,7 +414,6 @@ def semantic_dump(source: Path, dest: Path, roots, *extra: str) -> None:
 
 
 async def semantic_dump_async(source: Path, dest: Path, roots, *extra: str) -> None:
-    """Run semantic_dump asynchronously without blocking the event loop."""
     if not source.is_file():
         write_text(dest.with_suffix(".error.txt"), "source export missing\n")
         return
@@ -859,10 +859,82 @@ def command_capture(args) -> int:
     return 0
 
 
+def _file_sha256(path: Path) -> str:
+    with path.open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def _resources_sha256(resources: Path) -> str:
+    def fail(error: OSError) -> None:
+        raise error
+
+    files = (folder / name for folder, _, names in resources.walk(on_error=fail) for name in names)
+    entries = sorted((path.relative_to(resources).as_posix(), _file_sha256(path)) for path in files)
+    return sha256(json.dumps(entries).encode("utf-8"))
+
+
+def _extractor_sha256() -> str:
+    # Fixed roles and order keep the digest independent of checkout paths.
+    sources = (
+        Path(__file__),
+        Path(inspect.getfile(describe_audio)),
+        Path(inspect.getfile(composition_musicxml)),
+        Path(inspect.getfile(_engine_audio.CapturePolicy)),
+    )
+    return sha256("".join(_file_sha256(path) for path in sources).encode("ascii"))
+
+
+def audio_capture_provenance(binary: Path, resources: Path, soundfont: Path, fixtures: dict[str, Path]) -> dict:
+    return {
+        "schema": 2,
+        "binary_sha256": _file_sha256(binary),
+        "soundfont_sha256": _file_sha256(soundfont),
+        "resourcesSha256": _resources_sha256(resources),
+        "extractorSha256": _extractor_sha256(),
+        "fixture_sha256": {name: _file_sha256(path) for name, path in fixtures.items()},
+    }
+
+
+def reusable_golden_audio(
+    actual: Path | None,
+    fixtures: dict[str, Path],
+    binary: Path,
+    resources: Path,
+    soundfont: Path,
+) -> dict[str, Path] | None:
+    if actual is None:
+        return None
+    try:
+        provenance = json.loads((actual.parent / "provenance.json").read_text(encoding="utf-8"))
+        index_bytes = (actual / "index.json").read_bytes()
+        if not isinstance(provenance, dict) or provenance.get("indexSha256") != sha256(index_bytes):
+            return None
+        index = json.loads(index_bytes)
+        if not isinstance(index, dict):
+            return None
+        expected = audio_capture_provenance(binary, resources, soundfont, fixtures)
+        if any(provenance.get(key) != value for key, value in expected.items()):
+            return None
+        matched: dict[str, Path] = {}
+        for name in fixtures:
+            entry = index[name]
+            audio_path = actual / name / "audio.json"
+            if not isinstance(entry, dict) or _file_sha256(audio_path) != entry["audio.json"]:
+                return None
+            matched[name] = audio_path
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return None
+    return matched
+
+
 def command_compare(args) -> int:
     allow = load_allow(args.allow)
     args.output.mkdir(parents=True, exist_ok=True)
+    provenance_path = args.output / "provenance.json"
+    provenance_path.unlink(missing_ok=True)
     actual = args.output / "actual"
+    fixtures = {path.name: path for path in fixture_files() + mnx_fixture_files()}
+    provenance = audio_capture_provenance(args.binary, args.resources, args.soundfont, fixtures)
     with tempfile.TemporaryDirectory(prefix="golden-log-") as temporary:
         asyncio.run(
             asyncio.wait_for(
@@ -878,17 +950,8 @@ def command_compare(args) -> int:
         )
         # Keep a copy of the server log for debugging (outside the compared tree).
         shutil.copyfile(Path(temporary) / "server-stderr.log", args.output / "server-stderr.log")
-    write_json(
-        args.output / "provenance.json",
-        {
-            "schema": 1,
-            "binary_sha256": sha256(args.binary.resolve().read_bytes()),
-            "soundfont_sha256": sha256(args.soundfont.resolve().read_bytes()),
-            "resources": str(args.resources.resolve()),
-            "extractor_sha256": sha256(Path(__file__).resolve().read_bytes()),
-            "fixture_sha256": {path.name: sha256(path.read_bytes()) for path in fixture_files() + mnx_fixture_files()},
-        },
-    )
+    provenance["indexSha256"] = _file_sha256(actual / "index.json")
+    write_json(provenance_path, provenance)
     return compare_trees(args.golden, actual, allow, args.output, args.platform)
 
 
