@@ -64,11 +64,10 @@ build/release/engrave-mcp.exe --resources .runtime/assets `
 ```
 
 A packaged build finds its sibling `assets/` directory automatically. Windows
-and Linux build, test and packaging details are in [docs/dev/build.md](docs/dev/build.md).
+and Linux build, test, and packaging details are in [docs/dev/build.md](docs/dev/build.md):
 
-For development builds across `release`, `debug`, `releasedbg`, and `asan` profiles, use `scripts/bbuild.py --profile <profile> -j 12 build engrave_mcp`. Outputs are staged to `build/<profile>`, external archives are cached in `build/.bazel_repo_cache`, and Bazel action outputs are shared in `build/.bazel_disk_cache`. `scripts/build-native.ps1` and `scripts/build-native.sh` also default to `build/<profile>` and reset `vendor/engrave` via `git submodule update --init`; use them only for clean builds at the pinned engine. The root `clice.toml` selects profile compilation databases; formatting and linting support `--backend` and `-j` (see [build.md](docs/dev/build.md)).
-
-`tests/run_lanes.py` builds the targets selected lanes need and runs them (`--no-build` skips the build, `--profile` selects `build/<profile>`, `--list-lanes` prints the schedule). Supply `--engine-source`, `--assets`, `--soundfont`, and `--output` under `notes/runs/<name>` as shown in [validation.md](docs/dev/validation.md).
+- **Development builds**: Use `scripts/bbuild.py --profile <release|debug|releasedbg|asan> -j 12 build engrave_mcp` (stages to `build/<profile>` with shared Bazel caches in `build/.bazel_repo_cache` and `build/.bazel_disk_cache`). Reserve `scripts/build-native.ps1` / `scripts/build-native.sh` for clean builds at the pinned engine (they reset `vendor/engrave` via `git submodule update --init`).
+- **Acceptance lanes**: Use `tests/run_lanes.py` (builds needed targets automatically; `--no-build` skips building, `--profile` selects `build/<profile>`, `--list-lanes` prints the schedule) with `--output` under `notes/runs/<name>`; see [docs/dev/validation.md](docs/dev/validation.md).
 
 ## Tools
 
@@ -178,9 +177,8 @@ docs/dev/        design, tool contract, build, validation, engine fork guide
 - [Tool contract](docs/dev/tools.md)
 - [Build and test](docs/dev/build.md)
 - [Validation and test lanes](docs/dev/validation.md)
-- [Engine fork guide](docs/dev/fork.md)
+- [Engine fork and branching](docs/dev/fork.md)
 - [Supported scope and non-goals](docs/dev/scope.md)
 - [Open defects and limitations](docs/dev/defects.md)
-- [Branching and tags](docs/dev/branching.md)
 - [Code style guide](docs/dev/code-style-guide.md)
 - [中文说明](README.zh-CN.md)

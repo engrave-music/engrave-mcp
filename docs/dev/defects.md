@@ -19,12 +19,6 @@ This document records active defects and known limitations for the engine and ho
 | 030 | Windows MAX_PATH length on long output roots   | Open limitation      | EXECUTED                  | Destination paths and private staging folders exceeding 260 characters on Windows can trigger filesystem IO errors; short temporary directory roots are required.                                                                                                             |
 | 031 | Upstream `EngravingObject` base-ctor downcast  | Open                 | EXECUTED, SOURCE-REVIEWED | `EngravingObject::EngravingObject` in `vendor/engrave/src/engraving/dom/engravingobject.cpp` executes `static_cast<Score *>(this)` before derived `Score` construction, triggering UBSan `vptr` downcast diagnostics in Linux ASan/UBSan `host_api_test`.                     |
 
-## Closed issues
-
-| ID  | Issue                          | Status | Evidence                  | Resolution                                                                                                           |
-| --- | ------------------------------ | ------ | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| 004 | Batch rollback may move layout | Closed | SOURCE-REVIEWED, REPORTED | Removed implicit batch rollback in favor of prefix-commit batches (`score_edit`) and explicit in-memory checkpoints. |
-
 ## Current limitations
 
 - **Layout reflow across file round trips**: Live in-memory exports preserve exact visual placement. Saving to disk and reopening can reflow elements slightly due to XML serialization and margin defaults.

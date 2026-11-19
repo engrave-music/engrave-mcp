@@ -12,5 +12,7 @@ compile_commands.json
 .cache/
 .ruff_cache/
 .worktrees/
+AGENTS.local.md
+docs/do_not_commit/
 
 *.egg-info/

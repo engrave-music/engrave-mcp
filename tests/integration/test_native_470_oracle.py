@@ -439,7 +439,7 @@ def main() -> int:
     parser.add_argument("--current-assets", type=Path)
     parser.add_argument(
         "--oracle-ssh",
-        help="Physical Linux oracle host, e.g. user@<linux-host>; oracle paths are remote absolute paths",
+        help="Physical Linux oracle host, e.g. user@linux-host; oracle paths are remote absolute paths",
     )
     parser.add_argument(
         "--live-edits",
@@ -499,9 +499,9 @@ def main() -> int:
         else:
             require(
                 sys.platform.startswith("linux"),
-                "Linux ELF oracle requires --oracle-ssh user@<linux-host> --oracle-archive /path/to/oracles/mcp-4.7.6-4.tar.gz "
-                "--oracle-executable /path/to/oracles/mcp-4.7.6-4/bin/semantic_dump "
-                "--oracle-assets /path/to/oracles/mcp-4.7.6-4/assets",
+                "Linux ELF oracle requires --oracle-ssh user@linux-host --oracle-archive /path/to/oracles/musescore-4.7.6-oracle.tar.gz "
+                "--oracle-executable /path/to/oracles/musescore-4.7.6-oracle/bin/semantic_dump "
+                "--oracle-assets /path/to/oracles/musescore-4.7.6-oracle/assets",
             )
             oracle_root = preflight_oracle(
                 args.oracle_archive.resolve(),

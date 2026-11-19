@@ -57,11 +57,10 @@ build/release/engrave-mcp.exe --resources .runtime/assets `
 ```
 
 打包后的产物会自动查找同级的 `assets/` 目录。Windows 与 Linux 的构建、测试和打包
-细节见[构建指南](docs/dev/build.md)。
+细节见[构建指南](docs/dev/build.md)：
 
-日常在 `release`、`debug`、`releasedbg` 和 `asan` 配置下开发构建时，使用 `scripts/bbuild.py --profile <profile> -j 12 build engrave_mcp`。构建产物输出到 `build/<profile>`，外部归档缓存共享在 `build/.bazel_repo_cache`，编译产物缓存共享在 `build/.bazel_disk_cache`。`scripts/build-native.ps1` 与 `scripts/build-native.sh` 同样默认输出到 `build/<profile>`，并会运行 `git submodule update --init` 重置 `vendor/engrave`；仅在固定引擎提交上做干净构建时使用它们。根目录 `clice.toml` 选择各配置的编译数据库，格式化与静态检查支持 `--backend` 和 `-j`（详见[构建指南](docs/dev/build.md)）。
-
-`tests/run_lanes.py` 会先构建所选测试道需要的目标再执行（`--no-build` 跳过构建，`--profile` 选择 `build/<profile>`，`--list-lanes` 打印调度列表）。按[验证测试道与规范](docs/dev/validation.md)传入 `--engine-source`、`--assets`、`--soundfont`，并将 `--output` 指向 `notes/runs/<name>`。
+- **日常开发构建**：使用 `scripts/bbuild.py --profile <release|debug|releasedbg|asan> -j 12 build engrave_mcp`（输出到 `build/<profile>`，共享缓存在 `build/.bazel_repo_cache` 与 `build/.bazel_disk_cache`）。`scripts/build-native.ps1` 与 `scripts/build-native.sh` 会重置 `vendor/engrave`，仅在固定引擎提交上做干净构建时使用。
+- **验收测试道**：使用 `tests/run_lanes.py`（自动构建所需目标；`--no-build` 跳过构建，`--profile` 选择 `build/<profile>`，`--list-lanes` 打印调度列表），并将 `--output` 指向 `notes/runs/<name>`；详见[验证测试道与规范](docs/dev/validation.md)。
 
 ## 工具
 
@@ -162,8 +161,8 @@ docs/dev/        架构设计、工具契约、构建指南、测试验证、分
 - [工具契约说明](docs/dev/tools.md)
 - [构建与测试指南](docs/dev/build.md)
 - [验证测试道与规范](docs/dev/validation.md)
-- [引擎分叉指南](docs/dev/fork.md)
+- [引擎分叉与分支策略](docs/dev/fork.md)
 - [支持范围与非目标](docs/dev/scope.md)
 - [已知缺陷与限制](docs/dev/defects.md)
-- [分支与标签策略](docs/dev/branching.md)
+- [代码风格指南](docs/dev/code-style-guide.md)
 - [English README](README.md)
