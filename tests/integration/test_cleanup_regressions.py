@@ -70,15 +70,29 @@ class GoldenAudioReuseTests(unittest.TestCase):
         self.assertIsNone(self.reuse())
 
     def test_golden_audio_rejects_extractor_digest_change(self):
-        self.provenance["extractorSha256"] = "0" * 64
-        self.write_provenance()
-        self.assertIsNone(self.reuse())
+        real_hash = golden._file_sha256
+        extractor_files = (
+            Path(golden.__file__),
+            Path(golden.inspect.getfile(golden.describe_audio)),
+            Path(golden.inspect.getfile(golden.composition_musicxml)),
+            Path(golden.inspect.getfile(golden._engine_audio.CapturePolicy)),
+        )
+        for target in extractor_files:
+            with self.subTest(extractor=target.name):
+                resolved = target.resolve()
+
+                def altered(path: Path, *, _target=resolved):
+                    return "0" * 64 if path.resolve() == _target else real_hash(path)
+
+                with patch.object(golden, "_file_sha256", side_effect=altered):
+                    self.assertIsNone(self.reuse())
 
     def test_golden_audio_treats_bad_metadata_as_cache_miss(self):
+        nested = b"[" * 2000 + b"]" * 2000
         for path in (self.provenance_path, self.index):
             original = path.read_bytes()
-            for invalid in (b"{", b"[]", b"{}", b"\xff"):
-                with self.subTest(path=path.name, invalid=invalid):
+            for invalid in (b"{", b"[]", b"{}", b"\xff", nested):
+                with self.subTest(path=path.name, invalid=invalid[:16]):
                     path.write_bytes(invalid)
                     if path == self.index:
                         self.write_provenance()

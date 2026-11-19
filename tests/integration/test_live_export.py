@@ -251,7 +251,9 @@ def main():
             assert c.receive(ident)["error"]["code"] == -32800
         finally:
             owner_barrier.touch()
-        c.receive(sleeper)
+        sleeper_msg = c.receive(sleeper)
+        assert "result" in sleeper_msg, sleeper_msg
+        assert sleeper_msg["result"]["structuredContent"] == {"ok": True, "barrier": str(owner_barrier)}, sleeper_msg
         assert not dest.exists()
         phases = c.close()
         modes = {x["mode"] for x in phases}

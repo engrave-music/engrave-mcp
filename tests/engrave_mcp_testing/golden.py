@@ -922,7 +922,7 @@ def reusable_golden_audio(
             if not isinstance(entry, dict) or _file_sha256(audio_path) != entry["audio.json"]:
                 return None
             matched[name] = audio_path
-    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError, RecursionError):
         return None
     return matched
 
