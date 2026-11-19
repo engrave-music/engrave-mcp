@@ -1,4 +1,4 @@
-load("@engrave//bazel:defs.bzl", "win_manifest_library")
+load("@engrave//bazel:defs.bzl", "cc_pch", "win_manifest_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -14,6 +14,7 @@ HOST_DEFINES = select({
         "_USE_MATH_DEFINES",
         "_UNICODE",
         "UNICODE",
+        "_WIN32_WINNT=0x0A00",
     ],
     "//conditions:default": [],
 })
@@ -26,6 +27,24 @@ HOST_COPTS = [
         "-fPIC",
         "-pthread",
     ],
+})
+
+HOST_PCH_INPUTS = select({
+    "@engrave//bazel:pch_enabled": [
+        ":host_pch",
+        "//bazel:pch/host_pch.h",
+    ],
+    "//conditions:default": [],
+})
+
+HOST_PCH_COPTS = HOST_COPTS + select({
+    "@engrave//bazel:pch_enabled": [
+        "-Xclang",
+        "-fno-validate-pch",
+        "-include-pch",
+        "$(location :host_pch)",
+    ],
+    "//conditions:default": [],
 })
 
 HOST_LINKOPTS = select({
@@ -44,10 +63,27 @@ WIN_MANIFEST_DEPS = select({
 })
 
 cc_library(
+    name = "host_defines",
+    defines = HOST_DEFINES,
+)
+
+cc_library(
     name = "host_headers",
     hdrs = glob(["engrave_mcp/*.h"]),
-    defines = HOST_DEFINES,
     includes = ["engrave_mcp"],
+    deps = [":host_defines"],
+)
+
+cc_pch(
+    name = "host_pch",
+    copts = HOST_COPTS,
+    header = "//bazel:pch/host_pch.h",
+    deps = [
+        ":host_defines",
+        "@glaze",
+        "@ngcpp_proxy",
+        "@unordered_dense",
+    ],
 )
 
 cc_library(
@@ -57,7 +93,8 @@ cc_library(
         "engrave_mcp/registry.cpp",
         "engrave_mcp/schema_defs.cpp",
     ],
-    copts = HOST_COPTS,
+    additional_compiler_inputs = HOST_PCH_INPUTS,
+    copts = HOST_PCH_COPTS,
     deps = [
         ":host_headers",
         "@amc",
@@ -75,7 +112,8 @@ cc_library(
         "engrave_mcp/api_json.cpp",
         "engrave_mcp/host_api.cpp",
     ],
-    copts = HOST_COPTS,
+    additional_compiler_inputs = HOST_PCH_INPUTS,
+    copts = HOST_PCH_COPTS,
     deps = [
         ":host_headers",
         ":tool_registry",
@@ -90,7 +128,8 @@ cc_library(
 cc_binary(
     name = "registry_dump",
     srcs = ["engrave_mcp/tools/registry_dump.cpp"],
-    copts = HOST_COPTS,
+    additional_compiler_inputs = HOST_PCH_INPUTS,
+    copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS,
     deps = [":tool_registry"],
 )
@@ -98,7 +137,8 @@ cc_binary(
 cc_binary(
     name = "registry_test",
     srcs = ["engrave_mcp/tests/registry_test.cpp"],
-    copts = HOST_COPTS,
+    additional_compiler_inputs = HOST_PCH_INPUTS,
+    copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS,
     deps = [":tool_registry"],
 )
@@ -127,11 +167,8 @@ cc_library(
         "engrave_mcp/mcp_transport.cpp",
         "engrave_mcp/server_main.cpp",
     ],
-    copts = HOST_COPTS,
-    defines = select({
-        "@platforms//os:windows": ["_WIN32_WINNT=0x0A00"],
-        "//conditions:default": [],
-    }),
+    additional_compiler_inputs = HOST_PCH_INPUTS,
+    copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS + select({
         "@platforms//os:windows": [
             "-lws2_32",
@@ -154,7 +191,8 @@ cc_library(
 cc_binary(
     name = "engrave-mcp",
     srcs = ["engrave_mcp/main.cpp"],
-    copts = HOST_COPTS,
+    additional_compiler_inputs = HOST_PCH_INPUTS,
+    copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS,
     deps = [":engrave_mcp_core"] + WIN_MANIFEST_DEPS,
 )
@@ -167,7 +205,8 @@ alias(
 cc_binary(
     name = "engrave-mcp-test",
     srcs = ["engrave_mcp/tests/main_test.cpp"],
-    copts = HOST_COPTS,
+    additional_compiler_inputs = HOST_PCH_INPUTS,
+    copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS,
     deps = [":engrave_mcp_core"] + WIN_MANIFEST_DEPS,
 )
@@ -180,7 +219,8 @@ alias(
 cc_binary(
     name = "host_api_test",
     srcs = ["engrave_mcp/tests/host_api_test.cpp"],
-    copts = HOST_COPTS,
+    additional_compiler_inputs = HOST_PCH_INPUTS,
+    copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS,
     deps = [
         ":document_store",
@@ -191,7 +231,8 @@ cc_binary(
 cc_binary(
     name = "live_export_test",
     srcs = ["engrave_mcp/tests/live_export_test.cpp"],
-    copts = HOST_COPTS,
+    additional_compiler_inputs = HOST_PCH_INPUTS,
+    copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS,
     deps = [
         ":engrave_mcp_core",
