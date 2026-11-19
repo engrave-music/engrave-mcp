@@ -18,7 +18,6 @@
 #include <asio/this_coro.hpp>
 #include <asio/use_awaitable.hpp>
 
-#include "api_json_internal.h"
 #include "api_output.h"
 #include "export_timing.h"
 #include "host_api.h"

@@ -11,9 +11,9 @@
 #include <unistd.h>
 
 static int calls, fail_at;
-extern "C" int __real_fsync(int);
+extern "C" int __real_fsync(int); // NOLINT(readability-identifier-naming)
 
-extern "C" int __wrap_fsync(int fd) {
+extern "C" int __wrap_fsync(int fd) { // NOLINT(readability-identifier-naming)
     struct stat info{};
     if (::fstat(fd, &info)) throw std::runtime_error("fstat");
     ++calls;

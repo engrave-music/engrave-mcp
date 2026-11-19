@@ -14,15 +14,15 @@ namespace music::api {
 
 namespace {
 namespace fs = std::filesystem;
-using detail::invalid;
+using detail::invalid_error;
 
 std::string nonce() {
     std::random_device rd;
     static constexpr char hex[] = "0123456789abcdef";
     std::string result;
-    for (int i = 0; i < 4; ++i) {
-        const auto n = static_cast<std::uint32_t>(rd());
-        for (int j = 0; j < 8; ++j) result.push_back(hex[(n >> (j * 4)) & 15]);
+    for (i32 i = 0; i < 4; ++i) {
+        const auto n = static_cast<u32>(rd());
+        for (i32 j = 0; j < 8; ++j) result.push_back(hex[(n >> (j * 4)) & 15]);
     }
     return result;
 }
@@ -46,7 +46,7 @@ Result<std::shared_ptr<const AssetFile>> copy_asset(const fs::path &source) {
     auto result = std::make_shared<AssetFile>();
     const auto temp = fs::temp_directory_path(ec);
     if (ec) return std::unexpected(HostError{"Io", "cannot locate runtime asset directory: " + ec.message()});
-    for (int attempt = 0; attempt < 16; ++attempt) {
+    for (i32 attempt = 0; attempt < 16; ++attempt) {
         result->directory = temp / ("engrave-mcp-asset-" + nonce());
         if (fs::create_directory(result->directory, ec)) break;
         if (ec && ec != std::errc::file_exists) {
@@ -64,31 +64,30 @@ Result<std::shared_ptr<const AssetFile>> copy_asset(const fs::path &source) {
     return std::shared_ptr<const AssetFile>(std::move(result));
 }
 
-bool same_asset(const fs::path &a, const fs::path &b) {
+Result<bool> same_asset(const fs::path &a, const fs::path &b) {
     std::error_code ec;
     auto a_size = fs::file_size(a, ec);
-    if (ec) throw detail::DecodeError{HostError{"Io", "cannot read retained font: " + ec.message()}};
+    if (ec) return std::unexpected(HostError{"Io", "cannot read retained font: " + ec.message()});
     auto b_size = fs::file_size(b, ec);
-    if (ec) throw detail::DecodeError{HostError{"Io", "cannot read retained font: " + ec.message()}};
+    if (ec) return std::unexpected(HostError{"Io", "cannot read retained font: " + ec.message()});
     if (a_size != b_size) return false;
     std::ifstream left(a, std::ios::binary), right(b, std::ios::binary);
-    if (!left || !right) throw detail::DecodeError{HostError{"Io", "cannot open retained font"}};
+    if (!left || !right) return std::unexpected(HostError{"Io", "cannot open retained font"});
     std::array<char, 65536> x{}, y{};
     while (left && right) {
         left.read(x.data(), x.size());
         right.read(y.data(), y.size());
         if (left.gcount() != right.gcount() || !std::equal(x.begin(), x.begin() + left.gcount(), y.begin())) return false;
     }
-    if (left.bad() || right.bad()) throw detail::DecodeError{HostError{"Io", "cannot compare retained fonts"}};
+    if (left.bad() || right.bad()) return std::unexpected(HostError{"Io", "cannot compare retained fonts"});
     return true;
 }
 
 template <class F>
 Json boundary(F &&fn) {
     try {
-        return fn();
-    } catch (const detail::DecodeError &e) {
-        return error_envelope(e.error);
+        Result<Json> out = fn();
+        return out ? std::move(*out) : error_envelope(out.error());
     } catch (const std::exception &e) {
         return error_envelope({"EngineFailure", e.what()});
     } catch (...) {
@@ -96,39 +95,30 @@ Json boundary(F &&fn) {
     }
 }
 
-template <class T>
-T unwrap(Result<T> r) {
-    if (!r) throw detail::DecodeError{std::move(r.error())};
-    return std::move(*r);
+Result<std::optional<u64>> revision_arg(const Json &j) {
+    if (!j.contains("expected_revision")) return std::optional<u64>{std::nullopt};
+    auto rev = decode_revision(j.at("expected_revision"));
+    if (!rev) return std::unexpected(std::move(rev.error()));
+    return std::optional<u64>{*rev};
 }
 
-template <class T>
-T engine_result(engrave::Result<T> r) {
-    if (!r) throw detail::DecodeError{api_error(r.error())};
-    return std::move(*r);
-}
-
-std::optional<std::uint64_t> revision_arg(const Json &j) {
-    return j.contains("expected_revision") ? std::optional(unwrap(decode_revision(j.at("expected_revision")))) : std::nullopt;
-}
-
-std::vector<std::byte> base64(const std::string &s) {
-    std::size_t padding = 0;
+Result<std::vector<std::byte>> base64(const std::string &s) {
+    usize padding = 0;
     if (!s.empty() && s.back() == '=') ++padding;
     if (s.size() > 1 && s[s.size() - 2] == '=') ++padding;
     const auto size = s.size() / 4 * 3 - padding;
-    if (size > engrave::max_input_bytes) throw detail::DecodeError{HostError{"ResourceLimit", "decoded score exceeds 8 MiB"}};
+    if (size > engrave::max_input_bytes) return std::unexpected(HostError{"ResourceLimit", "decoded score exceeds 8 MiB"});
     std::vector<std::byte> bytes;
     bytes.reserve(size);
-    auto digit = [](unsigned char c) -> unsigned {
+    auto digit = [](unsigned char c) -> u32 {
         if (c >= 'A' && c <= 'Z') return c - 'A';
         if (c >= 'a' && c <= 'z') return c - 'a' + 26;
         if (c >= '0' && c <= '9') return c - '0' + 52;
         return c == '+' ? 62 : 63;
     };
-    for (std::size_t i = 0; i < s.size(); i += 4) {
-        unsigned x = (digit(s[i]) << 18) | (digit(s[i + 1]) << 12) | (s[i + 2] == '=' ? 0 : digit(s[i + 2]) << 6) |
-                     (s[i + 3] == '=' ? 0 : digit(s[i + 3]));
+    for (usize i = 0; i < s.size(); i += 4) {
+        u32 x = (digit(s[i]) << 18) | (digit(s[i + 1]) << 12) | (s[i + 2] == '=' ? 0 : digit(s[i + 2]) << 6) |
+                (s[i + 3] == '=' ? 0 : digit(s[i + 3]));
         bytes.push_back(static_cast<std::byte>((x >> 16) & 255));
         if (s[i + 2] != '=') bytes.push_back(static_cast<std::byte>((x >> 8) & 255));
         if (s[i + 3] != '=') bytes.push_back(static_cast<std::byte>(x & 255));
@@ -136,7 +126,7 @@ std::vector<std::byte> base64(const std::string &s) {
     return bytes;
 }
 
-engrave::Format input_format(const std::string &s) {
+Result<engrave::Format> input_format(const std::string &s) {
     if (s == "mscz") return engrave::Format::MSCZ;
     if (s == "mscx") return engrave::Format::MSCX;
     if (s == "musicxml") return engrave::Format::MUSIC_XML;
@@ -144,7 +134,7 @@ engrave::Format input_format(const std::string &s) {
     if (s == "midi") return engrave::Format::MIDI;
     if (s == "guitarpro") return engrave::Format::GUITAR_PRO;
     if (s == "mnx") return engrave::Format::MNX;
-    invalid("unknown input format");
+    return std::unexpected(invalid_error("unknown input format"));
 }
 
 template <class T>
@@ -159,6 +149,17 @@ std::vector<std::string> json_strings(const Json &array) {
     for (const auto &item : array.get_array()) result.push_back(item.get<std::string>());
     return result;
 }
+
+template <class Fn>
+Result<Json> run_checkpoint_op(const Json &j, engrave::Document &doc, std::string token, Fn &&fn) {
+    auto out = fn(doc, j.at("name").get<std::string>());
+    if (!out) {
+        auto e = api_error(out.error());
+        e.document = std::move(token);
+        return std::unexpected(std::move(e));
+    }
+    return Json{{"ok", true}, {"revision", std::to_string(doc.revision())}};
+}
 } // namespace
 
 // Each asset has a private, read-only file in a unique OS temporary directory.
@@ -170,7 +171,7 @@ struct RuntimeAssets {
 struct HostApi::Impl {
     std::thread::id owner = std::this_thread::get_id();
     std::string session = nonce();
-    std::uint64_t next = 1;
+    u64 next = 1;
     engrave::EngineOptions options;
     ExportLimits limits;
     std::shared_ptr<const RuntimeAssets> assets;
@@ -178,26 +179,26 @@ struct HostApi::Impl {
     ankerl::unordered_dense::map<std::string, std::unique_ptr<engrave::Document>> documents;
     ankerl::unordered_dense::set<std::string> borrowed;
 
-    void check_thread() const {
+    Result<void> check_thread() const {
         if (std::this_thread::get_id() != owner) {
-            throw detail::DecodeError{HostError{"EngineFailure", "HostApi called outside its owner thread"}};
+            return std::unexpected(HostError{"EngineFailure", "HostApi called outside its owner thread"});
         }
+        return {};
     }
 
-    engrave::Document &get(const std::string &token, std::optional<std::uint64_t> expected) {
+    Result<engrave::Document *> get(const std::string &token, std::optional<u64> expected) {
         auto it = documents.find(token);
-        if (it == documents.end()) throw detail::DecodeError{HostError{"NotFound", "unknown or closed document", {}, token}};
-        auto &doc = *it->second;
-        const auto actual = doc.revision();
+        if (it == documents.end()) return std::unexpected(HostError{"NotFound", "unknown or closed document", {}, token});
+        auto *doc = it->second.get();
+        const auto actual = doc->revision();
         if (expected && *expected != actual) {
-            throw detail::DecodeError{
-                HostError{"RevisionConflict", "document revision does not match expected_revision", {}, token, actual}};
+            return std::unexpected(HostError{"RevisionConflict", "document revision does not match expected_revision", {}, token, actual});
         }
         return doc;
     }
 
-    Json publish(std::unique_ptr<engrave::Document> doc) {
-        if (next == 0) throw detail::DecodeError{HostError{"ResourceLimit", "document token space exhausted"}};
+    Result<Json> publish(std::unique_ptr<engrave::Document> doc) {
+        if (next == 0) return std::unexpected(HostError{"ResourceLimit", "document token space exhausted"});
         auto token = "doc-" + session + "-" + std::to_string(next++);
         Json out = {{"ok", true},
                     {"document", token},
@@ -207,8 +208,9 @@ struct HostApi::Impl {
         return out;
     }
 
-    void capacity() const {
-        if (documents.size() >= 16) throw detail::DecodeError{HostError{"ResourceLimit", "at most 16 documents may be open"}};
+    Result<void> capacity() const {
+        if (documents.size() >= 16) return std::unexpected(HostError{"ResourceLimit", "at most 16 documents may be open"});
+        return {};
     }
 
     engrave::EngineOptions asset_options() const {
@@ -231,8 +233,16 @@ Result<std::unique_ptr<HostApi>> HostApi::create(const engrave::EngineOptions &o
     try {
         auto impl = std::make_unique<Impl>();
         auto assets = std::make_shared<RuntimeAssets>();
-        for (const auto &f : options.fonts) assets->fonts.push_back(unwrap(copy_asset(f)));
-        for (const auto &f : options.soundfonts) assets->soundfonts.push_back(unwrap(copy_asset(f)));
+        for (const auto &f : options.fonts) {
+            auto copied = copy_asset(f);
+            if (!copied) return std::unexpected(std::move(copied.error()));
+            assets->fonts.push_back(std::move(*copied));
+        }
+        for (const auto &f : options.soundfonts) {
+            auto copied = copy_asset(f);
+            if (!copied) return std::unexpected(std::move(copied.error()));
+            assets->soundfonts.push_back(std::move(*copied));
+        }
         impl->assets = std::move(assets);
         impl->options = options;
         impl->limits = limits;
@@ -242,115 +252,165 @@ Result<std::unique_ptr<HostApi>> HostApi::create(const engrave::EngineOptions &o
         if (!engine) return std::unexpected(api_error(engine.error()));
         impl->engine = std::move(*engine);
         return std::unique_ptr<HostApi>(new HostApi(std::move(impl)));
-    } catch (const detail::DecodeError &e) {
-        return std::unexpected(e.error);
     } catch (const std::exception &e) {
         return std::unexpected(HostError{"EngineFailure", e.what()});
     }
 }
 
 Json HostApi::open(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("score_open", j);
-        impl_->capacity();
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("score_open", j); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = impl_->capacity(); !ok) return std::unexpected(std::move(ok.error()));
         engrave::OpenOptions options;
-        if (j.contains("format")) options.format = input_format(j.at("format").get<std::string>());
-        if (j.contains("filename_hint")) options.filename_hint = detail::path(j.at("filename_hint"));
+        if (j.contains("format")) {
+            auto fmt = input_format(j.at("format").get<std::string>());
+            if (!fmt) return std::unexpected(std::move(fmt.error()));
+            options.format = *fmt;
+        }
+        if (j.contains("filename_hint")) {
+            auto hint = detail::path(j.at("filename_hint"));
+            if (!hint) return std::unexpected(std::move(hint.error()));
+            options.filename_hint = std::move(*hint);
+        }
         if (j.contains("strict_ids")) options.strict_ids = j.at("strict_ids").get<bool>();
-        auto doc = j.contains("path") ? engine_result(impl_->engine->open(detail::path(j.at("path")), options)) :
-                                        engine_result(impl_->engine->open(base64(j.at("data").get<std::string>()), options));
-        return impl_->publish(std::move(doc));
+        engrave::Result<std::unique_ptr<engrave::Document>> opened = [&] -> engrave::Result<std::unique_ptr<engrave::Document>> {
+            return std::unexpected(engrave::Error{engrave::ErrorCode::INVALID_ARGUMENT, ""});
+        }();
+        if (j.contains("path")) {
+            auto p = detail::path(j.at("path"));
+            if (!p) return std::unexpected(std::move(p.error()));
+            opened = impl_->engine->open(*p, options);
+        } else {
+            auto bytes = base64(j.at("data").get<std::string>());
+            if (!bytes) return std::unexpected(std::move(bytes.error()));
+            opened = impl_->engine->open(*bytes, options);
+        }
+        if (!opened) return std::unexpected(api_error(opened.error()));
+        return impl_->publish(std::move(*opened));
     });
 }
 
 Json HostApi::create_document(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("score_create", j);
-        impl_->capacity();
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("score_create", j); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = impl_->capacity(); !ok) return std::unexpected(std::move(ok.error()));
         engrave::CreateOptions o;
         if (j.contains("template_id")) o.template_id = j.at("template_id").get<std::string>();
-        if (j.contains("template_path")) o.template_path = detail::path(j.at("template_path"));
+        if (j.contains("template_path")) {
+            auto tp = detail::path(j.at("template_path"));
+            if (!tp) return std::unexpected(std::move(tp.error()));
+            o.template_path = std::move(*tp);
+        }
         o.title = json_value<std::string>(j, "title", {});
         o.subtitle = json_value<std::string>(j, "subtitle", {});
         o.composer = json_value<std::string>(j, "composer", {});
         o.lyricist = json_value<std::string>(j, "lyricist", {});
-        for (const auto *value : {&o.title, &o.subtitle, &o.composer, &o.lyricist}) detail::validate_xml_text(*value);
-        return impl_->publish(engine_result(impl_->engine->create_document(o)));
+        for (const auto *value : {&o.title, &o.subtitle, &o.composer, &o.lyricist}) {
+            if (auto ok = detail::validate_xml_text(*value); !ok) return std::unexpected(std::move(ok.error()));
+        }
+        auto doc = impl_->engine->create_document(o);
+        if (!doc) return std::unexpected(api_error(doc.error()));
+        return impl_->publish(std::move(*doc));
     });
 }
 
 Json HostApi::close(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("score_close", j);
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("score_close", j); !ok) return std::unexpected(std::move(ok.error()));
         const auto token = j.at("document").get<std::string>();
         if (impl_->borrowed.contains(token)) {
-            throw detail::DecodeError{HostError{"InvalidArgument", "document is in use by with_document", {}, token}};
+            return std::unexpected(HostError{"InvalidArgument", "document is in use by with_document", {}, token});
         }
-        if (!impl_->documents.erase(token)) throw detail::DecodeError{HostError{"NotFound", "unknown or closed document", {}, token}};
+        if (!impl_->documents.erase(token)) return std::unexpected(HostError{"NotFound", "unknown or closed document", {}, token});
         return Json{{"ok", true}};
     });
 }
 
 Json HostApi::outline(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("score_outline", j);
-        auto &doc = impl_->get(j.at("document").get<std::string>(), revision_arg(j));
-        auto selection = j.contains("score") ? unwrap(decode_score(j.at("score"))) : engrave::ScoreSel{};
-        auto result = doc.outline(selection);
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("score_outline", j); !ok) return std::unexpected(std::move(ok.error()));
+        auto expected = revision_arg(j);
+        if (!expected) return std::unexpected(std::move(expected.error()));
+        const auto token = j.at("document").get<std::string>();
+        auto doc = impl_->get(token, *expected);
+        if (!doc) return std::unexpected(std::move(doc.error()));
+        engrave::ScoreSel selection{};
+        if (j.contains("score")) {
+            auto sel = decode_score(j.at("score"));
+            if (!sel) return std::unexpected(std::move(sel.error()));
+            selection = *sel;
+        }
+        auto result = (*doc)->outline(selection);
         if (!result) {
             auto e = api_error(result.error());
-            e.document = j.at("document").get<std::string>();
-            throw detail::DecodeError{std::move(e)};
+            e.document = token;
+            return std::unexpected(std::move(e));
         }
-        return Json{{"ok", true}, {"revision", std::to_string(doc.revision())}, {"outline", encode(*result)}};
+        return Json{{"ok", true}, {"revision", std::to_string((*doc)->revision())}, {"outline", encode(*result)}};
     });
 }
 
 Json HostApi::query(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("score_query", j);
-        auto &doc = impl_->get(j.at("document").get<std::string>(), revision_arg(j));
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("score_query", j); !ok) return std::unexpected(std::move(ok.error()));
+        auto expected = revision_arg(j);
+        if (!expected) return std::unexpected(std::move(expected.error()));
+        const auto token = j.at("document").get<std::string>();
+        auto doc = impl_->get(token, *expected);
+        if (!doc) return std::unexpected(std::move(doc.error()));
         const auto mode = j.at("mode").get<std::string>();
-        Json result = {{"ok", true}, {"mode", mode}, {"revision", std::to_string(doc.revision())}};
+        Json result = {{"ok", true}, {"mode", mode}, {"revision", std::to_string((*doc)->revision())}};
         if (mode == "elements") {
-            auto query = unwrap(decode_query(json_value<Json>(j, "query", make_object<Json>())));
-            auto out = doc.query(query);
+            auto q = decode_query(json_value<Json>(j, "query", make_object<Json>()));
+            if (!q) return std::unexpected(std::move(q.error()));
+            auto out = (*doc)->query(*q);
             if (!out) {
                 auto e = api_error(out.error());
-                e.document = j.at("document").get<std::string>();
-                throw detail::DecodeError{std::move(e)};
+                e.document = token;
+                return std::unexpected(std::move(e));
             }
             json_merge(result, encode(*out));
         } else if (mode == "properties") {
-            auto target = unwrap(decode_ref(j.at("target")));
-            auto out = doc.get(target, j.contains("props") ? json_strings(j.at("props")) : std::vector<std::string>{});
+            auto target = decode_ref(j.at("target"));
+            if (!target) return std::unexpected(std::move(target.error()));
+            auto out = (*doc)->get(*target, j.contains("props") ? json_strings(j.at("props")) : std::vector<std::string>{});
             if (!out) {
                 auto e = api_error(out.error());
-                e.document = j.at("document").get<std::string>();
-                throw detail::DecodeError{std::move(e)};
+                e.document = token;
+                return std::unexpected(std::move(e));
             }
             result["properties"] = encoded_array(*out);
         } else if (mode == "page_count") {
-            auto selection = j.contains("score") ? unwrap(decode_score(j.at("score"))) : engrave::ScoreSel{};
-            auto out = doc.page_count(selection);
+            engrave::ScoreSel selection{};
+            if (j.contains("score")) {
+                auto sel = decode_score(j.at("score"));
+                if (!sel) return std::unexpected(std::move(sel.error()));
+                selection = *sel;
+            }
+            auto out = (*doc)->page_count(selection);
             if (!out) {
                 auto e = api_error(out.error());
-                e.document = j.at("document").get<std::string>();
-                throw detail::DecodeError{std::move(e)};
+                e.document = token;
+                return std::unexpected(std::move(e));
             }
             result["pages"] = *out;
         } else {
-            auto selection = j.contains("score") ? unwrap(decode_score(j.at("score"))) : engrave::ScoreSel{};
-            auto out = doc.audio_tracks(selection);
+            engrave::ScoreSel selection{};
+            if (j.contains("score")) {
+                auto sel = decode_score(j.at("score"));
+                if (!sel) return std::unexpected(std::move(sel.error()));
+                selection = *sel;
+            }
+            auto out = (*doc)->audio_tracks(selection);
             if (!out) {
                 auto e = api_error(out.error());
-                e.document = j.at("document").get<std::string>();
-                throw detail::DecodeError{std::move(e)};
+                e.document = token;
+                return std::unexpected(std::move(e));
             }
             result["audio_tracks"] = encode(*out);
         }
@@ -359,56 +419,57 @@ Json HostApi::query(const Json &j) {
 }
 
 Json HostApi::describe(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("score_describe", j);
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("score_describe", j); !ok) return std::unexpected(std::move(ok.error()));
         auto scope = j.at("scope").get<std::string>();
         if (scope == "types") return Json{{"ok", true}, {"scope", scope}, {"types", encoded_array(impl_->engine->describe())}};
         if (scope == "type") {
-            return Json{
-                {"ok", true}, {"scope", scope}, {"type", encode(engine_result(impl_->engine->describe(j.at("type").get<std::string>())))}};
+            auto info = impl_->engine->describe(j.at("type").get<std::string>());
+            if (!info) return std::unexpected(api_error(info.error()));
+            return Json{{"ok", true}, {"scope", scope}, {"type", encode(*info)}};
         }
         return Json{{"ok", true}, {"scope", scope}, {"styles", encoded_array(impl_->engine->describe_styles())}};
     });
 }
 
 Json HostApi::edit(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
         // Validate the envelope separately so the batch decoder can report the
         // index of malformed operations while still decoding the whole batch
         // before looking up or mutating a document.
         auto envelope = j;
         if (envelope.is_object() && envelope.contains("ops")) envelope["ops"] = make_array<Json>();
-        detail::validate_tool("score_edit", envelope);
+        if (auto ok = detail::validate_tool("score_edit", envelope); !ok) return std::unexpected(std::move(ok.error()));
         auto batch_res = decode_batch(j.at("ops"));
         if (!batch_res) {
             auto err = std::move(batch_res.error());
             err.applied = 0;
-            throw detail::DecodeError{std::move(err)};
+            return std::unexpected(std::move(err));
         }
-        auto &batch = *batch_res;
-        const auto expected = revision_arg(j);
+        auto expected = revision_arg(j);
+        if (!expected) return std::unexpected(std::move(expected.error()));
         const auto token = j.at("document").get<std::string>();
-        auto &doc = impl_->get(token, expected);
-        auto out = [&] {
-            try {
-                return doc.edit(batch, expected);
-            } catch (const std::exception &e) {
-                throw detail::DecodeError{HostError{"EngineFailure", e.what(), {}, token}};
-            } catch (...) {
-                throw detail::DecodeError{HostError{"EngineFailure", "unknown engine failure", {}, token}};
-            }
-        }();
+        auto doc = impl_->get(token, *expected);
+        if (!doc) return std::unexpected(std::move(doc.error()));
+        engrave::Result<engrave::EditResult> out = engrave::EditResult{};
+        try {
+            out = (*doc)->edit(*batch_res, *expected);
+        } catch (const std::exception &e) {
+            return std::unexpected(HostError{"EngineFailure", e.what(), {}, token});
+        } catch (...) {
+            return std::unexpected(HostError{"EngineFailure", "unknown engine failure", {}, token});
+        }
         if (!out) {
             auto e = api_error(out.error());
             e.document = token;
             if (e.code == "RevisionConflict") {
-                e.current_revision = doc.revision();
+                e.current_revision = (*doc)->revision();
             } else if (e.code != "Poisoned") {
                 e.applied = out.error().applied_ops.size();
             }
-            throw detail::DecodeError{std::move(e)};
+            return std::unexpected(std::move(e));
         }
         if (out->rejection) {
             auto e = api_error(out->rejection->error);
@@ -419,7 +480,7 @@ Json HostApi::edit(const Json &j) {
             e.created = std::move(out->created);
             e.removed = std::move(out->removed);
             e.replaced = std::move(out->replaced);
-            throw detail::DecodeError{std::move(e)};
+            return std::unexpected(std::move(e));
         }
         auto result = encode(*out);
         result["ok"] = true;
@@ -427,63 +488,69 @@ Json HostApi::edit(const Json &j) {
     });
 }
 
-namespace {
-template <class Fn>
-Json run_checkpoint_op(const Json &j, engrave::Document &doc, std::string token, Fn &&fn) {
-    auto out = fn(doc, j.at("name").get<std::string>());
-    if (!out) {
-        auto e = api_error(out.error());
-        e.document = std::move(token);
-        throw detail::DecodeError{std::move(e)};
-    }
-    return Json{{"ok", true}, {"revision", std::to_string(doc.revision())}};
-}
-} // namespace
-
 Json HostApi::checkpoint(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("checkpoint", j);
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("checkpoint", j); !ok) return std::unexpected(std::move(ok.error()));
+        auto expected = revision_arg(j);
+        if (!expected) return std::unexpected(std::move(expected.error()));
         const auto token = j.at("document").get<std::string>();
-        auto &doc = impl_->get(token, revision_arg(j));
-        return run_checkpoint_op(j, doc, token, [](engrave::Document &d, std::string_view name) { return d.checkpoint(name); });
+        auto doc = impl_->get(token, *expected);
+        if (!doc) return std::unexpected(std::move(doc.error()));
+        return run_checkpoint_op(j, **doc, token, [](engrave::Document &d, std::string_view name) { return d.checkpoint(name); });
     });
 }
 
 Json HostApi::restore_checkpoint(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("restore_checkpoint", j);
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("restore_checkpoint", j); !ok) return std::unexpected(std::move(ok.error()));
+        auto expected = revision_arg(j);
+        if (!expected) return std::unexpected(std::move(expected.error()));
         const auto token = j.at("document").get<std::string>();
-        auto &doc = impl_->get(token, revision_arg(j));
-        return run_checkpoint_op(j, doc, token, [](engrave::Document &d, std::string_view name) { return d.restore_checkpoint(name); });
+        auto doc = impl_->get(token, *expected);
+        if (!doc) return std::unexpected(std::move(doc.error()));
+        return run_checkpoint_op(j, **doc, token, [](engrave::Document &d, std::string_view name) { return d.restore_checkpoint(name); });
     });
 }
 
 Json HostApi::drop_checkpoint(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("drop_checkpoint", j);
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("drop_checkpoint", j); !ok) return std::unexpected(std::move(ok.error()));
+        auto expected = revision_arg(j);
+        if (!expected) return std::unexpected(std::move(expected.error()));
         const auto token = j.at("document").get<std::string>();
-        auto &doc = impl_->get(token, revision_arg(j));
-        return run_checkpoint_op(j, doc, token, [](engrave::Document &d, std::string_view name) { return d.drop_checkpoint(name); });
+        auto doc = impl_->get(token, *expected);
+        if (!doc) return std::unexpected(std::move(doc.error()));
+        return run_checkpoint_op(j, **doc, token, [](engrave::Document &d, std::string_view name) { return d.drop_checkpoint(name); });
     });
 }
 
 Json HostApi::runtime_info(const Json &j) {
-    return boundary([&] {
-        impl_->check_thread();
-        detail::validate_tool("runtime_info", j);
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("runtime_info", j); !ok) return std::unexpected(std::move(ok.error()));
         const auto action = json_value<std::string>(j, "action", "get");
         if (action == "add_font") {
-            auto font = unwrap(copy_asset(detail::path(j.at("path"))));
-            const bool exists = std::any_of(impl_->assets->fonts.begin(), impl_->assets->fonts.end(),
-                                            [&](const auto &existing) { return same_asset(existing->file, font->file); });
+            auto p = detail::path(j.at("path"));
+            if (!p) return std::unexpected(std::move(p.error()));
+            auto font = copy_asset(*p);
+            if (!font) return std::unexpected(std::move(font.error()));
+            bool exists = false;
+            for (const auto &existing : impl_->assets->fonts) {
+                auto same = same_asset(existing->file, (*font)->file);
+                if (!same) return std::unexpected(std::move(same.error()));
+                if (*same) {
+                    exists = true;
+                    break;
+                }
+            }
             if (!exists) {
                 auto next = std::make_shared<RuntimeAssets>(*impl_->assets);
-                next->fonts.push_back(font);
-                auto applied = impl_->engine->add_font(font->file);
-                if (!applied) throw detail::DecodeError{api_error(applied.error())};
+                next->fonts.push_back(*font);
+                auto applied = impl_->engine->add_font((*font)->file);
+                if (!applied) return std::unexpected(api_error(applied.error()));
                 impl_->assets = std::move(next);
             }
         } else if (action == "set_soundfonts") {
@@ -491,12 +558,15 @@ Json HostApi::runtime_info(const Json &j) {
             next->soundfonts.clear();
             std::vector<fs::path> paths;
             for (const auto &item : j.at("files").get_array()) {
-                auto f = unwrap(copy_asset(detail::path(item)));
-                paths.push_back(f->file);
-                next->soundfonts.push_back(std::move(f));
+                auto p = detail::path(item);
+                if (!p) return std::unexpected(std::move(p.error()));
+                auto f = copy_asset(*p);
+                if (!f) return std::unexpected(std::move(f.error()));
+                paths.push_back((*f)->file);
+                next->soundfonts.push_back(std::move(*f));
             }
             auto applied = impl_->engine->set_soundfonts(paths);
-            if (!applied) throw detail::DecodeError{api_error(applied.error())};
+            if (!applied) return std::unexpected(api_error(applied.error()));
             impl_->assets = std::move(next);
         }
         auto caps = impl_->engine->capabilities();
@@ -529,8 +599,9 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<u64> e
         return std::unexpected(std::move(error));
     };
     try {
-        impl_->check_thread();
-        auto &doc = impl_->get(key, expected);
+        if (auto ok = impl_->check_thread(); !ok) return failure(std::move(ok.error()));
+        auto doc = impl_->get(key, expected);
+        if (!doc) return failure(std::move(doc.error()));
         if (!impl_->borrowed.insert(key).second) {
             return std::unexpected(HostError{"InvalidArgument", "document is already in use by with_document", {}, key});
         }
@@ -542,9 +613,7 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<u64> e
             ~Guard() { set.erase(key); }
         } guard{impl_->borrowed, key};
 
-        return fn(doc);
-    } catch (const detail::DecodeError &e) {
-        return failure(e.error);
+        return fn(**doc);
     } catch (const std::exception &e) {
         return failure(HostError{"EngineFailure", e.what(), {}, key});
     } catch (...) {
@@ -554,12 +623,11 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<u64> e
 
 Result<engrave::EngineOptions> HostApi::runtime_options() const {
     try {
-        impl_->check_thread();
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
         return impl_->asset_options();
-    } catch (const detail::DecodeError &e) {
-        return std::unexpected(e.error);
     } catch (const std::exception &e) {
         return std::unexpected(HostError{"EngineFailure", e.what()});
     }
 }
+
 } // namespace music::api

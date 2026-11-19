@@ -15,10 +15,10 @@
 namespace music::api {
 
 namespace {
-using detail::invalid;
+using detail::invalid_error;
 
-std::size_t unicode_length(const std::string &s) {
-    std::size_t n = 0;
+usize unicode_length(const std::string &s) {
+    usize n = 0;
     for (unsigned char c : s) {
         if ((c & 0xc0) != 0x80) ++n;
     }
@@ -27,10 +27,10 @@ std::size_t unicode_length(const std::string &s) {
 
 bool base64_shape(std::string_view s) {
     if (s.size() % 4) return false;
-    std::size_t padding = 0;
+    usize padding = 0;
     if (!s.empty() && s.back() == '=') ++padding;
     if (s.size() > 1 && s[s.size() - 2] == '=') ++padding;
-    for (std::size_t i = 0; i < s.size() - padding; ++i) {
+    for (usize i = 0; i < s.size() - padding; ++i) {
         const unsigned char c = s[i];
         if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/')) return false;
     }
@@ -65,9 +65,9 @@ bool conforms(const Json &schema, const Json &instance, const Json &root) {
         if (type == "string" && !instance.is_string()) return false;
         if (type == "boolean" && !instance.is_boolean()) return false;
         if (type == "null" && !instance.is_null()) return false;
-        if (type == "number" && (!instance.is_number() || !std::isfinite(instance.as<double>()))) return false;
-        if (type == "integer" && (!instance.is_number() || !std::isfinite(instance.as<double>()) ||
-                                  std::trunc(instance.as<double>()) != instance.as<double>())) {
+        if (type == "number" && (!instance.is_number() || !std::isfinite(instance.as<f64>()))) return false;
+        if (type == "integer" &&
+            (!instance.is_number() || !std::isfinite(instance.as<f64>()) || std::trunc(instance.as<f64>()) != instance.as<f64>())) {
             return false;
         }
     }
@@ -86,8 +86,8 @@ bool conforms(const Json &schema, const Json &instance, const Json &root) {
     if (instance.is_string()) {
         const auto &s = instance.get<std::string>();
         const auto count = unicode_length(s);
-        if (schema.contains("minLength") && count < schema.at("minLength").as<std::size_t>()) return false;
-        if (schema.contains("maxLength") && count > schema.at("maxLength").as<std::size_t>()) return false;
+        if (schema.contains("minLength") && count < schema.at("minLength").as<usize>()) return false;
+        if (schema.contains("maxLength") && count > schema.at("maxLength").as<usize>()) return false;
         if (schema.contains("pattern")) {
             const auto &pattern = schema.at("pattern").get<std::string>();
             if (pattern.starts_with("^(?:[A-Za-z0-9+/]")) {
@@ -98,7 +98,7 @@ bool conforms(const Json &schema, const Json &instance, const Json &root) {
         }
     }
     if (instance.is_array()) {
-        if (schema.contains("maxItems") && instance.size() > schema.at("maxItems").as<std::size_t>()) return false;
+        if (schema.contains("maxItems") && instance.size() > schema.at("maxItems").as<usize>()) return false;
         if (schema.contains("items")) {
             for (const auto &v : instance.get_array()) {
                 if (!conforms(schema.at("items"), v, root)) return false;
@@ -133,7 +133,7 @@ bool conforms(const Json &schema, const Json &instance, const Json &root) {
         if (!found) return false;
     }
     if (schema.contains("oneOf")) {
-        int count = 0;
+        i32 count = 0;
         for (const auto &s : schema.at("oneOf").get_array()) count += conforms(s, instance, root) ? 1 : 0;
         if (count != 1) return false;
     }
@@ -176,9 +176,9 @@ Json strings_json(const std::vector<std::string> &values) {
     return result;
 }
 
-std::vector<std::int32_t> ints(const Json &array) {
-    std::vector<std::int32_t> result;
-    for (const auto &item : array.get_array()) result.push_back(item.as<std::int32_t>());
+std::vector<i32> ints(const Json &array) {
+    std::vector<i32> result;
+    for (const auto &item : array.get_array()) result.push_back(item.as<i32>());
     return result;
 }
 
@@ -218,107 +218,160 @@ const char *unit(engrave::Unit u) {
 } // namespace
 
 namespace detail {
-[[noreturn]] void invalid(std::string message) { throw DecodeError{HostError{"InvalidArgument", std::move(message)}}; }
 
-void validate_xml_text(std::string_view value) {
+Result<void> validate_xml_text(std::string_view value) {
     for (unsigned char c : value) {
-        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') invalid("text contains a character forbidden by XML 1.0");
+        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') {
+            return std::unexpected(invalid_error("text contains a character forbidden by XML 1.0"));
+        }
     }
     if (value.find("\xef\xbf\xbe") != std::string_view::npos || value.find("\xef\xbf\xbf") != std::string_view::npos) {
-        invalid("text contains a character forbidden by XML 1.0");
+        return std::unexpected(invalid_error("text contains a character forbidden by XML 1.0"));
     }
+    return {};
 }
 
-void validate_tool(std::string_view name, const Json &value) {
+Result<void> validate_tool(std::string_view name, const Json &value) {
     const auto &root = schema_for(name);
-    if (!conforms(root, value, root)) invalid("arguments do not match the declared " + std::string(name) + " schema");
+    if (!conforms(root, value, root)) {
+        return std::unexpected(invalid_error("arguments do not match the declared " + std::string(name) + " schema"));
+    }
+    return {};
 }
 
-void validate_def(std::string_view tool, std::string_view name, const Json &value) {
+Result<void> validate_def(std::string_view tool, std::string_view name, const Json &value) {
     const auto &root = schema_for(tool);
     if (!conforms(root.at("$defs").at(std::string(name)), value, root)) {
-        invalid("value does not match the declared " + std::string(name) + " schema");
+        return std::unexpected(invalid_error("value does not match the declared " + std::string(name) + " schema"));
     }
+    return {};
 }
 
-std::int64_t signed_decimal(const Json &j) {
+Result<i64> signed_decimal(const Json &j) {
+    if (!j.is_string()) return std::unexpected(invalid_error("integer is not a canonical int64 decimal"));
     const auto &s = j.get<std::string>();
-    std::int64_t n{};
+    i64 n{};
     const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), n);
-    if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s) invalid("integer is not a canonical int64 decimal");
+    if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s) {
+        return std::unexpected(invalid_error("integer is not a canonical int64 decimal"));
+    }
     return n;
 }
 
-engrave::ElementId eid(const Json &j) {
-    auto id = engrave::element_id_from_string(j.get<std::string>());
-    if (!id || engrave::to_string(*id) != j.get<std::string>()) invalid("invalid canonical element id");
+Result<engrave::ElementId> eid(const Json &j) {
+    if (!j.is_string()) return std::unexpected(invalid_error("invalid canonical element id"));
+    const auto &s = j.get<std::string>();
+    auto id = engrave::element_id_from_string(s);
+    if (!id || engrave::to_string(*id) != s) return std::unexpected(invalid_error("invalid canonical element id"));
     return *id;
 }
 
-engrave::Fraction fraction(const Json &j) {
+Result<engrave::Fraction> fraction(const Json &j) {
     auto n = signed_decimal(j.at("num"));
+    if (!n) return std::unexpected(std::move(n.error()));
     auto d = signed_decimal(j.at("den"));
-    if (d <= 0) invalid("fraction denominator must be positive");
-    return {n, d};
+    if (!d) return std::unexpected(std::move(d.error()));
+    if (*d <= 0) return std::unexpected(invalid_error("fraction denominator must be positive"));
+    return engrave::Fraction{*n, *d};
 }
 
-engrave::ScoreSel score(const Json &j) { return {j.contains("excerpt") ? std::optional(eid(j.at("excerpt"))) : std::nullopt}; }
+Result<engrave::ScoreSel> score(const Json &j) {
+    if (!j.contains("excerpt")) return engrave::ScoreSel{std::nullopt};
+    auto ex = eid(j.at("excerpt"));
+    if (!ex) return std::unexpected(std::move(ex.error()));
+    return engrave::ScoreSel{*ex};
+}
 
-engrave::Address address(const Json &j) {
-    const auto k = j.at("kind").get<std::string>();
+Result<engrave::Address> address(const Json &j) {
+    const auto &k = j.at("kind").get<std::string>();
     if (k == "segment") {
-        return engrave::SegmentAddress{eid(j.at("measure")), j.at("staff").as<int>(), j.at("voice").as<int>(), fraction(j.at("tick")),
+        auto measure = eid(j.at("measure"));
+        if (!measure) return std::unexpected(std::move(measure.error()));
+        auto tick = fraction(j.at("tick"));
+        if (!tick) return std::unexpected(std::move(tick.error()));
+        return engrave::SegmentAddress{*measure, j.at("staff").as<i32>(), j.at("voice").as<i32>(), *tick,
                                        j.at("segment_kind").get<std::string>()};
     }
-    if (k == "page") return engrave::PageAddress{score(j.at("score")), j.at("index").as<int>()};
-    if (k == "system") return engrave::SystemAddress{score(j.at("score")), j.at("page").as<int>(), j.at("index").as<int>()};
-    if (k == "spanner_segment") return engrave::SpannerSegmentAddress{eid(j.at("spanner")), j.at("index").as<int>()};
-    invalid("unknown address kind");
-}
-
-engrave::Ref ref(const Json &j, bool allow_op, std::size_t before) {
-    const auto k = j.at("kind").get<std::string>();
-    if (k == "id") return eid(j.at("id"));
-    if (k == "address") return address(j.at("address"));
-    if (k == "op" && allow_op) {
-        const auto op = j.at("op").as<std::size_t>();
-        if (op >= before) invalid("OpRef must refer to an earlier operation");
-        return engrave::OpRef{op, j.at("item").as<std::size_t>()};
+    if (k == "page") {
+        auto sel = score(j.at("score"));
+        if (!sel) return std::unexpected(std::move(sel.error()));
+        return engrave::PageAddress{*sel, j.at("index").as<i32>()};
     }
-    invalid("OpRef is only valid in an edit batch");
+    if (k == "system") {
+        auto sel = score(j.at("score"));
+        if (!sel) return std::unexpected(std::move(sel.error()));
+        return engrave::SystemAddress{*sel, j.at("page").as<i32>(), j.at("index").as<i32>()};
+    }
+    if (k == "spanner_segment") {
+        auto spanner = eid(j.at("spanner"));
+        if (!spanner) return std::unexpected(std::move(spanner.error()));
+        return engrave::SpannerSegmentAddress{*spanner, j.at("index").as<i32>()};
+    }
+    return std::unexpected(invalid_error("unknown address kind"));
 }
 
-engrave::Value value(const Json &j) {
-    if (j.is_null()) return std::monostate{};
-    const auto k = j.at("kind").get<std::string>();
+Result<engrave::Ref> ref(const Json &j, bool allow_op, usize before) {
+    const auto &k = j.at("kind").get<std::string>();
+    if (k == "id") {
+        auto id = eid(j.at("id"));
+        if (!id) return std::unexpected(std::move(id.error()));
+        return *id;
+    }
+    if (k == "address") {
+        auto addr = address(j.at("address"));
+        if (!addr) return std::unexpected(std::move(addr.error()));
+        return *addr;
+    }
+    if (k == "op" && allow_op) {
+        const auto op = j.at("op").as<usize>();
+        if (op >= before) return std::unexpected(invalid_error("OpRef must refer to an earlier operation"));
+        return engrave::OpRef{op, j.at("item").as<usize>()};
+    }
+    return std::unexpected(invalid_error("OpRef is only valid in an edit batch"));
+}
+
+Result<engrave::Value> value(const Json &j) {
+    if (j.is_null()) return engrave::Value{std::monostate{}};
+    const auto &k = j.at("kind").get<std::string>();
     const auto &v = j.at("value");
-    if (k == "bool") return v.get<bool>();
-    if (k == "int") return signed_decimal(v);
-    if (k == "real") return v.as<double>();
+    if (k == "bool") return engrave::Value{v.get<bool>()};
+    if (k == "int") {
+        auto n = signed_decimal(v);
+        if (!n) return std::unexpected(std::move(n.error()));
+        return engrave::Value{*n};
+    }
+    if (k == "real") return engrave::Value{v.as<f64>()};
     if (k == "string") {
         auto text = v.get<std::string>();
-        validate_xml_text(text);
-        return text;
+        if (auto ok = validate_xml_text(text); !ok) return std::unexpected(std::move(ok.error()));
+        return engrave::Value{std::move(text)};
     }
-    if (k == "fraction") return fraction(v);
-    if (k == "point") return engrave::Point{v.at("x").as<double>(), v.at("y").as<double>()};
-    if (k == "size") return engrave::Size{v.at("w").as<double>(), v.at("h").as<double>()};
+    if (k == "fraction") {
+        auto f = fraction(v);
+        if (!f) return std::unexpected(std::move(f.error()));
+        return engrave::Value{*f};
+    }
+    if (k == "point") return engrave::Value{engrave::Point{v.at("x").as<f64>(), v.at("y").as<f64>()}};
+    if (k == "size") return engrave::Value{engrave::Size{v.at("w").as<f64>(), v.at("h").as<f64>()}};
     if (k == "color") {
-        return engrave::Color{v.at("r").as<std::uint8_t>(), v.at("g").as<std::uint8_t>(), v.at("b").as<std::uint8_t>(),
-                              v.at("a").as<std::uint8_t>()};
+        return engrave::Value{engrave::Color{v.at("r").as<u8>(), v.at("g").as<u8>(), v.at("b").as<u8>(), v.at("a").as<u8>()}};
     }
-    if (k == "enum") return engrave::Enum{v.get<std::string>()};
+    if (k == "enum") return engrave::Value{engrave::Enum{v.get<std::string>()}};
     if (k == "int_list") {
-        std::vector<std::int64_t> xs;
-        for (const auto &x : v.get_array()) xs.push_back(signed_decimal(x));
-        return xs;
+        std::vector<i64> xs;
+        for (const auto &x : v.get_array()) {
+            auto n = signed_decimal(x);
+            if (!n) return std::unexpected(std::move(n.error()));
+            xs.push_back(*n);
+        }
+        return engrave::Value{std::move(xs)};
     }
-    invalid("unknown or read-only value kind");
+    return std::unexpected(invalid_error("unknown or read-only value kind"));
 }
 
-std::filesystem::path path(const Json &j) {
+Result<std::filesystem::path> path(const Json &j) {
     const auto &s = j.get<std::string>();
-    if (s.find('\0') != std::string::npos) invalid("path contains a NUL byte");
+    if (s.find('\0') != std::string::npos) return std::unexpected(invalid_error("path contains a NUL byte"));
     return std::filesystem::u8path(s);
 }
 
@@ -326,63 +379,70 @@ std::string path_text(const std::filesystem::path &p) {
     auto s = p.generic_u8string();
     return {reinterpret_cast<const char *>(s.data()), s.size()};
 }
+
 } // namespace detail
 
-Result<std::uint64_t> decode_revision(const Json &j) {
-    try {
-        if (!j.is_string()) invalid("revision must be a decimal string");
-        const auto &s = j.get<std::string>();
-        std::uint64_t n{};
-        const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), n);
-        if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s) {
-            invalid("revision is not a canonical uint64 decimal");
-        }
-        return n;
-    } catch (const detail::DecodeError &e) {
-        return std::unexpected(e.error);
+Result<u64> decode_revision(const Json &j) {
+    if (!j.is_string()) return std::unexpected(invalid_error("revision must be a decimal string"));
+    const auto &s = j.get<std::string>();
+    u64 n{};
+    const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), n);
+    if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s) {
+        return std::unexpected(invalid_error("revision is not a canonical uint64 decimal"));
     }
+    return n;
 }
 
 Result<engrave::ScoreSel> decode_score(const Json &j) {
-    try {
-        detail::validate_def("score_outline", "score", j);
-        return detail::score(j);
-    } catch (const detail::DecodeError &e) {
-        return std::unexpected(e.error);
-    }
+    if (auto ok = detail::validate_def("score_outline", "score", j); !ok) return std::unexpected(std::move(ok.error()));
+    return detail::score(j);
 }
 
 Result<engrave::Ref> decode_ref(const Json &j) {
-    try {
-        detail::validate_def("score_query", "read_ref", j);
-        return detail::ref(j, false, std::numeric_limits<std::size_t>::max());
-    } catch (const detail::DecodeError &e) {
-        return std::unexpected(e.error);
-    }
+    if (auto ok = detail::validate_def("score_query", "read_ref", j); !ok) return std::unexpected(std::move(ok.error()));
+    return detail::ref(j, false, std::numeric_limits<usize>::max());
 }
 
 Result<engrave::Query> decode_query(const Json &j) {
-    try {
-        detail::validate_tool("score_query", Json{{"document", "doc-A-1"}, {"mode", "elements"}, {"query", j}});
-        engrave::Query q;
-        if (j.contains("score")) q.score = detail::score(j.at("score"));
-        if (j.contains("types")) q.types = strings(j.at("types"));
-        if (j.contains("first_measure")) q.first_measure = j.at("first_measure").as<int>();
-        if (j.contains("measure_count")) q.measure_count = j.at("measure_count").as<int>();
-        if (j.contains("from_measure")) q.from_measure = detail::eid(j.at("from_measure"));
-        if (j.contains("to_measure")) q.to_measure = detail::eid(j.at("to_measure"));
-        if (j.contains("staves")) q.staves = ints(j.at("staves"));
-        if (j.contains("voices")) q.voices = ints(j.at("voices"));
-        if (j.contains("from_tick")) q.from_tick = detail::fraction(j.at("from_tick"));
-        if (j.contains("to_tick")) q.to_tick = detail::fraction(j.at("to_tick"));
-        if (j.contains("props")) q.props = strings(j.at("props"));
-        if (j.contains("layout_boxes")) q.layout_boxes = j.at("layout_boxes").get<bool>();
-        if (j.contains("limit")) q.limit = j.at("limit").as<std::size_t>();
-        if (j.contains("cursor")) q.cursor = j.at("cursor").as<std::size_t>();
-        return q;
-    } catch (const detail::DecodeError &e) {
-        return std::unexpected(e.error);
+    if (auto ok = detail::validate_tool("score_query", Json{{"document", "doc-A-1"}, {"mode", "elements"}, {"query", j}}); !ok) {
+        return std::unexpected(std::move(ok.error()));
     }
+    engrave::Query q;
+    if (j.contains("score")) {
+        auto sel = detail::score(j.at("score"));
+        if (!sel) return std::unexpected(std::move(sel.error()));
+        q.score = *sel;
+    }
+    if (j.contains("types")) q.types = strings(j.at("types"));
+    if (j.contains("first_measure")) q.first_measure = j.at("first_measure").as<i32>();
+    if (j.contains("measure_count")) q.measure_count = j.at("measure_count").as<i32>();
+    if (j.contains("from_measure")) {
+        auto id = detail::eid(j.at("from_measure"));
+        if (!id) return std::unexpected(std::move(id.error()));
+        q.from_measure = *id;
+    }
+    if (j.contains("to_measure")) {
+        auto id = detail::eid(j.at("to_measure"));
+        if (!id) return std::unexpected(std::move(id.error()));
+        q.to_measure = *id;
+    }
+    if (j.contains("staves")) q.staves = ints(j.at("staves"));
+    if (j.contains("voices")) q.voices = ints(j.at("voices"));
+    if (j.contains("from_tick")) {
+        auto tick = detail::fraction(j.at("from_tick"));
+        if (!tick) return std::unexpected(std::move(tick.error()));
+        q.from_tick = *tick;
+    }
+    if (j.contains("to_tick")) {
+        auto tick = detail::fraction(j.at("to_tick"));
+        if (!tick) return std::unexpected(std::move(tick.error()));
+        q.to_tick = *tick;
+    }
+    if (j.contains("props")) q.props = strings(j.at("props"));
+    if (j.contains("layout_boxes")) q.layout_boxes = j.at("layout_boxes").get<bool>();
+    if (j.contains("limit")) q.limit = j.at("limit").as<usize>();
+    if (j.contains("cursor")) q.cursor = j.at("cursor").as<usize>();
+    return q;
 }
 
 Json encode(const engrave::Value &v) {
@@ -393,9 +453,9 @@ Json encode(const engrave::Value &v) {
                 return nullptr;
             } else if constexpr (std::is_same_v<T, bool>) {
                 return {{"kind", "bool"}, {"value", x}};
-            } else if constexpr (std::is_same_v<T, std::int64_t>) {
+            } else if constexpr (std::is_same_v<T, i64>) {
                 return {{"kind", "int"}, {"value", std::to_string(x)}};
-            } else if constexpr (std::is_same_v<T, double>) {
+            } else if constexpr (std::is_same_v<T, f64>) {
                 return {{"kind", "real"}, {"value", x}};
             } else if constexpr (std::is_same_v<T, std::string>) {
                 return {{"kind", "string"}, {"value", x}};
@@ -409,7 +469,7 @@ Json encode(const engrave::Value &v) {
                 return {{"kind", "color"}, {"value", {{"r", x.r}, {"g", x.g}, {"b", x.b}, {"a", x.a}}}};
             } else if constexpr (std::is_same_v<T, engrave::Enum>) {
                 return {{"kind", "enum"}, {"value", x.token}};
-            } else if constexpr (std::is_same_v<T, std::vector<std::int64_t>>) {
+            } else if constexpr (std::is_same_v<T, std::vector<i64>>) {
                 return {{"kind", "int_list"}, {"value", mapped(x, [](auto n) { return Json(std::to_string(n)); })}};
             } else if constexpr (std::is_same_v<T, engrave::Opaque>) {
                 return {{"kind", "opaque"}, {"type", x.type}};
@@ -609,7 +669,7 @@ HostError api_error(const engrave::Error &e) {
 Json error_envelope(const HostError &e) {
     Json err = {{"code", e.code}, {"message", e.message}};
     if (e.op_index) err["op_index"] = *e.op_index;
-    if (e.applied) err["applied"] = static_cast<std::uint64_t>(*e.applied);
+    if (e.applied) err["applied"] = static_cast<u64>(*e.applied);
     if (e.poisoned) err["poisoned"] = *e.poisoned;
     if (e.document) err["document"] = *e.document;
     if (e.current_revision) err["current_revision"] = std::to_string(*e.current_revision);
@@ -621,4 +681,5 @@ Json error_envelope(const HostError &e) {
     if (!e.export_warnings.empty()) err["export_warnings"] = encode(e.export_warnings);
     return {{"ok", false}, {"error", err}};
 }
+
 } // namespace music::api
