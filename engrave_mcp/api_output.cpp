@@ -526,6 +526,9 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                         publication_gate.changed.wait(lock, [] { return publication_gate.closing.load(); });
                         std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n");
                         std::fflush(stderr);
+                    } else if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_BARRIER"); barrier && *barrier) {
+                        const auto barrier_path = std::filesystem::u8path(barrier);
+                        while (!std::filesystem::exists(barrier_path)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     } else if (const auto *delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS")) {
                         std::this_thread::sleep_for(std::chrono::milliseconds(std::stoul(delay)));
                     } else {

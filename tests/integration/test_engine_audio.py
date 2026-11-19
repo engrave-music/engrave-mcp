@@ -51,8 +51,63 @@ def git_revision(repo: Path) -> str:
     return subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
 
 
+_SLOW_AUDIO_FIRST = (
+    "chordline_path.mscx",
+    "graceArps.mnx",
+    "evening.musicxml",
+    "slurs.mscz",
+    "layout_elements.mscx",
+    "pedal.mscx",
+)
+
+
+def _reusable_golden_audio(
+    reuse_golden_actual: Path | None,
+    fixtures: dict[str, Path],
+    binary: Path,
+    resources: Path,
+    soundfont: Path,
+) -> dict[str, Path] | None:
+    if reuse_golden_actual is None:
+        return None
+    index_path = reuse_golden_actual / "index.json"
+    provenance_path = reuse_golden_actual.parent / "provenance.json"
+    if not index_path.is_file() or not provenance_path.is_file():
+        return None
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    expected_fixtures = {name: audio.file_sha256(path) for name, path in fixtures.items()}
+    if (
+        not isinstance(provenance, dict)
+        or provenance.get("schema") != 1
+        or provenance.get("binary_sha256") != audio.file_sha256(binary)
+        or provenance.get("soundfont_sha256") != audio.file_sha256(soundfont)
+        or provenance.get("resources") != str(resources.resolve())
+        or provenance.get("extractor_sha256") != audio.file_sha256(REPO_ROOT / "tests/engrave_mcp_testing/golden.py")
+        or provenance.get("fixture_sha256") != expected_fixtures
+    ):
+        return None
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    if not isinstance(index, dict):
+        return None
+    matched: dict[str, Path] = {}
+    for name in fixtures:
+        entry = index.get(name)
+        audio_path = reuse_golden_actual / name / "audio.json"
+        if not isinstance(entry, dict) or not audio_path.is_file():
+            return None
+        if audio.file_sha256(audio_path) != entry.get("audio.json"):
+            return None
+        matched[name] = audio_path
+    return matched
+
+
 async def capture_current_audio(
-    binary: Path, resources: Path, soundfont: Path, target: Path, engine_commit: str
+    binary: Path,
+    resources: Path,
+    soundfont: Path,
+    target: Path,
+    engine_commit: str,
+    reuse_golden_actual: Path | None = None,
 ) -> None:
     """Render the golden fixture inventory and preserve the server's version stamp."""
 
@@ -72,7 +127,8 @@ async def capture_current_audio(
             cwd=str(raw),
             env=audio.probe_env(),
         )
-        with (target / "server-stderr.log").open("w", encoding="utf-8") as log:
+        proof_log = raw / "proof-stderr.log"
+        with proof_log.open("w", encoding="utf-8") as log:
             async with golden.stdio_client(params, errlog=log) as (read, write):
                 async with golden.ClientSession(read, write) as session:
                     await session.initialize()
@@ -100,40 +156,79 @@ async def capture_current_audio(
                     assert not error, f"export version proof: {error}"
                     await golden.call_tool(session, "score_close", {"document": proof_document})
                     _capture.validate_version_proof(proof, audio.golden_platform(), engine_commit)
-                    for name, source in fixtures.items():
-                        if name == "created.json":
-                            xml = composition_musicxml(json.loads(source.read_text(encoding="utf-8")))
-                            payload, error = await golden.call_tool(
-                                session,
-                                "score_open",
-                                {
-                                    "data": base64.b64encode(xml.encode()).decode(),
-                                    "format": "musicxml",
-                                },
-                            )
-                        else:
-                            payload, error = await golden.call_tool(
-                                session, "score_open", {"path": str(source.resolve())}
-                            )
-                        assert not error, f"{name}: open failed: {error}"
-                        document = payload["document"]
-                        try:
-                            wav = raw / "capture.wav"
-                            _, error = await golden.call_tool(
-                                session,
-                                "score_export",
-                                {
-                                    "document": document,
-                                    "kind": "audio",
-                                    "options": {"format": "wav"},
-                                    "destination": {"kind": "file", "path": str(wav)},
-                                },
-                            )
-                            assert not error, f"{name}: audio export failed: {error}"
-                            golden.write_json(target / name / "audio.json", golden.describe_audio(wav))
-                            wav.unlink()
-                        finally:
-                            await golden.call_tool(session, "score_close", {"document": document})
+
+        reusable = _reusable_golden_audio(reuse_golden_actual, fixtures, binary, resources, soundfont)
+        if reusable is not None:
+            for name, src in reusable.items():
+                dst = target / name / "audio.json"
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dst)
+            shutil.copyfile(proof_log, target / "server-stderr.log")
+            return
+
+        priority = {name: idx for idx, name in enumerate(_SLOW_AUDIO_FIRST)}
+        ordered_fixtures = sorted(
+            fixtures.items(),
+            key=lambda item: (priority.get(item[0], len(priority)), -item[1].stat().st_size, item[0]),
+        )
+        queue: asyncio.Queue[tuple[str, Path]] = asyncio.Queue()
+        for item in ordered_fixtures:
+            queue.put_nowait(item)
+        worker_count = min(4, max(1, (os.cpu_count() or 2) // 2), len(ordered_fixtures))
+        worker_logs = [raw / f"worker-{idx}-stderr.log" for idx in range(worker_count)]
+
+        async def run_worker(worker_id: int) -> None:
+            wav = raw / f"capture-{worker_id}.wav"
+            with worker_logs[worker_id].open("w", encoding="utf-8") as log:
+                async with golden.stdio_client(params, errlog=log) as (read, write):
+                    async with golden.ClientSession(read, write) as session:
+                        await session.initialize()
+                        while True:
+                            try:
+                                name, source = queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                            try:
+                                if name == "created.json":
+                                    xml = composition_musicxml(json.loads(source.read_text(encoding="utf-8")))
+                                    payload, error = await golden.call_tool(
+                                        session,
+                                        "score_open",
+                                        {
+                                            "data": base64.b64encode(xml.encode()).decode(),
+                                            "format": "musicxml",
+                                        },
+                                    )
+                                else:
+                                    payload, error = await golden.call_tool(
+                                        session, "score_open", {"path": str(source.resolve())}
+                                    )
+                                assert not error, f"{name}: open failed: {error}"
+                                document = payload["document"]
+                                try:
+                                    _, error = await golden.call_tool(
+                                        session,
+                                        "score_export",
+                                        {
+                                            "document": document,
+                                            "kind": "audio",
+                                            "options": {"format": "wav"},
+                                            "destination": {"kind": "file", "path": str(wav)},
+                                        },
+                                    )
+                                    assert not error, f"{name}: audio export failed: {error}"
+                                    golden.write_json(target / name / "audio.json", golden.describe_audio(wav))
+                                    wav.unlink()
+                                finally:
+                                    await golden.call_tool(session, "score_close", {"document": document})
+                            finally:
+                                queue.task_done()
+
+        await asyncio.gather(*(run_worker(idx) for idx in range(worker_count)))
+        with (target / "server-stderr.log").open("w", encoding="utf-8") as combined:
+            for log_file in [proof_log, *worker_logs]:
+                if log_file.is_file():
+                    combined.write(log_file.read_text(encoding="utf-8", errors="replace"))
 
 
 def make_current_audio_capture(
@@ -142,6 +237,7 @@ def make_current_audio_capture(
     soundfont: Path,
     engine_source: Path,
     capture_root: Path,
+    reuse_golden_actual: Path | None = None,
 ) -> tuple[str, str]:
     platform = audio.golden_platform()
     destination = capture_destination(capture_root, platform)
@@ -167,7 +263,14 @@ def make_current_audio_capture(
         target = Path(temporary)
         asyncio.run(
             asyncio.wait_for(
-                capture_current_audio(binary, resources, soundfont, target, engine_commit),
+                capture_current_audio(
+                    binary,
+                    resources,
+                    soundfont,
+                    target,
+                    engine_commit,
+                    reuse_golden_actual=reuse_golden_actual,
+                ),
                 timeout=1800,
             )
         )
@@ -268,15 +371,6 @@ async def test_mcp_level_integration(
         rl, rr = (float(np.sqrt(np.mean(audio_right[:, i] ** 2))) for i in (0, 1))
         assert lr <= 0.02 * ll and rl <= 0.02 * rr
 
-        nonascii_dir = out_dir / "输出 音频"
-        nonascii_dir.mkdir(parents=True, exist_ok=True)
-        nonascii_async = {}
-        for fmt in ("wav", "flac", "opus", "mp3", "aac"):
-            sync = await export(doc, fmt, out_dir / f"mcp_sync.{fmt}")
-            async_path = await export(doc, fmt, nonascii_dir / f"异步 音频.{fmt}")
-            assert sync.read_bytes() == async_path.read_bytes(), fmt
-            nonascii_async[fmt] = str(async_path.relative_to(out_dir))
-
         midi = await export(doc, "midi", out_dir / "mcp_evening.mid")
         expected = json.loads(
             (
@@ -285,6 +379,24 @@ async def test_mcp_level_integration(
         )
         assert describe_midi(midi.read_bytes()) == expected
         await client.tool("score_close", {"document": doc})
+
+        short_doc = (
+            await client.tool(
+                "score_open",
+                {"path": str((REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/ghost_note.mscx").resolve())},
+            )
+        )["document"]
+        nonascii_dir = out_dir / "输出 音频"
+        nonascii_dir.mkdir(parents=True, exist_ok=True)
+        nonascii_async = {}
+        try:
+            for fmt in ("wav", "flac", "opus", "mp3", "aac"):
+                sync = await export(short_doc, fmt, out_dir / f"mcp_sync.{fmt}")
+                async_path = await export(short_doc, fmt, nonascii_dir / f"异步 音频.{fmt}")
+                assert sync.read_bytes() == async_path.read_bytes(), fmt
+                nonascii_async[fmt] = str(async_path.relative_to(out_dir))
+        finally:
+            await client.tool("score_close", {"document": short_doc})
     evidence["mcp_integration"] = {
         "status": "passed",
         "energy_ratio_db": round(energy_ratio_db, 2),
@@ -360,6 +472,12 @@ def main() -> int:
         action="store_true",
         help="Capture this host without running or comparing the other checks",
     )
+    parser.add_argument(
+        "--reuse-golden-actual",
+        type=Path,
+        default=None,
+        help="Optional golden/actual directory with verified index.json audio hashes to reuse",
+    )
     args = parser.parse_args()
 
     out_dir = args.output.resolve()
@@ -373,6 +491,7 @@ def main() -> int:
             args.soundfont,
             args.engine_source,
             args.cross_platform_captures.resolve(),
+            reuse_golden_actual=args.reuse_golden_actual,
         )
         return 0
 
@@ -407,7 +526,12 @@ def main() -> int:
             raise audio.AudioCheckPending("MCP binary not supplied or missing for current capture")
         captures = args.cross_platform_captures.resolve()
         source_commit, engine_commit = make_current_audio_capture(
-            args.binary, args.resources, args.soundfont, args.engine_source, captures
+            args.binary,
+            args.resources,
+            args.soundfont,
+            args.engine_source,
+            captures,
+            reuse_golden_actual=args.reuse_golden_actual,
         )
         test_cross_platform_audio_features(
             evidence,

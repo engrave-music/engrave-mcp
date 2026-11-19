@@ -1,9 +1,12 @@
 #include "async_session.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <future>
 #include <optional>
 #include <thread>
@@ -231,13 +234,27 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
     if (test_hooks_enabled()) {
         if (name == "test_owner_state") co_return Json{{"ok", true}, {"busy", self->test_owner_busy.load()}};
         if (name == "test_owner_sleep") {
+            std::string barrier;
+            if (arguments.is_object() && arguments.contains("barrier") && arguments.at("barrier").is_string()) {
+                barrier = arguments.at("barrier").get_string();
+            }
+            std::int64_t ms = 2000;
+            if (arguments.is_object() && arguments.contains("ms") && arguments.at("ms").is_number()) {
+                ms = static_cast<std::int64_t>(std::clamp(arguments.at("ms").as<double>(), 1.0, 60000.0));
+            }
             co_return co_await self->dispatch<Json>(
                 self->owner_io,
-                [self] {
+                [self, ms, barrier = std::move(barrier)] {
                     self->test_owner_busy.store(true);
-                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                    if (!barrier.empty()) {
+                        const auto barrier_path = std::filesystem::u8path(barrier);
+                        while (!std::filesystem::exists(barrier_path)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        self->test_owner_busy.store(false);
+                        return Json{{"ok", true}, {"barrier", barrier}};
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
                     self->test_owner_busy.store(false);
-                    return Json{{"ok", true}, {"slept_ms", 2000}};
+                    return Json{{"ok", true}, {"slept_ms", ms}};
                 },
                 true);
         }

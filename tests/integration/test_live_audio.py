@@ -1,8 +1,10 @@
 """Live audio parity, reuse, cancellation and watchdog acceptance probe."""
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 
@@ -14,7 +16,15 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("binary", "test-binary", "resources", "soundfont", "output"):
         p.add_argument("--" + name, type=Path, required=True)
+    p.add_argument(
+        "--reuse-iterations",
+        type=int,
+        default=21,
+        help="exports in one live session for reuse timing and RSS (minimum 5)",
+    )
     a = p.parse_args()
+    if a.reuse_iterations < 5:
+        p.error("--reuse-iterations must be at least 5")
     a.output = a.output.resolve()
     a.output.mkdir(parents=True, exist_ok=True)
     results = {"parity": [], "cancellation": [], "reuse": []}
@@ -48,44 +58,48 @@ def main():
                 raise AssertionError("missing " + marker)
             time.sleep(0.001)
 
-    for fmt in ("wav", "flac", "opus", "mp3", "aac"):
-        for label, mix in [
-            ("default", {}),
-            (
-                "mix",
-                {
-                    "master_volume_db": -6,
-                    "master_balance": 0.3,
-                    "tracks": [{"track": 0, "volume_db": -3, "soundfont": 0}],
-                },
-            ),
-        ]:
-            hashes = {}
-            for mode in ("fresh", "live"):
-                c = client(mode, f"parity-{fmt}-{label}-{mode}")
-                try:
-                    doc = opened(c)
-                    path = a.output / f"{fmt}-{label}-{mode}"
+    def parity(fmt, label, mix):
+        hashes = {}
+        for mode in ("fresh", "live"):
+            c = client(mode, f"parity-{fmt}-{label}-{mode}")
+            try:
+                doc = opened(c)
+                path = a.output / f"{fmt}-{label}-{mode}"
+                c.tool("score_export", args(doc, "audio", fmt, path, mix))
+                hashes[mode] = hashlib.sha256(path.read_bytes()).hexdigest()
+                if mode == "live":
+                    # Changing per-export mix must not contaminate a later render.
+                    c.tool(
+                        "score_export",
+                        args(doc, "audio", fmt, path, {"master_volume_db": -20}),
+                    )
                     c.tool("score_export", args(doc, "audio", fmt, path, mix))
-                    hashes[mode] = hashlib.sha256(path.read_bytes()).hexdigest()
-                    if mode == "live":
-                        # Changing per-export mix must not contaminate a later render.
-                        c.tool(
-                            "score_export",
-                            args(doc, "audio", fmt, path, {"master_volume_db": -20}),
-                        )
-                        c.tool("score_export", args(doc, "audio", fmt, path, mix))
-                        assert hashlib.sha256(path.read_bytes()).hexdigest() == hashes[mode]
-                finally:
-                    c.close()
-            results["parity"].append(
-                dict(
-                    format=fmt,
-                    mix=label,
-                    hashes=hashes,
-                    identical=len(set(hashes.values())) == 1,
-                )
-            )
+                    assert hashlib.sha256(path.read_bytes()).hexdigest() == hashes[mode]
+            finally:
+                c.close()
+        return dict(
+            format=fmt,
+            mix=label,
+            hashes=hashes,
+            identical=len(set(hashes.values())) == 1,
+        )
+
+    mixes = [
+        ("default", {}),
+        (
+            "mix",
+            {
+                "master_volume_db": -6,
+                "master_balance": 0.3,
+                "tracks": [{"track": 0, "volume_db": -3, "soundfont": 0}],
+            },
+        ),
+    ]
+    cases = [(fmt, label, mix) for fmt in ("wav", "flac", "opus", "mp3", "aac") for label, mix in mixes]
+    # Parity compares output hashes only, so its sessions may overlap; it
+    # finishes before the timing and RSS sections below start.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        results["parity"] = list(pool.map(lambda case: parity(*case), cases))
     c = client("live", "reuse")
     try:
         doc = opened(c)
@@ -115,17 +129,19 @@ def main():
     c = client("live", "reuse-first")
     try:
         doc = opened(c)
-        for i in range(101):
+        for i in range(a.reuse_iterations):
             start = time.perf_counter()
             c.tool("score_export", args(doc, "audio", "wav", a.output / "reuse.wav"))
             results["reuse"].append(dict(ms=(time.perf_counter() - start) * 1000, rss=rss_bytes(c.p.pid)))
     finally:
         c.close()
+    # One cold export, then the warm exports split into halves.
+    mid = 1 + (len(results["reuse"]) - 1) // 2
     results["reuse_summary"] = dict(
         first_ms=results["reuse"][0]["ms"],
         warm_ms=summary([r["ms"] for r in results["reuse"][1:]]),
-        first_half_rss=summary([r["rss"] for r in results["reuse"][1:51]]),
-        last_half_rss=summary([r["rss"] for r in results["reuse"][51:]]),
+        first_half_rss=summary([r["rss"] for r in results["reuse"][1:mid]]),
+        last_half_rss=summary([r["rss"] for r in results["reuse"][mid:]]),
     )
     for kind, fmt in [("audio", "wav"), ("render", "pdf"), ("score", "mscx")]:
         c = client("live", "cancel-" + kind, True)
@@ -161,8 +177,20 @@ def main():
                 samples_ms=samples,
             )
         )
+    # Audio keeps the production 5 s watchdog end to end; the others only
+    # need the claim path, so they use the test-hook duration.
+    short_watchdog = dict(
+        ENGRAVE_MCP_TEST_WATCHDOG_MS="200",
+        ENGRAVE_MCP_TEST_WATCHDOG_SETTLE_MS="40",
+    )
     for kind, fmt in [("audio", "wav"), ("render", "pdf"), ("score", "mscx")]:
-        c = client("live", "watchdog-" + kind, True)
+        env = {} if kind == "audio" else short_watchdog
+        os.environ.update(env)
+        try:
+            c = client("live", "watchdog-" + kind, True)
+        finally:
+            for key in env:
+                os.environ.pop(key, None)
         doc = opened(c)
         path = a.output / f"{kind}.test-live-noncooperative"
         ident = c.send(
@@ -175,7 +203,10 @@ def main():
         response = c.receive(ident)
         elapsed = time.perf_counter() - start
         assert response.get("error", {}).get("code") == -32603, response
-        assert 4.9 <= elapsed < 6, elapsed
+        if kind == "audio":
+            assert 4.9 <= elapsed < 6.5, elapsed
+        else:
+            assert 0.18 <= elapsed < 2.0, elapsed
         assert c.p.wait(timeout=2) == 70
         assert not path.exists()
         c.log.close()

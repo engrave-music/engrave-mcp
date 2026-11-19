@@ -1,6 +1,8 @@
 """Deterministic publication lock, visible-artifact and terminal resource regressions."""
 
 import argparse
+import concurrent.futures
+import functools
 import json
 import os
 import queue
@@ -218,6 +220,10 @@ def watchdog_barrier(a):
             ENGRAVE_MCP_TEST_WRITE_BARRIER=str(release),
             ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS="60000",
             ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE="1",
+            # The held report write keeps the lock busy, so a short settle still
+            # reaches WATCHDOG_LOCK_WAITING.
+            ENGRAVE_MCP_TEST_WATCHDOG_MS="150",
+            ENGRAVE_MCP_TEST_WATCHDOG_SETTLE_MS="30",
         ),
     )
     try:
@@ -352,16 +358,20 @@ def after_report(a):
 
 def refused_cleanup(a, watchdog=False):
     out = a.output / f"refused-cleanup-{watchdog}"
-    admission, terminal = out / "admit", out / "terminal"
-    h = Host(
-        a,
-        out,
-        dict(
-            ENGRAVE_MCP_TEST_ADMISSION_BARRIER=str(admission),
-            ENGRAVE_MCP_TEST_CLOSING_BARRIER=str(terminal),
-            ENGRAVE_MCP_TEST_CLEANUP_BARRIER=str(out / "never-release"),
-        ),
+    admission, terminal, fence = out / "admit", out / "terminal", out / "watchdog"
+    env = dict(
+        ENGRAVE_MCP_TEST_ADMISSION_BARRIER=str(admission),
+        ENGRAVE_MCP_TEST_CLOSING_BARRIER=str(terminal),
+        ENGRAVE_MCP_TEST_CLEANUP_BARRIER=str(out / "never-release"),
     )
+    if watchdog:
+        # The barrier holds the watchdog's lock attempt until cleanup is blocked;
+        # a short settle delay alone could exit before CLEANUP_BLOCKED.
+        env.update(
+            ENGRAVE_MCP_TEST_WATCHDOG_MS="150",
+            ENGRAVE_MCP_TEST_WATCHDOG_BARRIER=str(fence),
+        )
+    h = Host(a, out, env)
     try:
         pages = h.pages()
         h.export(pages)
@@ -372,6 +382,7 @@ def refused_cleanup(a, watchdog=False):
             admission.touch()
             h.marker("CLEANUP_BLOCKED")
             # The watchdog must acquire the fence despite blocked cleanup.
+            fence.touch()
             assert h.p.wait(timeout=2) == 70
         else:
             queued = out / "queued"
@@ -466,23 +477,29 @@ def main():
         p.add_argument("--" + k, type=Path, required=True)
     a = p.parse_args()
     a.output = a.output.resolve()
-    results = [artifact_fault(a, after=i) for i in (1, 2)]
-    results += [artifact_fault(a, partial=partial, wrapper=True) for partial in (False, True)]
-    results += [
-        artifact_fault(a, after=1, boundary="ERROR_REPORT"),
-        artifact_fault(a, boundary="DOCUMENT_CALLBACK"),
-        after_report(a),
-        refused_cleanup(a),
-        refused_cleanup(a, True),
-        regular_diagnostic(a),
+    # Each case owns a distinct output directory and host process and passes
+    # its environment to Popen, so cases are independent and can overlap.
+    cases = [functools.partial(artifact_fault, a, after=i) for i in (1, 2)]
+    cases += [functools.partial(artifact_fault, a, partial=partial, wrapper=True) for partial in (False, True)]
+    cases += [
+        functools.partial(artifact_fault, a, after=1, boundary="ERROR_REPORT"),
+        functools.partial(artifact_fault, a, boundary="DOCUMENT_CALLBACK"),
+        functools.partial(after_report, a),
+        functools.partial(refused_cleanup, a),
+        functools.partial(refused_cleanup, a, True),
+        functools.partial(regular_diagnostic, a),
     ]
-    results += [barrier(a, dead, report) for dead, report in ((False, True), (True, True), (True, False))]
-    results += [
-        watchdog_barrier(a),
-        diagnostic_cycles(a),
-        after_closing(a),
-        after_closing(a, True),
+    cases += [
+        functools.partial(barrier, a, dead, report) for dead, report in ((False, True), (True, True), (True, False))
     ]
+    cases += [
+        functools.partial(watchdog_barrier, a),
+        functools.partial(diagnostic_cycles, a),
+        functools.partial(after_closing, a),
+        functools.partial(after_closing, a, True),
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda case: case(), cases))
     (a.output / "results.json").write_text(json.dumps(results, indent=2))
     print("PASS: visible paths, real wrapper faults, queued fencing, publication/watchdog lock, 80 bounded diagnostics")
 

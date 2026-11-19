@@ -209,6 +209,7 @@ class LaneContext:
     testcwd: Path
     exe_suffix: str
     native_470_args: list[str]
+    golden_selected: bool = False
 
 
 @dataclass(frozen=True)
@@ -327,6 +328,16 @@ def _semantic_result(context: LaneContext, log_file, check_code: int) -> int:
 
 def _deferred_audio(context: LaneContext) -> list[str]:
     return ["--defer-dense-performance"] if os.environ.get("ENGRAVE_DEFER_DENSE_PERFORMANCE") == "1" else []
+
+
+def _reuse_golden(context: LaneContext) -> list[str]:
+    return (
+        ["--reuse-golden-actual", str(context.output / "golden/actual")]
+        if context.golden_selected
+        and (context.output / "golden/actual/index.json").is_file()
+        and (context.output / "golden/provenance.json").is_file()
+        else []
+    )
 
 
 def _native_470_arguments(context: LaneContext) -> list[str]:
@@ -661,6 +672,7 @@ LANES = (
             "--cross-platform-captures",
             _path("output", "audio-cross-platform"),
             _deferred_audio,
+            _reuse_golden,
         ),
         binaries=("engine_audio_probe", "engrave-mcp"),
         exclusive=True,
@@ -690,13 +702,23 @@ def run_lane(
     exe_suffix: str,
     log_file,
     native_470_args: list[str],
+    golden_selected: bool = False,
 ) -> int:
     spec = LANES_BY_NAME.get(lane)
     if spec is None:
         sys.stderr.write(f"Unknown lane: {lane}\n")
         return 1
     context = LaneContext(
-        repo_root, build_dir, engine_source, assets, soundfont, output, testcwd, exe_suffix, native_470_args
+        repo_root,
+        build_dir,
+        engine_source,
+        assets,
+        soundfont,
+        output,
+        testcwd,
+        exe_suffix,
+        native_470_args,
+        golden_selected,
     )
     code = 0
     for command in spec.build(context):
@@ -1018,6 +1040,7 @@ def main() -> None:
                     exe_suffix=exe_suffix,
                     log_file=log_file,
                     native_470_args=native_470_args,
+                    golden_selected="golden" in selected_lanes,
                 )
             except Exception as e:
                 log_file.write(f"Lane execution failed with exception: {e}\n".encode())

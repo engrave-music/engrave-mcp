@@ -7,11 +7,28 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import time
 from pathlib import Path
 
 from engrave_mcp_testing.paths import REPO_ROOT
 from engrave_mcp_testing.process_client import Client, export_args
+
+WATCHDOG_MS = 150
+SETTLE_MS = 30
+
+
+def assert_no_response(c, ident, seconds):
+    """Hold the flush barrier for `seconds`; a response or exit in that window fails."""
+    end = time.monotonic() + seconds
+    while (left := end - time.monotonic()) > 0:
+        try:
+            msg = c.q.get(timeout=left)
+        except queue.Empty:
+            return
+        assert msg.get("id") != ident and msg.get("error") != "server exited", msg
+        if "id" in msg:
+            c.pending[msg["id"]] = msg
 
 
 def main():
@@ -20,11 +37,23 @@ def main():
         p.add_argument("--" + key, type=Path, required=True)
     a = p.parse_args()
     a.output = a.output.resolve()
-    os.environ["ENGRAVE_MCP_TEST_SLOW_SECOND_FLUSH"] = "1"
     results = []
     for fail in (False, True):
         out = a.output / ("partial" if fail else "complete")
-        c = Client(a.binary, a.resources, out)
+        out.mkdir(parents=True, exist_ok=True)
+        release = out / "release-second-flush"
+        release.unlink(missing_ok=True)
+        env = dict(
+            ENGRAVE_MCP_TEST_WATCHDOG_MS=str(WATCHDOG_MS),
+            ENGRAVE_MCP_TEST_WATCHDOG_SETTLE_MS=str(SETTLE_MS),
+            ENGRAVE_MCP_TEST_SECOND_FLUSH_BARRIER=str(release),
+        )
+        os.environ.update(env)
+        try:
+            c = Client(a.binary, a.resources, out)
+        finally:
+            for key in env:
+                os.environ.pop(key, None)
         try:
             doc = c.tool(
                 "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")}
@@ -63,11 +92,18 @@ def main():
             first = pages / "page-0001.svg"
             before = hashlib.sha256(first.read_bytes()).hexdigest()
             assert list(pages.glob(".engrave-stage-*")), "second artifact must still be staged"
-            start = time.monotonic()
             c.send("notifications/cancelled", {"requestId": ident}, True)
+            deadline = time.monotonic() + 30
+            while "CANCEL_HANDLED" not in c.log_path.read_text():
+                assert time.monotonic() < deadline, "cancellation was not handled while publication held"
+                assert c.p.poll() is None
+                time.sleep(0.005)
+            # Publication has begun, so cancellation must arm no watchdog. Were one
+            # armed, it would claim within WATCHDOG_MS while the barrier still holds.
+            assert_no_response(c, ident, 2 * (WATCHDOG_MS + SETTLE_MS) / 1000)
+            release.touch()
             response = c.receive(ident)
-            elapsed = time.monotonic() - start
-            assert elapsed > 5, elapsed
+            assert "WATCHDOG_CLAIMED" not in c.log_path.read_text()
             result = response["result"]["structuredContent"]
             if fail:
                 assert result["error"]["code"] == "Io", result
@@ -86,8 +122,9 @@ def main():
                 assert b"<svg" in data and data.rstrip().endswith(b"</svg>"), path
             assert not list(pages.glob(".engrave-stage-*"))
             assert c.tool("score_outline", {"document": doc})["ok"]
-            results.append(dict(partial=fail, cancel_to_result_s=elapsed, response=response))
+            results.append(dict(partial=fail, response=response))
         finally:
+            release.touch()
             c.close()
     (a.output / "results.json").write_text(json.dumps(results, indent=2))
     print("PASS: slow publication survives watchdog; complete/partial results and cleanup verified")
