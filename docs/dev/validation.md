@@ -10,11 +10,7 @@ Run outputs (`--output` for lanes and the gate) go under `notes/runs/<name>` (gi
 
 ## Building for tests
 
-`tests/run_lanes.py` builds the targets the selected lanes need before running them (`--no-build` skips the build; `--profile` selects `build/<profile>`, defaulting to `release`). All `scripts/xbuild.py` profiles configure with `--engrave_tests=y` and share `build/.packages` and `build/.build_cache`; see [build.md](build.md) for profile builds and standalone test targets.
-
-### Nested checkouts and xmake `-P .`
-
-`scripts/xbuild.py` passes `-P` itself. When running raw `xmake` commands in nested checkouts, submodules (such as `vendor/engrave`), or worktrees under `.worktrees/`, pass `-P .` so `xmake` operates on the local checkout rather than an enclosing parent repository.
+`tests/run_lanes.py` builds the targets the selected lanes need before running them (`--no-build` skips the build; `--profile` selects `build/<profile>`, defaulting to `release`). All `scripts/bbuild.py` profiles share `build/.bazel_repo_cache` and `build/.bazel_disk_cache`; see [build.md](build.md) for profile builds and standalone test targets.
 
 ## Test Layout
 
@@ -67,11 +63,11 @@ $env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
 
 `--profile` selects `build/<profile>` (default: `release`); `--build-dir` overrides it, and `--no-build` skips building the targets the selected lanes need. Pass `--list-lanes` (no runtime/asset paths required) to print the catalogue, parallel vs. exclusive scheduling, and dependencies.
 
-Parallel lanes run in a thread pool (`-j` / `--jobs`, default half the CPU count bounded to 2–8; `-j 1` runs sequentially). Each lane gets its own `<output>/<lane>/cwd` and `tmp`, and writes `<output>/<lane>.log`; `semantic_check` waits for `golden` or requires a prior golden capture in `<output>/golden/actual`. After parallel work drains, exclusive lanes (default: `live_export`, `live_audio`, `archives`, `async_session`, `engine_audio`; opt-in: `document_stress`, `live_dense_cancel`, `live_queued_cancel`, `transport_wakeup`, `xmake_incremental`) run one at a time so concurrent runs do not skew latency measurements or share working state; run without unrelated builds or benchmarks when measuring timing.
+Parallel lanes run in a thread pool (`-j` / `--jobs`, default half the CPU count bounded to 2–8; `-j 1` runs sequentially). Each lane gets its own `<output>/<lane>/cwd` and `tmp`, and writes `<output>/<lane>.log`; `semantic_check` waits for `golden` or requires a prior golden capture in `<output>/golden/actual`. After parallel work drains, exclusive lanes (default: `live_export`, `live_audio`, `archives`, `async_session`, `engine_audio`; opt-in: `document_stress`, `live_dense_cancel`, `live_queued_cancel`, `transport_wakeup`, `bazel_incremental`) run one at a time so concurrent runs do not skew latency measurements or share working state; run without unrelated builds or benchmarks when measuring timing.
 
 Use `--only lane1,lane2` to run a subset (including opt-in lanes). The runner verifies line endings, native include boundaries, and required binaries before execution.
 
-- **Opt-in lanes** (`--only`): excluded from default runs because they require extra inputs (`native_470_oracle`), test rare stress/cancellation limits (`output_schema_boundaries`, `document_stress`, `live_dense_cancel`, `live_queued_cancel`, `native_470_conversion_cancel`, `native_470_serialization_cancel`, `transport_wakeup`), or mutate source files and rebuild (`xmake_incremental`, which must run in an isolated `.worktrees/` clone).
+- **Opt-in lanes** (`--only`): excluded from default runs because they require extra inputs (`native_470_oracle`), test rare stress/cancellation limits (`output_schema_boundaries`, `document_stress`, `live_dense_cancel`, `live_queued_cancel`, `native_470_conversion_cancel`, `native_470_serialization_cancel`, `transport_wakeup`), or mutate source files and rebuild (`bazel_incremental`, which must run in an isolated `.worktrees/` clone).
 - **Focused default lanes**: `native_includes` checks public header boundaries, `native_inputs` checks malformed input handling, `windows_manifest` checks Windows Segment Heap / UTF-8 / `asInvoker` manifests, `live_export` runs publication/cancellation/UTF-8 path checks alongside `live_export_test`, and `archives` tests archive export against `archive_test` and `engrave-mcp`. Run `--list-lanes` for the full list.
 
 ### Windows Output Roots and Path Limits
@@ -105,10 +101,10 @@ The cross-platform check requires matching captures from both platforms with ver
 
 ## Engine gate
 
-The engine owns its standalone public boundary gate in `vendor/engrave/tests/gate.py`. The host wrapper at `tests/engine_gate.py` defaults to `--pixi-manifest pixi.toml` and shares the host's `build/.build_cache` (`--ccachedir` overrides it):
+The engine owns its standalone public boundary gate in `vendor/engrave/tests/gate.py`. The host wrapper at `tests/engine_gate.py` builds `engine_tests` into `build/<profile>` via `scripts/bbuild.py` by default, defaults to `--pixi-manifest pixi.toml`, and shares `build/.bazel_repo_cache` and `build/.bazel_disk_cache` on standalone `--engine-source` / `--build-dir` invocations:
 
 ```powershell
-# Windows (PowerShell 7); pass --mutex-wrapper scripts/xmake_mutex.ps1 if sharing xmake's Windows lock
+# Windows (PowerShell 7)
 .pixi\envs\default\python.exe tests/engine_gate.py --engine-source vendor/engrave `
   --assets .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 `
@@ -123,13 +119,13 @@ The engine owns its standalone public boundary gate in `vendor/engrave/tests/gat
   --output notes/runs/gate --quick
 ```
 
-`--quick` skips the exclusive timing checks (`output-timing` and `dense-cancellation`) for per-step verification; omit `--quick` at milestones and engine bumps. Use a fresh `--output` directory under `notes/runs/<name>` for each run; existing capture directories are rejected. On Windows, pass `--mutex-wrapper scripts/xmake_mutex.ps1` when an engine build shares the global `Global\engrave-xmake-build` build lock.
+`--quick` skips the exclusive timing checks (`output-timing` and `dense-cancellation`) for per-step verification; omit `--quick` at milestones and engine bumps. Use a fresh `--output` directory under `notes/runs/<name>` for each run; existing capture directories are rejected.
 
 The gate builds the fork's `engine_tests` target and executes the API, import, playback, and adapter suites, along with `diagnostics_test`, `io_boundary_test`, installer tests, and asset manifest verification. It compares outputs against pinned goldens using `golden.py` comparators and the platform hash allow-list (`vendor/engrave/tests/data/golden/allow.json`).
 
 ## CI
 
-`.github/workflows/ci.yml` (pushes to `main`, pull requests, manual dispatch) is a build-and-unit-test lane, not acceptance. A `checks` job (Ubuntu, Pixi) verifies the submodule pin and xmake inputs, runs `pixi run format-check`, the layout audit and the Python checks that need no binary or asset (`test_test_layout`, `test_native_includes`, `test_engine_gate_wrapper`, `test_cleanup_regressions`, `test_oracle_harness`, `test_rendered_page`, `tests/test_engine_gate.py`, `tests/test_xbuild.py`). A `build-test` job on Windows (MSVC, `windows-latest`) and Linux (the pinned Pixi GCC) builds `engrave_mcp`, `engrave_mcp_test`, `registry_dump`, `registry_check` (which runs the tool-schema test), `host_api_test`, `staging_test` and, on Linux, `publication_test`, then runs `staging_test`, `publication_test`, `host_api_test` and the integration scripts that need only the server binary and the staged engine assets (`version_info`, `open_data`, `native_inputs`, `positions`, `imports_midi`, `imports_guitarpro`, `repeats`, `transport`, plus `windows_manifest` on Windows). `host_api_test` runs with the in-repository `vendor/engrave/tests/data/engine_audio/sine.sf2` as both SoundFonts, so CI downloads none. The fork has its own workflow (`vendor/engrave/.github/workflows/ci.yml`) for the engine unit tests.
+`.github/workflows/ci.yml` (pushes to `main`, pull requests, manual dispatch) is a build-and-unit-test lane, not acceptance. A `checks` job (Ubuntu, Pixi) verifies the submodule pin and Bazel inputs (`scripts/check_build_inputs.py`), runs `pixi run format-check`, the layout audit and the Python checks that need no binary or asset (`test_test_layout`, `test_native_includes`, `test_engine_gate_wrapper`, `test_cleanup_regressions`, `test_oracle_harness`, `test_rendered_page`, `tests/test_engine_gate.py`, `tests/test_bbuild.py`). A `build-test` job on Windows and Linux (both using Bazel + hermetic `xclang`) builds `engrave_mcp`, `engrave_mcp_test`, `registry_dump`, `registry_check` (which runs the tool-schema test), `host_api_test`, `staging_test` and, on Linux, `publication_test`, then runs `staging_test`, `publication_test`, `host_api_test` and the integration scripts that need only the server binary and the staged engine assets (`version_info`, `open_data`, `native_inputs`, `positions`, `imports_midi`, `imports_guitarpro`, `repeats`, `transport`, plus `windows_manifest` on Windows). `host_api_test` runs with the in-repository `vendor/engrave/tests/data/engine_audio/sine.sf2` as both SoundFonts, so CI downloads none. The fork has its own workflow (`vendor/engrave/.github/workflows/ci.yml`) for the engine unit tests.
 
 Not run in CI, and still manual here: the engine gate and golden comparisons (`tests/engine_gate.py`), the audio corpus and `engine_audio`, every lane that takes `--soundfont` (`live_export`, `live_audio`, `async_session`, `export_options`, `mcp_smoke`, ...), the opt-in lanes, the benchmarks, the Windows-versus-Linux paired captures, and engine naming lint. A green CI run does not replace the milestone validation policy above.
 
@@ -147,7 +143,7 @@ Not run in CI, and still manual here: the engine gate and golden comparisons (`t
 - `tests/benchmarks/bench_audio_distribution.py` — repeated audio synthesis measurement distribution
 - `tests/benchmarks/bench_native_writer_precision.py` — writer precision round-trip measurements
 - `tests/integration/test_live_dense_cancel.py` — cancellation on a 49,152-note score
-- `tests/integration/test_xmake_incremental.py` — incremental build behavior
+- `tests/integration/test_bazel_incremental.py` — incremental build and schema regeneration behavior
 
 Benchmark claims must retain raw samples, phase timings, hardware specification, and environment conditions.
 

@@ -1,0 +1,9 @@
+vendor/engrave
+.pixi
+.xmake
+.worktrees
+build
+notes
+artifacts
+.runtime
+.upstream

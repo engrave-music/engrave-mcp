@@ -1,28 +1,25 @@
 # Build and test
 
-The host is built with **xmake**; **Pixi** provides the pinned toolchain and native libraries. The engine build lives in the submodule (`vendor/engrave/xmake/engrave.lua`) and is included by the host's `xmake.lua`.
+The host and engine are built with **Bazel** (pinned in `.bazelversion`) and a hermetic Clang 23 / `libc++` (**xclang**) C++23 toolchain on both Windows and Linux. **Pixi** provides `bazelisk`, Python/lint tools, and the pinned `cairo` and `zlib` native libraries. The engine build lives in the submodule (`vendor/engrave/MODULE.bazel`, `vendor/engrave/BUILD.bazel`) and is consumed by the host's `MODULE.bazel` via `local_path_override`.
 
 ## Prerequisites
 
 Windows:
 
 - Git and [Pixi](https://pixi.sh/).
-- Visual Studio 2026 (or Build Tools) with the x64 C++ toolchain (MSVC 14.51+).
-- xmake 3.1.1+ (available on `PATH`).
+- Optional: Windows SDK (`mt.exe`) when running the `windows_manifest` acceptance lane. No Visual Studio installation is required to compile, link, or package `engrave-mcp`.
 
-Linux (validated on Ubuntu 24.04.5 x86_64 via `ssh user@<linux-host>`, conda GCC 15.3; Pixi pins Clang/clang-tools 23.1.4, C++23):
+Linux (validated on Ubuntu 24.04.5 x86_64 via `ssh user@<linux-host>`):
 
-- Git and Pixi.
-- Cairo and zlib come from the Pixi environment: the engine build requires them as `pixi::cairo` and `pixi::zlib` (an xmake package manager in `vendor/engrave/xmake/modules`), so no prefix option is needed.
+- Git and Pixi (`bazel` / `bazelisk` via Pixi or `~/engrave/tools/bazel/bin`).
+- Cairo and zlib come from the Pixi environment (`@pixi_deps//:cairo` and `@pixi_deps//:zlib` in `vendor/engrave/bazel/deps.bzl`).
 - WSL is not supported.
 
-> If xmake's bundled aria2 fails to download a package with a TLS handshake error, run `xmake g --downloader=curl` once.
-
-JSON: the host uses **glaze 9.1** for its DOM and wire writer. The engine build declares the pinned package and the `engrave-pinned` xmake repository; every host target that compiles JSON code lists `add_packages("glaze")` explicitly instead of relying on the `engrave` target's public propagation.
+JSON: the host uses **glaze 9.1** (`@glaze` in `MODULE.bazel`) for its JSON codecs and wire writer.
 
 ## Initial checkout and setup
 
-Clone with `--recursive`, or initialize the submodule before running `pixi install` (which depends on `vendor/engrave` in editable mode):
+Clone with `--recursive`, or initialize the submodule before running `pixi install` (which installs `vendor/engrave` in editable mode):
 
 ```powershell
 git submodule update --init
@@ -31,30 +28,24 @@ pixi run python scripts/bootstrap.py --soundfont
 pixi run python scripts/prepare.py
 ```
 
-`bootstrap.py` verifies the submodule status and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies a clean, pinned `vendor/engrave` checkout (refusing a modified engine) and stages its hash-pinned asset manifest into `.runtime/assets`.
+`bootstrap.py` verifies the submodule status and downloads the base SoundFont (`FluidR3Mono_GM.sf3`). `prepare.py` verifies a clean, pinned `vendor/engrave` checkout (refusing a modified engine) and stages its hash-pinned asset manifest into `.runtime/assets`. `scripts/check_build_inputs.py` verifies `.bazelversion` and `pixi.lock` native package parity (`cairo`, `zlib`, `libzlib`) between the host and `vendor/engrave`.
 
 ## Development builds
 
-Use `scripts/xbuild.py` for development builds across `release`, `debug`, `releasedbg`, and `asan` profiles. Outputs go to `build/<profile>`, configuration to `.xmake/profiles/<platform>-<arch>-<profile>/`, packages to `build/.packages`, and the compile cache is shared across all build directories in `build/.build_cache`. Every profile configures with `--engrave_tests=y` by default; test targets build only when named. Options before the action belong to the wrapper; subsequent arguments go to xmake. `--build-directory` overrides the profile output.
+Use `scripts/bbuild.py` (or `pixi run build`) for development builds across `release`, `debug`, `releasedbg`, and `asan` profiles. Outputs are staged to `build/<profile>`, external archives are cached in `build/.bazel_repo_cache`, and Bazel action outputs (including relocatable Clang binary precompiled headers for `engraving`) are shared across builds in `build/.bazel_disk_cache`. `--build-directory` overrides the staged output path, and `--no-pch` disables precompiled headers.
 
 ```powershell
-pixi run --locked python scripts/xbuild.py --profile release build -j 12 engrave_mcp engrave_mcp_test host_api_test registry_dump registry_check
-pixi run --locked python scripts/xbuild.py --profile debug build -j 12 engrave_mcp
-pixi run --locked python scripts/xbuild.py --profile releasedbg compdb
-pixi run --locked python scripts/xbuild.py --profile asan build -j 12 engrave_mcp
+pixi run --locked python scripts/bbuild.py --profile release -j 12 build engrave_mcp engrave_mcp_test host_api_test registry_dump registry_check
+pixi run --locked python scripts/bbuild.py --profile debug -j 12 build engrave_mcp
+pixi run --locked python scripts/bbuild.py --profile release compdb
+pixi run --locked python scripts/bbuild.py --profile asan -j 12 build engrave_mcp
 ```
 
-`xbuild.py` configures automatically on first use and passes `-P` itself (`-P .` matters only when running raw `xmake` in nested checkouts); `configure` changes options and `--reconfigure` forces configuration. Host and test targets use `set_default(false)`, so name them explicitly.
-
-### C++ modules: postponed
-
-The build uses headers only. A C++23 module facade that wrapped the public headers was tried (fork `95199efc2b`) and removed: xmake turns the compile cache off for module targets, the facade made incremental builds slower, and wrapping headers leaves the engine as it was. Adopting modules would need the engine restructured for them; that is postponed while header builds stay fast.
-
-Host rules live in `xmake/rules/*.lua`. The engine entry point `vendor/engrave/xmake/engrave.lua` loads split `environment.lua`, `packages.lua`, `generated.lua`, `tests.lua`, `rules/`, and `targets/` modules.
+With no explicit target arguments, `bbuild.py build` builds `all_binaries` (all host binaries plus `@engrave//:engine_tests`). `registry_check` builds `registry_dump` and `registry_test` and runs `tests/integration/test_tool_schema.py` against `engrave_mcp/tools.json`.
 
 ## Clean builds at the pinned engine
 
-Use `scripts/build-native.ps1` (Windows) and `scripts/build-native.sh` (Linux) only for a clean build at the pinned engine: both run `git submodule update --init` (which resets `vendor/engrave`) and `scripts/prepare.py` (which refuses a modified engine), then configure and build into `build/<profile>` (`build/release` by default):
+Use `scripts/build-native.ps1` (Windows) and `scripts/build-native.sh` (Linux) only for a clean build at the pinned engine: both run `git submodule update --init` (which resets `vendor/engrave`), `scripts/prepare.py` (which refuses a modified engine), and `scripts/check_build_inputs.py --check`, then build into `build/<profile>` (`build/release` by default):
 
 ```powershell
 # Windows (-Profile debug selects another profile)
@@ -66,11 +57,9 @@ pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 12
 bash scripts/build-native.sh 8
 ```
 
-The Windows script enters the Visual Studio developer shell and builds `engrave_mcp`, `engrave_mcp_test`, `registry_dump`, `registry_check`, and `host_api_test`. On Linux, `build-native.sh` selects the Pixi GCC toolchain and writes the runtime run path into the binaries.
-
 ### Running the development binary
 
-On Windows, development builds link against Pixi DLLs, which must be on `PATH`:
+On Windows, development builds load `cairo.dll` and `zlib.dll` from the Pixi environment, which must be on `PATH` (on Linux, `@pixi_deps` embeds the Pixi `lib/` RPATH directly):
 
 ```powershell
 $env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
@@ -80,10 +69,10 @@ build/release/engrave-mcp.exe --resources .runtime/assets `
 
 ## Test binaries
 
-`tests/run_lanes.py` builds the targets selected lanes need before running them (unless `--no-build` is passed). When invoking standalone test scripts directly, build any needed targets with `scripts/xbuild.py`:
+`tests/run_lanes.py` builds the targets selected lanes need before running them (unless `--no-build` is passed). When invoking standalone test scripts directly, build any needed targets with `scripts/bbuild.py`:
 
 ```powershell
-pixi run --locked python scripts/xbuild.py --profile release build -j 12 live_export_test staging_test semantic_dump
+pixi run --locked python scripts/bbuild.py --profile release -j 12 build live_export_test staging_test semantic_dump
 # On Linux, add publication_test; for the full engine test closure, build engine_tests.
 ```
 
@@ -126,7 +115,7 @@ The acceptance runner and lane catalog are detailed in [validation.md](validatio
 
 - Host sources in `engrave_mcp/` include only public engine headers from `engrave/...`, validated by `scripts/check_native_includes.py`.
 - `engrave_mcp/tools.json` is generated by `registry_dump` and validated by `registry_check`; do not edit manually.
-- `build/`, `.pixi/`, `.runtime/`, `artifacts/`, and `notes/` are gitignored.
+- `build/`, `bazel-*`, `.pixi/`, `.runtime/`, `artifacts/`, and `notes/` are gitignored.
 
 ## Code formatting and linting
 
@@ -142,7 +131,7 @@ pixi run setup-hooks
 
 `scripts/format.py --backend {auto,clice,clang-format} -j N` selects the C++ formatter. Auto uses clice with a usable binary, root `clice.toml`, and compilation database, otherwise clang-format. `scripts/lint.py --backend {auto,clice,clang-tidy} -j N` selects the C++ linter: auto keeps host checks scoped through clang-tidy; explicit clice checks the entire database, including the engine. Python uses Ruff, Markdown/JSON/YAML use Prettier, and TOML uses Taplo regardless of the C++ backend.
 
-The root `clice.toml` maps profile databases (`build/release`, `build/debug`, `build/releasedbg`, `build/asan`) and excludes dependencies and generated trees. Generate a profile database with `scripts/xbuild.py --profile <profile> compdb`. Keep one root clice project for host and engine.
+The root `clice.toml` maps profile databases (`build/release`, `build/debug`, `build/releasedbg`, `build/asan`) and excludes dependencies and generated trees. Generate a profile database with `scripts/bbuild.py --profile <profile> compdb` (via native `bazel aquery` with inline `xclang` toolchain flags). Keep one root clice project for host and engine.
 
 Host formatting and linting follow the root `.clang-format` and `.clang-tidy`; engine checks via `--engine` follow `vendor/engrave/.clang-format` and `vendor/engrave/.clang-tidy`.
 

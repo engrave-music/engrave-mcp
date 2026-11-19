@@ -33,7 +33,6 @@ IGNORED_PREFIXES = (
     ".upstream/",
     "tests/data/",
     ".pixi/",
-    ".xmake/",
     "build/",
     ".runtime/",
 )
@@ -241,10 +240,10 @@ def find_compile_commands(repo_root: Path) -> Path:
     existing = [path for path in candidates if path.is_file()]
     if existing:
         return max(existing, key=lambda path: path.stat().st_mtime_ns)
-    print("compile_commands.json not found; generating via xmake...", flush=True)
-    fallback = repo_root / "compile_commands.json"
+    print("compile_commands.json not found; generating via scripts/bbuild.py compdb...", flush=True)
+    fallback = repo_root / "build/release/compile_commands.json"
     try:
-        subprocess.check_call(["xmake", "project", "-k", "compile_commands"], cwd=repo_root)
+        subprocess.check_call([sys.executable, str(repo_root / "scripts/bbuild.py"), "compdb"], cwd=repo_root)
     except (OSError, subprocess.CalledProcessError) as error:
         raise ValueError(f"cannot generate compile_commands.json: {error}") from error
     return fallback

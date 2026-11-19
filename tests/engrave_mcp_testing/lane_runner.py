@@ -5,7 +5,6 @@ import argparse
 import hashlib
 import json
 import os
-import runpy
 import shutil
 import subprocess
 import sys
@@ -72,7 +71,7 @@ def build_required_binaries(repo_root: Path, build_dir: Path, profile: str, bina
     result = subprocess.run(
         [
             sys.executable,
-            str(repo_root / "scripts/xbuild.py"),
+            str(repo_root / "scripts/bbuild.py"),
             "--profile",
             profile,
             *build_options,
@@ -444,13 +443,13 @@ LANES = (
         exclusive=True,
     ),
     Lane(
-        "xmake_incremental",
+        "bazel_incremental",
         _script(
-            "xmake_incremental",
+            "bazel_incremental",
             "--binary",
             _binary("engrave-mcp"),
             "--output",
-            _path("output", "xmake_incremental"),
+            _path("output", "bazel_incremental"),
             "--assets",
             _path("assets"),
             cwd="repo_root",
@@ -970,15 +969,6 @@ def main() -> None:
     base_env["MUSESCORE_ENGINE_SOURCE"] = str(engine_source)
     base_env["ENGRAVING_TESTS_DATA_ROOT"] = str(engine_source / "src/engraving/tests")
     base_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    if "xmake_incremental" in selected_lanes:
-        # The lane invokes xmake directly after changing source, so it needs the
-        # same configuration and package store as the preflight build.
-        xbuild = runpy.run_path(str(repo_root / "scripts/xbuild.py"))
-        profile = build_profile(repo_root, build_dir, args.profile)
-        arch = "x64" if os.name == "nt" else xbuild["platform"].machine()
-        config = xbuild["resolve_layout"](repo_root, profile, build_dir, arch)[1]
-        base_env["XMAKE_CONFIGDIR"] = str(config)
-        base_env["XMAKE_PKG_LOCALDIR"] = str(repo_root / "build/.packages")
 
     native_env = pixi_env(repo_root)
     for extra in (native_env / "Library/bin", native_env / "bin"):

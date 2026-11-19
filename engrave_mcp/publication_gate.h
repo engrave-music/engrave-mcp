@@ -14,7 +14,7 @@ namespace music {
 struct PublicationGate {
     std::recursive_mutex mutex;
     usize owner_tasks = 0;
-    bool closing = false;
+    std::atomic<bool> closing{false};
     usize cleanup_failures = 0;
     std::condition_variable_any changed;
 };

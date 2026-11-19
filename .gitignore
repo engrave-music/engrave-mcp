@@ -1,7 +1,8 @@
 .upstream/
 .runtime/
 .pixi/
-.xmake/
+/bazel-*
+/user.bazelrc
 build/
 artifacts/
 notes/

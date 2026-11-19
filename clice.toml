@@ -10,21 +10,21 @@
 # engine-level file would take every engine translation unit out of this
 # project's database, index, lint and format runs. Requires clice 1.0+.
 
-# scripts/build-native.* and scripts/xbuild.py default to build/release;
+# scripts/build-native.* and scripts/bbuild.py default to build/release;
 # the other configurations are for debugging and sanitizer work.
 default_configuration = "release"
 
 # Code that is not ours to format, lint or index: vendored third-party trees,
-# xmake build and package caches, the Pixi environment (whose headers zlib or
+# Bazel build and package caches, the Pixi environment (whose headers zlib or
 # cairo includes reach via -I), runtime assets, upstream checkouts and worktrees.
 [[rules]]
 patterns = [
   "vendor/engrave/**/thirdparty/**",
   "vendor/engrave/vendor/**",
   "build/**",
+  "bazel-*/**",
   ".pixi/**",
   ".runtime/**",
-  ".xmake/**",
   ".clice/**",
   ".upstream/**",
   ".worktrees/**",
@@ -33,8 +33,8 @@ background_index = false
 lint = false
 format = false
 
-# One tag per xmake build mode. scripts/xbuild.py defaults to
-# `build/<tag>/compile_commands.json` (`xbuild.py --profile <tag> compdb`).
+# One tag per Bazel build profile. scripts/bbuild.py defaults to
+# `build/<tag>/compile_commands.json` (`bbuild.py --profile <tag> compdb`).
 [[rules]]
 configuration = "release"
 compile_commands = ["build/release"]

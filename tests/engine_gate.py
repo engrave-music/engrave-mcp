@@ -2,12 +2,10 @@
 """Host entry point for the fork-owned engine gate.
 
 By default the gate runs on the host's profile build: engine_tests is built with
-scripts/xbuild.py into build/<profile>, which ordinary host work keeps warm, and
-the gate gets --skip-build --build-dir. A standalone engine build compiles every
-file again: its source paths differ from the host's, so it misses the shared
-compile cache. Passing --build-dir, or an --engine-source other than the
-submodule, selects the standalone build, which uses build/.build_cache unless
---ccachedir is given.
+scripts/bbuild.py into build/<profile>, which ordinary host work keeps warm, and
+the gate gets --skip-build --build-dir. Passing --build-dir, or an --engine-source
+other than the submodule, selects the standalone fork build while sharing this
+checkout's Bazel repository and action caches unless overridden.
 
 Unless --pixi-manifest is given, the gate uses this project's Pixi environment
 (pixi.lock), the cairo and zlib builds the goldens were made with.
@@ -26,7 +24,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--engine-source", type=Path, default=submodule)
     parser.add_argument("--pixi-manifest", type=Path)
-    parser.add_argument("--ccachedir", type=Path)
+    parser.add_argument("--repo-cache", type=Path)
+    parser.add_argument("--disk-cache", type=Path)
     parser.add_argument("--build-dir", type=Path)
     parser.add_argument("--profile", default="release")
     parser.add_argument("--skip-build", action="store_true")
@@ -40,7 +39,7 @@ if __name__ == "__main__":
             built = subprocess.call(
                 [
                     sys.executable,
-                    str(project / "scripts/xbuild.py"),
+                    str(project / "scripts/bbuild.py"),
                     "--profile",
                     parsed.profile,
                     "build",
@@ -52,8 +51,11 @@ if __name__ == "__main__":
                 sys.exit(built)
             prefix.append("--skip-build")
         prefix += ["--build-dir", str(project / "build" / parsed.profile)]
-    elif parsed.ccachedir is None:
-        prefix += ["--ccachedir", str(project / "build/.build_cache")]
+    else:
+        if parsed.repo_cache is None:
+            prefix += ["--repo-cache", str(project / "build/.bazel_repo_cache")]
+        if parsed.disk_cache is None:
+            prefix += ["--disk-cache", str(project / "build/.bazel_disk_cache")]
     args = [*prefix, *args]
     os.environ["PYTHONPATH"] = os.pathsep.join(
         (str(root / "tests"), str(root / "tools"), os.environ.get("PYTHONPATH", ""))

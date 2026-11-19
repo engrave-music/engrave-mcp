@@ -314,12 +314,25 @@ class TestRenderedPageControls(unittest.TestCase):
             (page.REPO_ROOT / "vendor/engrave/tests/data/golden/linux/index.json").read_text(encoding="utf-8")
         )
         digest = index["layout_elements.mscx"]["page-0.svg"]
-        with mock.patch.object(page.sys, "platform", "linux"):
-            self.assertTrue(page.accepted_svg_counts(name, digest))
-            self.assertFalse(page.accepted_svg_counts(name, "0" * 64))
-            self.assertFalse(page.accepted_svg_counts("unknown.mscx/page-0.svg", digest))
-        with mock.patch.object(page.sys, "platform", "win32"):
-            self.assertFalse(page.accepted_svg_counts(name, digest))
+        for plat in ("linux", "win32"):
+            with mock.patch.object(page.sys, "platform", plat):
+                self.assertTrue(page.accepted_svg_counts(name, digest))
+                self.assertFalse(page.accepted_svg_counts(name, "0" * 64))
+                self.assertFalse(page.accepted_svg_counts("unknown.mscx/page-0.svg", digest))
+
+        synthetic = json.dumps(
+            {
+                "linux": {name: {"counts": {"paths": 184, "total_uses": 286}, "svg_sha256": "a" * 64}},
+                "windows": {name: {"counts": {"paths": 184, "total_uses": 286}, "svg_sha256": "b" * 64}},
+            }
+        )
+        with mock.patch.object(Path, "read_text", return_value=synthetic):
+            with mock.patch.object(page.sys, "platform", "linux"):
+                self.assertTrue(page.accepted_svg_counts(name, "a" * 64))
+                self.assertFalse(page.accepted_svg_counts(name, "b" * 64))
+            with mock.patch.object(page.sys, "platform", "win32"):
+                self.assertTrue(page.accepted_svg_counts(name, "b" * 64))
+                self.assertFalse(page.accepted_svg_counts(name, "a" * 64))
 
     def test_removed_glyph_with_updated_index_fails(self):
         name = "layout_elements.mscx/page-0.svg"

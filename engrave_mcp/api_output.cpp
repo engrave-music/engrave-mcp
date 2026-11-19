@@ -449,7 +449,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     std::fflush(stderr);
                     if (std::getenv("ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE")) {
                         std::unique_lock lock(publication_gate.mutex);
-                        publication_gate.changed.wait(lock, [] { return publication_gate.closing; });
+                        publication_gate.changed.wait(lock, [] { return publication_gate.closing.load(); });
                         std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n");
                         std::fflush(stderr);
                     } else if (const auto *delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS")) {

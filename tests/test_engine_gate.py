@@ -1,6 +1,6 @@
 """The host wrapper dispatches both argparse spellings to the requested fork.
 
-It also selects this project's Pixi environment and compile cache unless the
+It also selects this project's Pixi environment and Bazel caches unless the
 caller chose them.
 """
 
@@ -12,8 +12,10 @@ import unittest
 from pathlib import Path
 
 WRAPPER = Path(__file__).with_name("engine_gate.py")
-HOST_MANIFEST = str(Path(__file__).resolve().parents[1] / "pixi.toml")
-HOST_CCACHE_DIR = str(Path(__file__).resolve().parents[1] / "build/.build_cache")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+HOST_MANIFEST = str(PROJECT_ROOT / "pixi.toml")
+HOST_REPO_CACHE = str(PROJECT_ROOT / "build/.bazel_repo_cache")
+HOST_DISK_CACHE = str(PROJECT_ROOT / "build/.bazel_disk_cache")
 
 
 class EngineGateDispatch(unittest.TestCase):
@@ -32,13 +34,27 @@ class EngineGateDispatch(unittest.TestCase):
                     args = [*source_args, "--output", "unchanged"]
                     self.assertEqual(
                         self.dispatch(args),
-                        ["--pixi-manifest", HOST_MANIFEST, "--ccachedir", HOST_CCACHE_DIR, *args],
+                        [
+                            "--pixi-manifest",
+                            HOST_MANIFEST,
+                            "--repo-cache",
+                            HOST_REPO_CACHE,
+                            "--disk-cache",
+                            HOST_DISK_CACHE,
+                            *args,
+                        ],
                     )
             for manifest_args in (["--pixi-manifest", "other.toml"], ["--pixi-manifest=other.toml"]):
                 with self.subTest(args=manifest_args):
                     args = ["--engine-source", str(root), *manifest_args]
-                    self.assertEqual(self.dispatch(args), ["--ccachedir", HOST_CCACHE_DIR, *args])
-            for cache_args in (["--ccachedir", "other-cache"], ["--ccachedir=other-cache"]):
+                    self.assertEqual(
+                        self.dispatch(args),
+                        ["--repo-cache", HOST_REPO_CACHE, "--disk-cache", HOST_DISK_CACHE, *args],
+                    )
+            for cache_args in (
+                ["--repo-cache", "other-repo", "--disk-cache", "other-disk"],
+                ["--repo-cache=other-repo", "--disk-cache=other-disk"],
+            ):
                 with self.subTest(args=cache_args):
                     args = ["--engine-source", str(root), "--pixi-manifest=other.toml", *cache_args]
                     self.assertEqual(self.dispatch(args), args)
