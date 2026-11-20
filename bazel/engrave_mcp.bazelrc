@@ -8,7 +8,7 @@ common --experimental_cpp_modules
 build --incompatible_strict_action_env
 
 build -c opt
-build:release -c opt
+build:release -c opt --features=gc_sections --linkopt=-Wl,--icf=safe
 build:releasedbg -c opt --copt=-g
 build:debug -c dbg
 build:asan -c dbg --copt=-O1 --features=asan

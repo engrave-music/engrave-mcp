@@ -63,6 +63,10 @@ pixi run --locked python scripts/bbuild.py --profile release compdb
 pixi run --locked python scripts/bbuild.py --profile asan -j 12 build engrave_mcp
 ```
 
+The `release` profile uses xclang's `-O2`, LLD section garbage collection, and
+safe identical code folding on Windows and Linux. It keeps ordinary
+development builds free of link-time optimization.
+
 With no target arguments, `bbuild.py build` builds `all_binaries` (all host
 binaries plus `@engrave//:engine_tests`). `registry_check` builds
 `registry_dump` and `registry_test` and runs
@@ -196,7 +200,10 @@ pixi run --locked python scripts/package_linux.py \
   --binary build/release/engrave-mcp --output artifacts/linux-next
 ```
 
-The packagers assemble runtime DLL/ELF dependencies, asset folders, SoundFonts,
+The packagers strip the copied packaged executable by default (pass `--no-strip`
+to keep symbols), leave the staged `build/<profile>` binary untouched, and
+record `unstripped_executable_sha256` in `manifest.json`. They also assemble
+runtime DLL/ELF dependencies, asset folders, SoundFonts,
 and licenses into a self-contained folder. A packaged binary automatically
 resolves its adjacent `assets/` directory without needing `--resources`.
 
