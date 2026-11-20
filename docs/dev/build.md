@@ -2,8 +2,8 @@
 
 The host and engine are built with **Bazel** (pinned in `.bazelversion`) and a
 hermetic Clang 23 / `libc++` (**xclang**) C++23 toolchain on both Windows and
-Linux. **Pixi** provides `bazelisk`, Python/lint tools, and the pinned `cairo`
-and `zlib` native libraries. The engine build lives in `vendor/engrave`
+Linux. **Pixi** provides `bazelisk`, Python/lint tools, and the pinned `cairo`,
+`freetype`, and `zlib` native libraries. The engine build lives in `vendor/engrave`
 (`MODULE.bazel`, `BUILD.bazel`) and is consumed by the host's `MODULE.bazel` via
 `local_path_override`.
 
@@ -19,8 +19,8 @@ Windows:
 Linux (validated on Ubuntu 24.04.5 x86_64):
 
 - Git and Pixi (`bazel` / `bazelisk` via Pixi).
-- Cairo and zlib come from the Pixi environment (`@pixi_deps//:cairo` and
-  `@pixi_deps//:zlib` in `vendor/engrave/bazel/deps.bzl`).
+- Cairo, FreeType, and zlib come from the Pixi environment (`@pixi_deps//:cairo`,
+  `@pixi_deps//:freetype`, and `@pixi_deps//:zlib` in `vendor/engrave/bazel/deps.bzl`).
 - WSL is not supported.
 
 JSON: the host uses **glaze 9.1** (`@glaze` in `MODULE.bazel`) for its JSON
@@ -44,8 +44,8 @@ pixi run python scripts/prepare.py
   (refusing a modified engine) and stages its asset manifest from committed Git
   blobs into `.runtime/assets`.
 - `scripts/check_build_inputs.py` verifies `.bazelversion` and `pixi.lock`
-  native package parity (`cairo`, `zlib`, `libzlib`) between the host and
-  `vendor/engrave`.
+  native package parity (`cairo`, `freetype`, `libfreetype`, `libfreetype6`,
+  `zlib`, `libzlib`) between the host and `vendor/engrave`.
 
 ## Development Builds
 

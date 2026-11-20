@@ -387,7 +387,7 @@
     },
     "@@engrave+//bazel:deps.bzl%engrave_deps": {
       "general": {
-        "bzlTransitiveDigest": "5Z4b9FqAk8DVKqj5Ya+/LCu/fDoruWq4oen17FycYKY=",
+        "bzlTransitiveDigest": "vJ+xT2BOu4Pq9i0J38pVnriUbNY0EkA1mhpV/cdMYIA=",
         "usagesDigest": "WMxc8k0UvBO9+4o7aO5aqexMOB2kvxYRYce8DehBGVc=",
         "recordedInputs": [
           "REPO_MAPPING:engrave+,bazel_tools bazel_tools"
@@ -473,18 +473,6 @@
               "strip_prefix": "pugixml-1.15",
               "urls": [
                 "https://github.com/zeux/pugixml/releases/download/v1.15/pugixml-1.15.tar.gz"
-              ]
-            }
-          },
-          "freetype": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
-            "attributes": {
-              "build_file": "@@engrave+//bazel/third_party:freetype.BUILD.bazel",
-              "sha256": "174d9e53402e1bf9ec7277e22ec199ba3e55a6be2c0740cb18c0ee9850fc8c34",
-              "strip_prefix": "freetype-2.14.1",
-              "urls": [
-                "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz",
-                "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz"
               ]
             }
           },

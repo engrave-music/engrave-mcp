@@ -14,7 +14,7 @@ from pathlib import Path
 
 from engrave_testing.paths import pixi_env
 
-NATIVE_PINNED_PACKAGES = ("cairo", "zlib", "libzlib")
+NATIVE_PINNED_PACKAGES = ("cairo", "freetype", "libfreetype", "libfreetype6", "zlib", "libzlib")
 _LOCKED_PACKAGE = re.compile(r"^- conda: (\S+/(win-64|linux-64)/([A-Za-z0-9_.-]+?)-\d\S*\.conda)$", re.MULTILINE)
 
 
@@ -67,6 +67,12 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
     for label, path in required_files.items():
         if not path.is_file():
             errors.append(f"missing {label}: {path}")
+    ft_headers = (
+        native_root / "include" / "ft2build.h",
+        native_root / "include" / "freetype2" / "ft2build.h",
+    )
+    if not any(path.is_file() for path in ft_headers):
+        errors.append(f"missing native env freetype header: {' or '.join(str(p) for p in ft_headers)}")
 
     host_ver = project_root / ".bazelversion"
     eng_ver = source_root / ".bazelversion"
@@ -80,7 +86,11 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
     if not library_dir.is_dir():
         errors.append(f"missing native library directory: {library_dir}")
     else:
-        expected = ("cairo.lib", "z.lib") if sys.platform == "win32" else ("libcairo.so", "libz.so")
+        expected = (
+            ("cairo.lib", "freetype.lib", "z.lib")
+            if sys.platform == "win32"
+            else ("libcairo.so", "libfreetype.so", "libz.so")
+        )
         for name in expected:
             if not (library_dir / name).is_file():
                 errors.append(f"missing native link library: {library_dir / name}")
