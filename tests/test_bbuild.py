@@ -71,6 +71,51 @@ class BBuildTests(unittest.TestCase):
             self.assertFalse((out_dir / "main.o").exists())
             self.assertEqual((out_dir / f"engrave-mcp{ext}").read_bytes(), b"binary-payload")
 
+    def test_stage_bep_outputs_includes_runtime_libraries_and_preserves_default_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            out_dir = root / "build/sanitize"
+            default_dir = root / "default"
+            runtime_dir = root / "runtime"
+            default_dir.mkdir()
+            runtime_dir.mkdir()
+            suffix = ".dll" if os.name == "nt" else ".so"
+            runtime = runtime_dir / f"libsanitizer{suffix}"
+            default = default_dir / f"libshared{suffix}"
+            duplicate = runtime_dir / default.name
+            for path, content in [(runtime, b"sanitizer"), (default, b"default"), (duplicate, b"duplicate")]:
+                path.write_bytes(content)
+
+            bep_events = [
+                {
+                    "id": {"namedSet": {"id": "0"}},
+                    "namedSetOfFiles": {"files": [{"uri": default.as_uri()}]},
+                },
+                {
+                    "id": {"namedSet": {"id": "1"}},
+                    "namedSetOfFiles": {
+                        "files": [{"uri": duplicate.as_uri()}, {"uri": runtime.as_uri()}, {"uri": runtime.as_uri()}]
+                    },
+                },
+                {
+                    "completed": {
+                        "outputGroup": [
+                            {"name": "default", "fileSets": [{"id": "0"}]},
+                            {"name": "runtime_dynamic_libraries", "fileSets": [{"id": "1"}]},
+                        ]
+                    }
+                },
+            ]
+            bep_path = root / "bep.json"
+            bep_path.write_text("\n".join(json.dumps(event) for event in bep_events), encoding="utf-8")
+
+            bbuild.stage_bep_outputs(bep_path, out_dir)
+
+            self.assertEqual(
+                {path.name: path.read_bytes() for path in out_dir.iterdir()},
+                {default.name: b"default", runtime.name: b"sanitizer"},
+            )
+
     def test_generate_compdb_expands_cfg_strips_pch_and_deduplicates_pic(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

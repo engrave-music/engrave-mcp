@@ -1,4 +1,4 @@
-load("@engrave//bazel:defs.bzl", "cc_pch", "win_manifest_library")
+load("@engrave//bazel:defs.bzl", "cc_pch", "staged_binary_group", "win_manifest_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -267,7 +267,7 @@ cc_binary(
     ],
 )
 
-filegroup(
+staged_binary_group(
     name = "host_binaries",
     srcs = [
         ":engrave-mcp",

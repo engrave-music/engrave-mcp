@@ -67,10 +67,11 @@ The `release` profile uses xclang's `-O2`, LLD section garbage collection, and
 safe identical code folding on Windows and Linux. It keeps ordinary
 development builds free of link-time optimization.
 
-The `sanitize` profile enables AddressSanitizer (ASan), LeakSanitizer (LSan),
-and fatal UndefinedBehaviorSanitizer (UBSan) in one build via xclang's
-`--features=asan --features=ubsan`. Only the third-party LAME and libFLAC C
-codec targets disable UBSan. They retain ASan instrumentation.
+The `sanitize` profile enables AddressSanitizer (ASan) and fatal
+UndefinedBehaviorSanitizer (UBSan) on Linux and Windows x86-64 via xclang's
+`--features=asan --features=ubsan`. ASan enables LeakSanitizer (LSan) on
+Linux x86-64. Windows x86-64 has no LSan support. Only the third-party LAME
+and libFLAC C codec targets disable UBSan. They retain ASan instrumentation.
 
 With no target arguments, `bbuild.py build` builds `all_binaries` (all host
 binaries plus `@engrave//:engine_tests`). `registry_check` builds
