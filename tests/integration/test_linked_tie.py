@@ -61,7 +61,18 @@ async def run(args):
                     ],
                 },
             )
-            assert edited["diagnostics"] == []
+            if both:
+                assert edited["diagnostics"] == [], edited["diagnostics"]
+            else:
+                assert edited["diagnostics"] == [
+                    {
+                        "severity": "warning",
+                        "message": (
+                            "tie J_J now joins notes I_I and L_L, which have different pitches; "
+                            "MusicXML and 4.70 exports cannot keep it"
+                        ),
+                    }
+                ], edited["diagnostics"]
             after = await client.tool(
                 "score_query",
                 {
