@@ -158,9 +158,9 @@ bash scripts/build-native.sh 8
 
 ### Running the Development Binary
 
-On Windows, development builds load `cairo.dll` and `zlib.dll` from the Pixi
-environment, which must be on `PATH` (on Linux, `@pixi_deps` embeds the Pixi
-`lib/` RPATH directly):
+On Windows, development builds load `cairo.dll`, `freetype.dll`, and `zlib.dll`
+from the Pixi environment, which must be on `PATH` (on Linux, `@pixi_deps`
+embeds the Pixi `lib/` RPATH directly):
 
 ```powershell
 $env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"

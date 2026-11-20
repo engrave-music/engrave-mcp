@@ -117,6 +117,8 @@ def check_package(packager: Path, source: Path, directory: Path, no_strip: bool,
         assert pdata and pdata == src_meta[1]
         assert xdata and xdata == src_meta[2]
         assert imports and imports == src_meta[3]
+        lower_imports = {name.lower() for name in imports}
+        assert {"cairo.dll", "freetype.dll", "zlib.dll"} <= lower_imports, imports
         if no_strip:
             assert symbols > 0 and sha256(executable) == source_sha256
         else:
@@ -128,10 +130,17 @@ def check_package(packager: Path, source: Path, directory: Path, no_strip: bool,
         assert {".eh_frame", ".dynsym", ".dynstr"} <= sections
         if no_strip:
             assert {".symtab", ".strtab"} <= sections
+            syms = subprocess.check_output(["readelf", "--syms", "-W", str(executable)], text=True)
+            assert not re.search(
+                r"^\s*\d+:\s+[0-9a-f]+\s+\d+\s+FUNC\s+\S+\s+\S+\s+\d+\s+FT_Init_FreeType\b", syms, re.M
+            )
         else:
             assert not {".symtab", ".strtab"} & sections
         dynamic = subprocess.check_output(["readelf", "-dW", str(executable)], text=True)
         assert "[$ORIGIN/lib]" in dynamic
+        assert "[libfreetype.so.6]" in dynamic
+        dynsyms = subprocess.check_output(["readelf", "--dyn-syms", "-W", str(executable)], text=True)
+        assert re.search(r"\bUND\s+FT_Init_FreeType\b", dynsyms), "FT_Init_FreeType must be imported dynamically"
 
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["unstripped_executable_sha256"] == source_sha256
