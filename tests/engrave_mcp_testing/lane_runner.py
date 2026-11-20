@@ -681,6 +681,11 @@ LANES = (
     Lane("repeats", _host("repeats", "repeats", upstream=True)),
     Lane("version_info", _host("version_info", "version-info", upstream=True)),
     Lane("mcp_smoke", _script("mcp_smoke", env={"ENGRAVE_MCP_OUTPUT": _path("output", "smoke")})),
+    Lane(
+        "package_strip",
+        _script("package_strip", "--binary", _binary("engrave-mcp"), "--output", _path("output", "package-strip")),
+        binaries=("engrave-mcp",),
+    ),
 )
 
 LANES_BY_NAME = {lane.name: lane for lane in LANES}

@@ -163,6 +163,18 @@ def digest(path):
     return value.hexdigest()
 
 
+def find_strip():
+    native_bin = NATIVE_ENV / "bin"
+    for name in ("strip", "x86_64-conda-linux-gnu-strip", "llvm-strip"):
+        candidate = native_bin / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    tool = shutil.which("strip") or shutil.which("llvm-strip")
+    if tool is None:
+        raise RuntimeError("strip or llvm-strip is required; install one or pass --no-strip")
+    return tool
+
+
 def same_file(first, second):
     try:
         return os.path.samefile(first, second)
@@ -341,6 +353,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/linux-package")
     parser.add_argument("--binary", type=Path, help="Override the built executable")
+    parser.add_argument("--no-strip", action="store_true", help="Keep symbols in the packaged executable")
     parser.add_argument(
         "--source-root",
         type=Path,
@@ -401,6 +414,7 @@ def main():
         raise RuntimeError("ldd is required")
     if not Path(patchelf).is_file():
         raise RuntimeError("patchelf is required")
+    strip = None if args.no_strip else find_strip()
 
     # ldd runs the loader in trace mode, so this is the resolved transitive
     # closure of the original trusted binary, not just its direct DT_NEEDED list.
@@ -415,12 +429,17 @@ def main():
     if any(output.iterdir()):
         raise SystemExit("Package output must be empty; choose a new --output directory")
 
-    copy_checked(binary, output / "engrave-mcp")
+    executable = output / "engrave-mcp"
+    copy_checked(binary, executable)
+    unstripped_executable_sha256 = digest(executable)
+    if strip is not None:
+        executable.chmod(executable.stat().st_mode | stat.S_IWUSR)
+        subprocess.run([strip, "--strip-all", str(executable)], check=True)
     (output / "lib").mkdir()
     for soname in sorted(bundled):
         copy_checked(bundled[soname], output / "lib" / soname)
 
-    set_rpath(patchelf, output / "engrave-mcp", "$ORIGIN/lib", output)
+    set_rpath(patchelf, executable, "$ORIGIN/lib", output)
     for soname in sorted(bundled):
         set_rpath(patchelf, output / "lib" / soname, "$ORIGIN", output)
 
@@ -450,6 +469,7 @@ def main():
     manifest = {
         "files": files,
         "total_bytes": total_bytes,
+        "unstripped_executable_sha256": unstripped_executable_sha256,
         "glibc_baseline": glibc,
         "interpreter": interpreter,
         "build_path_strings": [

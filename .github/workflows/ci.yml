@@ -223,6 +223,7 @@ jobs:
             imports_guitarpro = @('tests/integration/test_imports_guitarpro.py')
             repeats = @('tests/integration/test_repeats.py') + $common + @('--output', "$out/repeats", '--upstream', "$root/vendor/engrave")
             transport = @('tests/integration/test_transport.py', $binary, "$out/transport.json")
+            package_strip = @('tests/integration/test_package_strip.py', '--binary', $binary, '--output', "$out/package_strip")
           }
           if ($IsWindows) {
             $checks['windows_manifest'] = @('tests/integration/test_windows_manifest.py', $binary, "$build/engrave-mcp-test$ext")

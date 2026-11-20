@@ -5,7 +5,9 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import struct
+import subprocess
 from pathlib import Path
 
 from engrave_testing.paths import pixi_env
@@ -49,6 +51,26 @@ STAGED_FONT_DIRS = (
     "musejazz",
     "petaluma",
 )
+
+
+def find_llvm_strip(environment: Path) -> str:
+    candidates = [
+        environment / "Library/bin/llvm-strip.exe",
+        *sorted(
+            (ROOT / "build").glob(
+                f".bazel-symlinks-*/{ROOT.name}/external/*xclang_x86_64-w64-mingw32/bin/llvm-strip.exe"
+            )
+        ),
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    tool = shutil.which("llvm-strip.exe")
+    if tool is None:
+        raise RuntimeError(
+            "llvm-strip is required; use the xclang toolchain, put llvm-strip on PATH, or pass --no-strip"
+        )
+    return tool
 
 
 def _pe_imported_dlls(binary: Path) -> list[str]:
@@ -179,6 +201,7 @@ def main():
         help="Package the Qt-free backend and external resources",
     )
     parser.add_argument("--binary", type=Path, help="Override the built executable")
+    parser.add_argument("--no-strip", action="store_true", help="Keep symbols in the packaged executable")
     parser.add_argument(
         "--source-root",
         type=Path,
@@ -205,6 +228,7 @@ def main():
         raise SystemExit("Package output must be empty; choose a new --output directory")
     environment = pixi_env(ROOT)
     library = environment / "Library"
+    strip = None if args.no_strip else find_llvm_strip(environment)
     available: dict[str, Path] = {}
     vc_redist = os.environ.get("VCToolsRedistDir")
     if vc_redist:
@@ -221,10 +245,12 @@ def main():
         origins[str(destination.relative_to(output))] = str(source)
         queue.append(destination)
 
-    copy(
-        args.binary or ROOT / "build/release/engrave-mcp.exe",
-        output / "engrave-mcp.exe",
-    )
+    executable = output / "engrave-mcp.exe"
+    copy(args.binary or ROOT / "build/release/engrave-mcp.exe", executable)
+    unstripped_executable_sha256 = hashlib.sha256(executable.read_bytes()).hexdigest()
+    if strip is not None:
+        executable.chmod(executable.stat().st_mode | stat.S_IWUSR)
+        subprocess.run([strip, "--strip-all", str(executable)], check=True)
     if not args.no_qt:
         copy(
             library / "lib/qt6/plugins/platforms/qoffscreen.dll",
@@ -276,6 +302,7 @@ def main():
             {
                 "files": manifest,
                 "total_bytes": sum(p["bytes"] for p in manifest.values()),
+                "unstripped_executable_sha256": unstripped_executable_sha256,
                 "note": "Local validation bundle. Full third-party source/license distribution audit remains required before publishing.",
             },
             indent=2,
