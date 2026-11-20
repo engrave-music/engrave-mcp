@@ -32,7 +32,7 @@ core (`github.com/Locietta/engrave`, consumed as the submodule
   in `vendor/engrave` (`MODULE.bazel`, `BUILD.bazel`, `bazel/`); the host build
   consumes `@engrave`. Validate on both native Windows (PowerShell,
   `.pixi/envs/default/python.exe`) and native Linux — never use WSL.
-- Build with `scripts/bbuild.py --profile <release|debug|releasedbg|asan>` into
+- Build with `scripts/bbuild.py --profile <release|debug|releasedbg|sanitize>` into
   `build/<profile>`. Do not bypass `scripts/bbuild.py`'s shared Bazel caches
   (`build/.bazel_repo_cache` and `build/.bazel_disk_cache`).
 - Avoid rewriting music algorithms; preserve an executable baseline for each

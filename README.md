@@ -66,7 +66,7 @@ build/release/engrave-mcp.exe --resources .runtime/assets `
 A packaged build finds its sibling `assets/` directory automatically. Windows
 and Linux build, test, and packaging details are in [docs/dev/build.md](docs/dev/build.md):
 
-- **Development builds**: Use `scripts/bbuild.py --profile <release|debug|releasedbg|asan> -j 12 build engrave_mcp` (stages to `build/<profile>` with shared Bazel caches in `build/.bazel_repo_cache` and `build/.bazel_disk_cache`). Reserve `scripts/build-native.ps1` / `scripts/build-native.sh` for clean builds at the pinned engine (they reset `vendor/engrave` via `git submodule update --init`).
+- **Development builds**: Use `scripts/bbuild.py --profile <release|debug|releasedbg|sanitize> -j 12 build engrave_mcp` (stages to `build/<profile>` with shared Bazel caches in `build/.bazel_repo_cache` and `build/.bazel_disk_cache`). Reserve `scripts/build-native.ps1` / `scripts/build-native.sh` for clean builds at the pinned engine (they reset `vendor/engrave` via `git submodule update --init`).
 - **Acceptance lanes**: Use `tests/run_lanes.py` (builds needed targets automatically; `--no-build` skips building, `--profile` selects `build/<profile>`, `--list-lanes` prints the schedule) with `--output` under `notes/runs/<name>`; see [docs/dev/validation.md](docs/dev/validation.md).
 
 ## Tools

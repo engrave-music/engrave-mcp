@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-PROFILES = ("release", "debug", "releasedbg", "asan")
+PROFILES = ("release", "debug", "releasedbg", "sanitize")
 
 HOST_TARGETS: dict[str, list[str]] = {
     "engrave_mcp": ["//:engrave-mcp"],

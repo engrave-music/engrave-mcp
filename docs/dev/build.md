@@ -50,7 +50,7 @@ pixi run python scripts/prepare.py
 ## Development Builds
 
 Use `scripts/bbuild.py` (or `pixi run build`) across `release`, `debug`,
-`releasedbg`, and `asan` profiles. Outputs are staged to `build/<profile>`,
+`releasedbg`, and `sanitize` profiles. Outputs are staged to `build/<profile>`,
 external archives are cached in `build/.bazel_repo_cache`, and Bazel action
 outputs (including relocatable Clang binary precompiled headers) are shared
 across builds in `build/.bazel_disk_cache`. `--build-directory` overrides the
@@ -60,12 +60,17 @@ staged output path, and `--no-pch` disables precompiled headers.
 pixi run --locked python scripts/bbuild.py --profile release -j 12 build engrave_mcp engrave_mcp_test host_api_test registry_dump registry_check
 pixi run --locked python scripts/bbuild.py --profile debug -j 12 build engrave_mcp
 pixi run --locked python scripts/bbuild.py --profile release compdb
-pixi run --locked python scripts/bbuild.py --profile asan -j 12 build engrave_mcp
+pixi run --locked python scripts/bbuild.py --profile sanitize -j 12 build engrave_mcp
 ```
 
 The `release` profile uses xclang's `-O2`, LLD section garbage collection, and
 safe identical code folding on Windows and Linux. It keeps ordinary
 development builds free of link-time optimization.
+
+The `sanitize` profile enables AddressSanitizer (ASan), LeakSanitizer (LSan),
+and fatal UndefinedBehaviorSanitizer (UBSan) in one build via xclang's
+`--features=asan --features=ubsan`. Only the third-party LAME and libFLAC C
+codec targets disable UBSan. They retain ASan instrumentation.
 
 With no target arguments, `bbuild.py build` builds `all_binaries` (all host
 binaries plus `@engrave//:engine_tests`). `registry_check` builds
@@ -249,7 +254,7 @@ pixi run setup-hooks
   database including the engine. Python uses Ruff, Markdown/JSON/YAML use
   Prettier, and TOML uses Taplo regardless of the C++ backend.
 - **Compilation databases**: Root `clice.toml` maps profile databases
-  (`build/release`, `build/debug`, `build/releasedbg`, `build/asan`) and
+  (`build/release`, `build/debug`, `build/releasedbg`, `build/sanitize`) and
   excludes vendored third-party code and `.pixi/` headers from lint and format.
   Generate a profile database with `scripts/bbuild.py --profile <profile> compdb`
   (via `bazel aquery` with inline `xclang` flags). Both `scripts/lint.py` and `vendor/engrave/tools/lint.py`

@@ -1,7 +1,7 @@
 param(
     [int]$Jobs = 12,
     [string]$BuildDirectory,
-    [ValidateSet('release', 'debug', 'releasedbg', 'asan')][string]$Profile = 'release',
+    [ValidateSet('release', 'debug', 'releasedbg', 'sanitize')][string]$Profile = 'release',
     [string[]]$Targets = @('engrave_mcp', 'engrave_mcp_test', 'registry_dump', 'registry_check', 'host_api_test'),
     [string]$EngineSource = ''
 )
