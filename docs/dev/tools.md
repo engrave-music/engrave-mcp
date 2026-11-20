@@ -78,6 +78,11 @@ Three modes, selected by `mode`:
 `target` (properties) is an EID (`{"kind":"id","id":...}`) or an address
 (`{"kind":"address","address":{...}}`).
 
+Note on automatic `placement`: before layout runs, centered items (such as
+grand-staff dynamics) derive default `placement` from score-wide staff
+visibility. When a score hides empty staves per system, run a layout-backed
+`score_query` (`layout_boxes: true`) to read the system-resolved `placement`.
+
 ## `score_describe`
 
 `scope` selects the catalogue:
