@@ -7,7 +7,7 @@ import os
 from decimal import Decimal
 from pathlib import Path
 
-from engrave_mcp_testing.golden import fixture_files, mnx_fixture_files, open_fixture, required
+from engrave_mcp_testing.golden import fixture_files, mnx_fixture_files, open_fixture, required, verify_input_provenance
 from engrave_mcp_testing.native_470 import (
     compare_semantics,
     compare_xml,
@@ -27,7 +27,6 @@ FERMATA_RESTORE = {
     "repeat72.mscx": (1, 3840),
     "repeat_with_2_voltas.mscx": (1, 3840),
 }
-GHOST_NOTE_DIAGNOSTIC = b"WARN: Skipping duplicate NoteParenGroup: note already covered by existing group"
 
 
 def read_semantics(data):
@@ -56,8 +55,11 @@ def check_blank_piano(path, actual):
 
 
 async def corpus_parity(args, session, output, binary, assets, oracle_env):
-    sources = {path.name: path for path in fixture_files() + mnx_fixture_files()}
-    require(len(sources) == GOLDEN_COUNT, f"expected {GOLDEN_COUNT} unique golden fixtures, found {len(sources)}")
+    fixtures = fixture_files() + mnx_fixture_files()
+    sources = {path.name: path for path in fixtures}
+    require(len(fixtures) == len(sources) == GOLDEN_COUNT, f"expected {GOLDEN_COUNT} unique golden fixtures")
+    provenance_issues = verify_input_provenance(sources=fixtures)
+    require(not provenance_issues, f"unreviewed corpus inputs: {provenance_issues}")
     current = args.current_binary or args.host_binary.with_name(
         "semantic_dump.exe" if os.name == "nt" else "semantic_dump"
     )
@@ -113,11 +115,9 @@ async def corpus_parity(args, session, output, binary, assets, oracle_env):
                     proc = run_dump(binary, assets, path, dest, f"oracle-{fmt}", oracle_env)
                     result["oracle_exit"] = proc.returncode
                     diagnostics = proc.stderr.splitlines()
+                    result["oracle_diagnostics"] = len(diagnostics)
                     require(proc.returncode == 0, f"oracle exited {proc.returncode}")
-                    require(
-                        all(name == "ghost_note.mscx" and line == GHOST_NOTE_DIAGNOSTIC for line in diagnostics),
-                        f"unexpected oracle diagnostics: {diagnostics}",
-                    )
+                    require(not diagnostics, f"unexpected oracle diagnostics: {diagnostics}")
                     actual = read_semantics(proc.stdout)
                     compare_semantics(expected, actual)
                     if name == BLANK_PIANO:
