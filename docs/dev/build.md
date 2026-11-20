@@ -189,7 +189,7 @@ pixi run --locked python scripts/bbuild.py --profile release -j 12 build live_ex
 Windows:
 
 ```powershell
-pixi run python scripts/package_windows.py --no-qt `
+pixi run python scripts/package_windows.py `
   --binary build/release/engrave-mcp.exe --output artifacts/windows-next
 ```
 

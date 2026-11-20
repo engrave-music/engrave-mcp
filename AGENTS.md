@@ -11,7 +11,7 @@ core (`github.com/Locietta/engrave`, consumed as the submodule
 - Full MuseScore compatibility and legacy formats are non-goals: only MuseScore
   4.6+ scores open, and nothing is kept or validated solely because MuseScore
   has it.
-- Native compilation only: no Qt, Node.js, WASM, desktop MuseScore install,
+- Native compilation only: no Node.js, WASM, desktop MuseScore install,
   computer use, screenshots, or simulated input.
 
 ## Repository & Engine Fork
@@ -28,7 +28,7 @@ core (`github.com/Locietta/engrave`, consumed as the submodule
 
 ## Build, Validation & Workspace
 
-- Build system: Bazel + hermetic `xclang` (C++23, no Qt). The engine build lives
+- Build system: Bazel + hermetic `xclang` (C++23). The engine build lives
   in `vendor/engrave` (`MODULE.bazel`, `BUILD.bazel`, `bazel/`); the host build
   consumes `@engrave`. Validate on both native Windows (PowerShell,
   `.pixi/envs/default/python.exe`) and native Linux — never use WSL.

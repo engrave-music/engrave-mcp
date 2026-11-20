@@ -195,11 +195,6 @@ def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Pa
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/windows-package")
-    parser.add_argument(
-        "--no-qt",
-        action="store_true",
-        help="Package the Qt-free backend and external resources",
-    )
     parser.add_argument("--binary", type=Path, help="Override the built executable")
     parser.add_argument("--no-strip", action="store_true", help="Keep symbols in the packaged executable")
     parser.add_argument(
@@ -251,18 +246,11 @@ def main():
     if strip is not None:
         executable.chmod(executable.stat().st_mode | stat.S_IWUSR)
         subprocess.run([strip, "--strip-all", str(executable)], check=True)
-    if not args.no_qt:
-        copy(
-            library / "lib/qt6/plugins/platforms/qoffscreen.dll",
-            output / "plugins/platforms/qoffscreen.dll",
-        )
     system = Path(os.environ["SystemRoot"]) / "System32"
     while queue:
         binary = queue.pop()
         for name in _pe_imported_dlls(binary):
             key = name.lower()
-            if args.no_qt and key.startswith(("qt5", "qt6")):
-                raise RuntimeError(f"Qt dependency found in Qt-free package: {name}")
             if key.startswith(("api-ms-", "ext-ms-")):
                 continue
             if key in available:
@@ -271,10 +259,7 @@ def main():
                     copy(available[key], destination)
             elif not (system / name).exists():
                 raise RuntimeError(f"Unresolved dependency: {name} from {binary.name}")
-    if args.no_qt:
-        shutil.copytree(ROOT / ".runtime/assets", output / "assets")
-    else:
-        (output / "qt.conf").write_text("[Paths]\nPrefix=.\nLibraries=.\nPlugins=plugins\n", encoding="utf-8")
+    shutil.copytree(ROOT / ".runtime/assets", output / "assets")
     soundfont = ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
     if soundfont.exists():
         copy(soundfont, output / "soundfonts/FluidR3Mono_GM.sf3")

@@ -104,8 +104,6 @@ def elf_sections(binary: Path) -> set[str]:
 def check_package(packager: Path, source: Path, directory: Path, no_strip: bool, source_sha256: str) -> Path:
     windows = sys.platform == "win32"
     command = [sys.executable, str(packager), "--binary", str(source), "--output", str(directory)]
-    if windows:
-        command.append("--no-qt")
     if no_strip:
         command.append("--no-strip")
     subprocess.run(command, check=True)

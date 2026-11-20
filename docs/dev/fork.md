@@ -20,7 +20,7 @@ integration branch and reserve tags for formal releases.
 ## Engine Fork (`vendor/engrave`)
 
 `engrave` is a native, headless C++ score engraving and audio playback engine
-library, free of Qt, GUI, and desktop dependencies, consumed by the host as a
+library, free of GUI and desktop dependencies, consumed by the host as a
 shallow submodule.
 
 ### Upstream Provenance

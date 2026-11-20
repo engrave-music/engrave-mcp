@@ -6,8 +6,8 @@ JSON-RPC.
 
 The engine is **engrave**, a pinned hard fork of the MuseScore 5.0 core
 ([github.com/Locietta/engrave](https://github.com/Locietta/engrave), consumed as
-`vendor/engrave`). It is compiled directly into the server. There is no Qt, Node.js,
-WebAssembly or desktop MuseScore dependency at runtime.
+`vendor/engrave`). It is compiled directly into the server as a standalone native
+C++ binary with no Node.js, WebAssembly, or desktop MuseScore dependency at runtime.
 
 The goal is interop, not legacy compatibility: an agent-made score must open and remain
 editable in MuseScore, and a MuseScore score must open and remain editable by

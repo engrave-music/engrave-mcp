@@ -150,7 +150,6 @@ HOST_RUNTIME = (
     re.compile(r"^ld-linux.*\.so(?:\.|$)"),
     re.compile(r"^linux-vdso\.so(?:\.|$)"),
 )
-QT_LIBRARY = re.compile(r"^libQt[56]", re.IGNORECASE)
 LDD_LINE = re.compile(r"^\s*(?P<name>\S+)(?:\s+=>\s+(?P<path>.*?))?(?:\s+\(0[xX][0-9a-fA-F]+\))?\s*$")
 CLEAN_LDD_ENV = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
 
@@ -184,10 +183,6 @@ def same_file(first, second):
 
 def is_host_runtime(soname):
     return any(pattern.match(soname) for pattern in HOST_RUNTIME)
-
-
-def is_qt(soname):
-    return bool(QT_LIBRARY.match(Path(soname).name))
 
 
 def parse_ldd(text, source):
@@ -232,8 +227,6 @@ def ldd_entries(ldd, target, environment=None):
 def classify_dependencies(entries):
     bundled = {}
     for soname, path in entries:
-        if is_qt(soname):
-            raise RuntimeError(f"Qt dependency is not allowed in the Linux package: {soname}")
         if is_host_runtime(soname):
             continue
         if path is None:
@@ -246,8 +239,6 @@ def classify_dependencies(entries):
             raise RuntimeError(f"Dependency {soname} does not resolve to a regular file: {resolved}")
         if not resolved.is_relative_to(NATIVE_ENV.resolve()):
             raise RuntimeError(f"Non-glibc dependency is outside the locked native environment: {resolved}")
-        if is_qt(resolved.name):
-            raise RuntimeError(f"Qt dependency is not allowed in the Linux package: {resolved.name}")
         if soname in bundled and not same_file(bundled[soname], resolved):
             raise RuntimeError(f"Two different files resolve to SONAME {soname}: {bundled[soname]} and {resolved}")
         bundled.setdefault(soname, resolved)
@@ -296,15 +287,11 @@ def validate_package(output, ldd, bundled):
     entries = ldd_entries(ldd, executable, CLEAN_LDD_ENV)
     resolved = {}
     for soname, path in entries:
-        if is_qt(soname):
-            raise RuntimeError(f"Qt dependency is not allowed in the Linux package: {soname}")
         if is_host_runtime(soname):
             continue
         if path is None:
             raise RuntimeError(f"Packaged dependency {soname} has no resolved path")
         dependency = Path(path).resolve(strict=True)
-        if is_qt(dependency.name):
-            raise RuntimeError(f"Qt dependency is not allowed in the Linux package: {dependency.name}")
         if not dependency.is_relative_to(root):
             raise RuntimeError(f"Non-glibc dependency {soname} resolved outside the package: {dependency}")
         resolved[soname] = str(dependency.relative_to(root))
