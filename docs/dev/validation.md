@@ -147,6 +147,20 @@ one mode (`--baseline` / `--writer-results` with
 `--current-assets .runtime/assets`, or `--producer` with `--host-binary`,
 `--host-resources`, and `--host-sha256`).
 
+Producer mode uses the pinned 4.7.6 `semantic_dump` to reopen MSCX and MSCZ
+exports of the compatibility manifest, all 26 golden fixtures, and a blank
+grand-staff Piano from `score_create`. For the corpus, it compares the full
+semantic dump against the corresponding 5.00 export and requires zero load
+errors and zero connector recovery diagnostics. The five documented fermata
+fixtures permit only the pinned reader's exact one-tick-early tempo restoration.
+The Piano check also verifies the legacy brace and bass clef in the exported XML.
+
+Add `--native-470-live-edits` to the lane command (or `--live-edits` to the
+direct script) to exercise paired edits, checkpoint rollback, and one-end tie
+refusals. The linked B4-to-C5 and B4-to-C♯5 edits check pitch, spelling, and
+ties in the oracle dump. The chromatic probe checks the sharp accidental in
+the same MSCX and MSCZ artifacts because the pinned dump omits accidentals.
+
 ### Audio Paired-Capture Requirement
 
 The `engine_audio` lane verifies audio synthesis determinism, MIDI event

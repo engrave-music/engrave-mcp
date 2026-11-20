@@ -544,11 +544,12 @@ def main() -> int:
         )
         save_json(mutation_dir / "record.json", mutations)
         if args.producer:
+            from engrave_mcp_testing.native_470_corpus import GOLDEN_COUNT
             from engrave_mcp_testing.native_470_producer import produce
 
             records = asyncio.run(produce(args, cases, fixture_root, output, binary, assets, oracle_env))
             require(
-                len(records) == len(cases) + (6 if args.live_edits else 0) > 0,
+                len(records) == len(cases) + GOLDEN_COUNT + 1 + (7 if args.live_edits else 0),
                 "producer skipped fixtures",
             )
             summary = {

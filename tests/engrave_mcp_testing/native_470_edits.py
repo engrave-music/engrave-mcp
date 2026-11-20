@@ -13,12 +13,14 @@ from mcp.client.stdio import stdio_client
 
 from engrave_mcp_testing.native_470 import (
     compare_semantics,
+    compare_warnings,
     compare_xml,
     file_sha,
     read_json,
     require,
     run_dump,
     save_json,
+    xml_roots,
 )
 from engrave_mcp_testing.native_470_producer import RecordingStream
 
@@ -62,7 +64,7 @@ def write_association_table(output):
     (output / "associations.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
-def shifted(value, delta=2):
+def shifted(value, delta, tpc_delta):
     """Expected pitch change for every linked copy, retaining time/owner context."""
     result = copy.deepcopy(value)
 
@@ -70,8 +72,8 @@ def shifted(value, delta=2):
         if isinstance(item, dict):
             if "pitch" in item:
                 item["pitch"] += delta
-                item["tpc1"] += 2 if delta == 2 else -5
-                item["tpc2"] += 2 if delta == 2 else -5
+                item["tpc1"] += tpc_delta
+                item["tpc2"] += tpc_delta
             if "tieTo" in item:
                 item["tieTo"][2] += delta
             for child in item.values():
@@ -82,6 +84,19 @@ def shifted(value, delta=2):
 
     visit(result)
     return result
+
+
+def check_chromatic_accidental(path):
+    # The oracle dump exposes pitches, spelling and tie endpoints. Check the
+    # accidental itself in the wire representation passed to the oracle.
+    for root in xml_roots(path):
+        starts = root.findall(".//Note[Spanner]")
+        require(starts, "chromatic edit lost all tie starts")
+        for note in starts:
+            tie = note.find("./Spanner[@type='Tie']/next")
+            if tie is not None:
+                require(note.findtext("pitch") == "73" and note.findtext("tpc") == "21", "wrong C-sharp spelling")
+                require(note.findtext("Accidental/subtype") == "accidentalSharp", "missing sharp at the tie start")
 
 
 async def live_edits(args, root, output, binary, assets, oracle_env):
@@ -102,7 +117,14 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
             ) as session:
                 await session.initialize()
                 for fixture in ("ties", "hidden_ties", "excerpts"):
-                    for scenario in ("paired_rollback", "one_end"):
+                    scenarios = ("paired_rollback", "one_end")
+                    if fixture == "excerpts":
+                        scenarios += ("paired_chromatic",)
+                    for scenario in scenarios:
+                        chromatic = scenario == "paired_chromatic"
+                        refused = scenario == "one_end"
+                        delta = 1 if fixture == "excerpts" and not chromatic else 2
+                        tpc_delta = -5 if delta == 1 else 2
                         name = f"live_{fixture}_{scenario}"
                         dest = output / name
                         dest.mkdir()
@@ -158,19 +180,24 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                 "expected two tie endpoints on staff zero",
                             )
 
-                            def op(note, delta=1 if fixture == "excerpts" else 2):
-                                return {
+                            def op(note):
+                                pitch = int(note["props"][0]["value"]["value"])
+                                operation = {
                                     "op": "set_pitch",
                                     "note": {"kind": "id", "id": note["id"]},
-                                    "pitch": int(note["props"][0]["value"]["value"]) + delta,
+                                    "pitch": pitch + delta,
                                 }
+                                if chromatic:
+                                    require(pitch == 71, "chromatic edit must start from B4")
+                                    operation["tpc"] = 21
+                                return operation
 
                             edit = await call(
                                 "score_edit",
                                 {
                                     "document": doc,
                                     "expected_revision": revision,
-                                    "ops": [op(n) for n in (targets if scenario == "paired_rollback" else targets[:1])],
+                                    "ops": [op(n) for n in (targets[:1] if refused else targets)],
                                 },
                             )
                             require(
@@ -178,8 +205,9 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                 "edit revision did not advance once",
                             )
                             revision = edit["revision"]
+                            if not refused:
+                                expected = shifted(expected, delta, tpc_delta)
                             if scenario == "paired_rollback":
-                                expected = shifted(expected, 1 if fixture == "excerpts" else 2)
                                 clean = await notes()
                                 measure = (await call("score_outline", {"document": doc}))["outline"]["measures"][0][
                                     "id"
@@ -219,7 +247,7 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                             warning_ids = {e.findtext("eid") for e in tree.findall(".//Tie")}
                             expected_warnings = (
                                 []
-                                if scenario == "paired_rollback"
+                                if not refused
                                 else [
                                     {
                                         "code": "B470_INVALID_TIE",
@@ -229,14 +257,11 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                     for eid in sorted(warning_ids)
                                 ]
                             )
-                            from engrave_mcp_testing.native_470 import compare_warnings
-
                             for fmt in ("mscx", "mscz"):
                                 # Retain the historical -run evidence key for existing comparators.
                                 folder = dest / f"{fmt}-run"
                                 folder.mkdir()
                                 path = folder / f"score.{fmt}"
-                                refused = scenario == "one_end"
                                 value = await call(
                                     "score_export",
                                     {
@@ -279,6 +304,8 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                         "missing artifact",
                                     )
                                     compare_xml(path, {})
+                                    if chromatic:
+                                        check_chromatic_accidental(path)
                                     proc = run_dump(
                                         binary,
                                         assets,

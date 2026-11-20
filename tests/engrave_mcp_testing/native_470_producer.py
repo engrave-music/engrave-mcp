@@ -280,6 +280,9 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                     save_json(dest / "result.json", record)
                     print(f"{record['status'].upper()} {case['id']}", flush=True)
                     records.append(record)
+                from engrave_mcp_testing.native_470_corpus import corpus_parity
+
+                records.extend(await corpus_parity(args, session, output, binary, assets, oracle_env))
     if getattr(args, "live_edits", False):
         from engrave_mcp_testing.native_470_edits import live_edits
 

@@ -195,6 +195,17 @@ warnings (`B470_*`).
 bounded string reaches the engine and fails with `Unsupported` plus
 `export_warnings`; a refusal publishes nothing.
 
+For MSCX and MSCZ, `"4.70"` writes general notation, including generated and
+authored accidentals, ties and other representable spanners, effective legacy
+style overrides, custom chord lists, and attached excerpts. A selected excerpt
+can also be exported as a standalone score. The exporter reports degradations
+for shared-part mappings, stave-sharing labels, page locks, group brackets,
+and instrument group-name overrides. It refuses features without a defined
+mapping, including unequal-pitch ties, unmappable spanner endpoints, active
+5.00-only overrides, and authored automation. Numeric part IDs survive export.
+The 4.70 format has no representation for part EIDs.
+See the [engine's 4.70 export contract](../../vendor/engrave/docs/write470.md).
+
 `options.score` selects the master (`{}`) or an excerpt
 (`{"excerpt":"<element-id>"}`). PDF, score, audio and position exports use one
 file; PNG/SVG require a directory and write one file per page.
