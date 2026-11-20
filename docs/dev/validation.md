@@ -153,6 +153,7 @@ grand-staff Piano from `score_create`. For the corpus, it compares the full
 semantic dump against the corresponding 5.00 export and requires zero load
 errors and zero connector recovery diagnostics. The five documented fermata
 fixtures permit only the pinned reader's exact one-tick-early tempo restoration.
+The reader's duplicate parenthesis warning is permitted for `ghost_note.mscx`.
 The Piano check also verifies the legacy brace and bass clef in the exported XML.
 
 Add `--native-470-live-edits` to the lane command (or `--live-edits` to the

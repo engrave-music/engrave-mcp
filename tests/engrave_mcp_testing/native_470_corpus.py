@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from decimal import Decimal
 from pathlib import Path
 
 from engrave_mcp_testing.golden import fixture_files, mnx_fixture_files, open_fixture, required
@@ -27,6 +28,14 @@ FERMATA_RESTORE = {
     "repeat_with_2_voltas.mscx": (1, 3840),
 }
 GHOST_NOTE_DIAGNOSTIC = b"WARN: Skipping duplicate NoteParenGroup: note already covered by existing group"
+
+
+def read_semantics(data):
+    def number(token):
+        value = Decimal(token)
+        return int(value) if value == value.to_integral_value() else float(value)
+
+    return json.loads(data, parse_float=number)
 
 
 def check_blank_piano(path, actual):
@@ -89,7 +98,7 @@ async def corpus_parity(args, session, output, binary, assets, oracle_env):
             await export(reference, "5.00")
             proc = run_dump(current.resolve(), current_assets.resolve(), reference, dest, "current", os.environ.copy())
             require(proc.returncode == 0 and not proc.stderr, "current reader failed or reported diagnostics")
-            expected = json.loads(proc.stdout)
+            expected = read_semantics(proc.stdout)
             if name in FERMATA_RESTORE:
                 index, tick = FERMATA_RESTORE[name]
                 require(expected["tempoMap"][index][0] == tick, "fermata restoration baseline changed")
@@ -109,7 +118,7 @@ async def corpus_parity(args, session, output, binary, assets, oracle_env):
                         all(name == "ghost_note.mscx" and line == GHOST_NOTE_DIAGNOSTIC for line in diagnostics),
                         f"unexpected oracle diagnostics: {diagnostics}",
                     )
-                    actual = json.loads(proc.stdout)
+                    actual = read_semantics(proc.stdout)
                     compare_semantics(expected, actual)
                     if name == BLANK_PIANO:
                         check_blank_piano(path, actual)
