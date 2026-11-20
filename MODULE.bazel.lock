@@ -387,7 +387,7 @@
     },
     "@@engrave+//bazel:deps.bzl%engrave_deps": {
       "general": {
-        "bzlTransitiveDigest": "mD7eb/1EiPRXuPOcjmwFFYCtSP3LXvJ9cLueOJ75uM0=",
+        "bzlTransitiveDigest": "lzKJMaPADlTF5JEVcxcunZEAWMZgr7kwNMU6s6pj2Hs=",
         "usagesDigest": "WMxc8k0UvBO9+4o7aO5aqexMOB2kvxYRYce8DehBGVc=",
         "recordedInputs": [
           "REPO_MAPPING:engrave+,bazel_tools bazel_tools"
@@ -486,7 +486,7 @@
             "attributes": {
               "build_file": "@@engrave+//bazel/third_party:libflac.BUILD.bazel",
               "extra_files": {
-                "config_include/config.h": "#pragma once\r\n#define CPU_IS_BIG_ENDIAN 0\r\n#define ENABLE_64_BIT_WORDS 1\r\n#define OGG_FOUND 0\r\n#define FLAC__HAS_OGG 0\r\n#define FLAC__HAS_X86INTRIN 1\r\n#define FLAC__HAS_NEONINTRIN 0\r\n#define FLAC__HAS_A64NEONINTRIN 0\r\n#define WITH_AVX 1\r\n#define FLAC__USE_AVX 1\r\n#define HAVE_BSWAP16 1\r\n#define HAVE_BSWAP32 1\r\n#define HAVE_CPUID_H 1\r\n#define HAVE_INTTYPES_H 1\r\n#define HAVE_LROUND 1\r\n#define HAVE_STDINT_H 1\r\n#define HAVE_STRING_H 1\r\n#define PACKAGE_VERSION \"1.4.3\"\r\n#define WORDS_BIGENDIAN 0\r\n#ifndef _WIN32\r\n#define HAVE_CLOCK_GETTIME 1\r\n#define HAVE_FSEEKO 1\r\n#define HAVE_SYS_PARAM_H 1\r\n#endif\r\n#ifndef _GNU_SOURCE\r\n#define _GNU_SOURCE 1\r\n#endif\r\n#ifndef _FILE_OFFSET_BITS\r\n#define _FILE_OFFSET_BITS 64\r\n#endif\r\n"
+                "config_include/config.h": "#pragma once\n#define CPU_IS_BIG_ENDIAN 0\n#define ENABLE_64_BIT_WORDS 1\n#define OGG_FOUND 0\n#define FLAC__HAS_OGG 0\n#define FLAC__HAS_X86INTRIN 1\n#define FLAC__HAS_NEONINTRIN 0\n#define FLAC__HAS_A64NEONINTRIN 0\n#define WITH_AVX 1\n#define FLAC__USE_AVX 1\n#define HAVE_BSWAP16 1\n#define HAVE_BSWAP32 1\n#define HAVE_CPUID_H 1\n#define HAVE_INTTYPES_H 1\n#define HAVE_LROUND 1\n#define HAVE_STDINT_H 1\n#define HAVE_STRING_H 1\n#define PACKAGE_VERSION \"1.4.3\"\n#define WORDS_BIGENDIAN 0\n#ifndef _WIN32\n#define HAVE_CLOCK_GETTIME 1\n#define HAVE_FSEEKO 1\n#define HAVE_SYS_PARAM_H 1\n#endif\n#ifndef _GNU_SOURCE\n#define _GNU_SOURCE 1\n#endif\n#ifndef _FILE_OFFSET_BITS\n#define _FILE_OFFSET_BITS 64\n#endif\n"
               },
               "sha256": "6c58e69cd22348f441b861092b825e591d0b822e106de6eb0ee4d05d27205b70",
               "strip_prefix": "flac-1.4.3",
@@ -500,7 +500,7 @@
             "attributes": {
               "build_file": "@@engrave+//bazel/third_party:libopus.BUILD.bazel",
               "extra_files": {
-                "config_include/config.h": "#pragma once\r\n#define PACKAGE_VERSION \"1.5.2\"\r\n"
+                "config_include/config.h": "#pragma once\n#define PACKAGE_VERSION \"1.5.2\"\n"
               },
               "sha256": "65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1",
               "strip_prefix": "opus-1.5.2",
@@ -514,7 +514,7 @@
             "attributes": {
               "build_file": "@@engrave+//bazel/third_party:libopusenc.BUILD.bazel",
               "extra_files": {
-                "config_include/config.h": "#pragma once\r\n#define PACKAGE_NAME \"libopusenc\"\r\n#define PACKAGE_VERSION \"0.2.1\"\r\n"
+                "config_include/config.h": "#pragma once\n#define PACKAGE_NAME \"libopusenc\"\n#define PACKAGE_VERSION \"0.2.1\"\n"
               },
               "header_copies": {
                 "staged_include/opus/opusenc.h": "include/opusenc.h"
@@ -531,7 +531,7 @@
             "attributes": {
               "build_file": "@@engrave+//bazel/third_party:lame.BUILD.bazel",
               "extra_files": {
-                "config_include/config.h": "#pragma once\r\n#define SIZEOF_DOUBLE 8\r\n#define SIZEOF_FLOAT 4\r\n#define SIZEOF_INT 4\r\n#define SIZEOF_SHORT 2\r\n#define SIZEOF_UNSIGNED_INT 4\r\n#define SIZEOF_UNSIGNED_SHORT 2\r\n#ifdef _WIN32\r\n#define SIZEOF_LONG 4\r\n#define SIZEOF_UNSIGNED_LONG 4\r\n#define SIZEOF_LONG_DOUBLE 12\r\n#else\r\n#define SIZEOF_LONG 8\r\n#define SIZEOF_UNSIGNED_LONG 8\r\n#define SIZEOF_LONG_DOUBLE 16\r\n#endif\r\n#define STDC_HEADERS 1\r\n#define HAVE_ERRNO_H 1\r\n#define HAVE_FCNTL_H 1\r\n#define HAVE_LIMITS_H 1\r\n#define HAVE_INTTYPES_H 1\r\n#define HAVE_STDINT_H 1\r\n#define HAVE_STRCHR 1\r\n#define HAVE_MEMCPY 1\r\n#define PACKAGE \"lame\"\r\n#define PROTOTYPES 1\r\n#define USE_FAST_LOG 1\r\n#define HAVE_MPGLIB 1\r\n#define DECODE_ON_THE_FLY 1\r\n#define HAVE_XMMINTRIN_H 1\r\n#define LAME_LIBRARY_BUILD 1\r\ntypedef long double ieee854_float80_t;\r\ntypedef double ieee754_float64_t;\r\ntypedef float ieee754_float32_t;\r\n"
+                "config_include/config.h": "#pragma once\n#define SIZEOF_DOUBLE 8\n#define SIZEOF_FLOAT 4\n#define SIZEOF_INT 4\n#define SIZEOF_SHORT 2\n#define SIZEOF_UNSIGNED_INT 4\n#define SIZEOF_UNSIGNED_SHORT 2\n#ifdef _WIN32\n#define SIZEOF_LONG 4\n#define SIZEOF_UNSIGNED_LONG 4\n#define SIZEOF_LONG_DOUBLE 12\n#else\n#define SIZEOF_LONG 8\n#define SIZEOF_UNSIGNED_LONG 8\n#define SIZEOF_LONG_DOUBLE 16\n#endif\n#define STDC_HEADERS 1\n#define HAVE_ERRNO_H 1\n#define HAVE_FCNTL_H 1\n#define HAVE_LIMITS_H 1\n#define HAVE_INTTYPES_H 1\n#define HAVE_STDINT_H 1\n#define HAVE_STRCHR 1\n#define HAVE_MEMCPY 1\n#define PACKAGE \"lame\"\n#define PROTOTYPES 1\n#define USE_FAST_LOG 1\n#define HAVE_MPGLIB 1\n#define DECODE_ON_THE_FLY 1\n#define HAVE_XMMINTRIN_H 1\n#define LAME_LIBRARY_BUILD 1\ntypedef long double ieee854_float80_t;\ntypedef double ieee754_float64_t;\ntypedef float ieee754_float32_t;\n"
               },
               "header_copies": {
                 "staged_include/lame/lame.h": "include/lame.h"
