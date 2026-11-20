@@ -206,6 +206,7 @@ Json declared_tools() {
                          {"created", array(eid, 65536)},
                          {"removed", array(eid, 65536)},
                          {"replaced", array(eid, 65536)},
+                         {"diagnostics", diagnostics},
                          {"published_artifacts", array(text)},
                          {"export_warnings", array(ref("export_warning"))}},
                         json_array<J>({"code", "message"}));
@@ -368,8 +369,9 @@ Json declared_tools() {
     tool("score_edit",
          "Decode and preflight batch, then apply operations in order as a prefix commit (each op is all-or-nothing; no implicit batch "
          "rollback). On rejection at op_index, ops 0..op_index-1 stay applied, applied reports the count completed, the error includes "
-         "the applied prefix's revision/created/removed/replaced, and the batch stops. Only an engine failure after writes poisons the "
-         "document until restore_checkpoint or reopen. Use checkpoint/restore_checkpoint for all-or-nothing batches. Opaque is read-only.",
+         "the applied prefix's revision/created/removed/replaced and any diagnostics, and the batch stops. Only an engine failure after "
+         "writes poisons the document until restore_checkpoint or reopen. Use checkpoint/restore_checkpoint for all-or-nothing batches. "
+         "Opaque is read-only.",
          object({{"document", doc}, {"expected_revision", u}, {"ops", array(ref("op"), 1024)}}, json_array<J>({"document", "ops"})),
          success({{"revision", u},
                   {"applied", idx},

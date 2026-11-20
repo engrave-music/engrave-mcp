@@ -31,6 +31,7 @@ struct HostError {
     std::optional<std::vector<engrave::ElementId>> created;
     std::optional<std::vector<engrave::ElementId>> removed;
     std::optional<std::vector<engrave::ElementId>> replaced;
+    std::vector<engrave::Diagnostic> diagnostics;
 };
 
 template <class T>

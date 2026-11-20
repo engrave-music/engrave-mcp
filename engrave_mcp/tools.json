@@ -124,6 +124,12 @@
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
             },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
+            },
             "document": {
               "maxLength": 128,
               "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
@@ -405,6 +411,12 @@
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
             },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
+            },
             "document": {
               "maxLength": 128,
               "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
@@ -587,6 +599,26 @@
     "name": "score_close",
     "outputSchema": {
       "$defs": {
+        "diagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "severity"
+          ],
+          "type": "object"
+        },
         "error": {
           "additionalProperties": false,
           "properties": {
@@ -626,6 +658,12 @@
               "maxLength": 20,
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
             },
             "document": {
               "maxLength": 128,
@@ -812,6 +850,26 @@
     "name": "score_outline",
     "outputSchema": {
       "$defs": {
+        "diagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "severity"
+          ],
+          "type": "object"
+        },
         "error": {
           "additionalProperties": false,
           "properties": {
@@ -851,6 +909,12 @@
               "maxLength": 20,
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
             },
             "document": {
               "maxLength": 128,
@@ -1783,6 +1847,26 @@
           ],
           "type": "object"
         },
+        "diagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "severity"
+          ],
+          "type": "object"
+        },
         "element": {
           "additionalProperties": false,
           "properties": {
@@ -1927,6 +2011,12 @@
               "maxLength": 20,
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
             },
             "document": {
               "maxLength": 128,
@@ -2615,6 +2705,26 @@
     "name": "score_describe",
     "outputSchema": {
       "$defs": {
+        "diagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "severity"
+          ],
+          "type": "object"
+        },
         "error": {
           "additionalProperties": false,
           "properties": {
@@ -2654,6 +2764,12 @@
               "maxLength": 20,
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
             },
             "document": {
               "maxLength": 128,
@@ -3249,7 +3365,7 @@
     }
   },
   {
-    "description": "Decode and preflight batch, then apply operations in order as a prefix commit (each op is all-or-nothing; no implicit batch rollback). On rejection at op_index, ops 0..op_index-1 stay applied, applied reports the count completed, the error includes the applied prefix's revision/created/removed/replaced, and the batch stops. Only an engine failure after writes poisons the document until restore_checkpoint or reopen. Use checkpoint/restore_checkpoint for all-or-nothing batches. Opaque is read-only.",
+    "description": "Decode and preflight batch, then apply operations in order as a prefix commit (each op is all-or-nothing; no implicit batch rollback). On rejection at op_index, ops 0..op_index-1 stay applied, applied reports the count completed, the error includes the applied prefix's revision/created/removed/replaced and any diagnostics, and the batch stops. Only an engine failure after writes poisons the document until restore_checkpoint or reopen. Use checkpoint/restore_checkpoint for all-or-nothing batches. Opaque is read-only.",
     "inputSchema": {
       "$defs": {
         "address": {
@@ -4368,6 +4484,12 @@
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
             },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
+            },
             "document": {
               "maxLength": 128,
               "pattern": "^doc-[A-Za-z0-9]+-[1-9][0-9]*$",
@@ -5179,6 +5301,26 @@
           ],
           "type": "object"
         },
+        "diagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "severity"
+          ],
+          "type": "object"
+        },
         "error": {
           "additionalProperties": false,
           "properties": {
@@ -5218,6 +5360,12 @@
               "maxLength": 20,
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
             },
             "document": {
               "maxLength": 128,
@@ -5522,6 +5670,26 @@
           ],
           "type": "object"
         },
+        "diagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "severity"
+          ],
+          "type": "object"
+        },
         "error": {
           "additionalProperties": false,
           "properties": {
@@ -5561,6 +5729,12 @@
               "maxLength": 20,
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
             },
             "document": {
               "maxLength": 128,
@@ -5827,6 +6001,26 @@
     "name": "checkpoint",
     "outputSchema": {
       "$defs": {
+        "diagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "severity"
+          ],
+          "type": "object"
+        },
         "error": {
           "additionalProperties": false,
           "properties": {
@@ -5866,6 +6060,12 @@
               "maxLength": 20,
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
             },
             "document": {
               "maxLength": 128,
@@ -6046,6 +6246,26 @@
     "name": "restore_checkpoint",
     "outputSchema": {
       "$defs": {
+        "diagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "severity"
+          ],
+          "type": "object"
+        },
         "error": {
           "additionalProperties": false,
           "properties": {
@@ -6085,6 +6305,12 @@
               "maxLength": 20,
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
             },
             "document": {
               "maxLength": 128,
@@ -6265,6 +6491,26 @@
     "name": "drop_checkpoint",
     "outputSchema": {
       "$defs": {
+        "diagnostic": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "severity"
+          ],
+          "type": "object"
+        },
         "error": {
           "additionalProperties": false,
           "properties": {
@@ -6304,6 +6550,12 @@
               "maxLength": 20,
               "pattern": "^(0|[1-9][0-9]*)$",
               "type": "string"
+            },
+            "diagnostics": {
+              "items": {
+                "$ref": "#/$defs/diagnostic"
+              },
+              "type": "array"
             },
             "document": {
               "maxLength": 128,

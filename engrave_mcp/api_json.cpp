@@ -677,6 +677,7 @@ Json error_envelope(const HostError &e) {
     if (e.created) err["created"] = ids(*e.created);
     if (e.removed) err["removed"] = ids(*e.removed);
     if (e.replaced) err["replaced"] = ids(*e.replaced);
+    if (!e.diagnostics.empty()) err["diagnostics"] = mapped(e.diagnostics, [](const auto &d) { return encode(d); });
     if (!e.published_artifacts.empty()) err["published_artifacts"] = e.published_artifacts;
     if (!e.export_warnings.empty()) err["export_warnings"] = encode(e.export_warnings);
     return {{"ok", false}, {"error", err}};

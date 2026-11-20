@@ -480,6 +480,7 @@ Json HostApi::edit(const Json &j) {
             e.created = std::move(out->created);
             e.removed = std::move(out->removed);
             e.replaced = std::move(out->replaced);
+            e.diagnostics = std::move(out->diagnostics);
             return std::unexpected(std::move(e));
         }
         auto result = encode(*out);

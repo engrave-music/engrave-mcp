@@ -381,6 +381,20 @@ TEST(HostApi, EndToEndToolContract) {
         }
     }
     require(found_tie, "queried ties did not include created tie ID");
+    const auto pitch_rejection =
+        error(*host, "score_edit",
+              {{"document", doc},
+               {"ops", music::json_array<Json>({Json{{"op", "set_pitch"}, {"note", idref(first_note)}, {"pitch", 62}, {"tpc", 16}},
+                                                Json{{"op", "add_tie"}, {"note", idref(first_note)}}})}},
+              "EditRejected");
+    const auto &pitch_error = pitch_rejection.at("error");
+    EXPECT_EQ(pitch_error.at("applied"), 1);
+    EXPECT_EQ(pitch_error.at("op_index"), 1);
+    const auto &pitch_diagnostics = pitch_error.at("diagnostics");
+    ASSERT_EQ(pitch_diagnostics.size(), 1u);
+    EXPECT_EQ(pitch_diagnostics[0].at("severity"), "warning");
+    const auto warning = pitch_diagnostics[0].at("message").get<std::string>();
+    EXPECT_TRUE(warning.contains(tie_id) && warning.contains("different pitches")) << warning;
     ok(*host, "score_edit",
        {{"document", doc}, {"ops", music::json_array<Json>({Json{{"op", "add_text"}, {"at", a}, {"style", "staff"}, {"text", "hello"}}})}});
     ok(*host, "score_edit",
