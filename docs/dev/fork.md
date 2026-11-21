@@ -33,7 +33,7 @@ evidence.
 
 ### Upstream 5.0 Ports
 
-Fork commits `6ddac86873..de9850587d` port these items from upstream MuseScore
+The 44 fork commits in `6ddac86873..392fee41ae` port these items from upstream MuseScore
 `32f0a26e5b..08d70c1a6a`:
 
 1. **Read/write and layout fixes**: `d923bdfee6` (skip duplicate tuplet
@@ -49,7 +49,9 @@ Fork commits `6ddac86873..de9850587d` port these items from upstream MuseScore
    indicators (`StaveSharingChange`), and gap rests are layout output in
    `LayoutDataStore`. Multi-measure rest detection checks authored music and
    annotations on sharing origins when the shared part has a visible staff,
-   before layout resolves the shared staff's content.
+   before layout resolves the shared staff's content. Local signatures and
+   breaths can split these rests. Generated shared rests follow the displayed
+   measures, including multi-measure rest overlays.
    `write470` drops the authored maps, any serialized
    indicators, and the `staveSharingChangeMinDistance` style, which 4.7.6 does
    not read.
@@ -57,7 +59,9 @@ Fork commits `6ddac86873..de9850587d` port these items from upstream MuseScore
    (#35681, missing Jianpu text styles). Digits, octave dots, and duration
    lines are layout output in `LayoutDataStore`. On a shared Jianpu staff,
    origins share a voice or a unison only where their keys number the digits
-   alike at the chord, including keys set before the map's range. The 24
+   alike at the chord, including keys set before the map's range. Authored
+   maps use the destination staff type, and equivalent mode aliases count the
+   digits alike. The 24
    `jianpu*` styles are in the 4.70 style catalog. `write470` strips them from
    scores without Jianpu and refuses Jianpu staff types, custom Jianpu key
    numbering, and `jianpu_number` text-style references
