@@ -33,7 +33,7 @@ evidence.
 
 ### Upstream 5.0 Ports
 
-Fork commits `6ddac86873..7a24b1fbd2` port these items from upstream MuseScore
+Fork commits `6ddac86873..de9850587d` port these items from upstream MuseScore
 `32f0a26e5b..08d70c1a6a`:
 
 1. **Read/write and layout fixes**: `d923bdfee6` (skip duplicate tuplet
@@ -47,8 +47,9 @@ Fork commits `6ddac86873..7a24b1fbd2` port these items from upstream MuseScore
    `9c58704883`) with the typed parent handling of `3da2b2351b`. Authored maps
    (`StaveSharingState`) persist on `SharedPart`. Resolved maps, the map
    indicators (`StaveSharingChange`), and gap rests are layout output in
-   `LayoutDataStore`. Multi-measure rest detection checks authored music on
-   enabled sharing origins before layout resolves the shared staff's content.
+   `LayoutDataStore`. Multi-measure rest detection checks authored music and
+   annotations on sharing origins when the shared part has a visible staff,
+   before layout resolves the shared staff's content.
    `write470` drops the authored maps, any serialized
    indicators, and the `staveSharingChangeMinDistance` style, which 4.7.6 does
    not read.
