@@ -33,7 +33,7 @@ evidence.
 
 ### Upstream 5.0 Ports
 
-Fork commits `6ddac86873..ea7de5b29c` port these items from upstream MuseScore
+Fork commits `6ddac86873..7a24b1fbd2` port these items from upstream MuseScore
 `32f0a26e5b..08d70c1a6a`:
 
 1. **Read/write and layout fixes**: `d923bdfee6` (skip duplicate tuplet
@@ -54,12 +54,14 @@ Fork commits `6ddac86873..ea7de5b29c` port these items from upstream MuseScore
    not read.
 3. **Jianpu numbered notation**: `82ba7e5736` (#31626) and `e93f1e4aae`
    (#35681, missing Jianpu text styles). Digits, octave dots, and duration
-   lines are layout output in `LayoutDataStore`. The 24 `jianpu*` styles are in
-   the 4.70 style catalog. `write470` strips them from scores without Jianpu
-   and refuses Jianpu staff types, custom Jianpu key numbering, and
-   `jianpu_number` text-style references (`B470_UNSUPPORTED_FEATURE`). Under
-   the default numbering, which follows the score key, it drops the inactive
-   tonic.
+   lines are layout output in `LayoutDataStore`. On a shared Jianpu staff,
+   origins share a voice or a unison only where their keys number the digits
+   alike at the chord, including keys set before the map's range. The 24
+   `jianpu*` styles are in the 4.70 style catalog. `write470` strips them from
+   scores without Jianpu and refuses Jianpu staff types, custom Jianpu key
+   numbering, and `jianpu_number` text-style references
+   (`B470_UNSUPPORTED_FEATURE`). Under the default numbering, which follows the
+   score key, it drops the inactive tonic.
 
 Not ported: `bendAlign` (`a9eb9927`, `457c8a5c`) and the legacy chord-line
 offset conversion of `daa0e5f3`, which the fork does not need because it
