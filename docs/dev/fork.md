@@ -33,7 +33,7 @@ evidence.
 
 ### Upstream 5.0 Ports
 
-Fork commits `6ddac86873..cd468e9d9d` port these items from upstream MuseScore
+Fork commits `6ddac86873..4c99c10251` port these items from upstream MuseScore
 `32f0a26e5b..08d70c1a6a`:
 
 1. **Read/write and layout fixes**: `d923bdfee6` (skip duplicate tuplet
@@ -45,16 +45,19 @@ Fork commits `6ddac86873..cd468e9d9d` port these items from upstream MuseScore
    range and meter rewrites.
 2. **User-authored stave-sharing maps**: PR #35239 (`521a4951d5` through merge
    `9c58704883`) with the typed parent handling of `3da2b2351b`. Authored maps
-   persist on `SharedPart`. Resolved maps, indicators, and gap rests are layout
-   output in `LayoutDataStore`. `write470` drops the authored maps
-   (`StaveSharingChange`, `StaveSharingState`) and the
-   `staveSharingChangeMinDistance` style, which 4.7.6 does not read.
+   (`StaveSharingState`) persist on `SharedPart`. Resolved maps, the map
+   indicators (`StaveSharingChange`), and gap rests are layout output in
+   `LayoutDataStore`. `write470` drops the authored maps, any serialized
+   indicators, and the `staveSharingChangeMinDistance` style, which 4.7.6 does
+   not read.
 3. **Jianpu numbered notation**: `82ba7e5736` (#31626) and `e93f1e4aae`
    (#35681, missing Jianpu text styles). Digits, octave dots, and duration
    lines are layout output in `LayoutDataStore`. The 24 `jianpu*` styles are in
    the 4.70 style catalog. `write470` strips them from scores without Jianpu
-   and refuses Jianpu staff types and key numbering
-   (`B470_UNSUPPORTED_FEATURE`).
+   and refuses Jianpu staff types, custom Jianpu key numbering, and
+   `jianpu_number` text-style references (`B470_UNSUPPORTED_FEATURE`). Under
+   the default numbering, which follows the score key, it drops the inactive
+   tonic.
 
 Not ported: `bendAlign` (`a9eb9927`, `457c8a5c`) and the legacy chord-line
 offset conversion of `daa0e5f3`, which the fork does not need because it
