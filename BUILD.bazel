@@ -42,7 +42,7 @@ HOST_PCH_COPTS = HOST_COPTS + select({
         "-Xclang",
         "-fno-validate-pch",
         "-include-pch",
-        "$(location :host_pch)",
+        "$(execpath :host_pch)",
     ],
     "//conditions:default": [],
 })
