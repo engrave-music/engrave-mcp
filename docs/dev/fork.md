@@ -31,6 +31,35 @@ independently; upstream fixes arrive only by cherry-pick and adaptation with the
 upstream SHA, framework origin (if applicable), rationale, and focused test
 evidence.
 
+### Upstream 5.0 Ports
+
+Fork commits `6ddac86873..cd468e9d9d` port these items from upstream MuseScore
+`32f0a26e5b..08d70c1a6a`:
+
+1. **Read/write and layout fixes**: `d923bdfee6` (skip duplicate tuplet
+   elements), `5471ed55d1` (#35281, nested tuplet brackets on shared staves),
+   `651875562b` (tuplet tick at construction), `6eb74953a6` (derived
+   `ends_note_anchored_line`), `72360d181f` (chords take no glissandos), and
+   `959c852dab` (Guitar Pro slide glissandos on their start note). The fork
+   adds its own safety for note spanners, excerpts, and grace chords across
+   range and meter rewrites.
+2. **User-authored stave-sharing maps**: PR #35239 (`521a4951d5` through merge
+   `9c58704883`) with the typed parent handling of `3da2b2351b`. Authored maps
+   persist on `SharedPart`. Resolved maps, indicators, and gap rests are layout
+   output in `LayoutDataStore`. `write470` drops the authored maps
+   (`StaveSharingChange`, `StaveSharingState`) and the
+   `staveSharingChangeMinDistance` style, which 4.7.6 does not read.
+3. **Jianpu numbered notation**: `82ba7e5736` (#31626) and `e93f1e4aae`
+   (#35681, missing Jianpu text styles). Digits, octave dots, and duration
+   lines are layout output in `LayoutDataStore`. The 24 `jianpu*` styles are in
+   the 4.70 style catalog. `write470` strips them from scores without Jianpu
+   and refuses Jianpu staff types and key numbering
+   (`B470_UNSUPPORTED_FEATURE`).
+
+Not ported: `bendAlign` (`a9eb9927`, `457c8a5c`) and the legacy chord-line
+offset conversion of `daa0e5f3`, which the fork does not need because it
+already reads and writes the 5.0 `<o1>`–`<o4>` offsets.
+
 ### Engine Structure
 
 - `MODULE.bazel`, `BUILD.bazel`, `bazel/`: Standalone Bazel targets
