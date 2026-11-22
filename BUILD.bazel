@@ -1,4 +1,4 @@
-load("@engrave//bazel:defs.bzl", "cc_pch", "staged_binary_group", "win_manifest_library")
+load("@engrave//bazel:defs.bzl", "cc_pch", "pch_consumer_copts", "staged_binary_group", "win_manifest_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -38,16 +38,7 @@ HOST_PCH_INPUTS = select({
 })
 
 HOST_PCH_COPTS = HOST_COPTS + select({
-    "@engrave//bazel:pch_enabled": [
-        "-Xclang",
-        "-fno-validate-pch",
-        "-include-pch",
-        "$(execpath :host_pch)",
-        "-Xclang",
-        "-isysroot",
-        "-Xclang",
-        ".",
-    ],
+    "@engrave//bazel:pch_enabled": pch_consumer_copts(":host_pch"),
     "//conditions:default": [],
 })
 

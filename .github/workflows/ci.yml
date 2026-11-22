@@ -133,12 +133,7 @@ jobs:
             'host_api_test', 'staging_test'
           )
           if ($IsLinux) { $targets += 'publication_test' }
-          # The existing pin still writes absolute paths into cached PCH files.
-          $pch = @()
-          if (-not (Select-String -Quiet -SimpleMatch -Pattern '"-relocatable-pch"' -Path vendor/engrave/bazel/defs.bzl)) {
-            $pch += '--no-pch'
-          }
-          pixi run --locked python scripts/bbuild.py --profile release --build-directory $env:BUILD_DIR -j 4 @pch build @targets
+          pixi run --locked python scripts/bbuild.py --profile release --build-directory $env:BUILD_DIR -j 4 build @targets
 
       - name: Save Bazel repository cache
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.repo-cache.outputs.cache-hit != 'true' }}
@@ -286,11 +281,7 @@ jobs:
       - name: Build sanitized host and engine tests
         id: build
         run: |
-          pch=()
-          if ! grep -Fq '"-relocatable-pch"' vendor/engrave/bazel/defs.bzl; then
-            pch+=(--no-pch)
-          fi
-          pixi run --locked python scripts/bbuild.py --profile sanitize -j 4 "${pch[@]}" build \
+          pixi run --locked python scripts/bbuild.py --profile sanitize -j 4 build \
             engrave_mcp host_api_test staging_test publication_test registry_test engrave_core_tests
 
       - name: Run sanitized host and engine tests
