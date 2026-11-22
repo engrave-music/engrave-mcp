@@ -503,6 +503,9 @@ def modern_cancel_before_admission(a):
         reply = h.read()
         assert reply["id"] == 31 and reply["result"]["resultType"] == "complete", reply
         assert reply["result"]["structuredContent"]["ok"], reply
+        h.p.stdin.close()
+        assert h.p.wait(timeout=10) == 0
+        assert h.p.stdout.read() == b""
         assert not list(pages.glob("*.svg"))
         assert not list(pages.glob(".engrave-stage-*"))
         return dict(modern_cancel_before_admission=True)
