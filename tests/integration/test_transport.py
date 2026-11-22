@@ -365,10 +365,10 @@ def _check_edge_cases(exe: str, failures: list[str]) -> dict[str, dict]:
     return records
 
 
-def _check_music_protocol(exe: str, output: Path, version: str) -> None:
+def _check_music_protocol(exe: str, output: Path, version: str, negotiated: str) -> None:
     resources = Path(os.environ.get("ENGRAVE_MCP_RESOURCES", REPO_ROOT / ".runtime/assets"))
     client = Client(Path(exe), resources, output, protocol_version=version)
-    legacy = version in ("2024-11-05", "2025-03-26")
+    legacy = negotiated == "2024-11-05"
 
     def call(name, arguments):
         result = client.rpc("tools/call", {"name": name, "arguments": arguments})["result"]
@@ -435,12 +435,13 @@ def main() -> int:
             "params": {**initialize_params, "protocolVersion": requested},
         }
         reply = json.loads(_run_server(exe, _compact(request) + "\n")["stdout"])
-        assert reply["result"]["protocolVersion"] == (PROTOCOL_VERSION if requested == "2099-01-01" else requested)
+        negotiated = PROTOCOL_VERSION if requested in ("2025-03-26", "2099-01-01") else requested
+        assert reply["result"]["protocolVersion"] == negotiated
         assert "score_write_phrase" in reply["result"]["instructions"]
         for term in ("content string", "C###4", "acciac(D5)", "after16", "3:2", "|"):
             assert term in reply["result"]["instructions"], term
         if requested != "2099-01-01":
-            _check_music_protocol(exe, output_path.parent / f"{output_path.stem}.{requested}", requested)
+            _check_music_protocol(exe, output_path.parent / f"{output_path.stem}.{requested}", requested, negotiated)
 
     main_lines = [
         '{"jsonrpc":"2.0","id":0,"method":"ping"',

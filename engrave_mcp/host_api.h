@@ -29,12 +29,11 @@ struct HostApi {
     Json read_music(const Json &);
     Json write_phrase(const Json &, const std::atomic<bool> *cancelled = nullptr);
     Json configure(const Json &);
-    Json describe(const Json &);
     Json edit(const Json &, const std::atomic<bool> *cancelled = nullptr);
     Json checkpoint(const Json &);
     Json restore_checkpoint(const Json &);
     Json drop_checkpoint(const Json &);
-    Json runtime_info(const Json &); // get, add_font(path), set_soundfonts(files)
+    Json runtime_info(const Json &);
 
     Result<void> with_document(std::string_view token, std::optional<u64> expected_revision, FnRef<Result<void>(engrave::Document &)> fn,
                                const std::vector<std::string> *visible_paths = nullptr);

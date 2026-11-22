@@ -4,6 +4,7 @@
 
 #include <ankerl/unordered_dense.h>
 
+#include "api_json_internal.h"
 #include "phrase.h"
 #include "types.h"
 #include "utf8_text.h"
@@ -38,8 +39,6 @@ Fraction multiply(Fraction a, Fraction b) {
     const auto g2 = std::gcd(b.num, a.den);
     return {(a.num / g1) * (b.num / g2), (a.den / g2) * (b.den / g1)};
 }
-
-bool same_fraction(Fraction a, Fraction b) { return a.num * b.den == b.num * a.den; }
 
 std::string id_tag(ElementId id, bool ids) { return ids ? "#" + to_string(id) : ""; }
 
@@ -104,10 +103,9 @@ Json notes(const std::vector<NoteMusic> &notes, bool ids, std::string &label) {
 Json graces(const std::vector<GraceMusic> &group, bool ids, std::string &label) {
     Json result = make_array<Json>();
     for (const auto &g : group) {
-        constexpr const char *names[]{"appog", "acciac", "grace4", "after8", "grace16", "after16", "grace32", "after32"};
         std::string chord;
         const auto duration = fraction(g.written_duration);
-        const auto *kind = names[static_cast<int>(g.kind)];
+        const auto kind = detail::grace_kind_name(g.kind);
         Json j = {{"kind", kind}, {"duration", duration}, {"notes", notes(g.notes, ids, chord)}};
         label += std::string(kind) + "(" + chord + ":" + duration + ")" + id_tag(g.chord, ids) + " ";
         if (ids) j["id"] = to_string(g.chord);
@@ -214,7 +212,7 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
                     const auto &group = w.tuplets[tuplets.at(to_string(id)) - 1];
                     expected = multiply(expected, {group.normal, group.actual});
                 }
-                if (!same_fraction(expected, e.elapsed_duration)) {
+                if (expected != e.elapsed_duration) {
                     summary.append("(elapsed=" + fraction(e.elapsed_duration) + ")");
                 }
                 end = add(e.offset, e.elapsed_duration);

@@ -10,7 +10,7 @@ MCP client
    ▼
 Host layer (engrave_mcp/)
    ├─ transport: reader thread, bounded admission, writer thread, cancellation
-   ├─ registry + JSON codecs: the twelve-tool contract
+   ├─ registry + JSON codecs: the fourteen-tool contract
    ├─ live export: render/encode on in-memory document, staging, publication
    └─ watchdog + process-wide publication gate
    │  serialized calls
@@ -27,6 +27,8 @@ Host sources in `engrave_mcp/` include only the engine's public headers under `e
 ## 2. One owner thread, multiple documents
 
 All score engine operations execute on a single dedicated owner thread per process: open, create, query, edit, render, audio synthesis, and close. Transport threads handle JSON-RPC parsing and scheduling but never invoke engine functions directly.
+
+`score_edit` applies batches atomically by default. Set `atomic: false` to retain the successfully applied prefix after an execution rejection.
 
 Up to 16 documents can remain open concurrently in one session; they share the engine and are served sequentially. Score engraving involves deep pointer structures and process-global state (font tables, style metrics, rendering contexts, and offline synthesis state). Serializing calls on one thread avoids complex multi-threaded synchronization in the engraving core. A long-running export blocks operations on other open documents in the same server process; cooperative cancellation allows clients to abort stuck or superseded requests.
 

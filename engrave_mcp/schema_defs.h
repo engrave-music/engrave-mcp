@@ -7,9 +7,8 @@ namespace music::api {
 using Json = music::Json;
 
 inline constexpr auto phrase_grace_defaults =
-    "Before-grace kinds are acciac, appog, grace4, grace16, grace32. After-grace kinds are after8, after16, after32. "
-    "Fixed kinds default to and require their named duration (1/4 for grace4, 1/8 for after8, 1/16 for grace16 and after16, "
-    "1/32 for grace32 and after32); acciac and appog default to 1/8 and accept any standard note value up to 1/4.";
+    "Numbered kinds default to and require the reciprocal of their number (1/4, 1/8, 1/16 or 1/32). "
+    "The two unnumbered kinds default to 1/8 and accept any standard note value up to 1/4.";
 inline constexpr auto phrase_grammar =
     "Give each lane a whitespace-separated content string. Use Eb4, F#5 or C###4 for pitches (up to three # or b), d36 for a drum key (0 "
     "through 127), "

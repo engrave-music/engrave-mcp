@@ -23,6 +23,8 @@ Result<engrave::Fraction> fraction(const Json &value);
 Result<engrave::Address> address(const Json &value, const engrave::Outline *outline = nullptr);
 Result<engrave::Ref> ref(const Json &value, bool allow_op, usize before);
 Result<engrave::ScoreSel> score(const Json &value);
+std::string_view grace_kind_name(engrave::GraceKind kind);
+std::optional<engrave::GraceKind> grace_kind(std::string_view name);
 Result<engrave::Value> value(const Json &j, engrave::ValueKind kind, const std::string &path);
 Result<std::filesystem::path> path(const Json &value);
 std::string path_text(const std::filesystem::path &value);

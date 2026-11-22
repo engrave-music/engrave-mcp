@@ -1234,7 +1234,7 @@ private:
                 }
 
                 auto version = params["protocolVersion"].get<std::string>();
-                if (version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18") version = "2025-11-25";
+                if (version != "2024-11-05" && version != "2025-06-18") version = "2025-11-25";
                 protocol_version_ = std::move(version);
                 Json result = {{"protocolVersion", protocol_version_},
                                {"capabilities", {{"tools", make_object<Json>()}}},
@@ -1581,8 +1581,7 @@ private:
     }
 
     ToolResultFormat tool_result_format() const {
-        return protocol_version_ == "2024-11-05" || protocol_version_ == "2025-03-26" ? ToolResultFormat::LEGACY :
-                                                                                        ToolResultFormat::STRUCTURED;
+        return protocol_version_ == "2024-11-05" ? ToolResultFormat::LEGACY : ToolResultFormat::STRUCTURED;
     }
 
     Json make_tool_error_result(const std::string &code, const std::string &message) const {

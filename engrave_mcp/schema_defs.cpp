@@ -236,7 +236,7 @@ Json declared_tools() {
          object({{"scope", scope}, {"query", text}, {"type", text}, {"op", text}}, json_array<Json>({})), true, false);
     tool("checkpoint", "Save a named in-memory snapshot.",
          object({{"document", document}, {"expected_revision", revision}, {"name", text}}, json_array<Json>({"document", "name"})), false,
-         false);
+         true);
     tool("restore_checkpoint", "Restore a named snapshot and advance the revision.",
          object({{"document", document}, {"expected_revision", revision}, {"name", text}}, json_array<Json>({"document", "name"})), false,
          true);
@@ -248,7 +248,7 @@ Json declared_tools() {
                 json_array<Json>({"document", "lanes"})),
          false, true);
     tool("runtime_configure", "Add a font or replace the ordered SoundFont list.",
-         object({{"add_font", text}, {"soundfonts", schema_array(text)}}, json_array<Json>({})), false, false);
+         object({{"add_font", text}, {"soundfonts", schema_array(text)}}, json_array<Json>({})), false, true);
     return tools;
 }
 } // namespace music::api

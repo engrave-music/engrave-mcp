@@ -1,5 +1,6 @@
 #include "host_api.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -106,6 +107,180 @@ Json error(HostApi &host, const std::string &tool, const Json &arg, const std::s
     return out;
 }
 } // namespace
+
+TEST(HostApi, RuntimeOperationExamplesDecodeAndAddAnArticulation) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto unknown = api.runtime_info({{"scope", "type"}, {"type", "AbsentType"}});
+    ASSERT_EQ(unknown.size(), 2u) << music::dump_json(unknown);
+    EXPECT_EQ(unknown.at("ok"), false);
+    EXPECT_EQ(unknown.at("error").at("code"), "NotFound");
+
+    const auto doc = ok(api, "score_create", music::make_object<Json>()).at("document").get<std::string>();
+    engrave::Outline outline;
+    ASSERT_TRUE(api.with_document(doc, {}, [&](engrave::Document &opened) -> music::api::Result<void> {
+        auto read = opened.outline();
+        if (!read) return std::unexpected(music::api::api_error(read.error()));
+        outline = std::move(*read);
+        return {};
+    }));
+    music::api::ValueCatalogue catalogue;
+    catalogue.properties = {{"visible", engrave::ValueKind::BOOL}, {"symbol", engrave::ValueKind::ENUM}};
+    catalogue.styles = {{"pageWidth", engrave::ValueKind::REAL}};
+    const auto ops = ok(api, "runtime_info", {{"scope", "ops"}}).at("ops").get_array();
+    ASSERT_EQ(ops.size(), music::api::operation_names.size());
+    for (const auto name : music::api::operation_names) {
+        const auto same_op = [&](const Json &entry) { return entry.at("op") == name; };
+        EXPECT_EQ(std::ranges::count_if(ops, same_op), 1) << name;
+        const auto entry = std::ranges::find_if(ops, same_op);
+        ASSERT_NE(entry, ops.end()) << name;
+        const auto decoded = music::api::decode_batch(music::json_array<Json>({entry->at("example")}), catalogue, &outline);
+        ASSERT_TRUE(decoded) << name << ": " << decoded.error().message;
+        EXPECT_EQ(music::api::operation_names.at(decoded->ops.at(0).index()), name);
+    }
+    const auto selected = ok(api, "runtime_info", {{"scope", "ops"}, {"op", "add"}}).at("ops");
+    ASSERT_EQ(selected.size(), 1u);
+    auto example = selected[0].at("example");
+    const auto entered = ok(api, "score_edit",
+                            {{"document", doc},
+                             {"detail", true},
+                             {"ops", music::json_array<Json>({Json{{"op", "enter_notes"},
+                                                                   {"at", Json{{"measure", 1}}},
+                                                                   {"duration", "1/4"},
+                                                                   {"pitches", music::json_array<Json>({Json{{"pitch", 60}}})}}})}});
+    example["anchor"] = entered.at("ops")[0].at("created")[0];
+    const auto added = ok(api, "score_edit", {{"document", doc}, {"ops", music::json_array<Json>({example})}});
+    EXPECT_EQ(added.at("applied"), 1);
+    const auto marks = ok(api, "score_query",
+                          {{"document", doc}, {"mode", "elements"}, {"query", {{"types", music::json_array<Json>({"Articulation"})}}}});
+    ASSERT_EQ(marks.at("elements").size(), 1u);
+    EXPECT_EQ(marks.at("elements")[0].at("parent"), example.at("anchor"));
+}
+
+TEST(HostApi, InstrumentFilterAndDrumMetadata) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto lookup = [&](std::string_view query) {
+        const auto result = api.runtime_info({{"scope", "instruments"}, {"query", query}});
+        require(result.at("ok") == true, music::dump_json(result));
+        return result.at("instruments");
+    };
+    const auto bass_drums = lookup("bAsS-dRuM");
+    EXPECT_EQ(bass_drums, lookup("bass-drum"));
+    EXPECT_LT(bass_drums.size(), lookup("").size());
+    EXPECT_TRUE(lookup("no-such-instrument").empty());
+    const auto &instruments = bass_drums.get_array();
+    const auto bass = std::ranges::find_if(instruments, [](const Json &i) { return i.at("id") == "bass-drum"; });
+    ASSERT_NE(bass, instruments.end());
+    EXPECT_EQ(bass->at("uses_drumset"), true);
+    EXPECT_EQ(bass->at("transpose"), (Json{{"diatonic", 0}, {"chromatic", 0}}));
+    const auto drums = bass->at("drums");
+    ASSERT_EQ(drums.size(), 1u);
+    EXPECT_EQ(drums[0], (Json{{"key", 36}, {"name", "Concert Bass Drum"}, {"line", 0}, {"voice", 1}}));
+    error(api, "runtime_info", {{"query", "bass-drum"}}, "InvalidArgument");
+    error(api, "runtime_info", {{"scope", "templates"}, {"query", "bass-drum"}}, "InvalidArgument");
+}
+
+TEST(HostApi, ScoreEditRollsBackMidBatchByDefaultAndWhenExplicit) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto created = ok(api, "score_create", music::make_object<Json>());
+    const auto doc = created.at("document");
+    const auto revision = created.at("revision");
+    const Json range{{"document", doc}, {"count", 1}, {"include_ids", true}};
+    const auto before = api.read_music(range);
+    ASSERT_EQ(before.at("ok"), true) << music::dump_json(before);
+    const auto enter = [](std::string_view offset, int pitch) {
+        return Json{{"op", "enter_notes"},
+                    {"at", Json{{"measure", 1}, {"offset", offset}}},
+                    {"duration", "1/4"},
+                    {"pitches", music::json_array<Json>({Json{{"pitch", pitch}}})}};
+    };
+    Json batch{{"document", doc}, {"ops", music::json_array<Json>({enter("0", 60), enter("1/8", 62)})}};
+    for (bool explicit_atomic : {false, true}) {
+        if (explicit_atomic) batch["atomic"] = true;
+        const auto failed = error(api, "score_edit", batch, "InvalidArgument").at("error");
+        EXPECT_EQ(failed.at("op_index"), 1);
+        EXPECT_EQ(failed.at("applied"), 0);
+        EXPECT_EQ(failed.at("revision"), revision);
+        EXPECT_EQ(api.read_music(range), before);
+    }
+}
+
+TEST(HostApi, ScoreEditResolvesOneBasedPositions) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto created = ok(api, "score_create", {{"template_id", "Piano"}});
+    const auto doc = created.at("document");
+    const auto &bars = created.at("outline").at("measures");
+    ASSERT_GE(bars.size(), 4u);
+    const auto bar_two = bars[1].at("id");
+    const auto bar_three = bars[2].at("id");
+    const auto enter = Json{{"op", "enter_notes"},
+                            {"at", Json{{"measure", 2}, {"offset", "1/4"}, {"staff", 2}, {"voice", 2}}},
+                            {"duration", "1/4"},
+                            {"pitches", music::json_array<Json>({Json{{"pitch", 60}}})}};
+    ok(api, "score_edit",
+       {{"document", doc},
+        {"ops", music::json_array<Json>(
+                    {enter, Json{{"op", "set_key_sig"}, {"measure", 2}, {"staff", 2}, {"key", 2}},
+                     Json{{"op", "add_spanner_to_bar_end"}, {"type", "HairPin"}, {"start", opref(0, 0)}, {"end", 3}},
+                     Json{{"op", "add_volta"}, {"first_measure", 2}, {"last_measure", 3}, {"endings", music::json_array<Json>({1})}}})}});
+    const auto window = api.read_music({{"document", doc}, {"count", 4}, {"include_ids", true}});
+    ASSERT_EQ(window.at("ok"), true) << music::dump_json(window);
+    const auto &bar = window.at("measures")[1];
+    ASSERT_EQ(bar.at("id"), bar_two);
+    const auto &voices = bar.at("voices").get_array();
+    const auto voice = std::ranges::find_if(voices, [](const Json &v) { return v.at("staff") == 2 && v.at("voice") == 2; });
+    ASSERT_NE(voice, voices.end());
+    const auto &events = voice->at("events").get_array();
+    const auto chord = std::ranges::find_if(events, [](const Json &event) { return event.contains("notes"); });
+    ASSERT_NE(chord, events.end());
+    EXPECT_EQ(chord->at("offset"), "1/4");
+    const auto &changes = bar.at("signature_changes").get_array();
+    EXPECT_EQ(
+        std::ranges::count_if(changes, [](const Json &s) { return s.at("type") == "KeySig" && s.at("staff") == 2 && s.at("key") == 2; }),
+        1);
+    ASSERT_EQ(window.at("spanners").size(), 1u);
+    const auto &hairpin = window.at("spanners")[0];
+    EXPECT_EQ(hairpin.at("start").at("measure_id"), bar_two);
+    EXPECT_EQ(hairpin.at("end").at("measure_id"), bars[3].at("id"));
+    EXPECT_EQ(hairpin.at("end").at("offset"), "0");
+    ASSERT_EQ(window.at("voltas").size(), 1u);
+    const auto &volta = window.at("voltas")[0];
+    EXPECT_EQ(volta.at("start").at("measure_id"), bar_two);
+    EXPECT_EQ(volta.at("end").at("measure_id"), bar_three);
+    EXPECT_EQ(volta.at("end").at("offset"), bars[2].at("duration"));
+
+    ok(api, "score_edit",
+       {{"document", doc},
+        {"ops", music::json_array<Json>({Json{{"op", "insert_measures"}, {"before", bar_two}, {"count", 1}},
+                                         Json{{"op", "set_repeat_barlines"}, {"measure", 2}, {"start", true}}})}});
+    const auto shifted = api.read_music({{"document", doc}, {"count", 4}, {"include_ids", true}});
+    ASSERT_EQ(shifted.at("ok"), true) << music::dump_json(shifted);
+    EXPECT_EQ(shifted.at("measures")[1].at("repeat_start"), false);
+    EXPECT_EQ(shifted.at("measures")[2].at("id"), bar_two);
+    EXPECT_EQ(shifted.at("measures")[2].at("repeat_start"), true);
+}
+
+TEST(HostApi, SoundFontSelectorBounds) {
+    for (const auto &selector : {std::string(4096, 'x'), std::string(4097, 'x'), std::string("kit\0.sf3", 8)}) {
+        const auto request =
+            music::api::decode_export({{"document", "doc"},
+                                       {"format", "wav"},
+                                       {"path", "test.wav"},
+                                       {"options", {{"tracks", music::json_array<Json>({Json{{"track", 0}, {"soundfont", selector}}})}}}});
+        EXPECT_EQ(request.has_value(), selector.size() == 4096) << selector.size();
+    }
+}
 
 TEST(Phrase, CompactEntryAtPickupBoundary) {
     engrave::Outline outline{};
@@ -630,17 +805,6 @@ TEST(HostApi, EndToEndToolContract) {
     for (const auto &addr : addresses.get_array()) {
         require(music::api::decode_ref(addr).has_value(), "address codec rejected a declared address");
     }
-    engrave::Positions positions;
-    positions.page_width = 100;
-    positions.page_height = 200;
-    positions.elements.push_back({3, 1, 2, 4, 5, 0});
-    positions.events.push_back({3, 123});
-    require(music::api::encode(positions) ==
-                Json({{"page_size", {{"width", 100}, {"height", 200}}},
-                      {"elements", music::json_array<Json>({Json{{"id", 3}, {"x", 1}, {"y", 2}, {"sx", 4}, {"sy", 5}, {"page", 0}}})},
-                      {"events", music::json_array<Json>({Json{{"elid", 3}, {"position", 123}}})}}),
-            "position codec mapping differs");
-
     // Exercise every variant through Document::edit, including invalid
     // combinations that the engine must reject with an operation index.
     auto all_ops_doc = ok(*host, "score_open", {{"path", path_text(root / "chordline_path.mscx")}}).at("document").get<std::string>();
@@ -760,6 +924,23 @@ TEST(HostApi, EndToEndToolContract) {
     EXPECT_EQ(part_window.at("score"), "excerpt");
     EXPECT_EQ(part_window.at("excerpt"), excerpt);
     EXPECT_TRUE(part_window.at("summary").get<std::string>().starts_with("Excerpt " + excerpt.get<std::string>() + "\n"));
+    Json part_query{{"document", linked_doc}, {"mode", "elements"}, {"query", {{"types", music::json_array<Json>({"Note"})}}}};
+    part_query["query"]["excerpt"] = excerpt;
+    const auto nested = ok(*host, "score_query", part_query);
+    ASSERT_FALSE(nested.at("elements").empty());
+    EXPECT_EQ(nested.at("elements")[0].at("score").at("excerpt"), excerpt);
+    part_query["excerpt"] = excerpt;
+    EXPECT_EQ(ok(*host, "score_query", part_query), nested);
+    part_query["query"] = Json{{"types", music::json_array<Json>({"Note"})}};
+    EXPECT_EQ(ok(*host, "score_query", part_query), nested);
+    const auto bar_id = linked.at("outline").at("measures")[0].at("id");
+    part_query["query"]["excerpt"] = bar_id;
+    error(*host, "score_query", part_query, "InvalidArgument");
+    const auto invalid_read = host->read_music({{"document", linked_doc}, {"excerpt", bar_id}});
+    const auto invalid_write =
+        host->write_phrase({{"document", linked_doc}, {"excerpt", bar_id}, {"lanes", music::json_array<Json>({phrase_lane})}});
+    EXPECT_EQ(invalid_read.at("error").at("document"), linked_doc);
+    EXPECT_EQ(invalid_write.at("error").at("document"), linked_doc);
     auto notes = ok(*host, "score_query",
                     {{"document", linked_doc}, {"mode", "elements"}, {"query", {{"types", music::json_array<Json>({"Note"})}}}});
     Json target;

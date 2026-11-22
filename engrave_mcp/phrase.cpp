@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string_view>
 
+#include "api_json_internal.h"
 #include "types.h"
 #include "utf8_text.h"
 
@@ -71,11 +72,6 @@ std::optional<Fraction> fraction(string_view token) {
     if (!numerator || !denominator || *numerator < 0 || *denominator <= 0) return std::nullopt;
     return Fraction{*numerator, *denominator};
 }
-
-constexpr std::pair<string_view, GraceKind> grace_kinds[]{{"acciac", GraceKind::Acciaccatura},  {"appog", GraceKind::Appoggiatura},
-                                                          {"grace4", GraceKind::Grace4},        {"grace16", GraceKind::Grace16},
-                                                          {"grace32", GraceKind::Grace32},      {"after8", GraceKind::Grace8After},
-                                                          {"after16", GraceKind::Grace16After}, {"after32", GraceKind::Grace32After}};
 
 int grace_denominator(GraceKind kind) {
     switch (kind) {
@@ -271,16 +267,15 @@ private:
         std::vector<PhraseGrace> result;
         for (;;) {
             const auto token = peek();
-            const auto kind =
-                std::ranges::find_if(grace_kinds, [=](auto g) { return g.first == token && after == token.starts_with("after"); });
-            if (kind == std::end(grace_kinds)) return result;
+            const auto kind = detail::grace_kind(token);
+            if (!kind || after != token.starts_with("after")) return result;
             next();
             expect('(');
             const auto notes_token = peek();
-            const auto entry = chord(grace_denominator(kind->second), false);
+            const auto entry = chord(grace_denominator(*kind), false);
             if (entry.notes.empty()) fail(notes_token, "invalid grace", "a note or chord");
             expect(')');
-            PhraseGrace grace{kind->second, entry.written_duration, {}};
+            PhraseGrace grace{*kind, entry.written_duration, {}};
             for (const auto &note : entry.notes) grace.notes.push_back(note.pitch);
             result.push_back(std::move(grace));
         }

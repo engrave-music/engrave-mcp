@@ -17,6 +17,19 @@ namespace {
 namespace fs = std::filesystem;
 using detail::invalid_error;
 
+std::string ascii_lower(std::string text) {
+    for (auto &c : text) {
+        if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+    }
+    return text;
+}
+
+std::unexpected<HostError> document_error(const engrave::Error &error, const std::string &token) {
+    auto e = api_error(error);
+    e.document = token;
+    return std::unexpected(std::move(e));
+}
+
 std::string nonce() {
     std::random_device rd;
     static constexpr char hex[] = "0123456789abcdef";
@@ -148,6 +161,14 @@ Json encoded_array(const std::vector<T> &values) {
     Json result = make_array<Json>();
     for (const auto &value : values) json_push(result, encode(value));
     return result;
+}
+
+Result<Json> describe(engrave::Engine &engine, const Json &j, std::string_view scope) {
+    if (scope == "types") return Json{{"scope", scope}, {"types", encoded_array(engine.describe())}};
+    if (scope == "styles") return Json{{"scope", scope}, {"styles", encoded_array(engine.describe_styles())}};
+    auto info = engine.describe(j.at("type").get<std::string>());
+    if (!info) return std::unexpected(api_error(info.error()));
+    return Json{{"scope", scope}, {"type", encode(*info)}};
 }
 
 std::vector<std::string> json_strings(const Json &array) {
@@ -375,6 +396,7 @@ Json HostApi::query(const Json &j) {
         if (mode == "elements") {
             auto q = decode_query(json_value<Json>(j, "query", make_object<Json>()));
             if (!q) return std::unexpected(std::move(q.error()));
+            if (j.contains("excerpt")) q->score = *detail::score(j);
             auto out = (*doc)->query(*q);
             if (!out) {
                 auto e = api_error(out.error());
@@ -429,25 +451,28 @@ Json HostApi::read_music(const Json &j) {
     return boundary([&]() -> Result<Json> {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
         if (auto ok = detail::validate_tool("score_read_music", j); !ok) return std::unexpected(ok.error());
-        auto doc = impl_->get(j.at("document").get<std::string>(), *revision_arg(j));
+        const auto token = j.at("document").get<std::string>();
+        auto doc = impl_->get(token, *revision_arg(j));
         if (!doc) return std::unexpected(doc.error());
         engrave::MusicRange range;
         range.score = *detail::score(j);
         range.first_measure = json_value<int>(j, "measure", 1) - 1;
         auto outline = (*doc)->outline(range.score);
-        if (!outline) return std::unexpected(api_error(outline.error()));
-        if (range.first_measure >= outline->measure_count)
+        if (!outline) return document_error(outline.error(), token);
+        if (range.first_measure >= outline->measure_count) {
             return std::unexpected(invalid_error("measure: outside score; expected an existing bar"));
+        }
         range.measure_count = json_value<int>(j, "count", std::min(4, outline->measure_count - range.first_measure));
-        if (range.measure_count > outline->measure_count - range.first_measure)
+        if (range.measure_count > outline->measure_count - range.first_measure) {
             return std::unexpected(invalid_error("count: window extends past score; expected a count within the remaining bars"));
+        }
         for (auto key : {"staves", "voices"}) {
             if (!j.contains(key)) continue;
             auto &indices = std::string_view(key) == "staves" ? range.staves : range.voices;
             for (const auto &n : j.at(key).get_array()) indices.push_back(n.as<int>() - 1);
         }
         auto window = (*doc)->read_music(range);
-        if (!window) return std::unexpected(api_error(window.error()));
+        if (!window) return document_error(window.error(), token);
         return music_result(*window, *outline, json_value<bool>(j, "include_ids", false));
     });
 }
@@ -457,17 +482,19 @@ Json HostApi::write_phrase(const Json &j, const std::atomic<bool> *cancelled) {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
         if (auto ok = detail::validate_tool("score_write_phrase", j); !ok) return std::unexpected(ok.error());
         auto expected = *revision_arg(j);
-        auto doc = impl_->get(j.at("document").get<std::string>(), expected);
+        const auto token = j.at("document").get<std::string>();
+        auto doc = impl_->get(token, expected);
         if (!doc) return std::unexpected(doc.error());
         auto score = *detail::score(j);
         auto outline = (*doc)->outline(score);
-        if (!outline) return std::unexpected(api_error(outline.error()));
+        if (!outline) return document_error(outline.error(), token);
         auto phrase = decode_phrase(j.at("lanes"), *outline, score);
         if (!phrase) return std::unexpected(phrase.error());
         if (cancelled && cancelled->load()) return std::unexpected(HostError{"Cancelled", "phrase cancelled before edit"});
         auto edited = (*doc)->write_phrase(*phrase, {expected, engrave::EditMode::Atomic});
         if (!edited || edited->rejection) {
             auto error = api_error(edited ? edited->rejection->error : edited.error());
+            error.document = token;
             error.op_index.reset();
             return std::unexpected(std::move(error));
         }
@@ -475,28 +502,9 @@ Json HostApi::write_phrase(const Json &j, const std::atomic<bool> *cancelled) {
     });
 }
 
-Json HostApi::describe(const Json &j) {
-    return boundary([&]() -> Result<Json> {
-        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
-
-        auto scope = j.at("scope").get<std::string>();
-        if (scope == "types") return Json{{"ok", true}, {"scope", scope}, {"types", encoded_array(impl_->engine->describe())}};
-        if (scope == "type") {
-            auto info = impl_->engine->describe(j.at("type").get<std::string>());
-            if (!info) return std::unexpected(api_error(info.error()));
-            return Json{{"ok", true}, {"scope", scope}, {"type", encode(*info)}};
-        }
-        return Json{{"ok", true}, {"scope", scope}, {"styles", encoded_array(impl_->engine->describe_styles())}};
-    });
-}
-
 Json HostApi::edit(const Json &j, const std::atomic<bool> *cancelled) {
     return boundary([&]() -> Result<Json> {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
-        // Validate the envelope separately so the batch decoder can report the
-        // index of malformed operations while still decoding the whole batch
-        // before looking up or mutating a document.
-
         if (auto ok = detail::validate_tool("score_edit", j); !ok) return std::unexpected(std::move(ok.error()));
         if (!impl_->catalogue) {
             ValueCatalogue catalogue;
@@ -682,7 +690,10 @@ Json operation_catalogue(std::string_view requested) {
         json_array<Json>({"at", "style", "text"}),
         {{"at", Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}}, {"style", "staff"}, {"text", "text"}});
     add("add", {{"anchor", "EID, layout address or {from_op,item}"}, {"type", "string"}, {"props", "array of {name, value}"}},
-        json_array<Json>({"anchor", "type"}), {{"anchor", "A_A"}, {"type", "HairPin"}});
+        json_array<Json>({"anchor", "type"}),
+        {{"anchor", "A_A"},
+         {"type", "Articulation"},
+         {"props", json_array<Json>({Json{{"name", "symbol"}, {"value", "articStaccatoAbove"}}})}});
     add("add_spanner_to_bar_end",
         {{"type", "string"},
          {"start", "EID, layout address or {from_op,item}"},
@@ -726,7 +737,11 @@ Json HostApi::runtime_info(const Json &j) {
         const auto scope = json_value<std::string>(j, "scope", "overview");
         Json catalog = make_object<Json>();
         if (scope == "templates") catalog["templates"] = encoded_array(impl_->engine->templates());
-        if (scope == "type" || scope == "types" || scope == "styles") catalog = describe(j);
+        if (scope == "type" || scope == "types" || scope == "styles") {
+            auto description = describe(*impl_->engine, j, scope);
+            if (!description) return std::unexpected(std::move(description.error()));
+            catalog = std::move(*description);
+        }
         if (scope == "ops") {
             auto ops = operation_catalogue(json_value<std::string>(j, "op", {}));
             if (ops.empty()) return std::unexpected(invalid_error("op: unknown operation; expected a registered edit operation"));
@@ -734,9 +749,12 @@ Json HostApi::runtime_info(const Json &j) {
         }
         if (scope == "instruments") {
             Json instruments = make_array<Json>();
-            auto query = json_value<std::string>(j, "query", {});
+            const auto query = ascii_lower(json_value<std::string>(j, "query", {}));
             for (const auto &i : impl_->engine->instruments()) {
-                if (!i.id.contains(query) && !i.name.contains(query) && !i.group_id.contains(query)) continue;
+                if (!query.empty() && !ascii_lower(i.id).contains(query) && !ascii_lower(i.name).contains(query) &&
+                    !ascii_lower(i.group_id).contains(query)) {
+                    continue;
+                }
                 Json drums = make_array<Json>();
                 for (const auto &d : i.drums) {
                     json_push(drums, Json{{"key", d.key}, {"name", d.name}, {"line", d.line}, {"voice", d.default_voice + 1}});

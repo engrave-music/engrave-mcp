@@ -217,9 +217,7 @@ Result<engrave::Op> decode_op(const Json &j, usize index, const ValueCatalogue &
     if (name == "add_grace_chord") {
         auto principal = ref("principal");
         if (!principal) return std::unexpected(principal.error());
-        constexpr std::string_view kinds[]{"appog", "acciac", "grace4", "after8", "grace16", "after16", "grace32", "after32"};
-        auto kind = static_cast<engrave::GraceKind>(std::find(std::begin(kinds), std::end(kinds), str("kind")) - std::begin(kinds));
-        engrave::GraceEntry g{kind, *detail::fraction(j.at("duration")), {}};
+        engrave::GraceEntry g{*detail::grace_kind(str("kind")), *detail::fraction(j.at("duration")), {}};
         for (const auto &p : j.at("pitches").get_array()) {
             g.pitches.push_back({p.at("pitch").as<int>(), p.contains("tpc") ? std::optional(p.at("tpc").as<int>()) : std::nullopt});
         }
@@ -242,8 +240,9 @@ Result<engrave::Op> decode_op(const Json &j, usize index, const ValueCatalogue &
     }
     if (name == "add_text") {
         auto text = str("text");
-        if (auto ok = detail::validate_xml_text(text); !ok)
+        if (auto ok = detail::validate_xml_text(text); !ok) {
             return std::unexpected(detail::invalid_error(path + ".text: invalid XML character; expected XML 1.0 text"));
+        }
         auto at = detail::address(j.at("at"), outline);
         if (!at) return std::unexpected(detail::invalid_error(path + ".at." + at.error().message));
         return engrave::AddText{std::move(*at), str("style"), std::move(text)};

@@ -93,6 +93,29 @@ const char *unit(engrave::Unit u) {
 
 namespace detail {
 
+std::string_view grace_kind_name(engrave::GraceKind kind) {
+    using enum engrave::GraceKind;
+    switch (kind) {
+        case Appoggiatura: return "appog";
+        case Acciaccatura: return "acciac";
+        case Grace4: return "grace4";
+        case Grace8After: return "after8";
+        case Grace16: return "grace16";
+        case Grace16After: return "after16";
+        case Grace32: return "grace32";
+        case Grace32After: return "after32";
+    }
+    throw std::logic_error("unrecognized grace kind");
+}
+
+std::optional<engrave::GraceKind> grace_kind(std::string_view name) {
+    using enum engrave::GraceKind;
+    for (const auto kind : {Appoggiatura, Acciaccatura, Grace4, Grace8After, Grace16, Grace16After, Grace32, Grace32After}) {
+        if (name == grace_kind_name(kind)) return kind;
+    }
+    return std::nullopt;
+}
+
 Result<void> validate_xml_text(std::string_view value) {
     for (unsigned char c : value) {
         if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') {
@@ -469,15 +492,6 @@ Json encode(const engrave::AudioTracks &a) {
                                               {"mix", mix(t.mix)}};
                               })},
             {"master", mix(a.master)}};
-}
-
-Json encode(const engrave::Positions &p) {
-    return {{"page_size", {{"width", p.page_width}, {"height", p.page_height}}},
-            {"elements", mapped(p.elements,
-                                [](const auto &e) {
-                                    return Json{{"id", e.id}, {"x", e.x}, {"y", e.y}, {"sx", e.sx}, {"sy", e.sy}, {"page", e.page}};
-                                })},
-            {"events", mapped(p.events, [](const auto &e) { return Json{{"elid", e.elid}, {"position", e.position}}; })}};
 }
 
 Json encode(const engrave::TypeInfo &t) {

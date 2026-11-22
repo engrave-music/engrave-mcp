@@ -78,8 +78,9 @@ void numeric(const Json &j, const std::string &p) {
 
 void filename(const Json &j, const std::string &p) {
     text<4096>(j, p);
-    if (j.get<std::string>().empty() || j.get<std::string>().find('\0') != std::string::npos)
+    if (j.get<std::string>().empty() || j.get<std::string>().find('\0') != std::string::npos) {
         fail(p, "invalid path", "a nonempty path without NUL");
+    }
 }
 
 void xml_text(const Json &j, const std::string &p) {
@@ -154,7 +155,12 @@ void score_position(const Json &j, const std::string &p) {
 }
 
 void check_sf(const Json &j, const std::string &p) {
-    if (!j.is_null() && !j.is_string()) integer<0, INT32_MAX>(j, p);
+    if (j.is_string()) {
+        text<4096>(j, p);
+        if (j.get<std::string>().contains('\0')) fail(p, "invalid SoundFont selector", "a string without NUL");
+    } else if (!j.is_null()) {
+        integer<0, INT32_MAX>(j, p);
+    }
 }
 
 void check_bit_depth(const Json &j, const std::string &p) {
@@ -179,7 +185,7 @@ void check_mode(const Json &j, const std::string &p) { choice(j, p, {"elements",
 void check_pitch_mode(const Json &j, const std::string &p) { choice(j, p, {"concert", "written"}); }
 
 void check_grace(const Json &j, const std::string &p) {
-    choice(j, p, {"acciac", "appog", "grace4", "grace16", "grace32", "after8", "after16", "after32"});
+    if (!j.is_string() || !grace_kind(j.get<std::string>())) fail(p, "invalid choice", "a listed grace kind");
 }
 
 void check_num(const Json &j, const std::string &p) { numeric(j, p); }
@@ -294,10 +300,14 @@ void validate_arguments(View name, const Json &j) {
         if (mode == "properties" && !j.contains("target")) fail("target", "missing field", "an EID or address");
         for (auto key : {"props", "target", "query", "excerpt"}) {
             if (j.contains(key) && !(mode == "properties" && (View(key) == "target" || View(key) == "props")) &&
-                !(mode == "elements" && View(key) == "query") &&
+                !(mode == "elements" && (View(key) == "query" || View(key) == "excerpt")) &&
                 !((mode == "audio_tracks" || mode == "page_count") && View(key) == "excerpt")) {
                 fail(key, "invalid for mode", mode);
             }
+        }
+        if (mode == "elements" && j.contains("excerpt") && j.contains("query") && j.at("query").contains("excerpt") &&
+            j.at("excerpt") != j.at("query").at("excerpt")) {
+            fail("excerpt", "conflicting score selectors", "matching excerpt IDs");
         }
         return;
     }
@@ -338,6 +348,9 @@ void validate_arguments(View name, const Json &j) {
             fail("type", "invalid selector", "type only with scope type");
         }
         if (j.contains("op") && (!j.contains("scope") || j.at("scope") != "ops")) fail("op", "invalid selector", "scope ops");
+        if (j.contains("query") && (!j.contains("scope") || j.at("scope") != "instruments")) {
+            fail("query", "invalid selector", "scope instruments");
+        }
         return;
     }
     if (name == "checkpoint") {
