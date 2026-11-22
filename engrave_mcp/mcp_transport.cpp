@@ -1450,6 +1450,10 @@ private:
             if (target && target->cancel) {
                 const bool first = !target->cancel_requested;
                 target->cancel_requested = true;
+                if (target->modern) {
+                    std::lock_guard lock(target->execution->response_mutex);
+                    target->execution->cancel_before_publication = true;
+                }
                 target->cancel->emit(asio::cancellation_type::terminal);
                 if (first && target->live_export && !target->tool_finished &&
                     target->execution->state.load(std::memory_order_acquire) == ExecutionState::EXECUTING) {

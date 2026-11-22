@@ -341,11 +341,18 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                                         publication.unlock();
                                         return false;
                                     }
-                                    auto running = ExecutionState::EXECUTING;
-                                    if (!execution->state.compare_exchange_strong(running, ExecutionState::PUBLISHING,
-                                                                                  std::memory_order_acq_rel)) {
-                                        publication.unlock();
-                                        return false;
+                                    {
+                                        std::lock_guard lock(execution->response_mutex);
+                                        if (execution->cancel_before_publication) {
+                                            publication.unlock();
+                                            return false;
+                                        }
+                                        auto running = ExecutionState::EXECUTING;
+                                        if (!execution->state.compare_exchange_strong(running, ExecutionState::PUBLISHING,
+                                                                                      std::memory_order_acq_rel)) {
+                                            publication.unlock();
+                                            return false;
+                                        }
                                     }
                                     return true;
                                 },

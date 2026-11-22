@@ -477,6 +477,39 @@ def regular_diagnostic(a):
         h.close()
 
 
+def modern_cancel_before_admission(a):
+    out = a.output / "modern-cancel-admission"
+    admission = out / "admit"
+    h = Host(a, out, dict(ENGRAVE_MCP_TEST_ADMISSION_BARRIER=str(admission)))
+    try:
+        pages = h.pages()
+        h.export(pages, ident=30, modern=True)
+        h.marker("PUBLICATION_READY")
+        h.send("notifications/cancelled", dict(requestId=30))
+        h.marker("CANCEL_HANDLED")
+        admission.write_text("go")
+        h.send(
+            "tools/call",
+            dict(
+                _meta={
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientCapabilities": {},
+                },
+                name="score_outline",
+                arguments=dict(document=h.doc),
+            ),
+            31,
+        )
+        reply = h.read()
+        assert reply["id"] == 31 and reply["result"]["resultType"] == "complete", reply
+        assert reply["result"]["structuredContent"]["ok"], reply
+        assert not list(pages.glob("*.svg"))
+        assert not list(pages.glob(".engrave-stage-*"))
+        return dict(modern_cancel_before_admission=True)
+    finally:
+        h.close()
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for k in ("binary", "resources", "output"):
@@ -488,6 +521,7 @@ def main():
     cases = [functools.partial(artifact_fault, a, after=i) for i in (1, 2)]
     cases += [functools.partial(artifact_fault, a, partial=partial, wrapper=True) for partial in (False, True)]
     cases += [functools.partial(artifact_fault, a, wrapper=True, modern=True)]
+    cases += [functools.partial(modern_cancel_before_admission, a)]
     cases += [
         functools.partial(artifact_fault, a, after=1, boundary="ERROR_REPORT"),
         functools.partial(artifact_fault, a, boundary="DOCUMENT_CALLBACK"),

@@ -471,7 +471,11 @@ def _check_modern_protocol(exe: str, output: Path, initialize_params: dict) -> d
         for method in ("server/discover", "tools/list", "tools/call"):
             for version in ("2099-01-01", PROTOCOL_VERSION):
                 extra = {"name": "runtime_info", "arguments": {}} if method == "tools/call" else {}
-                for payload_meta in ({**meta, VERSION_KEY: version}, {VERSION_KEY: version}):
+                for payload_meta in (
+                    {**meta, VERSION_KEY: version},
+                    {VERSION_KEY: version},
+                    {VERSION_KEY: version, CLIENT_INFO_KEY: "bad", "io.modelcontextprotocol/logLevel": []},
+                ):
                     response = request(method, {"_meta": payload_meta, **extra})
                     assert response["error"] == {
                         "code": -32022,

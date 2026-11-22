@@ -35,6 +35,7 @@ struct RequestExecution {
     UniqueFn<void(Json)> report;
     mutable std::mutex response_mutex;
     bool report_sent = false;
+    bool cancel_before_publication = false;
 
     void mark_report_sent() {
         std::lock_guard lock(response_mutex);
