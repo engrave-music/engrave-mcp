@@ -226,7 +226,7 @@ a build-and-unit-test gate, not milestone acceptance:
   `staging_test`, and (on Linux) `publication_test`, then runs `staging_test`,
   `publication_test`, `host_api_test` (using the in-repo
   `vendor/engrave/tests/data/engine_audio/sine.sf2` so CI downloads no
-  SoundFonts), and asset-only integration scripts (`version_info`, `open_data`,
+  SoundFonts), and asset-only integration scripts (`cli`, `version_info`, `open_data`,
   `native_inputs`, `positions`, `imports_midi`, `imports_guitarpro`, `repeats`,
   `transport`, plus `windows_manifest` on Windows). The fork has its own CI
   workflow (`vendor/engrave/.github/workflows/ci.yml`) for engine unit tests.
@@ -268,8 +268,6 @@ specifications, and environment conditions.
 
 ## What Is Not Covered
 
-- No leak-clean guarantee: LeakSanitizer findings remain open (see
-  [defects.md](defects.md)).
 - No hard process-memory bound: export quotas enforce logical file output
   limits, not process RSS limits.
 - No hard audio latency p95 guarantee under host contention.

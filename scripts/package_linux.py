@@ -477,7 +477,6 @@ def main():
             "Only libraries reported by ldd are bundled; dlopen plugins and non-library data or configuration are not enumerated.",
             "Compatibility with other distributions, glibc versions, or architectures is not claimed.",
             "Linux assets are found beside /proc/self/exe, with argv[0] as a fallback when procfs is unavailable.",
-            "The SoundFont is copied but not auto-discovered; pass --soundfont when WAV export is needed.",
             "This script does not run the packaged server or verify MCP, rendering, or audio behavior.",
         ],
         "note": "Local validation bundle. Full third-party source/license distribution audit remains required before publishing.",

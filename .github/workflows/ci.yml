@@ -215,6 +215,7 @@ jobs:
           }
           $common = @('--binary', $binary, '--resources', $assets)
           $checks = [ordered]@{
+            cli = @('tests/integration/test_cli.py') + $common + @('--output', "$out/cli")
             version_info = @('tests/integration/test_version_info.py') + $common + @('--output', "$out/version_info")
             open_data = @('tests/integration/test_open_data.py') + $common + @('--output', "$out/open_data")
             native_inputs = @('tests/integration/test_native_inputs.py', '--output', "$out/native_inputs")

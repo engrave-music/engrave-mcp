@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 #ifdef _WIN32
@@ -17,32 +18,66 @@
 #include "publication.h"
 #include "registry.h"
 #include "test_hooks.h"
+#include "version.h"
 
 namespace music {
 
+namespace {
+
+constexpr const char *usage_text = "Usage: engrave-mcp [--soundfont FILE.sf2|FILE.sf3] [--resources DIR] [-h|--help] [-V|--version]";
+
+void print_help() {
+    std::printf("%s\n\n"
+                "Options:\n"
+                "  --soundfont FILE   Load SoundFont (.sf2/.sf3); defaults to sibling soundfonts/FluidR3Mono_GM.sf3 if present\n"
+                "  --resources DIR    Override runtime assets directory (default: sibling assets/)\n"
+                "  -h, --help         Show this help message and exit\n"
+                "  -V, --version      Show version and exit\n",
+                usage_text);
+}
+
+} // namespace
+
 int run_server(int argc, char **argv) {
     try {
+        std::string soundfont;
+        bool has_soundfont = false;
+        std::string resources;
+        for (int i = 1; i < argc; ++i) {
+            const std::string_view arg(argv[i]);
+            if (arg == "--soundfont" && i + 1 < argc) {
+                soundfont = argv[++i];
+                has_soundfont = true;
+            } else if (arg == "--resources" && i + 1 < argc) {
+                resources = argv[++i];
+            } else if (arg == "--help" || arg == "-h") {
+                print_help();
+                return 0;
+            } else if (arg == "--version" || arg == "-V") {
+                std::printf("engrave-mcp %.*s\n", static_cast<int>(host_version.size()), host_version.data());
+                return 0;
+            } else {
+                throw std::invalid_argument(usage_text);
+            }
+        }
 #ifdef _WIN32
         if (_setmode(_fileno(stdin), _O_BINARY) == -1 || _setmode(_fileno(stdout), _O_BINARY) == -1) {
             throw std::runtime_error("Cannot configure binary stdio");
         }
 #endif
-        std::string soundfont;
-        std::string resources;
-        for (int i = 1; i < argc; ++i) {
-            if (std::string_view(argv[i]) == "--soundfont" && i + 1 < argc) {
-                soundfont = argv[++i];
-            } else if (std::string_view(argv[i]) == "--resources" && i + 1 < argc) {
-                resources = argv[++i];
-            } else {
-                throw std::invalid_argument("Usage: engrave-mcp [--soundfont FILE.sf2|FILE.sf3] [--resources DIR]");
-            }
-        }
+        const auto exe_dir = current_executable_path().parent_path();
         engrave::EngineOptions options;
-        options.resources = resources.empty() ? current_executable_path().parent_path() / "assets" :
-                                                std::filesystem::absolute(std::filesystem::u8path(resources));
-        if (!soundfont.empty()) {
-            options.soundfonts.push_back(std::filesystem::absolute(std::filesystem::u8path(soundfont)));
+        options.resources = resources.empty() ? exe_dir / "assets" : std::filesystem::absolute(std::filesystem::u8path(resources));
+        if (has_soundfont) {
+            if (!soundfont.empty()) {
+                options.soundfonts.push_back(std::filesystem::absolute(std::filesystem::u8path(soundfont)));
+            }
+        } else {
+            const auto default_soundfont = exe_dir / "soundfonts" / "FluidR3Mono_GM.sf3";
+            std::error_code ec;
+            if (std::filesystem::is_regular_file(default_soundfont, ec)) {
+                options.soundfonts.push_back(default_soundfont);
+            }
         }
         AsyncSession session(std::move(options));
         const bool hooks = test_hooks_enabled();

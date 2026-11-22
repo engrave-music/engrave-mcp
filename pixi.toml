@@ -6,8 +6,6 @@ platforms = ["win-64", "linux-64"]
 
 [dependencies]
 python = "3.13.*"
-cmake = "4.*"
-ninja = "*"
 zlib = "*"
 cairo = "*"
 freetype = "*"

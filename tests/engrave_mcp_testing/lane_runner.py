@@ -679,6 +679,7 @@ LANES = (
         after=("golden",),
     ),
     Lane("repeats", _host("repeats", "repeats", upstream=True)),
+    Lane("cli", _host("cli", "cli")),
     Lane("version_info", _host("version_info", "version-info", upstream=True)),
     Lane("mcp_smoke", _script("mcp_smoke", env={"ENGRAVE_MCP_OUTPUT": _path("output", "smoke")})),
     Lane(

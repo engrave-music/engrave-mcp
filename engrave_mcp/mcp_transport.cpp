@@ -71,6 +71,7 @@
 #include "test_hooks.h"
 #include "tool_result.h"
 #include "utf8_text.h"
+#include "version.h"
 
 namespace music {
 
@@ -1229,7 +1230,7 @@ private:
 
                 Json result = {{"protocolVersion", "2025-11-25"},
                                {"capabilities", {{"tools", make_object<Json>()}}},
-                               {"serverInfo", {{"name", "engrave-mcp"}, {"version", "0.1.0"}}}};
+                               {"serverInfo", {{"name", "engrave-mcp"}, {"version", std::string(host_version)}}}};
                 if (!co_await send_result(id, std::move(result))) {
                     co_return false;
                 }
