@@ -256,7 +256,7 @@ async def run(args):
                         )
                         assert sentinel.read_bytes() == b"unchanged"
                 await call("score_close", {"document": doc})
-                engine_data = REPO_ROOT / "vendor/engrave/tests/data"
+                engine_data = args.upstream / "tests/data"
                 fixture = engine_data / "inputs/golden/pedal.mscx"
                 opened = await call("score_open", {"path": str(fixture.resolve())})
                 png = await export(opened["document"], "png", "pedal")

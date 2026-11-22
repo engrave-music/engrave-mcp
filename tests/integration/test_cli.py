@@ -6,32 +6,16 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
-import tomllib
 from pathlib import Path
 
 from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_mcp_testing.version import read_host_version
 from engrave_testing.paths import pixi_env
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
-
-def expected_host_version() -> str:
-    header = (REPO_ROOT / "engrave_mcp/version.h").read_text(encoding="utf-8")
-    header_match = re.search(r'\bhost_version\s*=\s*"([^"]+)"', header)
-    assert header_match, "missing host_version in engrave_mcp/version.h"
-    version = header_match.group(1)
-
-    module_text = (REPO_ROOT / "MODULE.bazel").read_text(encoding="utf-8")
-    module_match = re.search(r'\bmodule\s*\([^)]*?\bversion\s*=\s*"([^"]+)"', module_text, re.DOTALL)
-    assert module_match and module_match.group(1) == version
-
-    pixi_data = tomllib.loads((REPO_ROOT / "pixi.toml").read_text(encoding="utf-8"))
-    assert pixi_data["workspace"]["version"] == version
-    return version
 
 
 def server_env() -> dict[str, str]:
@@ -83,7 +67,7 @@ async def run_tests(args: argparse.Namespace) -> None:
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     env = server_env()
-    version = expected_host_version()
+    version = read_host_version(REPO_ROOT)
 
     for flag in ("--help", "-h"):
         res = run_cli(binary, [flag], env)
@@ -100,7 +84,16 @@ async def run_tests(args: argparse.Namespace) -> None:
         assert res.stdout.strip() == f"engrave-mcp {version}", (flag, res.stdout)
 
     bad_cases = (
-        ["--unknown-flag"],
+        ["--bogus"],
+        ["--help", "--bogus"],
+        ["--bogus", "--help"],
+        ["--version", "--bogus"],
+        ["--soundfont", "--unknown"],
+        ["--soundfont", ""],
+        ["--resources", "-x"],
+        ["--resources", ""],
+        ["--soundfont", "a.sf2", "--soundfont", "b.sf2"],
+        ["--resources", "a", "--resources", "b"],
         ["--soundfont"],
         ["--resources"],
         ["--soundfont", "--help"],

@@ -36,39 +36,41 @@ void print_help() {
                 usage_text);
 }
 
-bool is_known_flag(std::string_view arg) {
-    return arg == "--soundfont" || arg == "--resources" || arg == "--help" || arg == "-h" || arg == "--version" || arg == "-V";
-}
-
 } // namespace
 
 int run_server(int argc, char **argv) {
     try {
         std::string soundfont;
-        bool has_soundfont = false;
         std::string resources;
+        enum class EarlyExit { NONE, HELP, VERSION };
+        auto early_exit = EarlyExit::NONE;
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg(argv[i]);
-            if (arg == "--soundfont") {
-                if (i + 1 >= argc || is_known_flag(argv[i + 1])) {
+            if (arg == "--soundfont" || arg == "--resources") {
+                auto &value = arg == "--soundfont" ? soundfont : resources;
+                if (!value.empty() || i + 1 >= argc) {
                     throw std::invalid_argument(usage_text);
                 }
-                soundfont = argv[++i];
-                has_soundfont = true;
-            } else if (arg == "--resources") {
-                if (i + 1 >= argc || is_known_flag(argv[i + 1])) {
+                const std::string_view next(argv[++i]);
+                if (next.empty() || next.starts_with('-')) {
                     throw std::invalid_argument(usage_text);
                 }
-                resources = argv[++i];
+                value = next;
             } else if (arg == "--help" || arg == "-h") {
-                print_help();
-                return 0;
+                if (early_exit == EarlyExit::NONE) early_exit = EarlyExit::HELP;
             } else if (arg == "--version" || arg == "-V") {
-                std::printf("engrave-mcp %.*s\n", static_cast<int>(host_version.size()), host_version.data());
-                return 0;
+                if (early_exit == EarlyExit::NONE) early_exit = EarlyExit::VERSION;
             } else {
                 throw std::invalid_argument(usage_text);
             }
+        }
+        if (early_exit == EarlyExit::HELP) {
+            print_help();
+            return 0;
+        }
+        if (early_exit == EarlyExit::VERSION) {
+            std::printf("engrave-mcp %.*s\n", static_cast<int>(host_version.size()), host_version.data());
+            return 0;
         }
 #ifdef _WIN32
         if (_setmode(_fileno(stdin), _O_BINARY) == -1 || _setmode(_fileno(stdout), _O_BINARY) == -1) {
@@ -76,16 +78,20 @@ int run_server(int argc, char **argv) {
         }
 #endif
         std::filesystem::path exe_dir;
-        if (resources.empty() || !has_soundfont) {
+        if (resources.empty()) {
             exe_dir = current_executable_path().parent_path();
+        } else if (soundfont.empty()) {
+            try {
+                exe_dir = current_executable_path().parent_path();
+            } catch (const std::runtime_error &) {
+                // Explicit resources allow startup without sibling SoundFont discovery.
+            }
         }
         engrave::EngineOptions options;
         options.resources = resources.empty() ? exe_dir / "assets" : std::filesystem::absolute(std::filesystem::u8path(resources));
-        if (has_soundfont) {
-            if (!soundfont.empty()) {
-                options.soundfonts.push_back(std::filesystem::absolute(std::filesystem::u8path(soundfont)));
-            }
-        } else {
+        if (!soundfont.empty()) {
+            options.soundfonts.push_back(std::filesystem::absolute(std::filesystem::u8path(soundfont)));
+        } else if (!exe_dir.empty()) {
             const auto default_soundfont = exe_dir / "soundfonts" / "FluidR3Mono_GM.sf3";
             std::error_code ec;
             if (std::filesystem::is_regular_file(default_soundfont, ec)) {

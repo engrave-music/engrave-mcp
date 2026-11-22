@@ -268,28 +268,30 @@ jobs:
           pixi run --locked python scripts/prepare.py
           pixi run --locked python scripts/check_build_inputs.py --check
 
-      - name: Cache Bazel repositories
-        uses: actions/cache@v6
+      - name: Restore Bazel repository cache
+        id: repo-cache
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.REPO_CACHE }}
           key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
           restore-keys: bazel-repo-linux-xclang-
 
-      - name: Cache sanitized Bazel actions
-        uses: actions/cache@v6
+      - name: Restore sanitized Bazel disk cache
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.DISK_CACHE }}
           key: bazel-disk-linux-sanitize-${{ github.sha }}
           restore-keys: bazel-disk-linux-sanitize-
 
       - name: Build sanitized host and engine tests
+        id: build
         run: |
           pch=()
           if ! grep -Fq '"-relocatable-pch"' vendor/engrave/bazel/defs.bzl; then
             pch+=(--no-pch)
           fi
           pixi run --locked python scripts/bbuild.py --profile sanitize -j 4 "${pch[@]}" build \
-            engrave_mcp host_api_test staging_test publication_test engrave_core_tests
+            engrave_mcp host_api_test staging_test publication_test registry_test engrave_core_tests
 
       - name: Run sanitized host and engine tests
         run: |
@@ -299,10 +301,19 @@ jobs:
           assets="$PWD/.runtime/assets"
           data="$PWD/vendor/engrave/tests/data/inputs"
           sine="$PWD/vendor/engrave/tests/data/engine_audio/sine.sf2"
+          export ASAN_OPTIONS="$ASAN_OPTIONS:log_path=$RUNNER_TEMP/asan"
+          export UBSAN_OPTIONS="$UBSAN_OPTIONS:log_path=$RUNNER_TEMP/ubsan"
+          export ENGRAVE_MCP_RESOURCES="$assets"
+          common=(--binary "$build/engrave-mcp" --resources "$assets")
           "$build/staging_test"
+          "$build/registry_test"
           "$build/publication_test" "$RUNNER_TEMP/publication"
           "$py" tests/integration/test_host_api.py --binary "$build/host_api_test" --resources "$assets" \
             --soundfont "$sine" --replacement-soundfont "$sine" --output "$RUNNER_TEMP/host-api"
+          "$py" tests/integration/test_cli.py "${common[@]}" --soundfont "$sine" --output "$RUNNER_TEMP/cli"
+          "$py" tests/integration/test_transport.py "$build/engrave-mcp" "$RUNNER_TEMP/transport.json"
+          "$py" tests/integration/test_open_data.py "${common[@]}" --output "$RUNNER_TEMP/open-data"
+          "$py" tests/integration/test_positions.py "${common[@]}" --output "$RUNNER_TEMP/positions"
           for shard in 0 1 2 3; do
             work="$RUNNER_TEMP/core-$shard"
             mkdir -p "$work/tmp"
@@ -310,3 +321,27 @@ jobs:
               "$build/engrave_core_tests" --assets="$assets" --golden-corpus="$data/golden" \
               --inputs-corpus="$data" --python="$py" --mnx-out="$RUNNER_TEMP/mnx-export")
           done
+
+      - name: Check sanitizer reports from child processes
+        if: ${{ !cancelled() }}
+        run: |
+          shopt -s nullglob
+          reports=("$RUNNER_TEMP"/asan.* "$RUNNER_TEMP"/ubsan.*)
+          if (( ${#reports[@]} )); then
+            cat "${reports[@]}"
+            exit 1
+          fi
+
+      - name: Save Bazel repository cache
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.repo-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.REPO_CACHE }}
+          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
+
+      - name: Save sanitized Bazel disk cache
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.DISK_CACHE }}
+          key: bazel-disk-linux-sanitize-${{ github.sha }}

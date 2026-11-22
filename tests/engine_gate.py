@@ -3,7 +3,7 @@
 
 By default the gate runs on the host's profile build: engine_tests is built with
 scripts/bbuild.py into build/<profile>, which ordinary host work keeps warm, and
-the gate gets --skip-build --build-dir. With --no-audio --goldens-only it builds
+the gate gets --skip-build --build-dir. With --goldens-only it builds
 just the capture and semantic probes. Passing --build-dir, or an --engine-source
 other than the submodule, selects the standalone fork build while sharing this
 checkout's Bazel repository and action caches unless overridden.

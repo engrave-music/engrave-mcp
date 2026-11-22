@@ -10,25 +10,13 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import tomllib
 from pathlib import Path
 
+from engrave_mcp_testing.version import read_host_version
 from engrave_testing.paths import pixi_env
 
 NATIVE_PINNED_PACKAGES = ("cairo", "freetype", "libfreetype", "libfreetype6", "zlib", "libzlib")
 _LOCKED_PACKAGE = re.compile(r"^- conda: (\S+/(win-64|linux-64)/([A-Za-z0-9_.-]+?)-\d\S*\.conda)$", re.MULTILINE)
-_HEADER_VERSION = re.compile(r'\bhost_version\s*=\s*"([^"]+)"')
-_MODULE_VERSION = re.compile(r'\bmodule\s*\([^)]*?\bversion\s*=\s*"([^"]+)"', re.DOTALL)
-_CPP_COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
-_STARLARK_COMMENT = re.compile(r"#[^\n]*")
-
-
-def _strip_cpp_comments(text: str) -> str:
-    return _CPP_COMMENT.sub("", text)
-
-
-def _strip_starlark_comments(text: str) -> str:
-    return _STARLARK_COMMENT.sub("", text)
 
 
 def _find_native_root(project_root: Path) -> Path:
@@ -56,44 +44,6 @@ def _check_native_pins(host_lock: Path, engine_lock: Path) -> list[str]:
             errors.append(
                 f"pixi.lock pins differ for {key[1]} ({key[0]}): host {host.get(key)}, engine {engine.get(key)}"
             )
-    return errors
-
-
-def _check_host_version(project_root: Path) -> list[str]:
-    version_header = project_root / "engrave_mcp" / "version.h"
-    module_bazel = project_root / "MODULE.bazel"
-    pixi_toml = project_root / "pixi.toml"
-
-    versions: dict[str, str] = {}
-    errors: list[str] = []
-
-    if version_header.is_file():
-        match = _HEADER_VERSION.search(_strip_cpp_comments(version_header.read_text(encoding="utf-8")))
-        if match:
-            versions["engrave_mcp/version.h"] = match.group(1)
-        else:
-            errors.append(f"could not parse host_version from {version_header}")
-
-    if module_bazel.is_file():
-        match = _MODULE_VERSION.search(_strip_starlark_comments(module_bazel.read_text(encoding="utf-8")))
-        if match:
-            versions["MODULE.bazel"] = match.group(1)
-        else:
-            errors.append(f"could not parse module version from {module_bazel}")
-
-    if pixi_toml.is_file():
-        manifest = tomllib.loads(pixi_toml.read_text(encoding="utf-8"))
-        workspace = manifest.get("workspace") or manifest.get("project") or {}
-        version = workspace.get("version")
-        if isinstance(version, str) and version:
-            versions["pixi.toml"] = version
-        else:
-            errors.append(f"could not parse workspace version from {pixi_toml}")
-
-    if len(set(versions.values())) > 1:
-        details = ", ".join(f"{name}={value!r}" for name, value in sorted(versions.items()))
-        errors.append(f"host version mismatch: {details}")
-
     return errors
 
 
@@ -148,7 +98,10 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
             if not (library_dir / name).is_file():
                 errors.append(f"missing native link library: {library_dir / name}")
 
-    errors += _check_host_version(project_root)
+    try:
+        read_host_version(project_root)
+    except (OSError, ValueError) as error:
+        errors.append(str(error))
     errors += _check_native_pins(project_root / "pixi.lock", source_root / "pixi.lock")
     return errors
 

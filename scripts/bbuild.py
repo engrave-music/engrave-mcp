@@ -265,8 +265,9 @@ def generate_compdb(
                 continue
             if tok == "-include-pch" and i + 1 < len(raw_args):
                 i += 2
-                if raw_args[i : i + 4] == ["-Xclang", "-isysroot", "-Xclang", "."]:
-                    i += 4
+                continue
+            if raw_args[i : i + 4] == ["-Xclang", "-isysroot", "-Xclang", "."]:
+                i += 4
                 continue
             if tok == "-Xclang" and i + 1 < len(raw_args) and raw_args[i + 1] == "-fno-validate-pch":
                 i += 2
