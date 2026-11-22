@@ -10,46 +10,19 @@ import struct
 import subprocess
 from pathlib import Path
 
+from _package_common import (
+    collect_package_notices,
+    collect_pixi_runtime_notices,
+    collect_vc_redist_notices,
+    resolve_engine_root,
+    stage_engine_assets,
+    stage_package_notices,
+    stage_soundfont,
+    validate_soundfont,
+)
 from engrave_testing.paths import pixi_env
 
 ROOT = Path(__file__).resolve().parents[1]
-CODEC_NOTICES = (
-    ("flac", "codecs/flac/COPYING.FDL"),
-    ("flac", "codecs/flac/COPYING.GPL"),
-    ("flac", "codecs/flac/COPYING.LGPL"),
-    ("flac", "codecs/flac/COPYING.Xiph"),
-    ("lame", "codecs/lame/COPYING"),
-    ("lame", "codecs/lame/LICENSE"),
-    ("opus", "codecs/opus/COPYING"),
-    ("opusenc", "codecs/opusenc/COPYING"),
-)
-
-ENGINE_THIRDPARTY_NOTICES = (
-    (
-        "fluidsynth",
-        "muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/LICENSE",
-        "thirdparty-fluidsynth-LICENSE",
-    ),
-    ("dtl", "src/engraving/thirdparty/dtl/COPYING", "thirdparty-dtl-COPYING"),
-    (
-        "beatroot",
-        "src/importexport/midi/thirdparty/beatroot/COPYING",
-        "thirdparty-beatroot-COPYING",
-    ),
-)
-
-STAGED_FONT_DIRS = (
-    "bravura",
-    "campania",
-    "edwin",
-    "finalebroadway",
-    "finalemaestro",
-    "gootville",
-    "leland",
-    "mscore",
-    "musejazz",
-    "petaluma",
-)
 
 
 def find_llvm_strip(environment: Path) -> str:
@@ -112,83 +85,14 @@ def _pe_imported_dlls(binary: Path) -> list[str]:
     return names
 
 
-def resolve_engine_root(root: Path, override: Path | None = None) -> Path:
-    return (override or root / "vendor/engrave").resolve()
-
-
-def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Path, str]]:
-    """Collect all required package notices.
-    Returns list of (category, source_path, dest_relative_to_licenses).
-    Fails if any expected notice is missing.
-    """
-    notices: list[tuple[str, Path, str]] = []
-
-    # 1. Superproject LICENSE
-    super_license = root / "LICENSE"
-    if not super_license.is_file():
-        raise RuntimeError(f"Missing superproject LICENSE: {super_license}")
-    notices.append(("superproject", super_license, "LICENSE"))
-
-    # 2. Entire licenses/ directory in superproject (including FluidR3Mono_License.md)
-    licenses_dir = root / "licenses"
-    if not licenses_dir.is_dir():
-        raise RuntimeError(f"Missing licenses/ directory: {licenses_dir}")
-    soundfont_license = licenses_dir / "FluidR3Mono_License.md"
-    if not soundfont_license.is_file():
-        raise RuntimeError(f"Missing SoundFont notice: {soundfont_license}")
-    for p in sorted(licenses_dir.rglob("*")):
-        if p.is_file():
-            rel = p.relative_to(licenses_dir).as_posix()
-            notices.append(("superproject-licenses", p, rel))
-
-    # 3. Upstream engine license(s)
-    upstream_licenses = sorted(engine_root.glob("LICENSE*"))
-    if not upstream_licenses:
-        raise RuntimeError(f"No upstream LICENSE file found under {engine_root}")
-    for p in upstream_licenses:
-        if p.is_file():
-            notices.append(("upstream", p, p.name))
-
-    # 4. Engine third-party notices
-    for name, rel, dst_name in ENGINE_THIRDPARTY_NOTICES:
-        src = engine_root / rel
-        if not src.is_file():
-            if name == "fluidsynth":
-                raise RuntimeError(f"Missing bundled FluidSynth license: {src}")
-            continue
-        notices.append((f"thirdparty-{name}", src, dst_name))
-
-    # 5. Codec notices
-    for name, rel in CODEC_NOTICES:
-        src = licenses_dir / rel
-        if not src.is_file():
-            raise RuntimeError(f"Missing bundled codec notice: {src}")
-        notices.append((f"codec-{name}", src, f"thirdparty-{name}-{src.name}"))
-
-    # 6. Font directory notices
-    fonts_root = engine_root / "fonts"
-    if not fonts_root.is_dir():
-        raise RuntimeError(f"Missing fonts directory: {fonts_root}")
-    fonts_readme = fonts_root / "README.md"
-    if fonts_readme.is_file():
-        notices.append(("font-root", fonts_readme, "font-README.md"))
-
-    for font_name in STAGED_FONT_DIRS:
-        fdir = fonts_root / font_name
-        found = [
-            p
-            for p in sorted(fdir.glob("*"))
-            if any(k in p.name.upper() for k in ["OFL", "LICENSE", "COPYING", "README"])
-        ]
-        if not found:
-            if font_name == "mscore" and fonts_readme.is_file():
-                pass
-            else:
-                raise RuntimeError(f"Missing font directory notice for staged font: {font_name} under {fdir}")
-        for f in found:
-            notices.append((f"font-{font_name}", f, f"font-{font_name}-{f.name}"))
-
-    return notices
+def build_windows_dll_map(library_bin: Path, vc_redist_dir: str | None) -> dict[str, Path]:
+    available = {path.name.lower(): path for path in library_bin.glob("*.dll") if path.is_file()}
+    if vc_redist_dir:
+        redist = Path(vc_redist_dir).resolve() / "x64"
+        for path in sorted(redist.rglob("*.dll")):
+            if path.is_file() and not any("debug" in part.lower() for part in path.relative_to(redist).parts):
+                available[path.name.lower()] = path
+    return available
 
 
 def main():
@@ -206,6 +110,12 @@ def main():
         action="store_true",
         help="Validate all required package notices without packaging",
     )
+    parser.add_argument("--soundfont", type=Path, help="Bundle this SoundFont file")
+    parser.add_argument(
+        "--soundfont-license",
+        type=Path,
+        help="License notice for a custom SoundFont (optional for FluidR3Mono_GM.sf3)",
+    )
     args = parser.parse_args()
 
     engine_root = resolve_engine_root(ROOT, args.source_root)
@@ -216,31 +126,27 @@ def main():
         for cat, src, dst in notices:
             print(f"  [{cat}] {src} -> licenses/{dst}")
         return
+    notices.extend(validate_soundfont(args.soundfont, args.soundfont_license))
     output = args.output.resolve()
-    output.mkdir(parents=True, exist_ok=True)
-    if any(output.iterdir()):
+    if os.path.lexists(output) and (not output.is_dir() or any(output.iterdir())):
         raise SystemExit("Package output must be empty; choose a new --output directory")
+    source_binary = (args.binary or ROOT / "build/release/engrave-mcp.exe").resolve()
+    if not source_binary.is_file():
+        raise RuntimeError(f"Missing Windows executable: {source_binary}")
+    output.mkdir(parents=True, exist_ok=True)
     environment = pixi_env(ROOT)
-    library = environment / "Library"
     strip = None if args.no_strip else find_llvm_strip(environment)
-    available: dict[str, Path] = {}
-    vc_redist = os.environ.get("VCToolsRedistDir")
-    if vc_redist:
-        redist = Path(vc_redist) / "x64"
-        if redist.is_dir():
-            available.update({p.name.lower(): p for p in redist.rglob("*.dll") if "debug" not in str(p).lower()})
-    available.update({p.name.lower(): p for p in (library / "bin").glob("*.dll")})
+    vc_redist_dir = os.environ.get("VCToolsRedistDir")
+    available = build_windows_dll_map(environment / "Library/bin", vc_redist_dir)
     queue = []
-    origins = {}
+    bundled = {}
 
-    def copy(source, destination):
-        destination.parent.mkdir(parents=True, exist_ok=True)
+    def copy_binary(source, destination):
         shutil.copy2(source, destination)
-        origins[str(destination.relative_to(output))] = str(source)
         queue.append(destination)
 
     executable = output / "engrave-mcp.exe"
-    copy(args.binary or ROOT / "build/release/engrave-mcp.exe", executable)
+    copy_binary(source_binary, executable)
     unstripped_executable_sha256 = hashlib.sha256(executable.read_bytes()).hexdigest()
     if strip is not None:
         executable.chmod(executable.stat().st_mode | stat.S_IWUSR)
@@ -255,24 +161,35 @@ def main():
             if key in available:
                 destination = output / available[key].name
                 if not destination.exists():
-                    copy(available[key], destination)
+                    copy_binary(available[key], destination)
+                    bundled[destination.name] = available[key]
             elif not (system / name).exists():
                 raise RuntimeError(f"Unresolved dependency: {name} from {binary.name}")
-    shutil.copytree(ROOT / ".runtime/assets", output / "assets")
-    soundfont = ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
-    if soundfont.exists():
-        copy(soundfont, output / "soundfonts/FluidR3Mono_GM.sf3")
-    licenses = output / "licenses"
-    licenses.mkdir(parents=True, exist_ok=True)
-    for cat, src, dst in notices:
-        target = licenses / dst
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, target)
-    for directory in (environment / "conda-meta",):
-        # Package metadata contains license/provenance, not user environment credentials.
-        if directory.is_dir():
-            for source in directory.glob("*.json"):
-                shutil.copy2(source, licenses / source.name)
+    env_resolved = environment.resolve()
+    pixi_dlls = {
+        name: path
+        for name, path in bundled.items()
+        if path.is_relative_to(environment) or path.resolve().is_relative_to(env_resolved)
+    }
+    notices.extend(collect_pixi_runtime_notices(environment, list(pixi_dlls.values())))
+    redist_dlls = {name: path for name, path in bundled.items() if name not in pixi_dlls}
+    redist_root = Path(vc_redist_dir).resolve() if vc_redist_dir else None
+    if redist_dlls:
+        if not vc_redist_dir:
+            raise RuntimeError(f"Bundled DLLs outside Pixi without VCToolsRedistDir: {sorted(redist_dlls)}")
+        notices.extend(collect_vc_redist_notices(vc_redist_dir, environment))
+    stage_engine_assets(engine_root, output / "assets")
+    stage_soundfont(args.soundfont, output / "soundfonts")
+    stage_package_notices(output / "licenses", notices)
+
+    def relative_origin(name: str, path: Path) -> str:
+        resolved = path.resolve()
+        if name in pixi_dlls:
+            return resolved.relative_to(env_resolved).as_posix()
+        if redist_root is not None and resolved.is_relative_to(redist_root):
+            return resolved.relative_to(redist_root).as_posix()
+        return path.name
+
     manifest = {
         str(p.relative_to(output)): {
             "bytes": p.stat().st_size,
@@ -287,7 +204,14 @@ def main():
                 "files": manifest,
                 "total_bytes": sum(p["bytes"] for p in manifest.values()),
                 "unstripped_executable_sha256": unstripped_executable_sha256,
-                "note": "Local validation bundle. Full third-party source/license distribution audit remains required before publishing.",
+                "dll_origins": {
+                    name: {
+                        "path": relative_origin(name, path),
+                        "provider": "Pixi" if name in pixi_dlls else "VCToolsRedistDir",
+                    }
+                    for name, path in sorted(bundled.items())
+                },
+                "note": "Relocatable Windows package with third-party licenses and filtered runtime provenance.",
             },
             indent=2,
         ),

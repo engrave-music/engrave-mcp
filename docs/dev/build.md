@@ -198,22 +198,26 @@ Windows:
 
 ```powershell
 pixi run python scripts/package_windows.py `
-  --binary build/release/engrave-mcp.exe --output artifacts/windows-next
+  --binary build/release/engrave-mcp.exe --output artifacts/windows-next `
+  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
 
 Linux:
 
 ```bash
 pixi run --locked python scripts/package_linux.py \
-  --binary build/release/engrave-mcp --output artifacts/linux-next
+  --binary build/release/engrave-mcp --output artifacts/linux-next \
+  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
 
 The packagers strip the copied packaged executable by default (pass `--no-strip`
 to keep symbols), leave the staged `build/<profile>` binary untouched, and
-record `unstripped_executable_sha256` in `manifest.json`. They also assemble
-runtime DLL/ELF dependencies, asset folders, SoundFonts,
-and licenses into a self-contained folder. A packaged binary automatically
-resolves its adjacent `assets/` directory without needing `--resources`.
+record `unstripped_executable_sha256` in `manifest.json`. Both packagers bundle
+runtime DLL/ELF dependencies and notices and stage assets directly from
+`vendor/engrave`. Pass the optional `--soundfont` argument to copy a SoundFont
+into the bundle (custom SoundFonts other than `FluidR3Mono_GM.sf3` also require
+`--soundfont-license`). A packaged binary automatically resolves its adjacent
+`assets/` directory without needing `--resources`.
 
 ## Smoke Tests and Lanes
 

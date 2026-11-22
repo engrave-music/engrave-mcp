@@ -17,127 +17,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _package_common import (
+    collect_package_notices,
+    collect_pixi_runtime_notices,
+    resolve_engine_root,
+    stage_engine_assets,
+    stage_package_notices,
+    stage_soundfont,
+    validate_soundfont,
+)
 from engrave_testing.paths import pixi_env
 
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE_ENV = pixi_env(ROOT)
-SOUNDFONT = ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
-CODEC_NOTICES = (
-    ("flac", "codecs/flac/COPYING.FDL"),
-    ("flac", "codecs/flac/COPYING.GPL"),
-    ("flac", "codecs/flac/COPYING.LGPL"),
-    ("flac", "codecs/flac/COPYING.Xiph"),
-    ("lame", "codecs/lame/COPYING"),
-    ("lame", "codecs/lame/LICENSE"),
-    ("opus", "codecs/opus/COPYING"),
-    ("opusenc", "codecs/opusenc/COPYING"),
-)
-
-ENGINE_THIRDPARTY_NOTICES = (
-    (
-        "fluidsynth",
-        "muse/framework/audio/thirdparty/fluidsynth/fluidsynth-2.3.3/LICENSE",
-        "thirdparty-fluidsynth-LICENSE",
-    ),
-    ("dtl", "src/engraving/thirdparty/dtl/COPYING", "thirdparty-dtl-COPYING"),
-    (
-        "beatroot",
-        "src/importexport/midi/thirdparty/beatroot/COPYING",
-        "thirdparty-beatroot-COPYING",
-    ),
-)
-
-STAGED_FONT_DIRS = (
-    "bravura",
-    "campania",
-    "edwin",
-    "finalebroadway",
-    "finalemaestro",
-    "gootville",
-    "leland",
-    "mscore",
-    "musejazz",
-    "petaluma",
-)
-
-
-def resolve_engine_root(root: Path, override: Path | None = None) -> Path:
-    return (override or root / "vendor/engrave").resolve()
-
-
-def collect_package_notices(root: Path, engine_root: Path) -> list[tuple[str, Path, str]]:
-    """Collect all required package notices.
-    Returns list of (category, source_path, dest_relative_to_licenses).
-    Fails if any expected notice is missing.
-    """
-    notices: list[tuple[str, Path, str]] = []
-
-    # 1. Superproject LICENSE
-    super_license = root / "LICENSE"
-    if not super_license.is_file():
-        raise RuntimeError(f"Missing superproject LICENSE: {super_license}")
-    notices.append(("superproject", super_license, "LICENSE"))
-
-    # 2. Entire licenses/ directory in superproject (including FluidR3Mono_License.md)
-    licenses_dir = root / "licenses"
-    if not licenses_dir.is_dir():
-        raise RuntimeError(f"Missing licenses/ directory: {licenses_dir}")
-    soundfont_license = licenses_dir / "FluidR3Mono_License.md"
-    if not soundfont_license.is_file():
-        raise RuntimeError(f"Missing SoundFont notice: {soundfont_license}")
-    for p in sorted(licenses_dir.rglob("*")):
-        if p.is_file():
-            rel = p.relative_to(licenses_dir).as_posix()
-            notices.append(("superproject-licenses", p, rel))
-
-    # 3. Upstream engine license(s)
-    upstream_licenses = sorted(engine_root.glob("LICENSE*"))
-    if not upstream_licenses:
-        raise RuntimeError(f"No upstream LICENSE file found under {engine_root}")
-    for p in upstream_licenses:
-        if p.is_file():
-            notices.append(("upstream", p, p.name))
-
-    # 4. Engine third-party notices
-    for name, rel, dst_name in ENGINE_THIRDPARTY_NOTICES:
-        src = engine_root / rel
-        if not src.is_file():
-            if name == "fluidsynth":
-                raise RuntimeError(f"Missing bundled FluidSynth license: {src}")
-            continue
-        notices.append((f"thirdparty-{name}", src, dst_name))
-
-    # 5. Codec notices
-    for name, rel in CODEC_NOTICES:
-        src = licenses_dir / rel
-        if not src.is_file():
-            raise RuntimeError(f"Missing bundled codec notice: {src}")
-        notices.append((f"codec-{name}", src, f"thirdparty-{name}-{src.name}"))
-
-    # 6. Font directory notices
-    fonts_root = engine_root / "fonts"
-    if not fonts_root.is_dir():
-        raise RuntimeError(f"Missing fonts directory: {fonts_root}")
-    fonts_readme = fonts_root / "README.md"
-    if fonts_readme.is_file():
-        notices.append(("font-root", fonts_readme, "font-README.md"))
-
-    for font_name in STAGED_FONT_DIRS:
-        fdir = fonts_root / font_name
-        found = [
-            p
-            for p in sorted(fdir.glob("*"))
-            if any(k in p.name.upper() for k in ["OFL", "LICENSE", "COPYING", "README"])
-        ]
-        if not found:
-            if font_name == "mscore" and fonts_readme.is_file():
-                pass
-            else:
-                raise RuntimeError(f"Missing font directory notice for staged font: {font_name} under {fdir}")
-        for f in found:
-            notices.append((f"font-{font_name}", f, f"font-{font_name}-{f.name}"))
-
-    return notices
 
 
 HOST_RUNTIME = (
@@ -240,7 +132,7 @@ def classify_dependencies(entries):
             raise RuntimeError(f"Non-glibc dependency is outside the locked native environment: {resolved}")
         if soname in bundled and not same_file(bundled[soname], resolved):
             raise RuntimeError(f"Two different files resolve to SONAME {soname}: {bundled[soname]} and {resolved}")
-        bundled.setdefault(soname, resolved)
+        bundled.setdefault(soname, Path(path))
     return bundled
 
 
@@ -350,6 +242,12 @@ def main():
         action="store_true",
         help="Validate all required package notices without packaging",
     )
+    parser.add_argument("--soundfont", type=Path, help="Bundle this SoundFont file")
+    parser.add_argument(
+        "--soundfont-license",
+        type=Path,
+        help="License notice for a custom SoundFont (optional for FluidR3Mono_GM.sf3)",
+    )
     args = parser.parse_args()
 
     engine_root = resolve_engine_root(ROOT, args.source_root)
@@ -364,12 +262,10 @@ def main():
     if sys.platform != "linux":
         raise SystemExit("Linux packaging must run on Linux")
 
+    notices.extend(validate_soundfont(args.soundfont, args.soundfont_license))
     output = args.output.resolve()
     binary = (args.binary or ROOT / "build/release/engrave-mcp").resolve()
-    assets = (ROOT / ".runtime/assets").resolve()
 
-    if output.is_relative_to(assets):
-        raise SystemExit("Package output must not be inside .runtime/assets")
     if os.path.lexists(output):
         if not output.is_dir() or any(output.iterdir()):
             raise SystemExit("Package output must be empty; choose a new --output directory")
@@ -378,21 +274,6 @@ def main():
     with binary.open("rb") as stream:
         if stream.read(4) != b"\x7fELF":
             raise RuntimeError(f"Not an ELF executable: {binary}")
-    if not assets.is_dir():
-        raise RuntimeError(f"Missing runtime assets: {assets}")
-    soundfont = None
-    if SOUNDFONT.exists():
-        if not SOUNDFONT.is_file():
-            raise RuntimeError(f"SoundFont is not a regular file: {SOUNDFONT}")
-        soundfont = SOUNDFONT
-    # Handled by collect_package_notices
-
-    conda_meta = NATIVE_ENV / "conda-meta"
-    if not conda_meta.is_dir():
-        raise RuntimeError(f"Missing active native environment metadata: {conda_meta}")
-    provenance = sorted(source for source in conda_meta.glob("*.json") if source.is_file())
-    if not provenance:
-        raise RuntimeError(f"No conda-meta JSON provenance found under {conda_meta}")
 
     ldd = "/usr/bin/ldd"
     patchelf = str(NATIVE_ENV / "bin/patchelf")
@@ -410,6 +291,7 @@ def main():
     entries = ldd_entries(ldd, binary, CLEAN_LDD_ENV)
     bundled = classify_dependencies(entries)
     glibc = glibc_metadata(ldd, entries)
+    notices.extend(collect_pixi_runtime_notices(NATIVE_ENV, list(bundled.values())))
 
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
@@ -429,18 +311,9 @@ def main():
     for soname in sorted(bundled):
         set_rpath(patchelf, output / "lib" / soname, "$ORIGIN", output)
 
-    shutil.copytree(assets, output / "assets")
-    if soundfont:
-        copy_checked(soundfont, output / "soundfonts/FluidR3Mono_GM.sf3")
-
-    license_directory = output / "licenses"
-    license_directory.mkdir(parents=True, exist_ok=True)
-    for cat, src, dst in notices:
-        target = license_directory / dst
-        target.parent.mkdir(parents=True, exist_ok=True)
-        copy_checked(src, target)
-    for source in provenance:
-        copy_checked(source, license_directory / source.name)
+    stage_engine_assets(engine_root, output / "assets")
+    stage_soundfont(args.soundfont, output / "soundfonts")
+    stage_package_notices(output / "licenses", notices)
 
     packaged = validate_package(output, ldd, bundled)
     files = {
@@ -478,7 +351,7 @@ def main():
             "Linux assets are found beside /proc/self/exe, with argv[0] as a fallback when procfs is unavailable.",
             "This script does not run the packaged server or verify MCP, rendering, or audio behavior.",
         ],
-        "note": "Local validation bundle. Full third-party source/license distribution audit remains required before publishing.",
+        "note": "Relocatable Linux package with third-party licenses and filtered runtime provenance.",
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps({"output": str(output), "files": len(files), "bytes": total_bytes}))

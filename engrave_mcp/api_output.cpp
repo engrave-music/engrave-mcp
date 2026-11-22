@@ -691,13 +691,14 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             if (!bytes || bytes != audio->bytes || fs::file_size(path) != bytes) {
                 return fail_export(HostError{"EngineFailure", "invalid audio byte count"});
             }
-            const char *mime = "audio/wav";
+            const char *mime = nullptr;
             switch (options.format) {
+                case engrave::AudioFormat::WAV: mime = "audio/wav"; break;
                 case engrave::AudioFormat::FLAC: mime = "audio/flac"; break;
                 case engrave::AudioFormat::OPUS: mime = "audio/ogg"; break;
                 case engrave::AudioFormat::MP3: mime = "audio/mpeg"; break;
-                default: break;
             }
+            if (!mime) return fail_export(HostError{"EngineFailure", "unknown audio output format"});
             timing.add("engine_call", start);
             const auto destination = request.destination.directory ? cleanup.destination / "output" : cleanup.destination;
             auto dest_text = report_path_text(destination);

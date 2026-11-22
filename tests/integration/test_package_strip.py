@@ -106,7 +106,18 @@ def check_package(packager: Path, source: Path, directory: Path, no_strip: bool,
     command = [sys.executable, str(packager), "--binary", str(source), "--output", str(directory)]
     if no_strip:
         command.append("--no-strip")
+    soundfont = REPO_ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
+    if soundfont.is_file():
+        command.extend(["--soundfont", str(soundfont)])
     subprocess.run(command, check=True)
+
+    licenses = directory / "licenses"
+    assert (licenses / "freetype/FTL.TXT").is_file()
+    assert (licenses / "engine-THIRD_PARTY_NOTICES.md").is_file()
+    for path in licenses.rglob("*"):
+        assert path.name.lower() != "gplv2.txt" and "fdk-aac" not in path.name.lower(), path
+    if soundfont.is_file():
+        assert sha256(directory / "soundfonts" / soundfont.name) == sha256(soundfont)
 
     executable = directory / ("engrave-mcp.exe" if windows else "engrave-mcp")
     if windows:

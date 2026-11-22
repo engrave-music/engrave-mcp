@@ -55,6 +55,8 @@ jobs:
           set -euo pipefail
           py=.pixi/envs/default/bin/python
           "$py" -c "from pathlib import Path; from engrave_mcp_testing.layout import audit_test_layout; errors = audit_test_layout(Path('.').resolve()); print('\n'.join(errors)); raise SystemExit(bool(errors))"
+          "$py" scripts/package_windows.py --check-notices
+          "$py" scripts/package_linux.py --check-notices
           for test in \
             tests/integration/test_test_layout.py \
             tests/integration/test_native_includes.py \
@@ -64,6 +66,7 @@ jobs:
             tests/integration/test_rendered_page.py \
             tests/test_engine_gate.py \
             tests/test_bbuild.py \
+            tests/test_packaging.py \
             tests/test_bazel_server_mcp.py; do
             echo "::group::$test"
             "$py" "$test"
