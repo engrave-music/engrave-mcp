@@ -65,15 +65,16 @@ class Client:
             self.q.put({"error": "server exited", "exit": self.p.wait()})
 
         threading.Thread(target=read, daemon=True).start()
-        self.rpc(
-            "initialize",
-            {
-                "protocolVersion": protocol_version,
-                "capabilities": {},
-                "clientInfo": {"name": "latency", "version": "1"},
-            },
-        )
-        self.send("notifications/initialized", {}, True)
+        if protocol_version is not None:
+            self.rpc(
+                "initialize",
+                {
+                    "protocolVersion": protocol_version,
+                    "capabilities": {},
+                    "clientInfo": {"name": "latency", "version": "1"},
+                },
+            )
+            self.send("notifications/initialized", {}, True)
 
     def send(self, method, params, notification=False):
         self.ident += 1

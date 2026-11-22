@@ -1,6 +1,8 @@
 # MCP score tools
 
-The host negotiates protocol versions 2024-11-05, 2025-06-18 and 2025-11-25. An unsupported version, including 2025-03-26, receives 2025-11-25. After initialization, `tools/list` publishes the active input schemas and annotations. With 2025-06-18 or later, tools return the typed payload in `structuredContent` and notation reads put the bar-aligned summary in `content[0].text`. Text above 256 KiB is replaced by a short budget notice while `structuredContent` remains complete. Version 2024-11-05 serializes the complete payload as JSON in `content[0].text`. Errors set `isError` and carry `error.code` and `error.message`.
+MCP 2026-07-28 requests can call `server/discover`, `tools/list`, `tools/call`, and `ping` immediately. Each request carries the protocol version and client capabilities in `params._meta`. Modern results include `resultType: "complete"` and server info in `_meta`. Discovery advertises all supported versions, and both discovery and tool listings can be cached publicly for one hour. An unsupported modern protocol version returns JSON-RPC error `-32022` with the requested and supported versions. Legacy clients use `initialize` followed by `notifications/initialized` before listing or calling tools. Legacy initialization accepts 2025-06-18 and selects 2025-11-25 for all other requested versions.
+
+For all supported versions, tools return the typed payload in `structuredContent` and notation reads put the bar-aligned summary in `content[0].text`. Text above 256 KiB is replaced by a short budget notice while `structuredContent` remains complete. Errors set `isError` and carry `error.code` and `error.message`.
 
 ## Documents
 

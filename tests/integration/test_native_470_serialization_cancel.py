@@ -45,7 +45,7 @@ def main():
             client.send(
                 "initialize",
                 dict(
-                    protocolVersion="2024-11-05",
+                    protocolVersion="2025-11-25",
                     capabilities={},
                     clientInfo=dict(name="write470-interruption", version="1"),
                 ),

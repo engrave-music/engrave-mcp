@@ -114,12 +114,14 @@ class Host:
         pages.mkdir()
         return pages
 
-    def export(self, pages, ident=30):
-        self.send(
-            "tools/call",
-            dict(name="score_export", arguments=export_args(self.doc, "svg", pages, True)),
-            ident,
-        )
+    def export(self, pages, ident=30, modern=False):
+        params = dict(name="score_export", arguments=export_args(self.doc, "svg", pages, True))
+        if modern:
+            params["_meta"] = {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }
+        self.send("tools/call", params, ident)
 
     def close(self):
         if self.p.poll() is None:
@@ -142,7 +144,7 @@ class Host:
             self.p.stderr.close()
 
 
-def artifact_fault(a, after=None, partial=False, wrapper=False, boundary=None):
+def artifact_fault(a, after=None, partial=False, wrapper=False, boundary=None, modern=False):
     env = {}
     if after:
         env["ENGRAVE_MCP_TEST_THROW_AFTER_RENAME"] = str(after)
@@ -150,19 +152,23 @@ def artifact_fault(a, after=None, partial=False, wrapper=False, boundary=None):
         env["ENGRAVE_MCP_TEST_THROW_WRAPPER"] = "1"
     if boundary:
         env["ENGRAVE_MCP_TEST_THROW_" + boundary] = "1"
-    h = Host(a, a.output / f"fault-{after}-{partial}-{wrapper}-{boundary}", env)
+    h = Host(a, a.output / f"fault-{after}-{partial}-{wrapper}-{boundary}-{int(modern)}", env)
     try:
         pages = h.pages()
         if partial:
             (pages / "page-0002.svg").mkdir()
-        h.export(pages)
-        result = h.read()["result"]["structuredContent"]
+        h.export(pages, modern=modern)
+        envelope = h.read()["result"]
+        if modern:
+            assert envelope["resultType"] == "complete", envelope
+            assert envelope["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "engrave-mcp", envelope
+        result = envelope["structuredContent"]
         assert result["error"]["code"] == ("Io" if after and not boundary else "EngineFailure"), result
         visible = sorted(p.as_posix() for p in pages.glob("*.svg") if p.is_file())
         assert visible == sorted(result["error"]["published_artifacts"]) and visible, result
         assert len(visible) == (after if after else (1 if partial else 2))
         assert not list(pages.glob(".engrave-stage-*"))
-        return dict(after=after, partial=partial, wrapper=wrapper, visible=visible)
+        return dict(after=after, partial=partial, wrapper=wrapper, modern=modern, visible=visible)
     finally:
         h.close()
 
@@ -481,6 +487,7 @@ def main():
     # its environment to Popen, so cases are independent and can overlap.
     cases = [functools.partial(artifact_fault, a, after=i) for i in (1, 2)]
     cases += [functools.partial(artifact_fault, a, partial=partial, wrapper=True) for partial in (False, True)]
+    cases += [functools.partial(artifact_fault, a, wrapper=True, modern=True)]
     cases += [
         functools.partial(artifact_fault, a, after=1, boundary="ERROR_REPORT"),
         functools.partial(artifact_fault, a, boundary="DOCUMENT_CALLBACK"),

@@ -72,7 +72,6 @@
 #include "test_hooks.h"
 #include "tool_result.h"
 #include "utf8_text.h"
-#include "version.h"
 
 namespace music {
 
@@ -100,6 +99,14 @@ constexpr std::size_t k_max_output_messages = 256u;
 constexpr int k_read_error = -1;
 constexpr int k_read_eof = 0;
 constexpr int k_read_stopped = -2;
+
+constexpr std::string_view k_modern_version = "2026-07-28";
+constexpr std::string_view k_latest_legacy_version = "2025-11-25";
+constexpr std::string_view k_oldest_legacy_version = "2025-06-18";
+constexpr std::string_view k_protocol_version_key = "io.modelcontextprotocol/protocolVersion";
+constexpr std::string_view k_client_capabilities_key = "io.modelcontextprotocol/clientCapabilities";
+constexpr std::string_view k_client_info_key = "io.modelcontextprotocol/clientInfo";
+constexpr std::string_view k_log_level_key = "io.modelcontextprotocol/logLevel";
 
 enum class ServerState { UNINITIALIZED, INITIALIZED_PENDING, READY };
 
@@ -145,6 +152,41 @@ bool json_nesting_exceeds(std::string_view text, int max_depth) {
 
 bool is_valid_id(const Json &id) { return id.is_string() || id.holds<uint64_t>() || id.holds<int64_t>(); }
 
+bool has_modern_meta_key(const Json &meta) {
+    return meta.contains(k_protocol_version_key) || meta.contains(k_client_capabilities_key) || meta.contains(k_client_info_key) ||
+           meta.contains(k_log_level_key);
+}
+
+bool valid_client_info(const Json &info) {
+    return info.is_object() && info.contains("name") && info.at("name").is_string() && info.contains("version") &&
+           info.at("version").is_string();
+}
+
+Json supported_versions() { return json_array(k_modern_version, k_latest_legacy_version, k_oldest_legacy_version); }
+
+std::string server_instructions() {
+    std::string instructions =
+        "Start with score_create or score_open. Keep the document handle and revision, then inspect the returned outline for "
+        "measure lengths, staves, signatures and excerpts. Bars, staves and voices start at 1. Use score_write_phrase for "
+        "note entry, then score_read_music to check the result in short windows. Positions use exact whole-note fractions "
+        "relative to the start of the measure: 0, 1/4 and 3/8 are valid offsets. A pickup uses its actual duration. "
+        "Pitch defaults to concert. Choose written pitch_mode on a lane when copying a transposed part. ";
+    instructions += api::phrase_grammar;
+    instructions += " ";
+    instructions += api::phrase_grace_defaults;
+    instructions += " Echo the last revision as expected_revision to guard writes and reads. Phrase writes and default score_edit "
+                    "batches are atomic. Save a named checkpoint before experimenting and use restore_checkpoint to return to it. "
+                    "Use runtime_info with scope ops for detailed edit operations or instruments to find instrument IDs. "
+                    "Request include_ids on a music window when an edit needs an element ID. Export the finished document with "
+                    "score_export by supplying format and path. Use mscz for an editable score. Close the document when finished.";
+    return instructions;
+}
+
+void add_cache_fields(Json &result) {
+    result["ttlMs"] = 3600000;
+    result["cacheScope"] = "public";
+}
+
 bool is_cancellation_code(const std::string &code) {
     return code == "operation_aborted" || code == "cancelled" || code == "canceled" || code == "aborted";
 }
@@ -159,6 +201,7 @@ struct ReaderEvent {
 struct CallState {
     Json id;
     std::shared_ptr<asio::cancellation_signal> cancel;
+    bool modern = false;
     bool cancel_requested = false;
     bool response_started = false;
     bool live_export = false;
@@ -682,12 +725,12 @@ private:
     }
 
     // Called synchronously on the owner with the publication lock held.
-    void publish_report(const Json &id, Json payload) noexcept {
+    void publish_report(const Json &id, Json payload, bool modern) noexcept {
         try {
             if (payload.is_null()) post_writer_failure("published report unavailable", true);
             Json result;
             try {
-                result = make_tool_result(payload, true, tool_result_format());
+                result = make_tool_result(payload, true);
             } catch (...) {
                 Json paths = make_array<Json>();
                 if (payload.contains("artifacts")) {
@@ -699,9 +742,9 @@ private:
                                                {"error",
                                                 {{"code", "EngineFailure"},
                                                  {"message", "Completed export wrapper failed"},
-                                                 {"published_artifacts", std::move(paths)}}}},
-                                          false, tool_result_format());
+                                                 {"published_artifacts", std::move(paths)}}}});
             }
+            if (modern) add_modern_result_fields(result);
             auto wire = dump_json(Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}});
             wire.push_back('\n');
             if (wire.size() > k_max_response_bytes) post_writer_failure("published report exceeds limit", true);
@@ -1004,12 +1047,13 @@ private:
         }
     }
 
-    asio::awaitable<bool> send_error(const Json &id, int code, const std::string &message) {
+    asio::awaitable<bool> send_error(const Json &id, int code, const std::string &message, Json data = nullptr) {
         try {
             Json error = make_object<Json>();
             error["jsonrpc"] = "2.0";
             error["id"] = is_valid_id(id) ? id : Json(nullptr);
             error["error"] = Json{{"code", code}, {"message", message}};
+            if (!data.is_null()) error["error"]["data"] = std::move(data);
             const WireStatus status = co_await send_wire(error);
             if (status == WireStatus::TOO_LARGE) {
                 fatal_shutdown("MCP error response exceeded the 16 MiB limit");
@@ -1214,6 +1258,39 @@ private:
                 params = req["params"];
             }
 
+            const bool has_meta = params.contains("_meta") && params.at("_meta").is_object();
+            const bool modern =
+                method == "server/discover" || (method != "initialize" && has_meta && has_modern_meta_key(params.at("_meta")));
+            if (modern) {
+                if (!has_meta) {
+                    co_return co_await send_error(id, -32602, "Invalid params: _meta object required");
+                }
+                const auto &meta = params.at("_meta");
+                if (!meta.contains(k_protocol_version_key) || !meta.at(k_protocol_version_key).is_string()) {
+                    co_return co_await send_error(id, -32602, "Invalid params: _meta protocol version string required");
+                }
+                if (!meta.contains(k_client_capabilities_key) || !meta.at(k_client_capabilities_key).is_object()) {
+                    co_return co_await send_error(id, -32602, "Invalid params: _meta client capabilities object required");
+                }
+                if (meta.contains(k_client_info_key) && !valid_client_info(meta.at(k_client_info_key))) {
+                    co_return co_await send_error(id, -32602, "Invalid params: _meta client info requires name and version strings");
+                }
+                const auto &requested = meta.at(k_protocol_version_key).get<std::string>();
+                if (requested != k_modern_version) {
+                    Json data = {{"supported", supported_versions()}, {"requested", requested}};
+                    co_return co_await send_error(id, -32022, "Unsupported protocol version", std::move(data));
+                }
+            }
+
+            if (method == "server/discover") {
+                Json result = {{"supportedVersions", supported_versions()},
+                               {"capabilities", {{"tools", make_object<Json>()}}},
+                               {"instructions", server_instructions()}};
+                add_modern_result_fields(result);
+                add_cache_fields(result);
+                co_return co_await send_result(id, std::move(result));
+            }
+
             if (method == "initialize") {
                 if (state_ != ServerState::UNINITIALIZED) {
                     co_return co_await send_error(id, -32600, "Server already initialized");
@@ -1227,35 +1304,16 @@ private:
                 if (!params.contains("clientInfo") || !params["clientInfo"].is_object()) {
                     co_return co_await send_error(id, -32602, "Invalid params: clientInfo object required");
                 }
-                const auto &client_info = params["clientInfo"];
-                if (!client_info.contains("name") || !client_info["name"].is_string() || !client_info.contains("version") ||
-                    !client_info["version"].is_string()) {
+                if (!valid_client_info(params.at("clientInfo"))) {
                     co_return co_await send_error(id, -32602, "Invalid params: clientInfo name and version strings required");
                 }
 
-                auto version = params["protocolVersion"].get<std::string>();
-                if (version != "2024-11-05" && version != "2025-06-18") version = "2025-11-25";
-                protocol_version_ = std::move(version);
-                Json result = {{"protocolVersion", protocol_version_},
+                std::string_view version = params.at("protocolVersion").get<std::string>();
+                if (version != k_oldest_legacy_version) version = k_latest_legacy_version;
+                Json result = {{"protocolVersion", version},
                                {"capabilities", {{"tools", make_object<Json>()}}},
-                               {"serverInfo", {{"name", "engrave-mcp"}, {"version", std::string(host_version)}}}};
-                std::string instructions =
-                    "Start with score_create or score_open. Keep the document handle and revision, then inspect the returned outline for "
-                    "measure lengths, staves, signatures and excerpts. Bars, staves and voices start at 1. Use score_write_phrase for "
-                    "note entry, then score_read_music to check the result in short windows. Positions use exact whole-note fractions "
-                    "relative to the start of the measure: 0, 1/4 and 3/8 are valid offsets. A pickup uses its actual duration. "
-                    "Pitch defaults to concert. Choose written pitch_mode on a lane when copying a transposed part. ";
-                instructions += api::phrase_grammar;
-                instructions += " ";
-                instructions += api::phrase_grace_defaults;
-                instructions +=
-                    " Echo the last revision as expected_revision to guard writes and reads. Phrase writes and default score_edit "
-                    "batches are atomic. Save a named checkpoint before experimenting and use restore_checkpoint to return to it. "
-                    "Use runtime_info with scope ops for detailed edit operations or instruments to find instrument IDs. "
-                    "Request include_ids on a music window when an edit needs an element ID. Export the finished document with "
-                    "score_export "
-                    "by supplying format and path. Use mscz for an editable score. Close the document when finished.";
-                result["instructions"] = std::move(instructions);
+                               {"serverInfo", server_info()},
+                               {"instructions", server_instructions()}};
                 if (!co_await send_result(id, std::move(result))) {
                     co_return false;
                 }
@@ -1264,11 +1322,13 @@ private:
             }
 
             if (method == "ping") {
-                co_return co_await send_result(id, make_object<Json>());
+                Json result = make_object<Json>();
+                if (modern) add_modern_result_fields(result);
+                co_return co_await send_result(id, std::move(result));
             }
 
             if (method == "tools/list") {
-                if (state_ != ServerState::READY) {
+                if (!modern && state_ != ServerState::READY) {
                     co_return co_await send_error(id, -32600, "Tools available only after initialized notification");
                 }
 
@@ -1296,11 +1356,15 @@ private:
                 }
 
                 Json result = {{"tools", std::move(tools_list)}};
+                if (modern) {
+                    add_modern_result_fields(result);
+                    add_cache_fields(result);
+                }
                 co_return co_await send_result(id, std::move(result));
             }
 
             if (method == "tools/call") {
-                if (state_ != ServerState::READY) {
+                if (!modern && state_ != ServerState::READY) {
                     co_return co_await send_error(id, -32600, "Tools available only after initialized notification");
                 }
                 if (!params.contains("name") || !params["name"].is_string()) {
@@ -1321,7 +1385,7 @@ private:
                     co_return co_await send_error(id, -32602, "Unknown tool: " + tool_name);
                 }
 
-                co_return co_await start_tool_call(id, std::move(tool_name), std::move(arguments));
+                co_return co_await start_tool_call(id, std::move(tool_name), std::move(arguments), modern);
             }
 
             co_return co_await send_error(id, -32601, "Method not found: " + method);
@@ -1443,17 +1507,18 @@ private:
     // Tool-call lifetime
     // ---------------------------------------------------------------------
 
-    asio::awaitable<bool> start_tool_call(const Json &id, std::string name, Json arguments) {
+    asio::awaitable<bool> start_tool_call(const Json &id, std::string name, Json arguments, bool modern) {
         CallStatePtr call;
         bool allocation_failed = false;
         try {
             call = std::make_shared<CallState>();
             call->id = id;
+            call->modern = modern;
             call->live_export = name == "score_export";
             call->cancel = std::make_shared<asio::cancellation_signal>();
             if (call->live_export) {
                 call->execution->report = make_unique_fn<void(Json)>(
-                    [self = shared_from_this(), id](Json payload) { self->publish_report(id, std::move(payload)); });
+                    [self = shared_from_this(), id, modern](Json payload) { self->publish_report(id, std::move(payload), modern); });
             }
             inflight_.push_back(call);
         } catch (...) {
@@ -1531,7 +1596,7 @@ private:
                 co_return;
             }
 
-            Json result = make_tool_result(std::move(payload), false, tool_result_format());
+            Json result = make_tool_result(std::move(payload));
             co_await deliver_tool_result(call, std::move(result));
             co_return;
         } catch (const ToolCallError &error) {
@@ -1580,17 +1645,17 @@ private:
         co_return;
     }
 
-    ToolResultFormat tool_result_format() const {
-        return protocol_version_ == "2024-11-05" ? ToolResultFormat::LEGACY : ToolResultFormat::STRUCTURED;
-    }
-
     Json make_tool_error_result(const std::string &code, const std::string &message) const {
         std::string bounded_message = message;
         bounded_message.resize(utf8_prefix(bounded_message, 16384));
-        auto result =
-            make_tool_result(Json{{"ok", false}, {"error", {{"code", code}, {"message", bounded_message}}}}, false, tool_result_format());
-        if (tool_result_format() == ToolResultFormat::STRUCTURED) result["content"][0]["text"] = std::move(bounded_message);
+        auto result = make_tool_result(Json{{"ok", false}, {"error", {{"code", code}, {"message", bounded_message}}}});
+        result["content"][0]["text"] = std::move(bounded_message);
         return result;
+    }
+
+    asio::awaitable<WireStatus> send_tool_result_status(const CallState &call, Json result) {
+        if (call.modern) add_modern_result_fields(result);
+        return send_result_status(call.id, std::move(result));
     }
 
     asio::awaitable<void> deliver_tool_result(CallStatePtr call, Json result) {
@@ -1602,11 +1667,11 @@ private:
         }
         call->response_started = true;
 
-        const WireStatus status = co_await send_result_status(call->id, std::move(result));
+        const WireStatus status = co_await send_tool_result_status(*call, std::move(result));
         if (status == WireStatus::TOO_LARGE && !fatal_.load(std::memory_order_acquire)) {
             Json fallback = make_tool_error_result("ResourceLimit", "Tool response exceeds the 16 MiB transport limit; "
                                                                     "the requested operation may already have completed.");
-            const WireStatus fallback_status = co_await send_result_status(call->id, std::move(fallback));
+            const WireStatus fallback_status = co_await send_tool_result_status(*call, std::move(fallback));
             if (fallback_status == WireStatus::TOO_LARGE) {
                 fatal_shutdown("tool resource-limit response exceeded 16 MiB");
             }
@@ -1629,11 +1694,11 @@ private:
         call->response_started = true;
 
         Json result = make_tool_error_result(code, message);
-        const WireStatus status = co_await send_result_status(call->id, std::move(result));
+        const WireStatus status = co_await send_tool_result_status(*call, std::move(result));
         if (status == WireStatus::TOO_LARGE && !fatal_.load(std::memory_order_acquire)) {
             // Fall back to a tiny bounded resource error.
             Json fallback = make_tool_error_result("ResourceLimit", "Tool error exceeds the 16 MiB transport limit.");
-            if (co_await send_result_status(call->id, std::move(fallback)) == WireStatus::TOO_LARGE) {
+            if (co_await send_tool_result_status(*call, std::move(fallback)) == WireStatus::TOO_LARGE) {
                 fatal_shutdown("tool error response exceeded 16 MiB");
             }
         }
@@ -1656,7 +1721,7 @@ private:
             message = "Unknown application error";
         }
         Json result = make_tool_error_result("EngineFailure", message);
-        const WireStatus status = co_await send_result_status(call->id, std::move(result));
+        const WireStatus status = co_await send_tool_result_status(*call, std::move(result));
         if (status == WireStatus::TOO_LARGE) {
             fatal_shutdown("generic tool error response exceeded 16 MiB");
         }
@@ -1774,7 +1839,6 @@ private:
     asio::executor_work_guard<asio::io_context::executor_type> work_;
 
     ServerState state_ = ServerState::UNINITIALIZED;
-    std::string protocol_version_;
     std::vector<CallStatePtr> inflight_;
 
     // Reader admission queue. Only the reader thread waits on queue_cv_; the

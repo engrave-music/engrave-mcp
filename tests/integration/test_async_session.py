@@ -300,12 +300,30 @@ async def run(args):
                     },
                 },
             )
+            modern_meta = {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }
+            modern_queued_id, modern_queued = client.begin(
+                "tools/call",
+                {
+                    "_meta": modern_meta,
+                    "name": "score_edit",
+                    "arguments": {
+                        "document": doc,
+                        "ops": [{"op": "insert_measures", "count": 1}],
+                    },
+                },
+            )
             await client.proc.stdin.drain()
             await client.notify("notifications/cancelled", {"requestId": queued_id})
+            await client.notify("notifications/cancelled", {"requestId": modern_queued_id})
             await client.notify("notifications/cancelled", {"requestId": stall_id})
-            await client.call("ping", {})
-            assert not queued.done()
+            ping = await client.call("ping", {"_meta": modern_meta})
+            assert ping["result"]["resultType"] == "complete", ping
+            assert not queued.done() and not modern_queued.done()
             client.pending.pop(queued_id)
+            client.pending.pop(modern_queued_id)
             assert (await asyncio.wait_for(stall, 10))["result"]["structuredContent"]["slept_ms"] == 2000
 
             # Fill the transport's outstanding-call bound while the owner is

@@ -45,10 +45,33 @@ TEST(Registry, SyntheticPublicationBoundary) {
             high = middle;
         }
     }
-    const auto under = report(low), over = report(high);
+    const auto over = report(high), under = report(low);
     EXPECT_LE(under, limit);
     EXPECT_GT(over, limit);
-    EXPECT_LT(music::dump_json(music::make_tool_result(payload)).size(), over);
+    const std::string id(transport_request_limit - 256, 'x');
+    Json legacy_response{{"jsonrpc", "2.0"}, {"id", id}, {"result", music::make_tool_result(payload)}};
+    EXPECT_LE(music::dump_json(legacy_response).size() + 1, limit);
+    Json modern_response = legacy_response;
+    music::add_modern_result_fields(modern_response.at("result"));
+    EXPECT_LE(music::dump_json(modern_response).size() + 1, limit);
+
+    Json paths = music::make_array<Json>();
+    for (const auto &entry : payload.at("artifacts").get_array()) music::json_push(paths, entry.at("path"));
+    Json fallback_result = music::make_tool_result(Json{
+        {"ok", false},
+        {"error", {{"code", "EngineFailure"}, {"message", "Completed export wrapper failed"}, {"published_artifacts", std::move(paths)}}}});
+    music::add_modern_result_fields(fallback_result);
+    Json fallback_response{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(fallback_result)}};
+    EXPECT_LE(music::dump_json(fallback_response).size() + 1, limit);
+
+    const Json small{{"ok", true},
+                     {"source_revision", "1"},
+                     {"artifacts", music::json_array<Json>({artifact})},
+                     {"export_warnings", music::make_array<Json>()}};
+    Json small_result = music::make_tool_result(small);
+    music::add_modern_result_fields(small_result);
+    Json small_response{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(small_result)}};
+    EXPECT_LE(music::dump_json(small_response).size() + 1, music::export_report_bound(small));
 }
 
 TEST(Registry, MusicSummaryAndTypedEvents) {
@@ -58,21 +81,10 @@ TEST(Registry, MusicSummaryAndTypedEvents) {
     EXPECT_EQ(result.at("content")[0].at("text"), "Bar 1  s1v1 Eb4:3/4");
     EXPECT_EQ(result.at("structuredContent").at("measures")[0], bar);
     EXPECT_FALSE(result.at("structuredContent").contains("summary"));
-    const auto legacy = music::make_tool_result(payload, false, music::ToolResultFormat::LEGACY);
-    EXPECT_FALSE(legacy.contains("structuredContent"));
-    const auto decoded = music::parse_json(legacy.at("content")[0].at("text").get<std::string>());
-    ASSERT_TRUE(decoded);
-    EXPECT_EQ(*decoded, payload);
-
     const Json large{{"ok", true}, {"types", music::json_array<Json>({std::string(300u * 1024u, 'x')})}};
     const auto large_structured = music::make_tool_result(large);
     EXPECT_LT(large_structured.at("content")[0].at("text").get<std::string>().size(), 1024u);
     EXPECT_EQ(large_structured.at("structuredContent"), large);
-    const auto large_legacy = music::make_tool_result(large, false, music::ToolResultFormat::LEGACY);
-    EXPECT_FALSE(large_legacy.contains("structuredContent"));
-    const auto large_decoded = music::parse_json(large_legacy.at("content")[0].at("text").get<std::string>());
-    ASSERT_TRUE(large_decoded);
-    EXPECT_EQ(*large_decoded, large);
 }
 
 TEST(Registry, DslSchemaDescribesItsEntryGrammar) {

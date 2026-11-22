@@ -6,9 +6,15 @@ import time
 from pathlib import Path
 
 from engrave_mcp_testing.paths import REPO_ROOT
-from engrave_mcp_testing.process_client import Client
+from engrave_mcp_testing.process_client import Client, export_args
 
 PROTOCOL_VERSION = "2025-11-25"
+MODERN_VERSION = "2026-07-28"
+SUPPORTED_VERSIONS = [MODERN_VERSION, PROTOCOL_VERSION, "2025-06-18"]
+VERSION_KEY = "io.modelcontextprotocol/protocolVersion"
+CAPABILITIES_KEY = "io.modelcontextprotocol/clientCapabilities"
+CLIENT_INFO_KEY = "io.modelcontextprotocol/clientInfo"
+SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo"
 # The advertised tool list must match the checked-in schema exactly.
 EXPECTED_TOOLS = [
     tool["name"] for tool in json.loads((REPO_ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))
@@ -365,43 +371,153 @@ def _check_edge_cases(exe: str, failures: list[str]) -> dict[str, dict]:
     return records
 
 
-def _check_music_protocol(exe: str, output: Path, version: str, negotiated: str) -> None:
+def _open_client(exe: str, output: Path, version: str | None) -> Client:
     resources = Path(os.environ.get("ENGRAVE_MCP_RESOURCES", REPO_ROOT / ".runtime/assets"))
-    client = Client(Path(exe), resources, output, protocol_version=version)
-    legacy = negotiated == "2024-11-05"
+    return Client(Path(exe), resources, output, protocol_version=version)
+
+
+def _check_music_round_trip(call) -> str:
+    opened, _ = call("score_create", {})
+    document = opened["document"]
+    call(
+        "score_write_phrase",
+        {
+            "document": document,
+            "lanes": [{"measure": 1, "content": "acciac(D5) C###4 3:2(D4:e E4:e F4:e)"}],
+        },
+    )
+    window, text = call("score_read_music", {"document": document, "count": 1, "include_ids": True})
+    assert window["score"] == "master" and window["excerpt"] is None
+    assert "summary" not in window
+    events = window["measures"][0]["voices"][0]["events"]
+    assert events[0]["notes"][0]["concert"] == "C###4" and events[0]["notes"][0]["id"]
+    assert events[0]["grace_before"][0]["duration"] == "1/8" and window["tuplets"][0]["actual"] == 3
+    tuplet_id = window["tuplets"][0]["id"]
+    for token in ("Bar 1#", "acciac(D5#", "C###4#", f"3:2#{tuplet_id}(D4#"):
+        assert token in text, text
+    return document
+
+
+def _check_legacy_music(exe: str, output: Path, version: str) -> None:
+    client = _open_client(exe, output, version)
 
     def call(name, arguments):
         result = client.rpc("tools/call", {"name": name, "arguments": arguments})["result"]
         assert not result["isError"], result
-        text = result["content"][0]["text"]
-        if legacy:
-            assert "structuredContent" not in result
-            return json.loads(text), text
-        return result["structuredContent"], text
+        assert set(result) == {"content", "isError", "structuredContent"}, result
+        return result["structuredContent"], result["content"][0]["text"]
 
     try:
-        opened, _ = call("score_create", {})
-        document = opened["document"]
-        call(
-            "score_write_phrase",
-            {
-                "document": document,
-                "lanes": [{"measure": 1, "content": "acciac(D5) C###4 3:2(D4:e E4:e F4:e)"}],
-            },
-        )
-        window, text = call("score_read_music", {"document": document, "count": 1, "include_ids": True})
-        assert window["score"] == "master" and window["excerpt"] is None
-        assert ("summary" in window) == legacy
-        events = window["measures"][0]["voices"][0]["events"]
-        assert events[0]["notes"][0]["concert"] == "C###4" and events[0]["notes"][0]["id"]
-        assert events[0]["grace_before"][0]["duration"] == "1/8" and window["tuplets"][0]["actual"] == 3
-        summary = window["summary"] if legacy else text
-        tuplet_id = window["tuplets"][0]["id"]
-        for token in ("Bar 1#", "acciac(D5#", "C###4#", f"3:2#{tuplet_id}(D4#"):
-            assert token in summary, summary
-        if legacy:
-            types_payload, types_text = call("runtime_info", {"scope": "types"})
-            assert len(types_text) > 256 * 1024 and len(types_payload["types"]) > 20
+        _check_music_round_trip(call)
+    finally:
+        client.close()
+
+
+def _check_modern_protocol(exe: str, output: Path, initialize_params: dict) -> dict:
+    client = _open_client(exe, output, None)
+    meta = {VERSION_KEY: MODERN_VERSION, CAPABILITIES_KEY: {}}
+
+    def request(method, params=None):
+        return client.rpc(method, {"_meta": meta, **(params or {})})
+
+    def check_complete(result):
+        assert result["resultType"] == "complete", result
+        server_info = result["_meta"][SERVER_INFO_KEY]
+        assert server_info["name"] == "engrave-mcp", server_info
+        assert isinstance(server_info["version"], str) and server_info["version"], server_info
+
+    def check_cache(result):
+        assert result["ttlMs"] == 3600000 and result["cacheScope"] == "public", result
+
+    def call(name, arguments, *, is_error=False):
+        result = request("tools/call", {"name": name, "arguments": arguments})["result"]
+        check_complete(result)
+        assert result["isError"] is is_error, result
+        return result["structuredContent"], result["content"][0]["text"]
+
+    try:
+        assert client.rpc("ping", {})["result"] == {}
+        assert client.rpc("tools/list", {})["error"]["code"] == -32600
+        legacy_call = {"name": "score_create", "arguments": {}}
+        assert client.rpc("tools/call", legacy_call)["error"]["code"] == -32600
+
+        listed = request("tools/list")["result"]
+        check_complete(listed)
+        check_cache(listed)
+        assert [tool["name"] for tool in listed["tools"]] == EXPECTED_TOOLS
+        document = _check_music_round_trip(call)
+        error, _ = call("score_write_phrase", {"document": document, "lanes": "invalid"}, is_error=True)
+        assert error["ok"] is False and error["error"]["code"] == "InvalidArgument", error
+        path = output / "stateless.mscz"
+        exported, _ = call("score_export", export_args(document, "mscz", path))
+        assert exported["ok"] is True and len(exported["artifacts"]) == 1, exported
+        artifact = exported["artifacts"][0]
+        assert Path(artifact["path"]) == path.resolve()
+        assert int(artifact["size"]) == path.stat().st_size > 0
+
+        ping = request("ping")["result"]
+        check_complete(ping)
+        assert set(ping) == {"resultType", "_meta"}, ping
+        discovered = request("server/discover", {"_meta": {**meta, CLIENT_INFO_KEY: {"name": "test", "version": "1"}}})[
+            "result"
+        ]
+        check_complete(discovered)
+        check_cache(discovered)
+        assert discovered["supportedVersions"] == SUPPORTED_VERSIONS
+        assert discovered["capabilities"] == {"tools": {}}
+        assert "score_write_phrase" in discovered["instructions"]
+        assert ping["_meta"] == listed["_meta"] == discovered["_meta"]
+
+        for method in ("server/discover", "tools/list"):
+            for version in ("2099-01-01", PROTOCOL_VERSION):
+                response = request(method, {"_meta": {**meta, VERSION_KEY: version}})
+                assert response["error"] == {
+                    "code": -32022,
+                    "message": "Unsupported protocol version",
+                    "data": {"supported": SUPPORTED_VERSIONS, "requested": version},
+                }, response
+
+        malformed = [
+            ("server/discover", {}),
+            ("server/discover", {"_meta": []}),
+            ("server/discover", {"_meta": {CAPABILITIES_KEY: {}}}),
+            ("ping", {"_meta": {CAPABILITIES_KEY: {}}}),
+            ("tools/list", {"_meta": {CAPABILITIES_KEY: {}}}),
+            ("tools/list", {"_meta": {CLIENT_INFO_KEY: {"name": "test", "version": "1"}}}),
+            ("tools/list", {"_meta": {"io.modelcontextprotocol/logLevel": "info"}}),
+            ("tools/list", {"_meta": {**meta, VERSION_KEY: 20260728}}),
+            ("tools/list", {"_meta": {VERSION_KEY: MODERN_VERSION}}),
+            ("tools/list", {"_meta": {**meta, CAPABILITIES_KEY: []}}),
+            ("tools/list", {"_meta": {**meta, CLIENT_INFO_KEY: "test"}}),
+            ("tools/list", {"_meta": {**meta, CLIENT_INFO_KEY: {"name": "test"}}}),
+            ("tools/list", {"_meta": {**meta, CLIENT_INFO_KEY: {"name": "test", "version": 1}}}),
+        ]
+        for method, params in malformed:
+            response = client.rpc(method, params)
+            assert response["error"]["code"] == -32602, (method, params, response)
+
+        assert client.rpc("tools/list", {})["error"]["code"] == -32600
+        initialized = client.rpc("initialize", {**initialize_params, "_meta": meta})["result"]
+        assert initialized["protocolVersion"] == PROTOCOL_VERSION
+        assert initialized["instructions"] == discovered["instructions"]
+        assert initialized["serverInfo"] == discovered["_meta"][SERVER_INFO_KEY]
+        assert client.rpc("tools/list", {})["error"]["code"] == -32600
+        check_complete(request("tools/list")["result"])
+        client.send("notifications/initialized", {}, True)
+        assert client.rpc("tools/list", {})["result"] == {"tools": listed["tools"]}
+        assert client.rpc("ping", {})["result"] == {}
+        # Reserved modern metadata keys without protocolVersion stay rejected even after legacy init.
+        for method, extra in (("ping", {}), ("tools/list", {}), ("tools/call", legacy_call)):
+            response = client.rpc(method, {"_meta": {CAPABILITIES_KEY: {}}, **extra})
+            assert response["error"]["code"] == -32602, (method, response)
+        # Ordinary legacy _meta (such as progressToken) remains valid on legacy calls.
+        assert client.rpc("ping", {"_meta": {"progressToken": "p1"}})["result"] == {}
+        return {
+            "discovery": discovered,
+            "stateless_tool_count": len(listed["tools"]),
+            "published_artifact": artifact,
+            "malformed_metadata_cases": len(malformed),
+        }
     finally:
         client.close()
 
@@ -414,7 +530,7 @@ def main() -> int:
         )
         return 2
 
-    exe = sys.argv[1]
+    exe = str(Path(sys.argv[1]).resolve())
     output_path = Path(sys.argv[2]) if len(sys.argv) == 3 else DEFAULT_VALIDATION_PATH
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -427,21 +543,32 @@ def main() -> int:
         "clientInfo": {"name": "test", "version": "1"},
     }
 
-    for requested in ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2099-01-01"):
+    negotiated_versions = {
+        "2024-11-05": PROTOCOL_VERSION,
+        "2025-03-26": PROTOCOL_VERSION,
+        "2025-06-18": "2025-06-18",
+        PROTOCOL_VERSION: PROTOCOL_VERSION,
+        MODERN_VERSION: PROTOCOL_VERSION,
+        "2099-01-01": PROTOCOL_VERSION,
+    }
+    for requested, negotiated in negotiated_versions.items():
         request = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
             "params": {**initialize_params, "protocolVersion": requested},
         }
-        reply = json.loads(_run_server(exe, _compact(request) + "\n")["stdout"])
-        negotiated = PROTOCOL_VERSION if requested in ("2025-03-26", "2099-01-01") else requested
+        run = _run_server(exe, _compact(request) + "\n")
+        assert run["returncode"] == 0, run
+        reply = json.loads(run["stdout"])
         assert reply["result"]["protocolVersion"] == negotiated
         assert "score_write_phrase" in reply["result"]["instructions"]
         for term in ("content string", "C###4", "acciac(D5)", "after16", "3:2", "|"):
             assert term in reply["result"]["instructions"], term
-        if requested != "2099-01-01":
-            _check_music_protocol(exe, output_path.parent / f"{output_path.stem}.{requested}", requested, negotiated)
+        if requested == negotiated:
+            _check_legacy_music(exe, output_path.parent / f"{output_path.stem}.{requested}", requested)
+
+    modern = _check_modern_protocol(exe, output_path.parent / f"{output_path.stem}.{MODERN_VERSION}", initialize_params)
 
     main_lines = [
         '{"jsonrpc":"2.0","id":0,"method":"ping"',
@@ -604,6 +731,7 @@ def main() -> int:
         "main_stream": main_record,
         "oversized_stream": oversized_record,
         "edge_cases": edge_cases,
+        "modern": modern,
         "failures": failures,
     }
 

@@ -9,24 +9,31 @@
 #include "runtime_limits.h"
 #include "test_hooks.h"
 #include "types.h"
+#include "version.h"
 
 namespace music {
 
-enum class ToolResultFormat { STRUCTURED, LEGACY };
+inline Json server_info() { return {{"name", "engrave-mcp"}, {"version", std::string(host_version)}}; }
+
+inline Json server_info_meta() { return {{"io.modelcontextprotocol/serverInfo", server_info()}}; }
+
+inline void add_modern_result_fields(Json &result) {
+    result["resultType"] = "complete";
+    result["_meta"] = server_info_meta();
+}
 
 // The text cap leaves room for the typed payload within the wire budget.
-inline Json make_tool_result(Json payload, bool publication = false, ToolResultFormat format = ToolResultFormat::STRUCTURED) {
+inline Json make_tool_result(Json payload, bool publication = false) {
     if (test_hooks_enabled() && publication && std::getenv("ENGRAVE_MCP_TEST_THROW_WRAPPER")) {
         throw std::runtime_error("Injected failure inside completed export wrapper");
     }
-    const bool structured = format == ToolResultFormat::STRUCTURED;
     std::string text;
-    if (structured && payload.contains("summary")) {
+    if (payload.contains("summary")) {
         text = payload.at("summary").get<std::string>();
         json_erase(payload, "summary");
     }
     if (text.empty()) text = dump_json(payload);
-    if (structured && text.size() > (256u * 1024u)) {
+    if (text.size() > (256u * 1024u)) {
         if (payload.contains("error")) {
             const auto &e = payload.at("error");
             text = e.at("code").get<std::string>() + ": " + e.at("message").get<std::string>();
@@ -48,16 +55,18 @@ inline Json make_tool_result(Json payload, bool publication = false, ToolResultF
     Json result = make_object<Json>();
     result["content"] = json_array(std::move(content_item));
     result["isError"] = payload.contains("ok") && payload["ok"].is_boolean() && !payload["ok"].get<bool>();
-    if (structured) result["structuredContent"] = std::move(payload);
+    result["structuredContent"] = std::move(payload);
     return result;
 }
 
-// Reserve the entire request-line budget for a string RPC id, plus envelope.
 inline usize export_report_bound(const Json &payload) {
-    // Always budget legacy duplication, even above its cutoff. This keeps the
-    // bound monotonic when a smaller visible subset falls below that cutoff.
+    // Budget the full payload as text so the bound remains monotonic when a
+    // smaller visible subset falls below the text cutoff.
     auto result = make_tool_result(payload);
     result["content"][0]["text"] = dump_json(payload);
+    add_modern_result_fields(result);
+    // Reserve the request-line budget for a string RPC id and room for the
+    // JSON-RPC frame and publication wrapper fallback.
     return dump_json(result).size() + api::transport_request_limit + 1024;
 }
 
