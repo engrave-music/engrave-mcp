@@ -23,7 +23,6 @@ ROOT = Path(__file__).resolve().parents[1]
 NATIVE_ENV = pixi_env(ROOT)
 SOUNDFONT = ROOT / ".runtime/soundfonts/FluidR3Mono_GM.sf3"
 CODEC_NOTICES = (
-    ("fdk-aac", "codecs/fdk-aac/NOTICE"),
     ("flac", "codecs/flac/COPYING.FDL"),
     ("flac", "codecs/flac/COPYING.GPL"),
     ("flac", "codecs/flac/COPYING.LGPL"),

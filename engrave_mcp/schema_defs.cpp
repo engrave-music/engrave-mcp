@@ -38,7 +38,7 @@ Json declared_tools() {
     const Json tpc = integer(-8, 40);
     const Json n1024 = integer(1, 1024);
     const Json format = choices({"mscz", "mscx", "musicxml", "mxl", "midi", "guitarpro", "mnx"});
-    const Json output = choices({"mscz", "mscx", "musicxml", "mxl", "midi", "pdf", "png", "svg", "wav", "flac", "opus", "mp3", "aac",
+    const Json output = choices({"mscz", "mscx", "musicxml", "mxl", "midi", "pdf", "png", "svg", "wav", "flac", "opus", "mp3",
                                  "measure_positions", "segment_positions"});
     const Json scope = choices({"overview", "templates", "instruments", "types", "type", "styles", "ops"});
     const Json mode = choices({"elements", "properties", "page_count", "audio_tracks"});

@@ -542,7 +542,6 @@ Json encode(const engrave::Capabilities &c) {
             case engrave::AudioFormat::FLAC: return "flac";
             case engrave::AudioFormat::OPUS: return "opus";
             case engrave::AudioFormat::MP3: return "mp3";
-            case engrave::AudioFormat::AAC: return "aac";
         }
         throw std::logic_error("unknown AudioFormat");
     };

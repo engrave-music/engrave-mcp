@@ -14,7 +14,6 @@ from engrave_testing.paths import pixi_env
 
 ROOT = Path(__file__).resolve().parents[1]
 CODEC_NOTICES = (
-    ("fdk-aac", "codecs/fdk-aac/NOTICE"),
     ("flac", "codecs/flac/COPYING.FDL"),
     ("flac", "codecs/flac/COPYING.GPL"),
     ("flac", "codecs/flac/COPYING.LGPL"),

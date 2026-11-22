@@ -336,7 +336,7 @@ async def test_mcp_level_integration(
         nonascii_dir.mkdir(parents=True, exist_ok=True)
         nonascii_async = {}
         try:
-            for fmt in ("wav", "flac", "opus", "mp3", "aac"):
+            for fmt in ("wav", "flac", "opus", "mp3"):
                 sync = await export(short_doc, fmt, out_dir / f"mcp_sync.{fmt}")
                 async_path = await export(short_doc, fmt, nonascii_dir / f"异步 音频.{fmt}")
                 assert sync.read_bytes() == async_path.read_bytes(), fmt

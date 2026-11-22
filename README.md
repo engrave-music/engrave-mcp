@@ -26,7 +26,7 @@ is available for MuseScore 4.x interop where the score stays inside its document
   all-or-nothing; a batch stops at the first rejected operation and keeps the
   operations before it. Named checkpoints give explicit rollback.
 - Export score files, PDF/PNG/SVG vector and raster pages, synthesized audio
-  (WAV/FLAC/Opus/MP3/AAC) and layout position data directly from the **live**
+  (WAV/FLAC/Opus/MP3) and layout position data directly from the **live**
   in-memory document, with durable publication.
 - Hot-load fonts and replace SoundFonts at runtime.
 

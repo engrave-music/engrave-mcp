@@ -40,8 +40,6 @@ def header(fmt, data):
         return data.startswith(b"fLaC")
     if fmt == "opus":
         return data.startswith(b"OggS")
-    if fmt == "aac":
-        return len(data) > 4 and data[0] == 0xFF and data[1] & 0xF0 == 0xF0
     if fmt == "mp3":
         return data.startswith(b"ID3") or any(
             data[i] == 0xFF and data[i + 1] & 0xE0 == 0xE0 for i in range(min(1024, len(data) - 1))
@@ -201,7 +199,7 @@ async def run(args):
             assert right["right"] > 0 and right["left"] <= TRACK_BALANCE_LEAKAGE_LIMIT * right["right"]
             master = analyze(await export(doc, "master-12.wav", {"master_volume_db": -12.0}))
             assert abs(20 * math.log10(master["rms"] / reference["rms"]) + 12) <= 0.2
-            for fmt in ("flac", "opus", "mp3", "aac"):
+            for fmt in ("flac", "opus", "mp3"):
                 path = await export(doc, f"compressed.{fmt}", {"master_volume_db": -3.0})
                 assert header(fmt, path.read_bytes()), fmt
             evidence["checks"].extend(
@@ -236,6 +234,13 @@ async def run(args):
         if args.soundfont:
             assert analyze(await export(doc, "excerpt.wav", {"master_volume_db": -2.0}, score=excerpt))["rms"] > 0
         revision = edited["revision"]
+
+        path = out / "unsupported-audio-export"
+        refused = await client.tool("score_export", {"document": doc, "format": "aac", "path": str(path)}, error=True)
+        assert refused["error"]["code"] == "InvalidArgument", refused
+        assert "format: invalid choice" in refused["error"]["message"], refused
+        assert not path.exists()
+        evidence["checks"].append("unsupported_audio_format")
 
         invalid_options = [
             {"tracks": [{"track": 999999, "mute": True}]},

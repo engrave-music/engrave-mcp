@@ -51,7 +51,7 @@ Use `runtime_info` with `{"scope":"ops","op":"enter_notes"}` for the fields and 
 
 `score_export` takes a document, format and local path. PNG and SVG use a directory containing one file per page. Other formats take a file path. PNG defaults to an opaque white background. Set `options.background` to false and `options.transparent` to true for transparency. Use `first_page`, `last_page` and PNG `dpi` in `options` to control rendering.
 
-Available formats are `mscz`, `mscx`, `musicxml`, `mxl`, `midi`, `pdf`, `png`, `svg`, `wav`, `flac`, `opus`, `mp3`, `aac`, `measure_positions` and `segment_positions`. Position exports contain page-local 1200-DPI geometry and repeat-expanded playback times in milliseconds. Success reports the source revision, published artifacts with integer byte sizes and any engine warnings. Publication failures identify files already visible.
+Available formats are `mscz`, `mscx`, `musicxml`, `mxl`, `midi`, `pdf`, `png`, `svg`, `wav`, `flac`, `opus`, `mp3`, `measure_positions` and `segment_positions`. Position exports contain page-local 1200-DPI geometry and repeat-expanded playback times in milliseconds. Success reports the source revision, published artifacts with integer byte sizes and any engine warnings. Publication failures identify files already visible.
 
 Native exports use version 5.00 by default. Set `options.native_version` to `"4.70"` for compatibility export. Inspect degradation warnings and refusals before distributing the result. [Engine compatibility details](../../vendor/engrave/docs/write470.md)
 

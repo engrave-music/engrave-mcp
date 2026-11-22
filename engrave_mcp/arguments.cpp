@@ -172,7 +172,7 @@ void check_format(const Json &j, const std::string &p) { choice(j, p, {"mscz", "
 
 void check_output(const Json &j, const std::string &p) {
     choice(j, p,
-           {"mscz", "mscx", "musicxml", "mxl", "midi", "pdf", "png", "svg", "wav", "flac", "opus", "mp3", "aac", "measure_positions",
+           {"mscz", "mscx", "musicxml", "mxl", "midi", "pdf", "png", "svg", "wav", "flac", "opus", "mp3", "measure_positions",
             "segment_positions"});
 }
 

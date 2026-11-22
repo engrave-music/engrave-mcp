@@ -90,7 +90,7 @@ def main():
             },
         ),
     ]
-    cases = [(fmt, label, mix) for fmt in ("wav", "flac", "opus", "mp3", "aac") for label, mix in mixes]
+    cases = [(fmt, label, mix) for fmt in ("wav", "flac", "opus", "mp3") for label, mix in mixes]
     # Parity compares output hashes only, so its sessions may overlap; it
     # finishes before the timing and RSS sections below start.
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:

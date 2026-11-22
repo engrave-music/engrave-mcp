@@ -895,7 +895,6 @@
             "flac",
             "opus",
             "mp3",
-            "aac",
             "measure_positions",
             "segment_positions"
           ],

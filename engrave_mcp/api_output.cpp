@@ -174,7 +174,6 @@ Result<engrave::AudioFormat> audio_format(const std::string &s) {
     if (s == "flac") return engrave::AudioFormat::FLAC;
     if (s == "opus") return engrave::AudioFormat::OPUS;
     if (s == "mp3") return engrave::AudioFormat::MP3;
-    if (s == "aac") return engrave::AudioFormat::AAC;
     return std::unexpected(invalid_error("unknown audio format"));
 }
 
@@ -697,7 +696,6 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                 case engrave::AudioFormat::FLAC: mime = "audio/flac"; break;
                 case engrave::AudioFormat::OPUS: mime = "audio/ogg"; break;
                 case engrave::AudioFormat::MP3: mime = "audio/mpeg"; break;
-                case engrave::AudioFormat::AAC: mime = "audio/aac"; break;
                 default: break;
             }
             timing.add("engine_call", start);
