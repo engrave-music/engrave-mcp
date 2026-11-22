@@ -31,7 +31,7 @@ class EngineGateDispatch(unittest.TestCase):
             (root / "tests/gate.py").write_text("import json, sys; print(json.dumps(sys.argv[1:]))", encoding="utf8")
             for source_args in (["--engine-source", str(root)], ["--engine-source=" + str(root)]):
                 with self.subTest(args=source_args):
-                    args = [*source_args, "--output", "unchanged"]
+                    args = [*source_args, "--output", "unchanged", "--no-audio", "--goldens-only"]
                     self.assertEqual(
                         self.dispatch(args),
                         [

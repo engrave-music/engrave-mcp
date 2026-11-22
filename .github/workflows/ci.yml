@@ -1,12 +1,8 @@
 name: CI
 
-# Build and unit-test lane for the engrave-mcp host.
-#
-# Runs on Windows and Linux using Bazel + hermetic xclang 23: builds the host
-# and its C++ tests against the pinned engine submodule, runs the host C++
-# tests and the fast Python checks. The engine gate (tests/engine_gate.py), the
-# golden comparisons, the audio corpus and every lane that needs a SoundFont
-# stay manual (docs/dev/validation.md).
+# Windows and Linux run release host tests and compare MCP rendering against
+# a pinned engine golden. Linux also runs host and engine core tests with
+# ASan, LSan, and UBSan. Host API tests use the checked-in sine SoundFont.
 
 on:
   push:
@@ -137,7 +133,12 @@ jobs:
             'host_api_test', 'staging_test'
           )
           if ($IsLinux) { $targets += 'publication_test' }
-          pixi run --locked python scripts/bbuild.py --profile release --build-directory $env:BUILD_DIR -j 4 build @targets
+          # The existing pin still writes absolute paths into cached PCH files.
+          $pch = @()
+          if (-not (Select-String -Quiet -SimpleMatch -Pattern '"-relocatable-pch"' -Path vendor/engrave/bazel/defs.bzl)) {
+            $pch += '--no-pch'
+          }
+          pixi run --locked python scripts/bbuild.py --profile release --build-directory $env:BUILD_DIR -j 4 @pch build @targets
 
       - name: Save Bazel repository cache
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.repo-cache.outputs.cache-hit != 'true' }}
@@ -241,3 +242,71 @@ jobs:
             }
           }
           if ($failed) { throw "failed: $($failed -join ', ')" }
+
+  sanitize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      REPO_CACHE: build/.bazel_repo_cache
+      DISK_CACHE: build/.bazel_disk_cache
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+
+      - name: Verify submodule, stage runtime assets, check Bazel inputs
+        run: |
+          pixi run --locked python scripts/bootstrap.py
+          pixi run --locked python scripts/prepare.py
+          pixi run --locked python scripts/check_build_inputs.py --check
+
+      - name: Cache Bazel repositories
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.REPO_CACHE }}
+          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
+          restore-keys: bazel-repo-linux-xclang-
+
+      - name: Cache sanitized Bazel actions
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.DISK_CACHE }}
+          key: bazel-disk-linux-sanitize-${{ github.sha }}
+          restore-keys: bazel-disk-linux-sanitize-
+
+      - name: Build sanitized host and engine tests
+        run: |
+          pch=()
+          if ! grep -Fq '"-relocatable-pch"' vendor/engrave/bazel/defs.bzl; then
+            pch+=(--no-pch)
+          fi
+          pixi run --locked python scripts/bbuild.py --profile sanitize -j 4 "${pch[@]}" build \
+            engrave_mcp host_api_test staging_test publication_test engrave_core_tests
+
+      - name: Run sanitized host and engine tests
+        run: |
+          export LD_LIBRARY_PATH="$PWD/.pixi/envs/default/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          build="$PWD/build/sanitize"
+          py="$PWD/.pixi/envs/default/bin/python"
+          assets="$PWD/.runtime/assets"
+          data="$PWD/vendor/engrave/tests/data/inputs"
+          sine="$PWD/vendor/engrave/tests/data/engine_audio/sine.sf2"
+          "$build/staging_test"
+          "$build/publication_test" "$RUNNER_TEMP/publication"
+          "$py" tests/integration/test_host_api.py --binary "$build/host_api_test" --resources "$assets" \
+            --soundfont "$sine" --replacement-soundfont "$sine" --output "$RUNNER_TEMP/host-api"
+          for shard in 0 1 2 3; do
+            work="$RUNNER_TEMP/core-$shard"
+            mkdir -p "$work/tmp"
+            (cd "$work" && TMPDIR="$work/tmp" GTEST_TOTAL_SHARDS=4 GTEST_SHARD_INDEX="$shard" \
+              "$build/engrave_core_tests" --assets="$assets" --golden-corpus="$data/golden" \
+              --inputs-corpus="$data" --python="$py" --mnx-out="$RUNNER_TEMP/mnx-export")
+          done

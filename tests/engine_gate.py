@@ -3,7 +3,8 @@
 
 By default the gate runs on the host's profile build: engine_tests is built with
 scripts/bbuild.py into build/<profile>, which ordinary host work keeps warm, and
-the gate gets --skip-build --build-dir. Passing --build-dir, or an --engine-source
+the gate gets --skip-build --build-dir. With --no-audio --goldens-only it builds
+just the capture and semantic probes. Passing --build-dir, or an --engine-source
 other than the submodule, selects the standalone fork build while sharing this
 checkout's Bazel repository and action caches unless overridden.
 
@@ -29,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("--build-dir", type=Path)
     parser.add_argument("--profile", default="release")
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--goldens-only", action="store_true")
     parsed, _ = parser.parse_known_args(args)
     root = parsed.engine_source.resolve()
     prefix = []
@@ -43,7 +45,7 @@ if __name__ == "__main__":
                     "--profile",
                     parsed.profile,
                     "build",
-                    "engine_tests",
+                    *(["engrave_output_probe", "semantic_dump"] if parsed.goldens_only else ["engine_tests"]),
                 ],
                 cwd=project,
             )

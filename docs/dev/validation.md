@@ -202,6 +202,10 @@ and `build/.bazel_disk_cache`:
 
 - `--quick` skips the `engine-audio` corpus check for faster per-step
   verification; omit `--quick` at milestones and engine bumps.
+- With an engine checkout that includes the SoundFont-free lane, `--no-audio`
+  runs GTest, asset and MNX checks, and compares 226 outputs across 25 fixtures.
+  Add `--goldens-only` to run just the asset manifest and golden checks. Before
+  the submodule pin advances, pass the updated checkout with `--engine-source`.
 - Always pass a fresh `--output` directory under `notes/runs/<name>`; existing
   capture directories are rejected.
 - The gate executes `engrave_core_tests` (API, handles, describe, read, ops,
@@ -212,8 +216,7 @@ and `build/.bazel_disk_cache`:
 
 ## CI
 
-`.github/workflows/ci.yml` (pushes to `main`, pull requests, manual dispatch) is
-a build-and-unit-test gate, not milestone acceptance:
+Both CI workflows run on pushes to `main`, pull requests, and manual dispatch.
 
 - **`checks`** (Ubuntu, Pixi): Verifies the submodule pin and Bazel inputs
   (`scripts/check_build_inputs.py`), runs `pixi run format-check`, the layout
@@ -228,14 +231,21 @@ a build-and-unit-test gate, not milestone acceptance:
   `vendor/engrave/tests/data/engine_audio/sine.sf2` so CI downloads no
   SoundFonts), and asset-only integration scripts (`cli`, `version_info`, `open_data`,
   `native_inputs`, `positions`, `imports_midi`, `imports_guitarpro`, `repeats`,
-  `transport`, plus `windows_manifest` on Windows). The fork has its own CI
-  workflow (`vendor/engrave/.github/workflows/ci.yml`) for engine unit tests.
-- **Manual checks (not in CI)**: The engine gate and golden comparisons
-  (`tests/engine_gate.py`), the audio corpus and `engine_audio`, all lanes
-  requiring `--soundfont` (`live_export`, `live_audio`, `async_session`,
-  `export_options`, `mcp_smoke`, etc.), opt-in lanes, benchmarks,
-  Windows-vs-Linux paired captures, and engine naming lint. A green CI run does
-  not replace milestone validation.
+  `transport`, plus `windows_manifest` on Windows). The positions lane compares
+  a PNG exported through MCP to the pinned engine's platform golden.
+- The host **`sanitize`** job on Linux builds the executable, staging, publication,
+  host API, and engine core tests with `--profile sanitize`. Runs the four test
+  binaries with ASan, LSan, and UBSan, using four shards for the engine core
+  suite and the checked-in sine SoundFont for the host API.
+- The **fork workflow** at `vendor/engrave/.github/workflows/ci.yml` runs release unit tests
+  and the SoundFont-free golden comparison on Windows and Linux. Its Linux
+  `sanitize` job runs four core shards, both upstream GTest suites, and the
+  SoundFont-free golden probes with ASan, LSan, and UBSan. Both sanitizer jobs
+  use disk cache keys distinct from their release jobs.
+- **Manual milestone checks** include the full engine gate
+  (`tests/engine_gate.py`), the audio corpus and `engine_audio`, the live export
+  and audio lanes, opt-in lanes, benchmarks, Windows-vs-Linux paired captures,
+  and engine naming lint.
 
 ## Timing Measurements and Benchmarks
 

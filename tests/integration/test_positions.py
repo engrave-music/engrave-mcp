@@ -1,4 +1,4 @@
-"""Validate layout coordinates and repeat/tempo playback mappings through MCP."""
+"""Validate MCP layout coordinates, rendered output, and repeat/tempo playback mappings."""
 
 from __future__ import annotations
 
@@ -8,11 +8,13 @@ import base64
 import json
 import math
 import os
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from engrave_mcp_testing.export_formats import REPEAT_FIXTURE_MUSICXML, read_png_dimensions
 from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_testing.golden import describe_png
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -254,6 +256,17 @@ async def run(args):
                         )
                         assert sentinel.read_bytes() == b"unchanged"
                 await call("score_close", {"document": doc})
+                engine_data = REPO_ROOT / "vendor/engrave/tests/data"
+                fixture = engine_data / "inputs/golden/pedal.mscx"
+                opened = await call("score_open", {"path": str(fixture.resolve())})
+                png = await export(opened["document"], "png", "pedal")
+                platform = "windows" if sys.platform == "win32" else "linux"
+                baseline = engine_data / "golden" / platform / fixture.name / "page-0.png.json"
+                expected = json.loads(baseline.read_text(encoding="utf-8"))
+                actual = describe_png(png)
+                assert actual == expected, (fixture.name, expected, actual)
+                await call("score_close", {"document": opened["document"]})
+                evidence["pinned_png_golden"] = fixture.name
                 opened = await open_xml(multipage_fixture())
                 identity = {"document": opened["document"]}
                 unlaid = await call("score_outline", identity)
