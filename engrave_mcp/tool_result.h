@@ -26,13 +26,12 @@ inline Json make_tool_result(Json payload, bool publication = false, ToolResultF
         json_erase(payload, "summary");
     }
     if (text.empty()) text = dump_json(payload);
-    if (text.size() > (256u * 1024u)) {
+    if (structured && text.size() > (256u * 1024u)) {
         if (payload.contains("error")) {
             const auto &e = payload.at("error");
             text = e.at("code").get<std::string>() + ": " + e.at("message").get<std::string>();
         } else {
-            text = structured ? "Result exceeds the text budget. Read structuredContent or request a smaller range." :
-                                "Result exceeds the text budget. Request a smaller range.";
+            text = "Result exceeds the text budget. Read structuredContent or request a smaller range.";
             for (const auto &[key, field] : payload.get_object()) {
                 if (field.is_array()) text += " " + key + "=" + std::to_string(field.size()) + " items.";
             }

@@ -63,6 +63,16 @@ TEST(Registry, MusicSummaryAndTypedEvents) {
     const auto decoded = music::parse_json(legacy.at("content")[0].at("text").get<std::string>());
     ASSERT_TRUE(decoded);
     EXPECT_EQ(*decoded, payload);
+
+    const Json large{{"ok", true}, {"types", music::json_array<Json>({std::string(300u * 1024u, 'x')})}};
+    const auto large_structured = music::make_tool_result(large);
+    EXPECT_LT(large_structured.at("content")[0].at("text").get<std::string>().size(), 1024u);
+    EXPECT_EQ(large_structured.at("structuredContent"), large);
+    const auto large_legacy = music::make_tool_result(large, false, music::ToolResultFormat::LEGACY);
+    EXPECT_FALSE(large_legacy.contains("structuredContent"));
+    const auto large_decoded = music::parse_json(large_legacy.at("content")[0].at("text").get<std::string>());
+    ASSERT_TRUE(large_decoded);
+    EXPECT_EQ(*large_decoded, large);
 }
 
 TEST(Registry, DslSchemaDescribesItsEntryGrammar) {

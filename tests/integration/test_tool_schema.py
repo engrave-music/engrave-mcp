@@ -116,9 +116,24 @@ def main():
         assert term in events["description"], term
     edit = by_name["score_edit"]
     assert edit.is_valid(
-        {"document": "doc-A-1", "ops": [{"op": "set_pitch", "tpc": -8}, {"op": "enter_notes", "tpc": 40}]}
+        {
+            "document": "doc-A-1",
+            "ops": [
+                {"op": "set_pitch", "tpc": -8},
+                {"op": "enter_notes", "pitches": [{"pitch": 63, "tpc": 40}]},
+                {"op": "add", "props": [{"name": "visible", "value": False}]},
+            ],
+        }
     )
     assert not edit.is_valid({"document": "doc-A-1", "ops": [{"op": "set_pitch", "tpc": 41}]})
+    assert not edit.is_valid({"document": "doc-A-1", "ops": [{"op": "enter_notes", "pitches": "bogus"}]})
+    assert not edit.is_valid(
+        {"document": "doc-A-1", "ops": [{"op": "enter_notes", "pitches": [{"pitch": 63, "tpc": 41}]}]}
+    )
+    assert not edit.is_valid(
+        {"document": "doc-A-1", "ops": [{"op": "enter_notes", "pitches": [{"pitch": 63, "tpc": -9}]}]}
+    )
+    assert not edit.is_valid({"document": "doc-A-1", "ops": [{"op": "add", "props": "bogus"}]})
     assert not edit.is_valid({"document": "doc-A-1", "ops": [{"op": "remove"}] * 1025})
     assert not by_name["score_read_music"].is_valid({"document": "doc-A-1", "measure": "1"})
     assert not by_name["score_export"].is_valid({"document": "doc-A-1", "format": "exe", "path": "out"})

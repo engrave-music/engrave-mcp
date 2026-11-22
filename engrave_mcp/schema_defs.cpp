@@ -2,7 +2,7 @@
 
 namespace music::api {
 namespace {
-Json array(const Json &item) { return {{"type", "array"}, {"items", item}}; }
+Json schema_array(const Json &item) { return {{"type", "array"}, {"items", item}}; }
 
 Json choices(std::initializer_list<Json> values) { return {{"type", "string"}, {"enum", json_array<Json>(values)}}; }
 
@@ -78,46 +78,47 @@ Json declared_tools() {
                              {"use_repeats", boolean},
                              {"master_volume_db", volume},
                              {"master_balance", balance},
-                             {"tracks", array(track)},
+                             {"tracks", schema_array(track)},
                              {"reverb", boolean},
                              {"reverb_send", num},
                              {"sample_rate", sample_rate}},
                             json_array<Json>({}));
     const Json query = object({{"excerpt", eid},
-                               {"types", array(text)},
+                               {"types", schema_array(text)},
                                {"first_measure", bar},
                                {"measure_count", count},
                                {"from_measure", eid},
                                {"to_measure", eid},
-                               {"staves", array(bar)},
-                               {"voices", array(voice)},
+                               {"staves", schema_array(bar)},
+                               {"voices", schema_array(voice)},
                                {"from_tick", fraction},
                                {"to_tick", fraction},
-                               {"props", array(text)},
+                               {"props", schema_array(text)},
                                {"layout_boxes", boolean},
                                {"limit", limit},
                                {"cursor", cursor}},
                               json_array<Json>({}));
     const Json gracenote =
-        object({{"kind", grace}, {"duration", duration}, {"pitches", array(text)}, {"drums", array(pitch)}}, json_array<Json>({"kind"}));
-    const Json note = object({{"pitches", array(text)},
-                              {"drums", array(pitch)},
+        object({{"kind", grace}, {"duration", duration}, {"pitches", schema_array(text)}, {"drums", schema_array(pitch)}},
+               json_array<Json>({"kind"}));
+    const Json note = object({{"pitches", schema_array(text)},
+                              {"drums", schema_array(pitch)},
                               {"duration", duration},
                               {"tie", tie},
-                              {"grace_before", array(gracenote)},
-                              {"grace_after", array(gracenote)}},
+                              {"grace_before", schema_array(gracenote)},
+                              {"grace_after", schema_array(gracenote)}},
                              json_array<Json>({}));
-    const Json event = object({{"pitches", array(text)},
-                               {"drums", array(pitch)},
+    const Json event = object({{"pitches", schema_array(text)},
+                               {"drums", schema_array(pitch)},
                                {"duration", duration},
                                {"tie", tie},
-                               {"grace_before", array(gracenote)},
-                               {"grace_after", array(gracenote)},
+                               {"grace_before", schema_array(gracenote)},
+                               {"grace_after", schema_array(gracenote)},
                                {"tuplet", text},
-                               {"events", array(note)},
+                               {"events", schema_array(note)},
                                {"bar", boolean}},
                               json_array<Json>({}));
-    auto phrase_events = array(event);
+    auto phrase_events = schema_array(event);
     phrase_events["description"] = std::string(json_phrase_grammar) + " " + phrase_grace_defaults;
     const Json lane = object({{"measure", bar},
                               {"offset", fraction},
@@ -167,7 +168,7 @@ Json declared_tools() {
     op_fields["style"] = text;
     op_fields["at"] = pos;
     op_fields["duration"] = fraction;
-    op_fields["pitches"] = array(object({{"pitch", pitch}, {"tpc", tpc}}, json_array<Json>({"pitch"})));
+    op_fields["pitches"] = schema_array(object({{"pitch", pitch}, {"tpc", tpc}}, json_array<Json>({"pitch"})));
     op_fields["note"] = ref;
     op_fields["pitch"] = pitch;
     op_fields["tpc"] = tpc;
@@ -185,11 +186,11 @@ Json declared_tools() {
     op_fields["on"] = boolean;
     op_fields["instrument_id"] = text;
     op_fields["part"] = ref;
-    op_fields["parts"] = array(ref);
+    op_fields["parts"] = schema_array(ref);
     op_fields["type"] = text;
     op_fields["start"] = Json{{"description", "See the named operation in runtime_info scope ops."}};
     op_fields["end"] = Json{{"description", "See the named operation in runtime_info scope ops."}};
-    op_fields["props"] = array(object({{"name", text}, {"value", value}}, json_array<Json>({"name", "value"})));
+    op_fields["props"] = schema_array(object({{"name", text}, {"value", value}}, json_array<Json>({"name", "value"})));
     op_fields["end_note"] = ref;
     op_fields["actual"] = n1024;
     op_fields["normal"] = n1024;
@@ -197,13 +198,13 @@ Json declared_tools() {
     op_fields["anchor"] = ref;
     op_fields["first_measure"] = ref;
     op_fields["last_measure"] = ref;
-    op_fields["endings"] = array(n1024);
+    op_fields["endings"] = schema_array(n1024);
     op_fields["closed"] = boolean;
     op_fields["principal"] = ref;
     op_fields["event_end"] = fraction;
-    op_fields["keys"] = array(pitch);
+    op_fields["keys"] = schema_array(pitch);
     const Json op = object(std::move(op_fields), json_array<Json>({"op"}));
-    auto ops = array(op);
+    auto ops = schema_array(op);
     ops["maxItems"] = 1024;
     Json tools = make_array<Json>();
     auto tool = [&](const char *name, const char *description, Json schema, bool read, bool destructive) {
@@ -233,7 +234,7 @@ Json declared_tools() {
                  {"mode", mode},
                  {"query", query},
                  {"target", ref},
-                 {"props", array(text)},
+                 {"props", schema_array(text)},
                  {"excerpt", eid}},
                 json_array<Json>({"document", "mode"})),
          true, false);
@@ -243,8 +244,8 @@ Json declared_tools() {
                  {"excerpt", eid},
                  {"measure", bar},
                  {"count", count},
-                 {"staves", array(bar)},
-                 {"voices", array(voice)},
+                 {"staves", schema_array(bar)},
+                 {"voices", schema_array(voice)},
                  {"include_ids", boolean}},
                 json_array<Json>({"document"})),
          true, false);
@@ -276,11 +277,11 @@ Json declared_tools() {
          object({{"document", document},
                  {"expected_revision", revision},
                  {"excerpt", eid},
-                 {"lanes", array(dsl_phrase_syntax ? dsl_lane : lane)}},
+                 {"lanes", schema_array(dsl_phrase_syntax ? dsl_lane : lane)}},
                 json_array<Json>({"document", "lanes"})),
          false, true);
     tool("runtime_configure", "Add a font or replace the ordered SoundFont list.",
-         object({{"add_font", text}, {"soundfonts", array(text)}}, json_array<Json>({})), false, false);
+         object({{"add_font", text}, {"soundfonts", schema_array(text)}}, json_array<Json>({})), false, false);
     return tools;
 }
 } // namespace music::api

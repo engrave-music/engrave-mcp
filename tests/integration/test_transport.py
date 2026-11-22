@@ -407,8 +407,12 @@ def _check_music_protocol(exe: str, output: Path, version: str) -> None:
         assert events[0]["notes"][0]["concert"] == "C###4" and events[0]["notes"][0]["id"]
         assert events[0]["grace_before"][0]["duration"] == "1/8" and window["tuplets"][0]["actual"] == 3
         summary = window["summary"] if legacy else text
-        for token in ("Bar 1#", "acciac(D5#", "C###4#", "3:2(D4#"):
+        tuplet_id = window["tuplets"][0]["id"]
+        for token in ("Bar 1#", "acciac(D5#", "C###4#", f"3:2#{tuplet_id}(D4#"):
             assert token in summary, summary
+        if legacy:
+            types_payload, types_text = call("runtime_info", {"scope": "types"})
+            assert len(types_text) > 256 * 1024 and len(types_payload["types"]) > 20
     finally:
         client.close()
 

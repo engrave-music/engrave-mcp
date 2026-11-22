@@ -515,27 +515,26 @@
                 "type": "integer"
               },
               "pitches": {
-                "value": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "pitch": {
-                        "maximum": 127,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tpc": {
-                        "maximum": 40,
-                        "minimum": -8,
-                        "type": "integer"
-                      }
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "pitch": {
+                      "maximum": 127,
+                      "minimum": 0,
+                      "type": "integer"
                     },
-                    "required": [
-                      "pitch"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                    "tpc": {
+                      "maximum": 40,
+                      "minimum": -8,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "pitch"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "principal": {
                 "description": "Persistent EID or a batch-local reference {from_op,item}."
@@ -545,25 +544,24 @@
                 "type": "string"
               },
               "props": {
-                "value": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "maxLength": 4096,
-                        "type": "string"
-                      },
-                      "value": {
-                        "description": "Native JSON value matching the engine property or style descriptor."
-                      }
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "maxLength": 4096,
+                      "type": "string"
                     },
-                    "required": [
-                      "name",
-                      "value"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                    "value": {
+                      "description": "Native JSON value matching the engine property or style descriptor."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "sig": {
                 "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",

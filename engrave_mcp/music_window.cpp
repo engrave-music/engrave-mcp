@@ -33,6 +33,14 @@ Fraction add(Fraction a, Fraction b) {
     return {a.num * (b.den / common) + b.num * (a.den / common), a.den * (b.den / common)};
 }
 
+Fraction multiply(Fraction a, Fraction b) {
+    const auto g1 = std::gcd(a.num, b.den);
+    const auto g2 = std::gcd(b.num, a.den);
+    return {(a.num / g1) * (b.num / g2), (a.den / g2) * (b.den / g1)};
+}
+
+bool same_fraction(Fraction a, Fraction b) { return a.num * b.den == b.num * a.den; }
+
 std::string id_tag(ElementId id, bool ids) { return ids ? "#" + to_string(id) : ""; }
 
 struct Summary {
@@ -82,9 +90,9 @@ Json notes(const std::vector<NoteMusic> &notes, bool ids, std::string &label) {
         };
         tie("incoming", note.incoming);
         tie("outgoing", note.outgoing);
-        if (note.incoming) token.insert(0, "~");
-        if (note.outgoing) token += "~";
+        if (note.incoming) token.insert(0, ids ? "~" + id_tag(note.incoming->tie, true) + ":" : "~");
         token += id_tag(note.id, ids);
+        if (note.outgoing) token += "~" + id_tag(note.outgoing->tie, ids);
         if (!label.empty()) label += " ";
         label += token;
         json_push(result, std::move(j));
@@ -197,11 +205,16 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
                 if (e.offset != end) summary.append("@" + fraction(e.offset) + " ");
                 for (usize depth = shared; depth < e.tuplet_path.size(); ++depth) {
                     const auto &group = w.tuplets[tuplets.at(to_string(e.tuplet_path[depth])) - 1];
-                    summary.append(std::format("{}:{}(", group.actual, group.normal));
+                    summary.append(std::format("{}:{}{}(", group.actual, group.normal, id_tag(group.id, ids)));
                 }
                 summary.append(before + token + ":" + fraction(e.written_duration) + id_tag(e.id, ids));
                 if (!after.empty()) summary.append(" " + after.substr(0, after.size() - 1));
-                if (e.tuplet_path.empty() && e.written_duration != e.elapsed_duration) {
+                Fraction expected = e.written_duration;
+                for (auto id : e.tuplet_path) {
+                    const auto &group = w.tuplets[tuplets.at(to_string(id)) - 1];
+                    expected = multiply(expected, {group.normal, group.actual});
+                }
+                if (!same_fraction(expected, e.elapsed_duration)) {
                     summary.append("(elapsed=" + fraction(e.elapsed_duration) + ")");
                 }
                 end = add(e.offset, e.elapsed_duration);

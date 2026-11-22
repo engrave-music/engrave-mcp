@@ -189,9 +189,14 @@ Result<engrave::SoundFontSelection> resolve_soundfont(const engrave::SoundFontSe
     const auto &name = std::get<std::string>(selection);
     const auto path = std::filesystem::u8path(name);
     const auto normalized = path.lexically_normal();
+    std::error_code ec;
+    const auto absolute = std::filesystem::absolute(path, ec).lexically_normal();
     for (usize i = 0; i < runtime.soundfonts.size(); ++i) {
         const auto &font = runtime.soundfonts[i];
-        if (path == font.source || normalized == font.source.lexically_normal() || path == font.copy) {
+        std::error_code source_ec;
+        const auto source_abs = std::filesystem::absolute(font.source, source_ec).lexically_normal();
+        if (path == font.source || normalized == font.source.lexically_normal() || (!ec && !source_ec && absolute == source_abs) ||
+            path == font.copy) {
             return engrave::SoundFontSelection{static_cast<i32>(i)};
         }
     }

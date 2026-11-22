@@ -231,14 +231,14 @@ TEST(Phrase, AtomicWritesHaveMatchingReadback) {
 TEST(MusicWindow, NestedGroupsGapsAndNotation) {
     using namespace engrave;
     const ElementId bar_id{0, 1}, first_group{0, 2}, inner_group{0, 3}, excerpt{0, 4};
-    const ElementId event_id{0, 5}, note_id{0, 6}, spanner_id{0, 7}, volta_id{0, 8};
+    const ElementId event_id{0, 5}, note_id{0, 6}, spanner_id{0, 7}, volta_id{0, 8}, tie_id{0, 9};
     const MeasureInfo bar{bar_id, 0, {0, 1}, {1, 1}};
     auto note = [](StepName step, int octave, ElementId id = {}) {
         const SpelledPitch pitch{step, 0, octave};
         return NoteMusic{id, PitchedNote{0, pitch, pitch}};
     };
     auto tied = note(StepName::E, 4, note_id);
-    tied.outgoing = TieLink{};
+    tied.outgoing = TieLink{tie_id};
     const ChordMusic main{{tied},
                           {{ElementId{}, GraceKind::Acciaccatura, {1, 8}, {note(StepName::D, 5)}}},
                           {{ElementId{}, GraceKind::Grace16After, {1, 16}, {note(StepName::D, 5)}}}};
@@ -273,7 +273,13 @@ TEST(MusicWindow, NestedGroupsGapsAndNotation) {
     EXPECT_NE(summary.find("\nSpanners: Slur 1@1/8(s1v1)-1@1/1(s1v1)\nVoltas: Volta 1@1/8(s1v1)-1@1/1(s1v1) endings=[1,2] closed"),
               std::string::npos);
     const auto tagged = music::api::music_result(window, outline, true).at("summary").get<std::string>();
-    for (auto id : {bar_id, event_id, note_id, spanner_id, volta_id}) EXPECT_NE(tagged.find("#" + to_string(id)), std::string::npos);
+    for (auto id : {bar_id, first_group, inner_group, event_id, note_id, tie_id, spanner_id, volta_id}) {
+        EXPECT_NE(tagged.find("#" + to_string(id)), std::string::npos);
+    }
+
+    window.measures[0].voices[0].events[0].elapsed_duration = {1, 24};
+    const auto stretched = music::api::music_result(window, outline, false).at("summary").get<std::string>();
+    EXPECT_NE(stretched.find("after16(D5:1/16)(elapsed=1/24)"), std::string::npos);
 
     auto &events = window.measures[0].voices[0].events;
     events.resize(4000, MusicEvent{{}, {}, {1, 4}, {1, 4}, {}, main});
@@ -933,8 +939,12 @@ TEST(HostApi, EndToEndToolContract) {
 
     const auto export_doc = ok(*host, "score_create", music::make_object<Json>()).at("document").get<std::string>();
     ASSERT_TRUE(host->write_phrase({{"document", export_doc}, {"lanes", music::json_array<Json>({phrase_lane})}}).at("ok").get<bool>());
-    const std::vector<fs::path> selectors{replacement_sf, replacement_sf.parent_path() / "." / replacement_sf.filename(), selected_path,
-                                          replacement_sf.filename(), replacement_sf.stem()};
+    std::vector<fs::path> selectors{replacement_sf, replacement_sf.parent_path() / "." / replacement_sf.filename(), selected_path,
+                                    replacement_sf.filename(), replacement_sf.stem()};
+    std::error_code rel_ec;
+    if (const auto rel = fs::relative(replacement_sf, fs::current_path(), rel_ec); !rel_ec && !rel.empty()) {
+        selectors.push_back(rel);
+    }
     for (const auto &selector : selectors) {
         auto target = scratch / "soundfont-selection.wav";
         auto request = music::api::decode_export(
