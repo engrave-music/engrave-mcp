@@ -150,24 +150,32 @@ TEST(Phrase, BadTokensIdentifyTheirLaneAndExpectedSyntax) {
         EXPECT_TRUE(message.starts_with("lanes[0].content (" + std::string(location) + "): ")) << message;
         EXPECT_NE(message.find(expected), std::string::npos) << message;
     };
-    rejects("C4 q4", "token 'q4'", "expected a spelled pitch such as Eb4, drum d36, or rest r");
-    rejects("C0004", "token 'C0004'", "canonical decimal integer");
-    rejects("C-0", "token 'C-0'", "canonical decimal integer");
-    rejects("d128", "token 'd128'", "d0 to d127");
-    rejects("[C4 d36]", "token 'd36'", "all spelled pitches or all drum keys");
-    rejects("D4:q...", "token 'q...'", "at most two duration dots");
-    rejects("D4:01/8", "token '01/8'", "canonical decimal terms");
-    rejects("3:02(A4:e G4:e F4:e)", "token '02'", "positive canonical decimal integer");
-    rejects("3:2(A4:e |", "token '|'", "a note, chord, or rest");
-    rejects("acciac D5", "token 'D5'", "expected '('");
-    rejects("C4 after8(D5", "end of content", "expected ')'");
+    rejects("C4 q4", "item 1, token 'q4'", "expected a spelled pitch such as Eb4, drum d36, or rest r");
+    rejects("C4:q D4:q [C4 q]", "item 2, token 'q'", "expected a spelled pitch such as Eb4, drum d36, or rest r");
+    rejects("C0004", "item 0, token 'C0004'", "canonical decimal integer");
+    rejects("C-0", "item 0, token 'C-0'", "canonical decimal integer");
+    rejects("d128", "item 0, token 'd128'", "d0 to d127");
+    rejects("[C4 d36]", "item 0, token 'd36'", "all spelled pitches or all drum keys");
+    rejects("D4:q...", "item 0, token 'q...'", "at most two duration dots");
+    rejects("D4:01/8", "item 0, token '01/8'", "canonical decimal terms");
+    rejects("3:02(A4:e G4:e F4:e)", "item 0, token '02'", "positive canonical decimal integer");
+    rejects("3:2(A4:e |", "item 0, member 1, token '|'", "a note, chord, or rest");
+    rejects("acciac D5", "item 0, token 'D5'", "expected '('");
+    rejects("C4 after8(D5", "item 0, end of content", "expected ')'");
+    rejects("r~", "item 0, token '~'", "rests cannot be tied");
+    rejects("r:q~", "item 0, token '~'", "rests cannot be tied");
+    rejects("acciac(D5~) C4", "item 0, token '~'", "no tie on a grace note or chord");
+    rejects("acciac([D5 E5]~) C4", "item 0, token '~'", "no tie on a grace note or chord");
+    rejects("acciac(D5:e~) C4", "item 0, token '~'", "no tie on a grace note or chord");
+    rejects(std::string("C4 ") + std::string("\0oops", 5), "item 1, token '\\u0000oops'",
+            "expected a spelled pitch such as Eb4, drum d36, or rest r");
 
     std::string long_token;
     for (int i = 0; i < 40; ++i) long_token += "\xc3\xa9";
     const auto decoded = decode(long_token);
     ASSERT_FALSE(decoded);
     const auto &message = decoded.error().message;
-    const std::string_view prefix = "lanes[0].content (token '";
+    const std::string_view prefix = "lanes[0].content (item 0, token '";
     ASSERT_TRUE(message.starts_with(prefix)) << message;
     const auto end = message.find("'): ", prefix.size());
     ASSERT_NE(end, std::string::npos) << message;
@@ -347,7 +355,7 @@ TEST(Phrase, HostTripleAccidentalsAndBarDiagnostics) {
     ASSERT_FALSE(bad_token.at("ok").get<bool>());
     EXPECT_EQ(bad_token.at("error").at("code"), "InvalidArgument");
     EXPECT_EQ(bad_token.at("error").at("message"),
-              "lanes[0].content (token 'q4'): invalid pitch; expected a spelled pitch such as Eb4, drum d36, or rest r");
+              "lanes[0].content (item 1, token 'q4'): invalid pitch; expected a spelled pitch such as Eb4, drum d36, or rest r");
 
     const auto bad = write("C###4:w | C4:1/3");
     ASSERT_FALSE(bad.at("ok").get<bool>());

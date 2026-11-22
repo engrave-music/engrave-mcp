@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <format>
 #include <numeric>
 #include <optional>
 #include <stdexcept>
@@ -94,6 +95,8 @@ public:
     std::vector<PhraseItem> parse() {
         std::vector<PhraseItem> items;
         for (auto token = peek(); !token.empty(); token = peek()) {
+            item_index_ = items.size();
+            member_index_.reset();
             if (take('|')) {
                 items.emplace_back(BarCheck{});
             } else if (is_tuplet_count(token)) {
@@ -111,10 +114,37 @@ private:
 
     string_view source_;
     std::string path_;
+    usize item_index_ = 0;
+    std::optional<usize> member_index_;
+
+    static std::string escape_token(string_view token) {
+        const auto clipped = utf8_abbrev(token, 32);
+        std::string out;
+        out.reserve(clipped.size());
+        for (unsigned char c : clipped) {
+            if (c == '\\') {
+                out += "\\\\";
+            } else if (c == '\'') {
+                out += "\\'";
+            } else if (c == '\n') {
+                out += "\\n";
+            } else if (c == '\r') {
+                out += "\\r";
+            } else if (c == '\t') {
+                out += "\\t";
+            } else if (c < 0x20 || c == 0x7f) {
+                out += std::format("\\u{:04x}", static_cast<unsigned>(c));
+            } else {
+                out.push_back(static_cast<char>(c));
+            }
+        }
+        return out;
+    }
 
     [[noreturn]] void fail(string_view token, string_view reason, string_view expected) const {
-        const auto location = token.empty() ? "end of content" : "token '" + utf8_abbrev(token, 32) + "'";
-        throw InputError(path_ + " (" + location + "): " + std::string(reason) + "; expected " + std::string(expected));
+        const auto where = "item " + std::to_string(item_index_) + (member_index_ ? ", member " + std::to_string(*member_index_) : "") +
+                           ", " + (token.empty() ? "end of content" : "token '" + escape_token(token) + "'");
+        throw InputError(path_ + " (" + where + "): " + std::string(reason) + "; expected " + std::string(expected));
     }
 
     string_view peek() {
@@ -203,7 +233,7 @@ private:
         return {numerator / divisor, denominator / divisor};
     }
 
-    PhraseEvent chord(int default_denominator) {
+    PhraseEvent chord(int default_denominator, bool allow_tie = true) {
         PhraseEvent result;
         const bool bracket = take('[');
         do {
@@ -211,18 +241,27 @@ private:
             if (bracket && token.empty()) fail(token, "unclosed chord", "a chord member or ']'");
             if (token == "r") {
                 if (bracket) fail(token, "invalid chord member", "a spelled pitch or drum key");
+                if (take('~')) fail("~", "invalid tie", "a note or chord; rests cannot be tied");
                 break;
             }
             auto member = pitch(token);
             if (!result.notes.empty() && result.notes.front().pitch.index() != member.index()) {
                 fail(token, "mixed chord", "all spelled pitches or all drum keys");
             }
-            result.notes.push_back({member, take('~')});
+            const bool tied = take('~');
+            if (tied && !allow_tie) fail("~", "invalid tie", "no tie on a grace note or chord");
+            result.notes.push_back({member, tied});
         } while (bracket && !take(']'));
 
         const bool chord_tie = bracket && take('~');
+        if (chord_tie && !allow_tie) fail("~", "invalid tie", "no tie on a grace note or chord");
         result.written_duration = duration(default_denominator);
-        if (take('~') || chord_tie) {
+        const bool trailing_tie = take('~');
+        if (trailing_tie) {
+            if (!allow_tie) fail("~", "invalid tie", "no tie on a grace note or chord");
+            if (result.notes.empty()) fail("~", "invalid tie", "a note or chord; rests cannot be tied");
+        }
+        if (trailing_tie || chord_tie) {
             for (auto &note : result.notes) note.tie_to_next = true;
         }
         return result;
@@ -238,7 +277,7 @@ private:
             next();
             expect('(');
             const auto notes_token = peek();
-            const auto entry = chord(grace_denominator(kind->second));
+            const auto entry = chord(grace_denominator(kind->second), false);
             if (entry.notes.empty()) fail(notes_token, "invalid grace", "a note or chord");
             expect(')');
             PhraseGrace grace{kind->second, entry.written_duration, {}};
@@ -263,11 +302,13 @@ private:
         TupletGroup result{actual, normal, {}};
         if (const auto token = peek(); token == ")") fail(token, "empty tuplet", "a note, chord, or rest");
         while (!take(')')) {
+            member_index_ = result.members.size();
             const auto token = peek();
             if (token.empty()) fail(token, "unclosed tuplet", "')'");
             if (is_tuplet_count(token) || token == "|") fail(token, "invalid tuplet member", "a note, chord, or rest");
             result.members.push_back(event());
         }
+        member_index_.reset();
         return result;
     }
 };
