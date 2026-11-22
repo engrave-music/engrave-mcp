@@ -157,7 +157,9 @@ async def run(args):
             response = await client.call("tools/call", {"name": name, "arguments": {}})
             assert response["error"]["code"] == -32602, (name, response)
         for name in TOOLS:
-            result = await client.tool(name, [], error=True)
+            response = await client.call("tools/call", {"name": name, "arguments": []})
+            assert response["error"]["code"] == -32602, (name, response)
+            result = await client.tool(name, {"__invalid__": True}, error=True)
             assert result["error"]["code"] == "InvalidArgument", result
         info = await client.tool("runtime_info", {})
         assert info["limits"] == {
@@ -325,6 +327,32 @@ async def run(args):
             client.pending.pop(queued_id)
             client.pending.pop(modern_queued_id)
             assert (await asyncio.wait_for(stall, 10))["result"]["structuredContent"]["slept_ms"] == 2000
+
+            # Cancelling a running modern 2026-07-28 call suppresses its reply
+            # even when the owner finishes its work before unwinding.
+            modern_stall_id, modern_stall = client.begin(
+                "tools/call",
+                {"_meta": modern_meta, "name": "test_owner_sleep", "arguments": {}},
+            )
+            await client.proc.stdin.drain()
+            for _ in range(100):
+                if (await client.tool("test_owner_state", {}))["busy"]:
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                raise AssertionError("modern owner stall did not start")
+            await client.notify("notifications/cancelled", {"requestId": modern_stall_id})
+            ping = await client.call("ping", {"_meta": modern_meta})
+            assert ping["result"]["resultType"] == "complete", ping
+            # Waiting for an owner-thread call confirms the cancelled sleep
+            # finished without emitting a response for modern_stall_id.
+            outline = await client.call(
+                "tools/call",
+                {"_meta": modern_meta, "name": "score_outline", "arguments": {"document": doc}},
+            )
+            assert outline["result"]["resultType"] == "complete" and outline["result"]["structuredContent"]["ok"]
+            assert not modern_stall.done()
+            client.pending.pop(modern_stall_id)
 
             # Fill the transport's outstanding-call bound while the owner is
             # busy, then cancel queued reads and account for every response.

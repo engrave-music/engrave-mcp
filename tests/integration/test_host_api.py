@@ -60,7 +60,11 @@ def main() -> int:
         if payload["ok"]:
             inputs[name].validate(arguments)
             if name == "runtime_info" and arguments == {"scope": "ops"}:
+                op_props = set(tools["score_edit"]["inputSchema"]["properties"]["ops"]["items"]["properties"])
                 for entry in payload["ops"]:
+                    fields = set(entry["fields"])
+                    assert fields <= op_props, (entry["op"], fields - op_props)
+                    assert set(entry["required"]) <= fields, (entry["op"], entry["required"])
                     inputs["score_edit"].validate({"document": "doc-A-1", "ops": [entry["example"]]})
                     ops_examples_checked += 1
         counts[name] += 1

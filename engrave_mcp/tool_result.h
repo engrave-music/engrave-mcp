@@ -19,7 +19,8 @@ inline Json server_info_meta() { return {{"io.modelcontextprotocol/serverInfo", 
 
 inline void add_modern_result_fields(Json &result) {
     result["resultType"] = "complete";
-    result["_meta"] = server_info_meta();
+    if (!result.contains("_meta") || !result.at("_meta").is_object()) result["_meta"] = make_object<Json>();
+    result.at("_meta")["io.modelcontextprotocol/serverInfo"] = server_info();
 }
 
 // The text cap leaves room for the typed payload within the wire budget.

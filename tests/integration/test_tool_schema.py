@@ -33,28 +33,48 @@ NAMES = [
 ]
 
 
-def inspect_schema(node):
+def inspect_schema(node, *, inside_any_of=False):
     assert isinstance(node, dict), node
-    assert not {"oneOf", "unevaluatedProperties", "not", "if", "then", "else", "const", "outputSchema"} & node.keys(), (
-        node
-    )
-    if "type" in node:
+    forbidden = {
+        "oneOf",
+        "allOf",
+        "unevaluatedProperties",
+        "not",
+        "if",
+        "then",
+        "else",
+        "const",
+        "outputSchema",
+        "$ref",
+        "$defs",
+        "definitions",
+        "patternProperties",
+        "dependentSchemas",
+    }
+    assert not (forbidden & node.keys()), node
+    has_type = "type" in node
+    has_any_of = "anyOf" in node
+    assert has_type != has_any_of, node
+    if has_type:
         assert isinstance(node["type"], str), node
     else:
-        assert node.get("anyOf"), node
+        assert not inside_any_of and isinstance(node["anyOf"], list) and node["anyOf"], node
     if "enum" in node:
-        assert "type" in node, node
+        assert has_type, node
     if node.get("type") == "array":
         assert "items" in node, node
-    for keyword in ("properties", "patternProperties", "$defs", "definitions", "dependentSchemas"):
-        for sub in node.get(keyword, {}).values():
-            inspect_schema(sub)
+    if "properties" in node:
+        assert node.get("type") == "object" and node.get("additionalProperties") is False, node
+        assert set(node.get("required", [])) <= node["properties"].keys(), node
+    for prop in node.get("properties", {}).values():
+        inspect_schema(prop)
     for keyword in ("items", "additionalProperties", "contains", "propertyNames"):
         if keyword in node and isinstance(node[keyword], dict):
             inspect_schema(node[keyword])
-    for keyword in ("anyOf", "allOf", "prefixItems"):
-        for branch in node.get(keyword, []):
-            inspect_schema(branch)
+    for branch in node.get("anyOf", []):
+        inspect_schema(branch, inside_any_of=True)
+    for item in node.get("prefixItems", []):
+        inspect_schema(item)
 
 
 def check_values(validator, arguments, accepted, rejected):

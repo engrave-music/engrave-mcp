@@ -162,6 +162,13 @@ bool valid_client_info(const Json &info) {
            info.at("version").is_string();
 }
 
+bool valid_log_level(const Json &level) {
+    if (!level.is_string()) return false;
+    const std::string_view value = level.get<std::string>();
+    return value == "debug" || value == "info" || value == "notice" || value == "warning" || value == "error" || value == "critical" ||
+           value == "alert" || value == "emergency";
+}
+
 Json supported_versions() { return json_array(k_modern_version, k_latest_legacy_version, k_oldest_legacy_version); }
 
 std::string server_instructions() {
@@ -1034,8 +1041,9 @@ private:
         co_return WireStatus::OK;
     }
 
-    asio::awaitable<WireStatus> send_result_status(const Json &id, Json result) {
+    asio::awaitable<WireStatus> send_result_status(const Json &id, Json result, bool modern = false) {
         try {
+            if (modern) add_modern_result_fields(result);
             Json response = make_object<Json>();
             response["jsonrpc"] = "2.0";
             response["id"] = id;
@@ -1258,7 +1266,10 @@ private:
                 params = req["params"];
             }
 
-            const bool has_meta = params.contains("_meta") && params.at("_meta").is_object();
+            if (params.contains("_meta") && !params.at("_meta").is_object()) {
+                co_return co_await send_error(id, -32602, "Invalid params: _meta must be an object");
+            }
+            const bool has_meta = params.contains("_meta");
             const bool modern =
                 method == "server/discover" || (method != "initialize" && has_meta && has_modern_meta_key(params.at("_meta")));
             if (modern) {
@@ -1269,16 +1280,19 @@ private:
                 if (!meta.contains(k_protocol_version_key) || !meta.at(k_protocol_version_key).is_string()) {
                     co_return co_await send_error(id, -32602, "Invalid params: _meta protocol version string required");
                 }
+                const auto &requested = meta.at(k_protocol_version_key).get<std::string>();
+                if (requested != k_modern_version) {
+                    Json data = {{"supported", supported_versions()}, {"requested", requested}};
+                    co_return co_await send_error(id, -32022, "Unsupported protocol version", std::move(data));
+                }
                 if (!meta.contains(k_client_capabilities_key) || !meta.at(k_client_capabilities_key).is_object()) {
                     co_return co_await send_error(id, -32602, "Invalid params: _meta client capabilities object required");
                 }
                 if (meta.contains(k_client_info_key) && !valid_client_info(meta.at(k_client_info_key))) {
                     co_return co_await send_error(id, -32602, "Invalid params: _meta client info requires name and version strings");
                 }
-                const auto &requested = meta.at(k_protocol_version_key).get<std::string>();
-                if (requested != k_modern_version) {
-                    Json data = {{"supported", supported_versions()}, {"requested", requested}};
-                    co_return co_await send_error(id, -32022, "Unsupported protocol version", std::move(data));
+                if (meta.contains(k_log_level_key) && !valid_log_level(meta.at(k_log_level_key))) {
+                    co_return co_await send_error(id, -32602, "Invalid params: _meta logLevel must be a valid logging level");
                 }
             }
 
@@ -1374,6 +1388,9 @@ private:
                 std::string tool_name = params["name"].get<std::string>();
                 Json arguments = make_object<Json>();
                 if (params.contains("arguments")) {
+                    if (!params["arguments"].is_object()) {
+                        co_return co_await send_error(id, -32602, "Invalid params: arguments must be an object");
+                    }
                     arguments = params["arguments"];
                 }
 
@@ -1484,15 +1501,17 @@ private:
                                 std::_Exit(70);
                             }
                         }).detach();
-                        asio::co_spawn(
-                            self->ioc_,
-                            [self, target]() -> asio::awaitable<void> {
-                                std::ignore =
-                                    co_await self->send_error(target->id, -32603,
-                                                              "Live export cancellation watchdog expired after 5 seconds; session "
-                                                              "terminates if export remains blocked");
-                            },
-                            asio::detached);
+                        if (!target->modern) {
+                            asio::co_spawn(
+                                self->ioc_,
+                                [self, target]() -> asio::awaitable<void> {
+                                    std::ignore =
+                                        co_await self->send_error(target->id, -32603,
+                                                                  "Live export cancellation watchdog expired after 5 seconds; session "
+                                                                  "terminates if export remains blocked");
+                                },
+                                asio::detached);
+                        }
                     });
                 }
                 if (test_hooks_enabled()) {
@@ -1653,13 +1672,9 @@ private:
         return result;
     }
 
-    asio::awaitable<WireStatus> send_tool_result_status(const CallState &call, Json result) {
-        if (call.modern) add_modern_result_fields(result);
-        return send_result_status(call.id, std::move(result));
-    }
-
     asio::awaitable<void> deliver_tool_result(CallStatePtr call, Json result) {
-        if (call->response_started || call->execution->was_reported() || fatal_.load(std::memory_order_acquire)) {
+        if (call->response_started || call->execution->was_reported() || (call->modern && call->cancel_requested) ||
+            fatal_.load(std::memory_order_acquire)) {
             call->response_started = true;
             erase_inflight(call);
             maybe_finish_graceful();
@@ -1667,11 +1682,11 @@ private:
         }
         call->response_started = true;
 
-        const WireStatus status = co_await send_tool_result_status(*call, std::move(result));
+        const WireStatus status = co_await send_result_status(call->id, std::move(result), call->modern);
         if (status == WireStatus::TOO_LARGE && !fatal_.load(std::memory_order_acquire)) {
             Json fallback = make_tool_error_result("ResourceLimit", "Tool response exceeds the 16 MiB transport limit; "
                                                                     "the requested operation may already have completed.");
-            const WireStatus fallback_status = co_await send_tool_result_status(*call, std::move(fallback));
+            const WireStatus fallback_status = co_await send_result_status(call->id, std::move(fallback), call->modern);
             if (fallback_status == WireStatus::TOO_LARGE) {
                 fatal_shutdown("tool resource-limit response exceeded 16 MiB");
             }
@@ -1685,7 +1700,8 @@ private:
     }
 
     asio::awaitable<void> deliver_tool_error(const CallStatePtr &call, std::string code, std::string message) {
-        if (call->response_started || call->execution->was_reported() || fatal_.load(std::memory_order_acquire)) {
+        if (call->response_started || call->execution->was_reported() || (call->modern && call->cancel_requested) ||
+            fatal_.load(std::memory_order_acquire)) {
             call->response_started = true;
             erase_inflight(call);
             maybe_finish_graceful();
@@ -1694,11 +1710,11 @@ private:
         call->response_started = true;
 
         Json result = make_tool_error_result(code, message);
-        const WireStatus status = co_await send_tool_result_status(*call, std::move(result));
+        const WireStatus status = co_await send_result_status(call->id, std::move(result), call->modern);
         if (status == WireStatus::TOO_LARGE && !fatal_.load(std::memory_order_acquire)) {
             // Fall back to a tiny bounded resource error.
             Json fallback = make_tool_error_result("ResourceLimit", "Tool error exceeds the 16 MiB transport limit.");
-            if (co_await send_tool_result_status(*call, std::move(fallback)) == WireStatus::TOO_LARGE) {
+            if (co_await send_result_status(call->id, std::move(fallback), call->modern) == WireStatus::TOO_LARGE) {
                 fatal_shutdown("tool error response exceeded 16 MiB");
             }
         }
@@ -1709,7 +1725,8 @@ private:
     }
 
     asio::awaitable<void> deliver_generic_error(const CallStatePtr &call, std::string message) {
-        if (call->response_started || call->execution->was_reported() || fatal_.load(std::memory_order_acquire)) {
+        if (call->response_started || call->execution->was_reported() || (call->modern && call->cancel_requested) ||
+            fatal_.load(std::memory_order_acquire)) {
             call->response_started = true;
             erase_inflight(call);
             maybe_finish_graceful();
@@ -1721,7 +1738,7 @@ private:
             message = "Unknown application error";
         }
         Json result = make_tool_error_result("EngineFailure", message);
-        const WireStatus status = co_await send_tool_result_status(*call, std::move(result));
+        const WireStatus status = co_await send_result_status(call->id, std::move(result), call->modern);
         if (status == WireStatus::TOO_LARGE) {
             fatal_shutdown("generic tool error response exceeded 16 MiB");
         }
@@ -1732,7 +1749,7 @@ private:
     }
 
     asio::awaitable<void> finish_call(CallStatePtr call, std::exception_ptr error) {
-        if (call->response_started || call->execution->was_reported()) {
+        if (call->response_started || call->execution->was_reported() || (call->modern && call->cancel_requested)) {
             erase_inflight(call);
             maybe_finish_graceful();
             co_return;

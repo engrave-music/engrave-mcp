@@ -468,18 +468,23 @@ def _check_modern_protocol(exe: str, output: Path, initialize_params: dict) -> d
         assert "score_write_phrase" in discovered["instructions"]
         assert ping["_meta"] == listed["_meta"] == discovered["_meta"]
 
-        for method in ("server/discover", "tools/list"):
+        for method in ("server/discover", "tools/list", "tools/call"):
             for version in ("2099-01-01", PROTOCOL_VERSION):
-                response = request(method, {"_meta": {**meta, VERSION_KEY: version}})
-                assert response["error"] == {
-                    "code": -32022,
-                    "message": "Unsupported protocol version",
-                    "data": {"supported": SUPPORTED_VERSIONS, "requested": version},
-                }, response
+                extra = {"name": "runtime_info", "arguments": {}} if method == "tools/call" else {}
+                for payload_meta in ({**meta, VERSION_KEY: version}, {VERSION_KEY: version}):
+                    response = request(method, {"_meta": payload_meta, **extra})
+                    assert response["error"] == {
+                        "code": -32022,
+                        "message": "Unsupported protocol version",
+                        "data": {"supported": SUPPORTED_VERSIONS, "requested": version},
+                    }, response
 
         malformed = [
             ("server/discover", {}),
             ("server/discover", {"_meta": []}),
+            ("ping", {"_meta": []}),
+            ("tools/list", {"_meta": "bad"}),
+            ("tools/call", {"_meta": [], **legacy_call}),
             ("server/discover", {"_meta": {CAPABILITIES_KEY: {}}}),
             ("ping", {"_meta": {CAPABILITIES_KEY: {}}}),
             ("tools/list", {"_meta": {CAPABILITIES_KEY: {}}}),
@@ -491,10 +496,14 @@ def _check_modern_protocol(exe: str, output: Path, initialize_params: dict) -> d
             ("tools/list", {"_meta": {**meta, CLIENT_INFO_KEY: "test"}}),
             ("tools/list", {"_meta": {**meta, CLIENT_INFO_KEY: {"name": "test"}}}),
             ("tools/list", {"_meta": {**meta, CLIENT_INFO_KEY: {"name": "test", "version": 1}}}),
+            ("ping", {"_meta": {**meta, "io.modelcontextprotocol/logLevel": []}}),
+            ("ping", {"_meta": {**meta, "io.modelcontextprotocol/logLevel": "verbose"}}),
+            ("tools/call", {"_meta": meta, "name": "runtime_info", "arguments": []}),
         ]
         for method, params in malformed:
             response = client.rpc(method, params)
             assert response["error"]["code"] == -32602, (method, params, response)
+        check_complete(request("ping", {"_meta": {**meta, "io.modelcontextprotocol/logLevel": "info"}})["result"])
 
         assert client.rpc("tools/list", {})["error"]["code"] == -32600
         initialized = client.rpc("initialize", {**initialize_params, "_meta": meta})["result"]
@@ -506,6 +515,7 @@ def _check_modern_protocol(exe: str, output: Path, initialize_params: dict) -> d
         client.send("notifications/initialized", {}, True)
         assert client.rpc("tools/list", {})["result"] == {"tools": listed["tools"]}
         assert client.rpc("ping", {})["result"] == {}
+        assert client.rpc("tools/call", {"name": "runtime_info", "arguments": []})["error"]["code"] == -32602
         # Reserved modern metadata keys without protocolVersion stay rejected even after legacy init.
         for method, extra in (("ping", {}), ("tools/list", {}), ("tools/call", legacy_call)):
             response = client.rpc(method, {"_meta": {CAPABILITIES_KEY: {}}, **extra})

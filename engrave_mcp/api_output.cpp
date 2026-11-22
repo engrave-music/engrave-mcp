@@ -723,7 +723,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                      {"export_warnings", encode(warnings)}};
         // Export exceptions below are bounded to our 16 KiB diagnostic cap,
         // not the schema's larger message ceiling. Control bytes maximize JSON
-        // escaping, including the duplicated legacy text form.
+        // escaping, including the duplicated text form.
         Json partial{
             {"ok", false},
             {"error",
