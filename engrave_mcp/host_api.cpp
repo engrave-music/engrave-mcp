@@ -462,7 +462,7 @@ Json HostApi::write_phrase(const Json &j, const std::atomic<bool> *cancelled) {
         auto score = *detail::score(j);
         auto outline = (*doc)->outline(score);
         if (!outline) return std::unexpected(api_error(outline.error()));
-        auto phrase = decode_phrase(j.at("lanes"), *outline, score, dsl_phrase_syntax ? PhraseSyntax::DSL : PhraseSyntax::JSON);
+        auto phrase = decode_phrase(j.at("lanes"), *outline, score);
         if (!phrase) return std::unexpected(phrase.error());
         if (cancelled && cancelled->load()) return std::unexpected(HostError{"Cancelled", "phrase cancelled before edit"});
         auto edited = (*doc)->write_phrase(*phrase, {expected, engrave::EditMode::Atomic});

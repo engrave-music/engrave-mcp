@@ -1245,7 +1245,7 @@ private:
                     "note entry, then score_read_music to check the result in short windows. Positions use exact whole-note fractions "
                     "relative to the start of the measure: 0, 1/4 and 3/8 are valid offsets. A pickup uses its actual duration. "
                     "Pitch defaults to concert. Choose written pitch_mode on a lane when copying a transposed part. ";
-                instructions += api::dsl_phrase_syntax ? api::dsl_phrase_grammar : api::json_phrase_grammar;
+                instructions += api::phrase_grammar;
                 instructions += " ";
                 instructions += api::phrase_grace_defaults;
                 instructions +=

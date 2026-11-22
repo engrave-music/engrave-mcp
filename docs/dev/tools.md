@@ -17,33 +17,23 @@ Create and open return `document`, `revision`, `outline` and `diagnostics`. Revi
 
 `score_write_phrase` takes a document and a list of lanes. Each lane starts at a 1-based measure, staff and voice. Staff and voice default to 1. The offset defaults to `"0"` and uses an exact whole-note fraction measured from the beginning of that bar. Concert pitch is the default. Set `pitch_mode` to `written` to enter transposed notation.
 
-The server starts in JSON mode. Select the other prototype with `--phrase-syntax dsl` or `ENGRAVE_MCP_PHRASE_SYNTAX=dsl`. A command-line choice takes precedence. Each server advertises only the selected lane syntax.
+Supply the compact notation in each lane's `content` string.
 
 ```json
 {
   "document": "doc-session-1",
   "expected_revision": "1",
-  "lanes": [
-    {
-      "measure": 1,
-      "events": [
-        { "pitches": ["Eb4", "G4"], "duration": "1/2", "tie": ["Eb4"] },
-        { "pitches": ["Eb4"] },
-        { "pitches": [] },
-        { "bar": true }
-      ]
-    }
-  ]
+  "lanes": [{ "measure": 1, "content": "[Eb4~ G4]:h Eb4:q r:q |" }]
 }
 ```
 
-In DSL mode the same lane has `"content": "[Eb4~ G4]:h Eb4:q r:q |"`. Bar checks honor pickup lengths and local staff meters. Each lane needs a musical event or tuplet. Phrase errors identify zero-based lane and item indices, counting bar checks. Both syntaxes accept up to three sharps or flats in a pitch spelling, as in `C###4`. Use canonical decimals without leading zeros. DSL content is limited to 65,536 Unicode characters and structured phrase strings to 4,096.
+Separate musical events with whitespace. Use a spelled pitch such as `Eb4` or `C###4` with up to three sharps or flats, a drum key such as `d36` (0 through 127), or `r` for a rest. Chords use brackets, as in `[Eb4 G4]` or `[d36 d42]`. Select ties with `~` inside a chord, or append it to a note or chord to tie every member. Main events default to a quarter note. Duration suffixes take whole-note fractions such as `:3/8` or the shorthands `:w :h :q :e :s :32 :64`, with up to two augmentation dots.
 
-A quarter is the default main-event duration. DSL duration suffixes accept an exact fraction or `w h q e s 32 64`, with up to two augmentation dots. Chords use brackets. Select individual ties with `~` inside the chord, or append it to the chord to tie every member. Drum keys use `d36` or `[d36 d42]`. JSON uses a `drums` array of MIDI keys from 0 through 127. Empty pitch and drum arrays enter rests. Set `tie` to `true` for the whole chord or give an array of its tied pitch spellings or drum keys.
+Use `|` to check a measure boundary, including pickups and local staff meters. A tuplet uses `actual:normal(...)`, as in `3:2(A4:e G4:e F4:e)`. Its members may be notes, chords or rests. Before-graces use `acciac`, `appog`, `grace4`, `grace16` and `grace32`. After-graces use `after8`, `after16` and `after32`. Each wraps a note or chord with an optional duration, as in `acciac([D5 F#5]) E5:q after16(D5)`. Omitted durations are 1/8 for `acciac`, `appog` and `after8`, 1/4 for `grace4`, 1/16 for `grace16` and `after16`, and 1/32 for `grace32` and `after32`.
 
-For a triplet, use `3:2(A4:e G4:e F4:e)` or an object with `"tuplet": "3:2"` and an `events` array. Tuplet members may be notes, chords or rests. Before-graces use `acciac`, `appog`, `grace4`, `grace16` and `grace32`. After-graces use `after8`, `after16` and `after32`. Each wraps a note or chord, as in `acciac([D5 F#5]) E5:q after16(D5)`. The structured spelling uses ordered `grace_before` and `grace_after` arrays with `kind`, optional `duration`, and `pitches` or `drums`. Omitted durations are 1/8 for `acciac`, `appog` and `after8`, 1/4 for `grace4`, 1/16 for `grace16` and `after16`, and 1/32 for `grace32` and `after32`.
+Each lane needs a musical event or tuplet. Content is limited to 65,536 Unicode characters. Use canonical decimal integers without leading zeros or `-0`. Syntax errors identify the lane and offending token or end of content. Score edit rejections give zero-based lane and item indices, counting bar checks.
 
-`score_read_music` starts at `measure` (default 1) and reads `count` bars (default up to 4, maximum 128). Restrict the window with 1-based `staves` and `voices` arrays. The payload identifies the selected `score` as `master` or `excerpt`, with the selected EID or null in `excerpt`. Set `include_ids` to address elements in later edits. The summary includes those IDs as `#<eid>` tags. It shows bar lengths, repeat markers, signature changes, voice offsets, nested tuplets, graces, ties, measure repeats, spanners and voltas. It ends with `... [truncated]` if it would exceed 32,768 bytes. The typed result also provides elapsed durations, concert and written note spellings, and drum kit names. Written meters retain their spelling, including `6/8`.
+`score_read_music` starts at `measure` (default 1) and reads `count` bars (default up to 4, maximum 128). Restrict the window with 1-based `staves` and `voices` arrays. The payload identifies the selected `score` as `master` or `excerpt`, with the selected EID or null in `excerpt`. Set `include_ids` to address elements in later edits. The summary includes those IDs as `#<eid>` tags. It shows bar lengths, repeat markers, signature changes, voice offsets, nested tuplets, graces, ties, measure repeats, spanners and voltas. It ends with `... [truncated]` if it would exceed 32,768 bytes. The typed result also provides elapsed durations, concert and written note spellings, and drum kit names. Written meters retain their spelling, including `6/8`. Each hairpin carries a `subtype` of `crescendo`, `diminuendo`, `crescendo_line` or `diminuendo_line`. The summary shows the subtype as in `HairPin(crescendo)`.
 
 ## Edit, query and checkpoints
 

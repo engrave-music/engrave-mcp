@@ -95,25 +95,17 @@ def main():
         inspect_schema(schema)
     by_name = {t["name"]: Draft202012Validator(t["inputSchema"]) for t in tools}
     by_name["score_create"].validate({})
-    by_name["score_write_phrase"].validate(
-        {
-            "document": "doc-A-1",
-            "lanes": [
-                {
-                    "measure": 1,
-                    "events": [
-                        {"pitches": ["C###4"], "grace_before": [{"kind": "grace16", "pitches": ["D4"]}]},
-                        {"drums": [36], "tie": [36]},
-                        {"tuplet": "3:2", "events": [{"pitches": [], "duration": "1/8"}]},
-                        {"bar": True},
-                    ],
-                }
-            ],
-        }
+    phrase = by_name["score_write_phrase"]
+    phrase.validate(
+        {"document": "doc-A-1", "lanes": [{"measure": 1, "content": "grace16(D4) C###4 3:2(D4:e r:e E4:e) r:h |"}]}
     )
-    events = by_name["score_write_phrase"].schema["properties"]["lanes"]["items"]["properties"]["events"]
-    for term in ("pitches", "C###4", "drums", "127", "1/4", "tie", "3:2", '{"bar":true}', "grace16", "after16", "1/32"):
-        assert term in events["description"], term
+    assert not phrase.is_valid({"document": "doc-A-1", "lanes": []})
+    assert not phrase.is_valid(
+        {"document": "doc-A-1", "lanes": [{"measure": 1, "content": "C4", "events": [{"pitches": ["C4"]}]}]}
+    )
+    content = phrase.schema["properties"]["lanes"]["items"]["properties"]["content"]
+    for term in ("C###4", "d36", "127", ":q", "tie", "3:2", "|", "grace16", "after16", "1/32"):
+        assert term in content["description"], term
     edit = by_name["score_edit"]
     assert edit.is_valid(
         {

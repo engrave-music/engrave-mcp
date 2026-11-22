@@ -76,13 +76,13 @@ TEST(Registry, MusicSummaryAndTypedEvents) {
 }
 
 TEST(Registry, DslSchemaDescribesItsEntryGrammar) {
-    dsl_phrase_syntax = true;
     const auto tools = declared_tools();
-    dsl_phrase_syntax = false;
     for (const auto &tool : tools.get_array()) {
         if (tool.at("name") != "score_write_phrase") continue;
         EXPECT_TRUE(tool.at("annotations").at("destructiveHint").get<bool>());
         const auto &lane = tool.at("inputSchema").at("properties").at("lanes").at("items");
+        EXPECT_EQ(lane.at("required"), music::json_array<Json>({"measure", "content"}));
+        EXPECT_FALSE(lane.at("properties").contains("events"));
         const auto &content = lane.at("properties").at("content");
         EXPECT_EQ(content.at("maxLength"), 65536);
         const auto &description = content.at("description").get<std::string>();

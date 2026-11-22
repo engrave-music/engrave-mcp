@@ -685,15 +685,15 @@ async def apply_edit_scenario(session, identity, name, scenario, raw):
         ]
         expected = {
             "edit-set-pitches-coverage": [
-                (72, Fraction(0), 0),
-                (74, Fraction(1, 4), 0),
-                (53, Fraction(1, 4), 1),
-                (76, Fraction(1, 3), 0),
+                (72, Fraction(0), 1),
+                (74, Fraction(1, 4), 1),
+                (53, Fraction(1, 4), 2),
+                (76, Fraction(1, 3), 1),
             ],
             "edit-set-pitches-linked": [
-                (72, Fraction(0), 0),
-                (74, Fraction(1, 4), 0),
-                (76, Fraction(1, 2), 0),
+                (72, Fraction(0), 1),
+                (74, Fraction(1, 4), 1),
+                (76, Fraction(1, 2), 1),
             ],
         }[name]
         if signatures != expected:

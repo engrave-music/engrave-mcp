@@ -43,9 +43,6 @@ Json declared_tools() {
     const Json ref = Json{{"description", "Persistent EID or a batch-local reference {from_op,item}."}};
     const Json pos = Json{{"description", "Use {measure,offset,staff,voice} with a 1-based measure number and exact measure-local offset. "
                                           "Layout addresses use kind and zero-based index."}};
-    const Json duration = Json{{"type", "string"}, {"maxLength", 4096}};
-    const Json grace = choices({"acciac", "appog", "grace4", "grace16", "grace32", "after8", "after16", "after32"});
-    const Json tie = Json{{"description", "true ties the chord. An array selects chord members by pitch spelling or MIDI drum key."}};
     const Json num = Json{{"type", "number"}};
     const Json volume = Json{{"type", "number"}, {"minimum", -120}, {"maximum", 24}};
     const Json balance = Json{{"type", "number"}, {"minimum", -1}, {"maximum", 1}};
@@ -98,40 +95,13 @@ Json declared_tools() {
                                {"limit", limit},
                                {"cursor", cursor}},
                               json_array<Json>({}));
-    const Json gracenote =
-        object({{"kind", grace}, {"duration", duration}, {"pitches", schema_array(text)}, {"drums", schema_array(pitch)}},
-               json_array<Json>({"kind"}));
-    const Json note = object({{"pitches", schema_array(text)},
-                              {"drums", schema_array(pitch)},
-                              {"duration", duration},
-                              {"tie", tie},
-                              {"grace_before", schema_array(gracenote)},
-                              {"grace_after", schema_array(gracenote)}},
-                             json_array<Json>({}));
-    const Json event = object({{"pitches", schema_array(text)},
-                               {"drums", schema_array(pitch)},
-                               {"duration", duration},
-                               {"tie", tie},
-                               {"grace_before", schema_array(gracenote)},
-                               {"grace_after", schema_array(gracenote)},
-                               {"tuplet", text},
-                               {"events", schema_array(note)},
-                               {"bar", boolean}},
-                              json_array<Json>({}));
-    auto phrase_events = schema_array(event);
-    phrase_events["description"] = std::string(json_phrase_grammar) + " " + phrase_grace_defaults;
-    const Json lane = object({{"measure", bar},
-                              {"offset", fraction},
-                              {"staff", bar},
-                              {"voice", voice},
-                              {"pitch_mode", pitch_mode},
-                              {"events", std::move(phrase_events)}},
-                             json_array<Json>({"measure", "events"}));
     auto content = long_text;
-    content["description"] = std::string(dsl_phrase_grammar) + " " + phrase_grace_defaults;
-    const Json dsl_lane =
+    content["description"] = std::string(phrase_grammar) + " " + phrase_grace_defaults;
+    const Json lane =
         object({{"measure", bar}, {"offset", fraction}, {"staff", bar}, {"voice", voice}, {"pitch_mode", pitch_mode}, {"content", content}},
                json_array<Json>({"measure", "content"}));
+    auto lanes = schema_array(lane);
+    lanes["minItems"] = 1;
     Json op_fields = make_object<Json>();
     op_fields["op"] = choices({"set_property",
                                "reset_property",
@@ -274,10 +244,7 @@ Json declared_tools() {
          object({{"document", document}, {"expected_revision", revision}, {"name", text}}, json_array<Json>({"document", "name"})), false,
          true);
     tool("score_write_phrase", "Enter one or more musical lanes together in an atomic edit.",
-         object({{"document", document},
-                 {"expected_revision", revision},
-                 {"excerpt", eid},
-                 {"lanes", schema_array(dsl_phrase_syntax ? dsl_lane : lane)}},
+         object({{"document", document}, {"expected_revision", revision}, {"excerpt", eid}, {"lanes", lanes}},
                 json_array<Json>({"document", "lanes"})),
          false, true);
     tool("runtime_configure", "Add a font or replace the ordered SoundFont list.",

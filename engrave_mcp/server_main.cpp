@@ -1,7 +1,6 @@
 #include "server_main.h"
 
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -25,8 +24,7 @@ namespace music {
 
 namespace {
 
-constexpr const char *usage_text =
-    "Usage: engrave-mcp [--soundfont FILE.sf2|FILE.sf3] [--resources DIR] [--phrase-syntax json|dsl] [-h|--help] [-V|--version]";
+constexpr const char *usage_text = "Usage: engrave-mcp [--soundfont FILE.sf2|FILE.sf3] [--resources DIR] [-h|--help] [-V|--version]";
 
 void print_help() {
     std::printf("%s\n\n"
@@ -44,13 +42,12 @@ int run_server(int argc, char **argv) {
     try {
         std::string soundfont;
         std::string resources;
-        std::string syntax;
         enum class EarlyExit { NONE, HELP, VERSION };
         auto early_exit = EarlyExit::NONE;
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg(argv[i]);
-            if (arg == "--soundfont" || arg == "--resources" || arg == "--phrase-syntax") {
-                auto &value = arg == "--soundfont" ? soundfont : (arg == "--resources" ? resources : syntax);
+            if (arg == "--soundfont" || arg == "--resources") {
+                auto &value = arg == "--soundfont" ? soundfont : resources;
                 if (!value.empty() || i + 1 >= argc) {
                     throw std::invalid_argument(usage_text);
                 }
@@ -67,12 +64,6 @@ int run_server(int argc, char **argv) {
                 throw std::invalid_argument(usage_text);
             }
         }
-        if (syntax.empty()) {
-            const auto *env = std::getenv("ENGRAVE_MCP_PHRASE_SYNTAX");
-            syntax = env ? env : "json";
-        }
-        if (syntax != "dsl" && syntax != "json") throw std::invalid_argument("--phrase-syntax expects json or dsl");
-        api::dsl_phrase_syntax = syntax == "dsl";
         if (early_exit == EarlyExit::HELP) {
             print_help();
             return 0;

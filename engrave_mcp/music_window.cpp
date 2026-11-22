@@ -238,10 +238,12 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
         return std::format("{}@{}(s{}v{})", bars.at(to_string(p.measure)), fraction(p.offset), p.staff + 1, p.voice + 1);
     };
     auto span_label = [&](const SpanMusic &s) {
-        return std::format(" {}{} {}-{}", s.type, id_tag(s.id, ids), position_label(s.start), position_label(s.end));
+        const auto type = s.subtype ? s.type + "(" + *s.subtype + ")" : s.type;
+        return std::format(" {}{} {}-{}", type, id_tag(s.id, ids), position_label(s.start), position_label(s.end));
     };
     auto span = [&](const SpanMusic &s) {
         Json j = {{"type", s.type}, {"start", position(s.start)}, {"end", position(s.end)}};
+        if (s.subtype) j["subtype"] = *s.subtype;
         if (ids) {
             j["id"] = to_string(s.id);
             if (s.start_element) j["start_element"] = to_string(*s.start_element);

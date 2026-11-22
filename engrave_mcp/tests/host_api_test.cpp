@@ -107,62 +107,117 @@ Json error(HostApi &host, const std::string &tool, const Json &arg, const std::s
 }
 } // namespace
 
-TEST(Phrase, BothSpellingsAtPickupBoundary) {
+TEST(Phrase, CompactEntryAtPickupBoundary) {
     engrave::Outline outline{};
     outline.measure_count = 2;
     outline.measures = {{{}, 0, {0, 1}, {1, 4}}, {{}, 1, {1, 4}, {1, 1}}};
-    const auto structured = music::parse_json(
-        R"([{"measure":1,"events":[{"pitches":["Eb4","B#3"],"tie":["Eb4"],"grace_before":[{"kind":"acciac","pitches":["D5","F#5"],"duration":"1/8"}]},{"bar":true},{"tuplet":"3:2","events":[{"drums":[36,42],"duration":"1/8"},{"pitches":[],"duration":"1/8"},{"pitches":["Cb4"],"duration":"1/8"}]}]}])");
     const auto textual =
         music::parse_json(R"dsl([{"measure":1,"content":"acciac([D5 F#5]:e) [Eb4~ B#3]:q | 3:2([d36 d42]:e r:e Cb4:e)"}])dsl");
-    ASSERT_TRUE(structured && textual);
-    for (auto syntax : {music::api::PhraseSyntax::JSON, music::api::PhraseSyntax::DSL}) {
-        auto phrase = music::api::decode_phrase(syntax == music::api::PhraseSyntax::JSON ? *structured : *textual, outline, {}, syntax);
-        ASSERT_TRUE(phrase) << phrase.error().message;
-        ASSERT_EQ(phrase->lanes.size(), 1u);
-        const auto &items = phrase->lanes.front().items;
-        ASSERT_EQ(items.size(), 3u);
-        const auto &chord = std::get<engrave::PhraseEvent>(items[0]);
-        ASSERT_EQ(chord.notes.size(), 2u);
-        EXPECT_TRUE(chord.notes[0].tie_to_next);
-        EXPECT_FALSE(chord.notes[1].tie_to_next);
-        EXPECT_EQ(std::get<engrave::SpelledPitch>(chord.notes[0].pitch).alter, -1);
-        EXPECT_EQ(std::get<engrave::SpelledPitch>(chord.notes[1].pitch).step, engrave::StepName::B);
-        ASSERT_EQ(chord.before.size(), 1u);
-        EXPECT_EQ(chord.before.front().kind, engrave::GraceKind::Acciaccatura);
-        EXPECT_EQ(chord.before.front().notes.size(), 2u);
-        EXPECT_TRUE(std::holds_alternative<engrave::BarCheck>(items[1]));
-        const auto &tuplet = std::get<engrave::TupletGroup>(items[2]);
-        EXPECT_EQ(tuplet.actual, 3);
-        EXPECT_EQ(tuplet.normal, 2);
-        ASSERT_EQ(tuplet.members.size(), 3u);
-        ASSERT_EQ(tuplet.members[0].notes.size(), 2u);
-        EXPECT_EQ(std::get<engrave::DrumKey>(tuplet.members[0].notes[1].pitch).key, 42);
-        EXPECT_TRUE(tuplet.members[1].notes.empty());
-    }
+    ASSERT_TRUE(textual);
+    auto phrase = music::api::decode_phrase(*textual, outline, {});
+    ASSERT_TRUE(phrase) << phrase.error().message;
+    ASSERT_EQ(phrase->lanes.size(), 1u);
+    const auto &items = phrase->lanes.front().items;
+    ASSERT_EQ(items.size(), 3u);
+    const auto &chord = std::get<engrave::PhraseEvent>(items[0]);
+    ASSERT_EQ(chord.notes.size(), 2u);
+    EXPECT_TRUE(chord.notes[0].tie_to_next);
+    EXPECT_FALSE(chord.notes[1].tie_to_next);
+    EXPECT_EQ(std::get<engrave::SpelledPitch>(chord.notes[0].pitch).alter, -1);
+    EXPECT_EQ(std::get<engrave::SpelledPitch>(chord.notes[1].pitch).step, engrave::StepName::B);
+    ASSERT_EQ(chord.before.size(), 1u);
+    EXPECT_EQ(chord.before.front().kind, engrave::GraceKind::Acciaccatura);
+    EXPECT_EQ(chord.before.front().notes.size(), 2u);
+    EXPECT_TRUE(std::holds_alternative<engrave::BarCheck>(items[1]));
+    const auto &tuplet = std::get<engrave::TupletGroup>(items[2]);
+    EXPECT_EQ(tuplet.actual, 3);
+    EXPECT_EQ(tuplet.normal, 2);
+    ASSERT_EQ(tuplet.members.size(), 3u);
+    ASSERT_EQ(tuplet.members[0].notes.size(), 2u);
+    EXPECT_EQ(std::get<engrave::DrumKey>(tuplet.members[0].notes[1].pitch).key, 42);
+    EXPECT_TRUE(tuplet.members[1].notes.empty());
 }
 
-TEST(Phrase, CanonicalNumbersAndStringLimits) {
-    using music::api::PhraseSyntax;
-    engrave::Outline outline{.measure_count = 1, .measures = {{{}, 0, {0, 1}, {1, 1}}}};
-    auto rejects = [&](const Json &lane, PhraseSyntax syntax, std::string_view message) {
-        auto decoded = music::api::decode_phrase(music::json_array<Json>({lane}), outline, {}, syntax);
-        ASSERT_FALSE(decoded);
-        EXPECT_NE(decoded.error().message.find(message), std::string::npos);
+TEST(Phrase, BadTokensIdentifyTheirLaneAndExpectedSyntax) {
+    const engrave::Outline outline{.measure_count = 1, .measures = {{{}, 0, {0, 1}, {1, 1}}}};
+    auto decode = [&](const std::string &content) {
+        return music::api::decode_phrase(music::json_array<Json>({Json{{"measure", 1}, {"content", content}}}), outline, {});
     };
-    for (auto spelling : {"C0004", "C-0"}) {
-        rejects({{"measure", 1}, {"content", spelling}}, PhraseSyntax::DSL, "canonical decimal integer");
-        rejects({{"measure", 1}, {"events", music::json_array<Json>({Json{{"pitches", music::json_array<Json>({spelling})}}})}},
-                PhraseSyntax::JSON, "canonical decimal integer");
-    }
-    rejects({{"measure", 1}, {"content", std::string(65535, ' ') + "C4"}}, PhraseSyntax::DSL, "65536 Unicode characters");
-    std::string long_pitch;
-    for (int i = 0; i < 4097; ++i) long_pitch += "\xc3\xa9";
-    rejects({{"measure", 1}, {"events", music::json_array<Json>({Json{{"pitches", music::json_array<Json>({long_pitch})}}})}},
-            PhraseSyntax::JSON, "4096 Unicode characters");
+    auto rejects = [&](const std::string &content, std::string_view location, std::string_view expected) {
+        const auto decoded = decode(content);
+        ASSERT_FALSE(decoded) << content;
+        const auto &message = decoded.error().message;
+        EXPECT_TRUE(message.starts_with("lanes[0].content (" + std::string(location) + "): ")) << message;
+        EXPECT_NE(message.find(expected), std::string::npos) << message;
+    };
+    rejects("C4 q4", "token 'q4'", "expected a spelled pitch such as Eb4, drum d36, or rest r");
+    rejects("C0004", "token 'C0004'", "canonical decimal integer");
+    rejects("C-0", "token 'C-0'", "canonical decimal integer");
+    rejects("d128", "token 'd128'", "d0 to d127");
+    rejects("[C4 d36]", "token 'd36'", "all spelled pitches or all drum keys");
+    rejects("D4:q...", "token 'q...'", "at most two duration dots");
+    rejects("D4:01/8", "token '01/8'", "canonical decimal terms");
+    rejects("3:02(A4:e G4:e F4:e)", "token '02'", "positive canonical decimal integer");
+    rejects("3:2(A4:e |", "token '|'", "a note, chord, or rest");
+    rejects("acciac D5", "token 'D5'", "expected '('");
+    rejects("C4 after8(D5", "end of content", "expected ')'");
+
+    std::string long_token;
+    for (int i = 0; i < 40; ++i) long_token += "\xc3\xa9";
+    const auto decoded = decode(long_token);
+    ASSERT_FALSE(decoded);
+    const auto &message = decoded.error().message;
+    const std::string_view prefix = "lanes[0].content (token '";
+    ASSERT_TRUE(message.starts_with(prefix)) << message;
+    const auto end = message.find("'): ", prefix.size());
+    ASSERT_NE(end, std::string::npos) << message;
+    const auto snippet = std::string_view(message).substr(prefix.size(), end - prefix.size());
+    EXPECT_LE(snippet.size(), 32u);
+    EXPECT_NE(snippet.find("..."), std::string::npos);
+    EXPECT_TRUE(music::valid_utf8(snippet));
+
+    EXPECT_TRUE(decode(std::string(65534, ' ') + "C4"));
+    const auto oversized = decode(std::string(65535, ' ') + "C4");
+    ASSERT_FALSE(oversized);
+    EXPECT_NE(oversized.error().message.find("65536 Unicode characters"), std::string::npos);
 }
 
-TEST(Phrase, AtomicWritesHaveMatchingReadback) {
+TEST(Phrase, AllGraceDefaultsAndDurationSuffixes) {
+    using namespace engrave;
+    const Outline outline{.measure_count = 1, .measures = {{{}, 0, {0, 1}, {1, 1}}}};
+    const auto lanes = music::parse_json(
+        R"dsl([{"measure":1,"content":"acciac(D5) appog(E5) grace4(F5) grace16(G5) grace32(A5) [Cbbb4 C###5]~:h.. after8(B4) after16(A4) after32(G4) r:3/8 r:w r:q. r:e r:s r:32 r:64"}])dsl");
+    ASSERT_TRUE(lanes);
+    const auto phrase = music::api::decode_phrase(*lanes, outline, {});
+    ASSERT_TRUE(phrase) << phrase.error().message;
+    const auto &items = phrase->lanes.at(0).items;
+    const auto &chord = std::get<PhraseEvent>(items.at(0));
+    ASSERT_EQ(chord.notes.size(), 2u);
+    EXPECT_TRUE(chord.notes[0].tie_to_next);
+    EXPECT_TRUE(chord.notes[1].tie_to_next);
+    EXPECT_EQ(std::get<SpelledPitch>(chord.notes[0].pitch).alter, -3);
+    EXPECT_EQ(std::get<SpelledPitch>(chord.notes[1].pitch).alter, 3);
+    const auto check_graces = [](const auto &graces, std::initializer_list<int> denominators) {
+        ASSERT_EQ(graces.size(), denominators.size());
+        std::size_t i = 0;
+        for (const auto denominator : denominators) {
+            EXPECT_EQ(graces[i].written_duration.num, 1);
+            EXPECT_EQ(graces[i].written_duration.den, denominator);
+            ++i;
+        }
+    };
+    check_graces(chord.before, {8, 8, 4, 16, 32});
+    check_graces(chord.after, {8, 16, 32});
+    const std::vector<Fraction> expected{{7, 8}, {3, 8}, {1, 1}, {3, 8}, {1, 8}, {1, 16}, {1, 32}, {1, 64}};
+    ASSERT_EQ(items.size(), expected.size());
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const auto actual = std::get<PhraseEvent>(items[i]).written_duration;
+        EXPECT_EQ(actual.num, expected[i].num);
+        EXPECT_EQ(actual.den, expected[i].den);
+    }
+}
+
+TEST(Phrase, AtomicWritesPreserveNotation) {
     ASSERT_FALSE(g_args.empty());
     engrave::EngineOptions options;
     options.resources = fs::absolute(fs::u8path(g_args.front()));
@@ -178,54 +233,37 @@ TEST(Phrase, AtomicWritesHaveMatchingReadback) {
 <Part id="1"><Staff><StaffType group="percussion"/></Staff><trackName>Kit</trackName><Instrument id="drumset"><useDrumset>1</useDrumset>
 <Drum pitch="36"><name>Custom low drum</name><head>normal</head><line>4</line><stem>1</stem><voice>0</voice></Drum></Instrument></Part>
 <Staff id="1"><Measure><voice><Rest><durationType>measure</durationType></Rest></voice></Measure></Staff></Score></museScore>)";
-    auto compare = [&](const std::string &source, const Json &events, const char *content, bool drums) {
-        Json first;
-        for (auto syntax : {music::api::PhraseSyntax::JSON, music::api::PhraseSyntax::DSL}) {
-            auto bytes = std::as_bytes(std::span(source.data(), source.size()));
-            auto doc = (*engine)->open(bytes, {.format = engrave::Format::MSCX});
-            ASSERT_TRUE(doc) << doc.error().message;
-            auto outline = (*doc)->outline();
-            ASSERT_TRUE(outline);
-            Json lane = {{"measure", 1}, {"pitch_mode", "written"}};
-            if (syntax == music::api::PhraseSyntax::DSL) {
-                lane["content"] = content;
-            } else {
-                lane["events"] = events;
-            }
-            auto phrase = music::api::decode_phrase(music::json_array<Json>({lane}), *outline, {}, syntax);
-            ASSERT_TRUE(phrase) << phrase.error().message;
-            auto edit = (*doc)->write_phrase(*phrase, {1, engrave::EditMode::Atomic});
-            ASSERT_TRUE(edit) << edit.error().message;
-            ASSERT_FALSE(edit->rejection) << edit->rejection->error.message;
-            auto read = (*doc)->read_music({.measure_count = outline->measure_count});
-            ASSERT_TRUE(read) << read.error().message;
-            auto window = music::api::music_result(*read, *outline, false);
-            const auto &note = window.at("measures")[0].at("voices")[0].at("events")[0].at("notes")[0];
-            if (drums) {
-                EXPECT_EQ(note.at("drum"), 36);
-                EXPECT_EQ(note.at("kit_name"), "Custom low drum");
-            } else {
-                EXPECT_EQ(note.at("written"), "B#3");
-                EXPECT_NE(note.at("concert"), note.at("written"));
-                EXPECT_EQ(window.at("tuplets").size(), 1u);
-                const auto &principal = window.at("measures")[1].at("voices")[0].at("events")[4];
-                EXPECT_EQ(principal.at("grace_before")[0].at("duration"), "1/8");
-                EXPECT_EQ(principal.at("grace_before")[1].at("duration"), "1/16");
-                EXPECT_EQ(principal.at("grace_after")[0].at("duration"), "1/16");
-            }
-            if (syntax == music::api::PhraseSyntax::JSON) {
-                first = window;
-            } else {
-                EXPECT_EQ(window, first);
-            }
+    auto check_readback = [&](const std::string &source, const char *content, bool drums) {
+        auto bytes = std::as_bytes(std::span(source.data(), source.size()));
+        auto doc = (*engine)->open(bytes, {.format = engrave::Format::MSCX});
+        ASSERT_TRUE(doc) << doc.error().message;
+        auto outline = (*doc)->outline();
+        ASSERT_TRUE(outline);
+        const Json lane = {{"measure", 1}, {"pitch_mode", "written"}, {"content", content}};
+        auto phrase = music::api::decode_phrase(music::json_array<Json>({lane}), *outline, {});
+        ASSERT_TRUE(phrase) << phrase.error().message;
+        auto edit = (*doc)->write_phrase(*phrase, {1, engrave::EditMode::Atomic});
+        ASSERT_TRUE(edit) << edit.error().message;
+        ASSERT_FALSE(edit->rejection) << edit->rejection->error.message;
+        auto read = (*doc)->read_music({.measure_count = outline->measure_count});
+        ASSERT_TRUE(read) << read.error().message;
+        auto window = music::api::music_result(*read, *outline, false);
+        const auto &note = window.at("measures")[0].at("voices")[0].at("events")[0].at("notes")[0];
+        if (drums) {
+            EXPECT_EQ(note.at("drum"), 36);
+            EXPECT_EQ(note.at("kit_name"), "Custom low drum");
+        } else {
+            EXPECT_EQ(note.at("written"), "B#3");
+            EXPECT_NE(note.at("concert"), note.at("written"));
+            EXPECT_EQ(window.at("tuplets").size(), 1u);
+            const auto &principal = window.at("measures")[1].at("voices")[0].at("events")[4];
+            EXPECT_EQ(principal.at("grace_before")[0].at("duration"), "1/8");
+            EXPECT_EQ(principal.at("grace_before")[1].at("duration"), "1/16");
+            EXPECT_EQ(principal.at("grace_after")[0].at("duration"), "1/16");
         }
     };
-    compare(
-        clarinet,
-        *music::parse_json(
-            R"([{"duration":"1/8","pitches":["B#3","Eb4"],"tie":["Eb4"]},{"bar":true},{"pitches":["Cb4","Eb4"]},{"tuplet":"3:2","events":[{"pitches":["A4"],"duration":"1/8"},{"pitches":["G4"],"duration":"1/8"},{"pitches":["F4"],"duration":"1/8"}]},{"pitches":["C4"],"grace_before":[{"kind":"acciac","pitches":["D5"]},{"kind":"grace16","pitches":["F5"]}],"grace_after":[{"kind":"after16","pitches":["E5"]}]}])"),
-        "[B#3 Eb4~]:e | [Cb4 Eb4] 3:2(A4:e G4:e F4:e) acciac(D5) grace16(F5) C4 after16(E5)", false);
-    compare(kit, *music::parse_json(R"([{"drums":[36],"duration":"1/8"},{"drums":[],"duration":"1/8"}])"), "d36:e r:e", true);
+    check_readback(clarinet, "[B#3 Eb4~]:e | [Cb4 Eb4] 3:2(A4:e G4:e F4:e) acciac(D5) grace16(F5) C4 after16(E5)", false);
+    check_readback(kit, "d36:e r:e", true);
 }
 
 TEST(MusicWindow, NestedGroupsGapsAndNotation) {
@@ -258,8 +296,8 @@ TEST(MusicWindow, NestedGroupsGapsAndNotation) {
                          {{}, {5, 24}, {1, 8}, {1, 20}, {first_group, inner_group}, drums},
                          {{}, {1, 2}, {1, 4}, {1, 4}, {}, RestMusic{true, 2}}}}}}},
         .tuplets = {{first_group, 3, 2, {1, 8}}, {inner_group, 5, 3, {1, 8}}},
-        .spanners = {{spanner_id, "Slur", start, end}},
-        .voltas = {{{volta_id, "Volta", start, end}, {1, 2}, true}}};
+        .spanners = {{spanner_id, "Slur", {}, start, end}},
+        .voltas = {{{volta_id, "Volta", {}, start, end}, {1, 2}, true}}};
     const Outline outline{.measures = {bar}};
     const auto result = music::api::music_result(window, outline, false);
     EXPECT_EQ(result.at("score"), "excerpt");
@@ -296,29 +334,36 @@ TEST(Phrase, HostTripleAccidentalsAndBarDiagnostics) {
     ASSERT_TRUE(made) << made.error().message;
     auto &host = **made;
     const auto document = ok(host, "score_create", music::make_object<Json>()).at("document");
-    auto write = [&](std::string_view events) {
-        const auto lanes = music::parse_json("[{\"measure\":1,\"events\":" + std::string(events) + "}]");
-        return host.write_phrase({{"document", document}, {"lanes", *lanes}});
+    auto write = [&](std::string_view content, std::string_view offset = "0") {
+        return host.write_phrase(
+            {{"document", document}, {"lanes", music::json_array<Json>({Json{{"measure", 1}, {"offset", offset}, {"content", content}}})}});
     };
-    const auto bad = write(R"([{"pitches":["C###4"],"duration":"1/1"},{"bar":true},{"pitches":["C4"],"duration":"1/3"}])");
+    const auto legacy =
+        host.write_phrase({{"document", document}, {"lanes", *music::parse_json(R"([{"measure":1,"events":[{"pitches":["C4"]}]}])")}});
+    ASSERT_FALSE(legacy.at("ok").get<bool>());
+    EXPECT_EQ(legacy.at("error").at("code"), "InvalidArgument");
+    EXPECT_TRUE(legacy.at("error").at("message").get<std::string>().starts_with("lanes[0].events:"));
+    const auto bad_token = write("C4 q4");
+    ASSERT_FALSE(bad_token.at("ok").get<bool>());
+    EXPECT_EQ(bad_token.at("error").at("code"), "InvalidArgument");
+    EXPECT_EQ(bad_token.at("error").at("message"),
+              "lanes[0].content (token 'q4'): invalid pitch; expected a spelled pitch such as Eb4, drum d36, or rest r");
+
+    const auto bad = write("C###4:w | C4:1/3");
     ASSERT_FALSE(bad.at("ok").get<bool>());
     EXPECT_TRUE(bad.at("error").at("message").get<std::string>().starts_with("lane 0, item 2: "));
     EXPECT_FALSE(bad.at("error").contains("op_index"));
-    const auto entry = write(R"([{"pitches":["C###4"]}])");
+    const auto entry = write("C###4");
     ASSERT_TRUE(entry.at("ok").get<bool>()) << music::dump_json(entry);
-    const auto inside_note = host.write_phrase(
-        {{"document", document}, {"lanes", *music::parse_json(R"([{"measure":1,"offset":"1/8","events":[{"pitches":["F4"]}]}])")}});
+    const auto inside_note = write("F4", "1/8");
     ASSERT_FALSE(inside_note.at("ok").get<bool>());
     const auto &rejection = inside_note.at("error");
     EXPECT_TRUE(rejection.at("message").get<std::string>().starts_with("lane 0, item 0: "));
     EXPECT_NE(rejection.at("message").get<std::string>().find("inside a sounding event"), std::string::npos);
     EXPECT_FALSE(rejection.contains("op_index"));
 
-    music::api::dsl_phrase_syntax = true;
-    const auto dsl_entry =
-        host.write_phrase({{"document", document}, {"lanes", *music::parse_json(R"([{"measure":1,"offset":"1/4","content":"C###4"}])")}});
-    music::api::dsl_phrase_syntax = false;
-    ASSERT_TRUE(dsl_entry.at("ok").get<bool>()) << music::dump_json(dsl_entry);
+    const auto next_entry = write("C###4", "1/4");
+    ASSERT_TRUE(next_entry.at("ok").get<bool>()) << music::dump_json(next_entry);
     auto read_first = [&] { return host.read_music({{"document", document}, {"count", 1}, {"include_ids", true}}); };
     const auto window = read_first();
     EXPECT_EQ(window.at("score"), "master");
@@ -336,6 +381,39 @@ TEST(Phrase, HostTripleAccidentalsAndBarDiagnostics) {
     set_pitch(63, 35);
     const auto edited = read_first();
     EXPECT_EQ(edited.at("measures")[0].at("voices")[0].at("events")[0].at("notes")[0].at("concert"), "C###4");
+}
+
+TEST(MusicWindow, HairpinSubtypesInToolReadback) {
+    ASSERT_FALSE(g_args.empty());
+    auto made = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(made) << made.error().message;
+    auto &host = **made;
+    const auto document = ok(host, "score_create", music::make_object<Json>()).at("document");
+    const auto written =
+        host.write_phrase({{"document", document}, {"lanes", music::json_array<Json>({Json{{"measure", 1}, {"content", "C4 D4 E4"}}})}});
+    ASSERT_TRUE(written.at("ok").get<bool>()) << music::dump_json(written);
+    const Json range = {{"document", document}, {"count", 1}, {"include_ids", true}};
+    const auto source = host.read_music(range);
+    const auto &events = source.at("measures")[0].at("voices")[0].at("events");
+    auto hairpin = [&](int start, int end, int kind) -> Json {
+        return {{"op", "add_spanner"},
+                {"type", "HairPin"},
+                {"start", events[start].at("id")},
+                {"end", events[end].at("id")},
+                {"props", music::json_array<Json>({Json{{"name", "HAIRPIN_TYPE"}, {"value", kind}}})}};
+    };
+    ok(host, "score_edit", {{"document", document}, {"ops", music::json_array<Json>({hairpin(0, 1, 0), hairpin(1, 2, 1)})}});
+    const auto window = host.read_music(range);
+    ASSERT_TRUE(window.at("ok").get<bool>()) << music::dump_json(window);
+    const auto &spanners = window.at("spanners");
+    ASSERT_EQ(spanners.size(), 2u);
+    EXPECT_EQ(spanners[0].at("type"), "HairPin");
+    EXPECT_EQ(spanners[0].at("subtype"), "crescendo");
+    EXPECT_EQ(spanners[1].at("type"), "HairPin");
+    EXPECT_EQ(spanners[1].at("subtype"), "diminuendo");
+    const auto &summary = window.at("summary").get<std::string>();
+    EXPECT_NE(summary.find("HairPin(crescendo)#" + spanners[0].at("id").get<std::string>()), std::string::npos);
+    EXPECT_NE(summary.find("HairPin(diminuendo)#" + spanners[1].at("id").get<std::string>()), std::string::npos);
 }
 
 TEST(HostApi, EndToEndToolContract) {
@@ -401,7 +479,7 @@ TEST(HostApi, EndToEndToolContract) {
     auto outline = ok(*host, "score_outline", {{"document", doc}, {"expected_revision", "1"}});
     require(outline.at("outline").at("title") == "Store test", "template metadata missing");
     auto measure = outline.at("outline").at("measures")[0].at("id").get<std::string>();
-    const Json phrase_lane = {{"measure", 1}, {"events", music::json_array<Json>({Json{{"pitches", music::json_array<Json>({"Eb4"})}}})}};
+    const Json phrase_lane = {{"measure", 1}, {"content", "Eb4"}};
     std::atomic<bool> cancelled{true};
     auto interrupted = host->write_phrase(Json{{"document", doc}, {"lanes", music::json_array<Json>({phrase_lane})}}, &cancelled);
     EXPECT_EQ(interrupted.at("error").at("code"), "Cancelled");

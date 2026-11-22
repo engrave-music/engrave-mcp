@@ -386,18 +386,7 @@ def _check_music_protocol(exe: str, output: Path, version: str) -> None:
             "score_write_phrase",
             {
                 "document": document,
-                "lanes": [
-                    {
-                        "measure": 1,
-                        "events": [
-                            {"pitches": ["C###4"], "grace_before": [{"kind": "acciac", "pitches": ["D5"]}]},
-                            {
-                                "tuplet": "3:2",
-                                "events": [{"pitches": [pitch], "duration": "1/8"} for pitch in ("D4", "E4", "F4")],
-                            },
-                        ],
-                    }
-                ],
+                "lanes": [{"measure": 1, "content": "acciac(D5) C###4 3:2(D4:e E4:e F4:e)"}],
             },
         )
         window, text = call("score_read_music", {"document": document, "count": 1, "include_ids": True})
@@ -448,7 +437,7 @@ def main() -> int:
         reply = json.loads(_run_server(exe, _compact(request) + "\n")["stdout"])
         assert reply["result"]["protocolVersion"] == (PROTOCOL_VERSION if requested == "2099-01-01" else requested)
         assert "score_write_phrase" in reply["result"]["instructions"]
-        for term in ("C###4", "grace_before", "after16", "3:2", '"bar":true'):
+        for term in ("content string", "C###4", "acciac(D5)", "after16", "3:2", "|"):
             assert term in reply["result"]["instructions"], term
         if requested != "2099-01-01":
             _check_music_protocol(exe, output_path.parent / f"{output_path.stem}.{requested}", requested)
