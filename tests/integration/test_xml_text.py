@@ -33,8 +33,8 @@ async def run(args):
         address = {
             "kind": "segment",
             "measure": measure["id"],
-            "staff": 0,
-            "voice": 0,
+            "staff": 1,
+            "voice": 1,
             "tick": measure["tick"],
             "segment_kind": "ChordRest",
         }
@@ -44,7 +44,7 @@ async def run(args):
             "ops": [
                 {
                     "op": "set_layout_break",
-                    "measure": {"kind": "id", "id": measure["id"]},
+                    "measure": measure["id"],
                     "kind": "line",
                     "on": True,
                 },
@@ -65,9 +65,9 @@ async def run(args):
             "ops": [
                 {
                     "op": "set_property",
-                    "target": {"kind": "id", "id": measure["id"]},
+                    "target": measure["id"],
                     "property": "text",
-                    "value": {"kind": "string", "value": "bad\x01"},
+                    "value": "bad\x01",
                 }
             ],
         }
@@ -91,12 +91,7 @@ async def run(args):
             path = out / f"valid.{fmt}"
             await client.tool(
                 "score_export",
-                {
-                    "document": doc,
-                    "kind": "score",
-                    "options": {"format": fmt},
-                    "destination": {"kind": "file", "path": str(path)},
-                },
+                {"document": doc, "format": fmt, "path": str(path)},
             )
             tree = ET.parse(path)
             assert title.encode("utf-8") in path.read_bytes()

@@ -114,12 +114,7 @@ def main():
                 elif kind == 3:
                     name, args = (
                         "score_export",
-                        dict(
-                            document=doc,
-                            kind="audio",
-                            options=dict(format="wav"),
-                            destination=dict(kind="file", path=str(a.output / "soak.wav")),
-                        ),
+                        {"document": doc, "format": "wav", "path": str(a.output / "soak.wav")},
                     )
                 else:
                     name, args = (
@@ -129,7 +124,7 @@ def main():
                             ops=[
                                 dict(
                                     op="set_layout_break",
-                                    measure=dict(kind="id", id=measures[di]),
+                                    measure=measures[di],
                                     kind="page",
                                     on=bool((i // 10) % 2),
                                 )

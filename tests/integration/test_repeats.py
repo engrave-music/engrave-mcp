@@ -195,12 +195,8 @@ async def execute_tests(binary: Path, resources: Path, output_dir: Path, upstrea
                             "score_export",
                             {
                                 "document": doc_id,
-                                "kind": "positions",
-                                "options": {"position_kind": "measure"},
-                                "destination": {
-                                    "kind": "file",
-                                    "path": str(pos_path.resolve()),
-                                },
+                                "format": "measure_positions",
+                                "path": str(pos_path.resolve()),
                             },
                         )
                         if err_exp or not pos_path.exists():

@@ -104,6 +104,9 @@ cc_library(
     name = "document_store",
     srcs = [
         "engrave_mcp/api_edit_json.cpp",
+        "engrave_mcp/arguments.cpp",
+        "engrave_mcp/phrase.cpp",
+        "engrave_mcp/music_window.cpp",
         "engrave_mcp/api_json.cpp",
         "engrave_mcp/host_api.cpp",
     ],

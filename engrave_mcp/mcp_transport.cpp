@@ -67,6 +67,7 @@
 
 #include "publication_gate.h"
 #include "runtime_limits.h"
+#include "schema_defs.h"
 #include "terminal_diagnostic.h"
 #include "test_hooks.h"
 #include "tool_result.h"
@@ -1228,9 +1229,33 @@ private:
                     co_return co_await send_error(id, -32602, "Invalid params: clientInfo name and version strings required");
                 }
 
-                Json result = {{"protocolVersion", "2025-11-25"},
+                auto version = params["protocolVersion"].get<std::string>();
+                if (version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18") version = "2025-11-25";
+                Json result = {{"protocolVersion", version},
                                {"capabilities", {{"tools", make_object<Json>()}}},
                                {"serverInfo", {{"name", "engrave-mcp"}, {"version", std::string(host_version)}}}};
+                std::string instructions =
+                    "Start with score_create or score_open. Keep the document handle and revision, then inspect the returned outline for "
+                    "measure lengths, staves, signatures and excerpts. Bars, staves and voices start at 1. Use score_write_phrase for "
+                    "note entry, then score_read_music to check the result in short windows. Positions use exact whole-note fractions "
+                    "relative to the start of the measure: 0, 1/4 and 3/8 are valid offsets. A pickup uses its actual duration. "
+                    "Pitch defaults to concert. Choose written pitch_mode on a lane when copying a transposed part. ";
+                instructions +=
+                    api::dsl_phrase_syntax ?
+                        "Each lane has a starting measure and content such as '[C4 E4 G4]:h r:q Eb4:q |'. Use d36 for a drum key, "
+                        "3:2(A4:e G4:e F4:e) for a triplet and ~ for a tie. " :
+                        "Each lane has a starting measure and an events array. Give a note or chord a pitches array such as "
+                        "[\"Eb4\",\"G4\"] "
+                        "and duration such as 1/4. Empty pitches enter a rest. Use drums for MIDI drum keys, tuplet and events for a "
+                        "group, and {\"bar\":true} to check a measure boundary. ";
+                instructions +=
+                    "Echo the last revision as expected_revision to guard writes and reads. Phrase writes and default score_edit "
+                    "batches are atomic. Save a named checkpoint before experimenting and use restore_checkpoint to return to it. "
+                    "Use runtime_info with scope ops for detailed edit operations or instruments to find instrument IDs. "
+                    "Request include_ids on a music window when an edit needs an element ID. Export the finished document with "
+                    "score_export "
+                    "by supplying format and path. Use mscz for an editable score. Close the document when finished.";
+                result["instructions"] = std::move(instructions);
                 if (!co_await send_result(id, std::move(result))) {
                     co_return false;
                 }
@@ -1540,13 +1565,14 @@ private:
 
         call->tool_finished = true;
         if (call->watchdog) call->watchdog->cancel();
-        // Delivering the failure must not itself be aborted because the
-        // cancellation state is still "cancelled"; the response is the
-        // acknowledgement of that cancellation (or the real tool error).
         co_await asio::this_coro::reset_cancellation_state(asio::disable_cancellation());
 
         switch (delivery) {
-            case FailureDelivery::CANCELLED: co_await deliver_cancelled(call); break;
+            case FailureDelivery::CANCELLED:
+                call->response_started = true; // The completion handler must also leave this request silent.
+                erase_inflight(call);
+                maybe_finish_graceful();
+                break;
             case FailureDelivery::TOOL_ERROR: co_await deliver_tool_error(call, std::move(error_code), std::move(error_message)); break;
             case FailureDelivery::GENERIC: co_await deliver_generic_error(call, std::move(error_message)); break;
             case FailureDelivery::NONE: break;
@@ -1641,23 +1667,6 @@ private:
         co_return;
     }
 
-    asio::awaitable<void> deliver_cancelled(const CallStatePtr &call) {
-        if (call->response_started || call->execution->was_reported()) {
-            erase_inflight(call);
-            maybe_finish_graceful();
-            co_return;
-        }
-        call->response_started = true;
-
-        if (!fatal_.load(std::memory_order_acquire)) {
-            std::ignore = co_await send_error(call->id, -32800, "Request cancelled");
-        }
-
-        erase_inflight(call);
-        maybe_finish_graceful();
-        co_return;
-    }
-
     asio::awaitable<void> finish_call(CallStatePtr call, std::exception_ptr error) {
         if (call->response_started || call->execution->was_reported()) {
             erase_inflight(call);
@@ -1672,9 +1681,7 @@ private:
             co_return;
         }
 
-        if (error && call->cancel_requested && is_operation_aborted(error)) {
-            std::ignore = co_await send_error(call->id, -32800, "Request cancelled");
-        } else {
+        if (!(error && call->cancel_requested && is_operation_aborted(error))) {
             std::ignore = co_await send_error(call->id, -32603, "Internal error");
         }
 

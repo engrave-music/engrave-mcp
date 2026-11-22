@@ -30,7 +30,7 @@ def main():
                 ops=[
                     dict(
                         op="set_layout_break",
-                        measure=dict(kind="id", id=measure),
+                        measure=measure,
                         kind="page",
                         on=True,
                     )
@@ -41,7 +41,7 @@ def main():
         def export(path, ok=True, fmt="svg"):
             args = export_args(doc, fmt, path, True)
             # The helper resolves paths: override with the literal UTF-8 alias.
-            args["destination"]["path"] = str(path)
+            args["path"] = str(path)
             return c.tool("score_export", args, ok)
 
         if os.name == "posix":

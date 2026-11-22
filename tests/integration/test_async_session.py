@@ -7,7 +7,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from engrave_mcp_testing.mcp_client import TOOLS, VALIDATORS, Client
+from engrave_mcp_testing.mcp_client import TOOLS, Client
 from engrave_mcp_testing.paths import REPO_ROOT
 
 RETIRED = {
@@ -28,12 +28,7 @@ RETIRED = {
 
 
 def export(doc, path):
-    return {
-        "document": doc,
-        "kind": "score",
-        "options": {"format": "musicxml"},
-        "destination": {"kind": "file", "path": str(path)},
-    }
+    return {"document": doc, "format": "musicxml", "path": str(path)}
 
 
 async def eof_pipeline(args, out):
@@ -170,7 +165,7 @@ async def run(args):
             "base64_chars": 11184812,
             "batch_ops": 1024,
             "query_results": 4096,
-            "output_bytes": "1073741824",
+            "output_bytes": 1073741824,
             "deadline_ms": 120000,
             "cancellation": "cooperative",
             "transport_request_bytes": 4194304,
@@ -187,7 +182,7 @@ async def run(args):
             {"document": doc, "mode": "elements", "query": {"types": ["Note"]}},
         )
         note = notes["elements"][0]["id"]
-        await client.tool("score_describe", {"scope": "type", "type": "Note"})
+        await client.tool("runtime_info", {"scope": "type", "type": "Note"})
         edits = [
             {
                 "document": doc,
@@ -195,7 +190,7 @@ async def run(args):
                 "ops": [
                     {
                         "op": "set_pitch",
-                        "note": {"kind": "id", "id": note},
+                        "note": note,
                         "pitch": pitch,
                     }
                 ],
@@ -214,8 +209,6 @@ async def run(args):
             *reads,
         )
         writes = [r["result"]["structuredContent"] for r in responses[:4]]
-        for result in writes:
-            VALIDATORS["score_edit"].validate(result)
         assert sum(x["ok"] for x in writes) == 1 and all(
             x["ok"] or x["error"]["code"] == "RevisionConflict" for x in writes
         ), writes
@@ -236,7 +229,7 @@ async def run(args):
             {
                 "document": doc,
                 "expected_revision": revision,
-                "ops": [{"op": "set_pitch", "note": {"kind": "id", "id": note}, "pitch": 79}],
+                "ops": [{"op": "set_pitch", "note": note, "pitch": 79}],
             },
         )
         assert changed["revision"] != revision
@@ -264,7 +257,7 @@ async def run(args):
                 "ops": [
                     {
                         "op": "set_layout_break",
-                        "measure": {"kind": "id", "id": measure},
+                        "measure": measure,
                         "kind": "page",
                         "on": True,
                     }
@@ -277,12 +270,7 @@ async def run(args):
         (directory / "page-0002.png").mkdir(exist_ok=True)
         result = await client.tool(
             "score_export",
-            {
-                "document": partial_doc,
-                "kind": "render",
-                "options": {"format": "png", "dpi": 36, "last_page": 1},
-                "destination": {"kind": "directory", "path": str(directory)},
-            },
+            {"document": partial_doc, "format": "png", "path": str(directory), "options": {"dpi": 36, "last_page": 1}},
             error=True,
         )
         assert result["error"]["code"] == "Io" and len(result["error"]["published_artifacts"]) == 1, result
@@ -315,7 +303,9 @@ async def run(args):
             await client.proc.stdin.drain()
             await client.notify("notifications/cancelled", {"requestId": queued_id})
             await client.notify("notifications/cancelled", {"requestId": stall_id})
-            assert (await asyncio.wait_for(queued, 10))["error"]["code"] == -32800
+            await client.call("ping", {})
+            assert not queued.done()
+            client.pending.pop(queued_id)
             assert (await asyncio.wait_for(stall, 10))["result"]["structuredContent"]["slept_ms"] == 2000
 
             # Fill the transport's outstanding-call bound while the owner is
@@ -339,10 +329,16 @@ async def run(args):
             for identity, future in pending:
                 if not future.done():
                     await client.notify("notifications/cancelled", {"requestId": identity})
-            responses = await asyncio.wait_for(asyncio.gather(*(future for _, future in pending)), 15)
+            await asyncio.wait_for(stall, 10)
+            await client.call("ping", {})
+            responses = [future.result() for _, future in pending if future.done()]
+            silent = [i for i, future in pending if not future.done()]
+            assert silent
+            for i in silent:
+                client.pending.pop(i)
             codes = [x.get("error", {}).get("code") for x in responses]
-            assert -32000 in codes and -32800 in codes, codes
-            assert all(code in (-32000, -32800, None) for code in codes), codes
+            assert -32000 in codes, codes
+            assert all(code in (-32000, None) for code in codes), codes
             await asyncio.wait_for(stall, 10)
 
         else:
@@ -356,7 +352,7 @@ async def run(args):
         export_revision=revision,
         eof_pipeline=True,
         published_artifacts_on_error=True,
-        output_schema_validation=True,
+        input_schema_validation=True,
         runtime_limits=info["limits"],
         status="passed",
     )

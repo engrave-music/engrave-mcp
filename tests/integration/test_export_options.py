@@ -200,12 +200,10 @@ async def main() -> None:
                 "score_export",
                 {
                     "document": doc,
-                    "kind": kind,
-                    "options": options,
-                    "destination": {
-                        "kind": "directory" if directory else "file",
-                        "path": str(destination),
-                    },
+                    "format": options.get("format") or options.get("position_kind", "") + "_positions",
+                    "path": str(destination),
+                    "options": {k: v for k, v in options.items() if k not in ("score", "format", "position_kind")},
+                    **options.get("score", {}),
                 },
             )
             artifacts = result["artifacts"]
@@ -241,7 +239,7 @@ async def main() -> None:
         opaque = (await png("opaque", transparent=False))[0]
         assert inspect_png_alpha(transparent)["has_transparency"]
         assert not inspect_png_alpha(opaque)["has_transparency"]
-        nobg = (await png("nobg", background=False))[0]
+        nobg = (await png("nobg", background=False, transparent=True))[0]
         withbg = (await png("withbg", background=True))[0]
         with Image.open(nobg) as image:
             assert image.convert("RGBA").getpixel((0, 0))[3] == 0
@@ -350,12 +348,10 @@ async def main() -> None:
                 "score_export",
                 {
                     "document": doc,
-                    "kind": kind,
-                    "options": options,
-                    "destination": {
-                        "kind": "directory" if directory else "file",
-                        "path": str(target),
-                    },
+                    "format": options.get("format") or options.get("position_kind", "") + "_positions",
+                    "path": str(target),
+                    "options": {k: v for k, v in options.items() if k not in ("score", "format", "position_kind")},
+                    **options.get("score", {}),
                 },
                 error=True,
             )

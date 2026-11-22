@@ -43,7 +43,7 @@ async def run(args):
             )
             notes = {item["id"]: item for item in before["elements"]}
             assert {"I_I", "L_L"} <= notes.keys(), notes.keys()
-            assert all(notes[n]["props"][0]["value"]["value"] == "71" for n in ("I_I", "L_L"))
+            assert all(notes[n]["props"][0]["value"] == 71 for n in ("I_I", "L_L"))
             assert len(notes["I_I"]["links"]) > 1, notes["I_I"]
             ids = ["I_I", "L_L"] if both else ["I_I"]
             edited = await client.tool(
@@ -54,7 +54,7 @@ async def run(args):
                     "ops": [
                         {
                             "op": "set_pitch",
-                            "note": {"kind": "id", "id": n},
+                            "note": n,
                             "pitch": 74,
                         }
                         for n in ids
@@ -81,31 +81,23 @@ async def run(args):
                     "query": {"types": ["Note"], "props": ["pitch"]},
                 },
             )
-            pitches = {item["id"]: item["props"][0]["value"]["value"] for item in after["elements"]}
-            assert pitches["I_I"] == "74" and pitches["L_L"] == ("74" if both else "71")
+            pitches = {item["id"]: item["props"][0]["value"] for item in after["elements"]}
+            assert pitches["I_I"] == 74 and pitches["L_L"] == (74 if both else 71)
             for linked in notes["I_I"]["links"]:
                 prop = await client.tool(
                     "score_query",
                     {
                         "document": doc,
                         "mode": "properties",
-                        "target": {"kind": "id", "id": linked},
+                        "target": linked,
                         "props": ["pitch"],
                     },
                 )
-                assert prop["properties"][0]["value"]["value"] == "74"
+                assert prop["properties"][0]["value"] == 74
             for fmt in ("musicxml", "mxl"):
                 await client.tool(
                     "score_export",
-                    {
-                        "document": doc,
-                        "kind": "score",
-                        "options": {"format": fmt},
-                        "destination": {
-                            "kind": "file",
-                            "path": str(out / f"{label}.{fmt}"),
-                        },
-                    },
+                    {"document": doc, "format": fmt, "path": str(out / f"{label}.{fmt}")},
                 )
             original = first_tie(out / f"{label}.musicxml")
             assert original == [
@@ -116,12 +108,7 @@ async def run(args):
             result = out / f"{label}-reopened.musicxml"
             await client.tool(
                 "score_export",
-                {
-                    "document": restored,
-                    "kind": "score",
-                    "options": {"format": "musicxml"},
-                    "destination": {"kind": "file", "path": str(result)},
-                },
+                {"document": restored, "format": "musicxml", "path": str(result)},
             )
             reimported = first_tie(result)
             if both:

@@ -136,14 +136,8 @@ def main():
                                 "ops": [
                                     {
                                         "op": "remove_measures",
-                                        "first": {
-                                            "kind": "id",
-                                            "id": outline["measures"][1]["id"],
-                                        },
-                                        "last": {
-                                            "kind": "id",
-                                            "id": outline["measures"][-1]["id"],
-                                        },
+                                        "first": outline["measures"][1]["id"],
+                                        "last": outline["measures"][-1]["id"],
                                     }
                                 ],
                             },
@@ -161,12 +155,12 @@ def main():
                                     "at": {
                                         "kind": "segment",
                                         "measure": measure["id"],
-                                        "staff": 0,
-                                        "voice": 0,
+                                        "staff": 1,
+                                        "voice": 1,
                                         "tick": measure["tick"],
                                         "segment_kind": "ChordRest",
                                     },
-                                    "duration": {"num": "1", "den": "1"},
+                                    "duration": "1/1",
                                     "pitches": [{"pitch": p} for p in (60, 64, 67)],
                                 }
                             ],
@@ -176,15 +170,7 @@ def main():
                         fmt = "wav" if soundfont else "pdf"
                         call(
                             "score_export",
-                            {
-                                "document": doc,
-                                "kind": "audio" if soundfont else "render",
-                                "options": {"format": fmt},
-                                "destination": {
-                                    "kind": "file",
-                                    "path": str((OUT / f"cycle.{fmt}").resolve()),
-                                },
-                            },
+                            {"document": doc, "format": fmt, "path": str((OUT / f"cycle.{fmt}").resolve())},
                         )
                     call("score_close", {"document": doc})
                     if iteration % 10 == 9:

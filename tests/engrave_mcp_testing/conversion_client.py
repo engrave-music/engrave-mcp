@@ -28,6 +28,7 @@ class Client:
         )
         self.responses = queue.Queue()
         self.counter = 0
+        self.seen = set()
 
         def read():
             for line in self.process.stdout:
@@ -53,6 +54,8 @@ class Client:
             response = self.responses.get(timeout=max(0.01, deadline - time.monotonic()))
             self.log.write(json.dumps(dict(time=time.monotonic(), received=response)) + "\n")
             self.log.flush()
+            assert response.get("id") not in self.seen, response
+            self.seen.add(response.get("id"))
             if response.get("id") == ident:
                 return response
         raise TimeoutError(ident)

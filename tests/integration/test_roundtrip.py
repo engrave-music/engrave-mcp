@@ -268,14 +268,9 @@ class RoundTripRunner:
 
         # 1. Export MSCX of D (A)
         path_A = out / f"{prefix}_A.mscx"
-        exp_args: dict[str, Any] = {
-            "document": doc_id,
-            "kind": "score",
-            "options": {"format": "mscx"},
-            "destination": {"kind": "file", "path": str(path_A)},
-        }
+        exp_args: dict[str, Any] = {"document": doc_id, "format": "mscx", "path": str(path_A)}
         if excerpt_id is not None:
-            exp_args["options"]["score"] = {"excerpt": excerpt_id}
+            exp_args["excerpt"] = excerpt_id
         err, _ = await self.call("score_export", exp_args)
         if err:
             result["status"] = "failed"
@@ -285,7 +280,7 @@ class RoundTripRunner:
 
         # 2. MSCZ round trip -> B
         path_mscz = out / f"{prefix}.mscz"
-        exp_args["options"]["format"], exp_args["destination"]["path"] = (
+        exp_args["format"], exp_args["path"] = (
             "mscz",
             str(path_mscz),
         )
@@ -301,12 +296,7 @@ class RoundTripRunner:
         try:
             await self.must(
                 "score_export",
-                {
-                    "document": doc_B,
-                    "kind": "score",
-                    "options": {"format": "mscx"},
-                    "destination": {"kind": "file", "path": str(path_B)},
-                },
+                {"document": doc_B, "format": "mscx", "path": str(path_B)},
             )
 
             # Check excerpts preservation on reopened MSCZ of master scores
@@ -361,15 +351,9 @@ class RoundTripRunner:
                                         "score_export",
                                         {
                                             "document": document,
-                                            "kind": "score",
-                                            "options": {
-                                                "format": "mscx",
-                                                "score": {"excerpt": excerpt},
-                                            },
-                                            "destination": {
-                                                "kind": "file",
-                                                "path": str(path),
-                                            },
+                                            "format": "mscx",
+                                            "path": str(path),
+                                            **({"excerpt": excerpt}),
                                         },
                                     )
                                 sem_exc_a = parse_mscx(p_exc_a.read_text("utf-8"))
@@ -408,7 +392,7 @@ class RoundTripRunner:
 
         # 3. MusicXML round trip -> C
         path_xml1 = out / f"{prefix}_1.musicxml"
-        exp_args["options"]["format"], exp_args["destination"]["path"] = (
+        exp_args["format"], exp_args["path"] = (
             "musicxml",
             str(path_xml1),
         )
@@ -426,12 +410,7 @@ class RoundTripRunner:
             for fmt, path in (("mscx", path_C), ("musicxml", path_xml2)):
                 await self.must(
                     "score_export",
-                    {
-                        "document": doc_C,
-                        "kind": "score",
-                        "options": {"format": fmt},
-                        "destination": {"kind": "file", "path": str(path)},
-                    },
+                    {"document": doc_C, "format": fmt, "path": str(path)},
                 )
         finally:
             await self.call("score_close", {"document": doc_C})
@@ -455,12 +434,7 @@ class RoundTripRunner:
         try:
             await self.must(
                 "score_export",
-                {
-                    "document": opened_D["document"],
-                    "kind": "score",
-                    "options": {"format": "mscx"},
-                    "destination": {"kind": "file", "path": str(path_D)},
-                },
+                {"document": opened_D["document"], "format": "mscx", "path": str(path_D)},
             )
         finally:
             await self.call("score_close", {"document": opened_D["document"]})
@@ -540,10 +514,7 @@ async def run_suite(
                         assert len(measures) >= 2
                         for measure, pitches in zip(measures[:2], ((60, 62, 64, 65), (76, 74, 72, 71))):
                             for beat, value in enumerate(pitches):
-                                tick = Fraction(
-                                    int(measure["tick"]["num"]),
-                                    int(measure["tick"]["den"]),
-                                ) + Fraction(beat, 4)
+                                tick = Fraction(measure["tick"]) + Fraction(beat, 4)
                                 await runner.must(
                                     "score_edit",
                                     {
@@ -554,15 +525,12 @@ async def run_suite(
                                                 "at": {
                                                     "kind": "segment",
                                                     "measure": measure["id"],
-                                                    "staff": 0,
-                                                    "voice": 0,
-                                                    "tick": {
-                                                        "num": str(tick.numerator),
-                                                        "den": str(tick.denominator),
-                                                    },
+                                                    "staff": 1,
+                                                    "voice": 1,
+                                                    "tick": str(str(tick.numerator)) + "/" + str(str(tick.denominator)),
                                                     "segment_kind": "ChordRest",
                                                 },
-                                                "duration": {"num": "1", "den": "4"},
+                                                "duration": "1/4",
                                                 "pitches": [{"pitch": value}],
                                             }
                                         ],
@@ -575,7 +543,7 @@ async def run_suite(
                                 "mode": "elements",
                                 "query": {
                                     "types": ["Note"],
-                                    "first_measure": 0,
+                                    "first_measure": 1,
                                     "measure_count": 1,
                                 },
                             },
@@ -588,10 +556,7 @@ async def run_suite(
                                 "ops": [
                                     {
                                         "op": "set_pitch",
-                                        "note": {
-                                            "kind": "id",
-                                            "id": q["elements"][0]["id"],
-                                        },
+                                        "note": q["elements"][0]["id"],
                                         "pitch": 68,
                                     }
                                 ],

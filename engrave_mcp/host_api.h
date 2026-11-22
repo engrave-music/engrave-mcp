@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <thread>
 
@@ -25,8 +26,11 @@ struct HostApi {
 
     Json outline(const Json &);
     Json query(const Json &);
+    Json read_music(const Json &);
+    Json write_phrase(const Json &, const std::atomic<bool> *cancelled = nullptr);
+    Json configure(const Json &);
     Json describe(const Json &);
-    Json edit(const Json &);
+    Json edit(const Json &, const std::atomic<bool> *cancelled = nullptr);
     Json checkpoint(const Json &);
     Json restore_checkpoint(const Json &);
     Json drop_checkpoint(const Json &);

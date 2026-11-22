@@ -10,7 +10,7 @@ from jsonschema import Draft202012Validator
 from engrave_mcp_testing.paths import REPO_ROOT
 
 TOOLS = {x["name"]: x for x in json.loads((REPO_ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))}
-VALIDATORS = {name: Draft202012Validator(tool["outputSchema"]) for name, tool in TOOLS.items()}
+INPUTS = {name: Draft202012Validator(tool["inputSchema"]) for name, tool in TOOLS.items()}
 
 
 class Client:
@@ -103,8 +103,8 @@ class Client:
         assert bool(result["isError"]) == error, result
         payload = result["structuredContent"]
         assert payload["ok"] != error, payload
-        if name in VALIDATORS:
-            VALIDATORS[name].validate(payload)
+        if not error and name in INPUTS:
+            INPUTS[name].validate(args)
         assert len(result["content"][0]["text"].encode()) <= 4 * 1024 * 1024
         return payload
 

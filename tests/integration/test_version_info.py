@@ -140,12 +140,8 @@ async def run(args):
                 "score_export",
                 {
                     "document": document,
-                    "kind": "render" if render else "score",
-                    "options": {"format": fmt},
-                    "destination": {
-                        "kind": "directory" if render else "file",
-                        "path": str(path),
-                    },
+                    "format": fmt,
+                    "path": str(path),
                 },
             )
 
@@ -275,7 +271,7 @@ async def run(args):
                 "mode": "elements",
                 "query": {
                     "types": ["Note"],
-                    "first_measure": 0,
+                    "first_measure": 1,
                     "measure_count": 1,
                     "props": ["pitch"],
                 },
@@ -291,8 +287,8 @@ async def run(args):
                 "ops": [
                     {
                         "op": "set_pitch",
-                        "note": {"kind": "id", "id": notes[0]["id"]},
-                        "pitch": int(notes[0]["props"][0]["value"]["value"]) + 2,
+                        "note": notes[0]["id"],
+                        "pitch": int(notes[0]["props"][0]["value"]) + 2,
                     }
                 ],
             },
@@ -319,7 +315,7 @@ async def run(args):
                 "ops": [
                     {
                         "op": "generate_excerpts",
-                        "parts": [{"kind": "id", "id": part["id"]} for part in outline["parts"]],
+                        "parts": [part["id"] for part in outline["parts"]],
                     }
                 ],
             },

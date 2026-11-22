@@ -1,287 +1,64 @@
-# Tool contract
+# MCP score tools
 
-The server exposes twelve tools. This page is the human-readable contract; the
-generated [engrave_mcp/tools.json](../../engrave_mcp/tools.json) is the machine-readable
-one and is checked by the `tool_schema` lane.
+The host negotiates protocol versions 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25. An unsupported version receives 2025-11-25. After initialization, `tools/list` publishes the active input schemas and annotations. Tool revision 3 returns a structured object with `ok` and a text representation. Errors set `isError` and carry `error.code` and `error.message`. Reads of notation have a bar-aligned text representation.
 
-## Envelope and revisions
+## Documents
 
-Every result is a JSON object in `structuredContent`:
+| Tool            | Arguments and result                                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `score_create`  | Supply a template ID or local template path. Omit both to use `Treble_Clef`. Optional metadata fields are `title`, `subtitle`, `composer` and `lyricist`.                            |
+| `score_open`    | Supply a local `path` or base64 `data`, with optional `format`, `filename_hint` and `strict_ids`. The decoded input limit is 8 MiB. Stdio limits the complete request line to 4 MiB. |
+| `score_outline` | Read metadata, parts, staff IDs, measures, signatures and excerpts. Page counts can be null until the score has been laid out.                                                       |
+| `score_close`   | Release the document and its named checkpoints.                                                                                                                                      |
 
-```json
-{"ok": true,  "...": "tool-specific fields"}
-{"ok": false, "error": {"code": "RevisionConflict", "message": "...", "...": "optional detail"}}
-```
+Create and open return `document`, `revision`, `outline` and `diagnostics`. Revisions are canonical unsigned decimal strings. Pass the returned string as `expected_revision` to guard a subsequent operation. Element IDs are persistent strings scoped to the document. Supply an `excerpt` EID to select an excerpt on supported tools. Omitting it selects the master.
 
-Failures also set the MCP `isError` flag. `error` may carry `document`,
-`current_revision`, `revision`, `op_index`, `applied`, `created`, `removed`,
-`replaced`, `diagnostics`, `poisoned`, `published_artifacts` or `export_warnings`.
+## Phrase entry and readback
 
-Document revisions are decimal strings. A newly opened or created document
-starts at `"1"`. A batch that changes the score increments it (including a failed
-batch that wrote before failing), and `restore_checkpoint` increments it; an
-empty or no-op successful batch or preflight failure leaves it unchanged.
-`expected_revision`, when supplied, is checked before the operation and a
-mismatch returns `RevisionConflict` with `current_revision`. Revisions are per
-document.
+`score_write_phrase` takes a document and a list of lanes. Each lane starts at a 1-based measure, staff and voice. Staff and voice default to 1. The offset defaults to `"0"` and uses an exact whole-note fraction measured from the beginning of that bar. Concert pitch is the default. Set `pitch_mode` to `written` to enter transposed notation.
 
-## `score_open`
-
-Opens a score from `path`, or from base64 `data`.
-
-| Field           | Type    | Notes                                                          |
-| --------------- | ------- | -------------------------------------------------------------- |
-| `path`          | string  | Mutually exclusive with `data` (oneOf).                        |
-| `data`          | string  | Base64 bytes; decoded limit 8 MiB.                             |
-| `format`        | enum    | `mscz`, `mscx`, `musicxml`, `mxl`, `midi`, `guitarpro`, `mnx`. |
-| `filename_hint` | string  | Helps format detection for `data`.                             |
-| `strict_ids`    | boolean | Reject input with unusable element IDs instead of repairing.   |
-
-Returns `{ok, document, revision, diagnostics[]}`. Pre-4.6 MuseScore files are
-rejected with `UnsupportedFormat`.
-
-## `score_create`
-
-Creates a score from `template_id` (oneOf) or `template_path` (oneOf), with
-optional `title`, `subtitle`, `composer`, `lyricist`. Returns
-`{ok, document, revision, diagnostics[]}`. Template IDs are listed by
-`runtime_info` in `templates`.
-
-## `score_close`
-
-`document` (required). Returns `{ok: true}`.
-
-## `score_outline`
-
-`document` (required), optional `expected_revision`, optional
-`score: {excerpt}` to outline one excerpt. Returns
-`{ok, revision, outline}`, where `outline` contains `title`, `subtitle`,
-`composer`, `poet`, `duration`, `key`, `timesig`, `pages`, `measure_count`,
-`mscore_version`, `file_version`, `parts[]`, `measures[]`, `signatures[]` and
-`excerpts[]`.
-
-## `score_query`
-
-Three modes, selected by `mode`:
-
-| Mode           | Required                                       | Returns                                              |
-| -------------- | ---------------------------------------------- | ---------------------------------------------------- |
-| `elements`     | `document`, `mode`, optional `query`           | `{elements[], total, next_cursor, revision, mode}`   |
-| `properties`   | `document`, `mode`, `target`, optional `props` | `{properties[], revision, mode}`                     |
-| `audio_tracks` | `document`, `mode`, optional `score`           | `{audio_tracks: {master, tracks[]}, revision, mode}` |
-
-`query` (elements) accepts `score: {excerpt}`, `types[]`, `staves[]`,
-`voices[]`, `first_measure`, `measure_count`, `from_measure`, `to_measure`
-(EIDs), `from_tick`/`to_tick` (`{num, den}`), `props[]`, `layout_boxes`,
-`limit`, `cursor`. `next_cursor` is an integer or `null`.
-
-`target` (properties) is an EID (`{"kind":"id","id":...}`) or an address
-(`{"kind":"address","address":{...}}`).
-
-Note on automatic `placement`: before layout runs, centered items (such as
-grand-staff dynamics) derive default `placement` from score-wide staff
-visibility. When a score hides empty staves per system, run a layout-backed
-`score_query` (`layout_boxes: true`) to read the system-resolved `placement`.
-
-## `score_describe`
-
-`scope` selects the catalogue:
-
-- `types` → `{types[]}`
-- `type` (requires `type`) → `{type: {type, props[]}}`
-- `styles` → `{styles[]}`
-
-## `score_edit`
-
-`document` (required), `ops` (required, max 1,024), optional
-`expected_revision`. Returns `{ok, revision, applied, ops[], created[], removed[],
-replaced[], diagnostics[]}` where `applied` is the count of executed operations.
-
-Batches use **prefix-commit** semantics: each operation is all-or-nothing on its
-own, while the batch as a whole has no implicit rollback. The host decodes and
-preflights the batch before writing, then applies operations `0..n-1` in order.
-If decoding or preflight rejects operation `k`, nothing changes and the error
-reports `applied: 0`, `op_index: k`, and the rejection reason (`code` /
-`message`). If operation `k` is rejected during execution, operations `0..k-1`
-remain applied, operation `k` has no effect, the batch stops, the document is
-not poisoned, and the error reports `applied: k`, `op_index: k`, the applied
-prefix's `revision`, `created`, `removed`, `replaced`, and the rejection
-reason. If the applied prefix produced diagnostics, the error includes them in
-`diagnostics`.
-
-`poisoned: true` (with a hint to call `restore_checkpoint` or reopen the file)
-occurs only if an unexpected engine failure happens after an operation has
-started writing. On a poisoned document, reads, queries, and non-native exports
-still work, while write batches, `checkpoint`, and native (`mscx`/`mscz`) saves
-are refused with `Poisoned` until `restore_checkpoint` succeeds or the document
-is closed and reopened. Use `checkpoint` before a risky batch and
-`restore_checkpoint` on failure when all-or-nothing rollback is needed.
-
-There are 23 operations:
-
-| `op`                | Required fields                               |
-| ------------------- | --------------------------------------------- |
-| `set_property`      | `target`, `property`, `value`                 |
-| `reset_property`    | `target`, `property`                          |
-| `set_style`         | `score`, `style`, `value`                     |
-| `enter_notes`       | `at`, `duration`, `pitches`                   |
-| `set_pitch`         | `note`, `pitch` (optional `tpc`)              |
-| `set_duration`      | `chord_rest`, `duration`                      |
-| `remove`            | `target`                                      |
-| `insert_measures`   | `count` (optional `before`, `kind`)           |
-| `remove_measures`   | `first`, `last`                               |
-| `set_time_sig`      | `measure`, `sig`                              |
-| `set_key_sig`       | `measure`, `key` (optional `staff`)           |
-| `insert_clef`       | `at`, `clef`                                  |
-| `set_layout_break`  | `measure`, `kind`, `on`                       |
-| `add_part`          | `instrument_id` (optional `before`)           |
-| `remove_part`       | `part`                                        |
-| `add_staff`         | `part`                                        |
-| `remove_staff`      | `staff`                                       |
-| `generate_excerpts` | `parts`                                       |
-| `add_spanner`       | `start`, `end`, `type` (optional `props`)     |
-| `add_tie`           | `note`                                        |
-| `add_tuplet`        | `first`, `last` (optional `actual`, `normal`) |
-| `add_text`          | `at`, `style`, `text`                         |
-| `add`               | `anchor`, `type` (optional `props`)           |
-
-Targets are EIDs, addresses, or a score selection; see the generated schema for
-the exact shapes.
-
-## `score_export`
-
-Exports from the live document. `kind` selects the export family; every variant
-takes `document`, `kind`, `destination`, `options`, and optional
-`expected_revision`.
-
-| `kind`      | Destination                           | `options.format`                          | Other options                                                                                                                                         |
-| ----------- | ------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `score`     | `file`                                | `mscz`, `mscx`, `musicxml`, `mxl`, `midi` | `native_version` (`5.00` default, `4.70`), `score.excerpt`, and for MIDI only `midi_expand_repeats`, `midi_rpns`                                      |
-| `render`    | `file` (PDF) or `directory` (SVG/PNG) | `pdf`, `png`, `svg`                       | `first_page`, `last_page`, `background`, `score.excerpt`; `dpi` (36–1200) and `transparent` are PNG-only                                              |
-| `audio`     | `file`                                | `wav`, `flac`, `opus`, `mp3`, `aac`       | `sample_rate`, `bit_depth`, `bitrate_kbps`, `reverb`, `reverb_send`, `master_volume_db`, `master_balance`, `tracks[]`, `use_repeats`, `score.excerpt` |
-| `positions` | `file`                                | —                                         | `position_kind`: `measure` or `segment`, `score.excerpt`                                                                                              |
-
-`destination` is `{"kind":"file","path":...}` or
-`{"kind":"directory","path":...}`; directory destinations produce
-`page-0001.svg` / `page-0001.png` names. Paths are limited to 4,096 bytes.
-
-### Destination syntax
-
-The host validates the requested path and the resolved existing prefix before
-creating anything. Supported syntax is ordinary drive/UNC and POSIX paths,
-including non-ASCII UTF-8.
-
-| Condition                                                                                                                                                                                                      | Outcome                                                                                    |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Missing parent directory                                                                                                                                                                                       | Created recursively, then published.                                                       |
-| Empty/structurally invalid path, non-directory component, existing wrong destination type                                                                                                                      | `InvalidArgument`, naming the destination.                                                 |
-| Invalid UTF-8 or an unencodable resolved path                                                                                                                                                                  | `InvalidArgument`, before creating anything.                                               |
-| Windows invalid characters (`< > : " \| ? *`, controls), reserved devices (`CON`, `PRN`, `AUX`, `NUL`, `COM1–9`, `LPT1–9`, including extensions and superscript forms), trailing dots/spaces, empty components | `InvalidArgument`, before creating anything; drive/root syntax and `.`/`..` are preserved. |
-| Windows device namespaces (`\\.\`, `\\?\`) and incomplete UNC roots                                                                                                                                            | `InvalidArgument`, before any metadata probe.                                              |
-| POSIX filenames                                                                                                                                                                                                | No added restrictions beyond NUL and `/`.                                                  |
-| Permission denied                                                                                                                                                                                              | `Io`, retaining the filesystem diagnostic.                                                 |
-| Other filesystem failure (I/O, read-only, symlink loop, name too long, disk full)                                                                                                                              | `Io`, retaining the filesystem diagnostic.                                                 |
-
-Complex DACLs, SMB authentication, device namespaces and multi-file
-transactions are non-goals; see [scope.md](scope.md).
-
-Success returns `{ok, source_revision, artifacts[], export_warnings[]}`, where
-each artifact is `{path, mime, size}` and `size` is a decimal string. A failure
-during multi-file publication returns `Io` with `published_artifacts` listing the
-files already visible. `export_warnings` carries structured 4.70 degradation
-warnings (`B470_*`).
-
-`native_version` accepts `"5.00"` (default) and `"4.70"`. Any other nonempty
-bounded string reaches the engine and fails with `Unsupported` plus
-`export_warnings`; a refusal publishes nothing.
-
-For MSCX and MSCZ, `"4.70"` writes general notation, including generated and
-authored accidentals, ties and other representable spanners, effective legacy
-style overrides, custom chord lists, and attached excerpts. A selected excerpt
-can also be exported as a standalone score. The exporter reports degradations
-for shared-part mappings, stave-sharing labels, page locks, group brackets,
-and instrument group-name overrides. It refuses features without a defined
-mapping, including unequal-pitch ties, unmappable spanner endpoints, active
-5.00-only overrides, and authored automation. Numeric part IDs survive export.
-The 4.70 format has no representation for part EIDs.
-See the [engine's 4.70 export contract](../../vendor/engrave/docs/write470.md).
-
-`options.score` selects the master (`{}`) or an excerpt
-(`{"excerpt":"<element-id>"}`). PDF, score, audio and position exports use one
-file; PNG/SVG require a directory and write one file per page.
-
-### Positions artifact
-
-A `positions` export writes UTF-8 JSON derived from `engrave::Positions`:
+The server starts in JSON mode. Select the other prototype with `--phrase-syntax dsl` or `ENGRAVE_MCP_PHRASE_SYNTAX=dsl`. A command-line choice takes precedence. Each server advertises only the selected lane syntax.
 
 ```json
 {
-  "page_size": { "width": 1000.0, "height": 1500.0 },
-  "elements": [
-    { "id": 0, "x": 10.0, "y": 20.0, "sx": 100.0, "sy": 40.0, "page": 0 }
-  ],
-  "events": [{ "elid": 0, "position": 0 }]
+  "document": "doc-session-1",
+  "expected_revision": "1",
+  "lanes": [
+    {
+      "measure": 1,
+      "events": [
+        { "pitches": ["Eb4", "G4"], "duration": "1/2", "tie": ["Eb4"] },
+        { "pitches": ["Eb4"] },
+        { "pitches": [] },
+        { "bar": true }
+      ]
+    }
+  ]
 }
 ```
 
-Coordinates and sizes are page-local 1200-DPI layout units; pages are
-zero-based. For PNG, multiply by `dpi / 1200`. Element `id` and event `elid` are
-local to the artifact, not persistent EIDs. Event `position` is repeat-expanded
-playback time in milliseconds, so a repeated passage can reference an element
-more than once. Position reads may lay out the score but do not change the
-revision.
+In DSL mode the same lane has `"content": "[Eb4~ G4]:h Eb4:q r:q |"`. A checked barline must coincide with a real measure boundary, including pickups. A quarter is the default duration. Duration suffixes accept an exact fraction or `w h q e s 32 64`, with up to two augmentation dots. Chords use brackets. Select individual ties with `~` inside the chord, or append it to the chord to tie every member. Drum keys use `d36` or `[d36 d42]`. JSON uses an integer `drums` array. Empty pitch and drum arrays enter rests.
 
-## `runtime_info`
+For a triplet, use `3:2(A4:e G4:e F4:e)` or an object with `tuplet: "3:2"` and an `events` array. Tuplet members may be chords or rests. Before-graces use `acciac`, `appog`, `grace4`, `grace16` and `grace32`. After-graces use `after8`, `after16` and `after32`. Each wraps a note or chord, as in `acciac([D5 F#5]:e) E5:q after16(D5:s)`. The structured spelling uses ordered `grace_before` and `grace_after` arrays with `kind`, `duration` and `pitches`.
 
-| `action`         | Fields    | Effect                                                   |
-| ---------------- | --------- | -------------------------------------------------------- |
-| `get` (default)  | —         | Return capabilities, templates, fonts and limits.        |
-| `add_font`       | `path`    | Register a font and invalidate layout.                   |
-| `set_soundfonts` | `files[]` | Replace the SoundFont set; an empty list disables audio. |
+`score_read_music` starts at `measure` (default 1) and reads `count` bars (default up to 4, maximum 128). Restrict the window with 1-based `staves` and `voices` arrays. Set `include_ids` to address elements in later edits. Structured results give the staff contexts, measure-local events and durations, concert and written spellings, drum keys and kit names, ties, graces, tuplet groups, repeat barlines, spanners and voltas. Written meters retain their spelling, including `6/8`.
 
-`get` returns `{ok, tool_revision:"2", capabilities, templates[], fonts[],
-limits}`. `capabilities` reports `engine_version`, `import_formats`,
-`export_formats`, `render_formats`, `audio_formats`, `audio_sample_rate` and
-`soundfonts`. `limits` reports `input_bytes` (8 MiB), `base64_chars` (11,184,812),
-`batch_ops` (1,024), `query_results` (4,096), `output_bytes` (1 GiB as a
-string), `deadline_ms` (120,000), `cancellation` (`cooperative`) and
-`transport_request_bytes` (4 MiB).
+## Edit, query and checkpoints
 
-## `checkpoint`, `restore_checkpoint`, `drop_checkpoint`
+`score_edit` applies up to 1024 operations in order. Atomic mode is the default. With `atomic: false`, an execution rejection can leave an applied prefix. The error reports the failing operation index, applied count and revision when available. Set `detail: true` for per-operation created-element slots. Use a bare EID for a persisted target. Within a batch, `{"from_op":0,"item":1}` refers to item 1 of operation 0. Both indices are zero-based.
 
-Named in-memory snapshots sharing a 64 MiB per-document retained-data budget.
-Checkpoints are in memory only and are the only way to undo edits apart from
-reopening the file.
+Use `runtime_info` with `{"scope":"ops","op":"enter_notes"}` for the fields and example for one operation. The `at` position accepts `{"measure":1,"staff":1,"voice":1,"offset":"3/8"}`. The runtime catalogue supplies property and style value kinds. Values use JSON booleans, numbers, strings, integer lists and named objects such as `{"x":1,"y":2}` or `{"r":0,"g":0,"b":255,"a":255}`.
 
-| Tool                 | Required           | Optional            | Returns          | Effect                                                                                                                     |
-| -------------------- | ------------------ | ------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `checkpoint`         | `document`, `name` | `expected_revision` | `{ok, revision}` | Save (or replace) a named in-memory checkpoint; replacing keeps the prior copy on budget refusal; refused when `Poisoned`. |
-| `restore_checkpoint` | `document`, `name` | `expected_revision` | `{ok, revision}` | Restore the named checkpoint, preserving public EIDs, advancing `revision`, dirtying layout, and clearing `Poisoned`.      |
-| `drop_checkpoint`    | `document`, `name` | `expected_revision` | `{ok, revision}` | Delete the named checkpoint and release its budget share.                                                                  |
+`score_query` accepts four modes. `elements` takes optional `query` filters and pagination. `properties` takes a `target` and optional list of `props`. `page_count` prepares layout. `audio_tracks` returns the selected score's playback tracks and default mix.
 
-## Error codes
+`checkpoint`, `restore_checkpoint` and `drop_checkpoint` each take a document and name. Checkpoints share a 64 MiB in-memory budget. Restoring a checkpoint advances the revision and preserves public IDs. A document that reports a poisoned edit can be recovered by restoring a checkpoint or reopening the file.
 
-Cancellation has two layers. A request cancelled through
-`notifications/cancelled` is normally answered with JSON-RPC error `-32800` and
-no `structuredContent`; the transport owns that response. The structured
-`Cancelled` code below is used when a tool reports a cancellation inside its own
-result (for example an engine callback abort). Do not treat the two as
-interchangeable.
+## Export and runtime
 
-| Code                | Meaning                                                                                                                                                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `InvalidArgument`   | Malformed parameters or destination syntax.                                                                                                                                                                      |
-| `InvalidInput`      | Corrupt or unreadable score/archive content.                                                                                                                                                                     |
-| `UnsupportedFormat` | Unknown format, or a MuseScore file older than 4.6.                                                                                                                                                              |
-| `Unsupported`       | Valid request the engine cannot perform.                                                                                                                                                                         |
-| `NotFound`          | Unknown document handle, element, or path.                                                                                                                                                                       |
-| `StaleHandle`       | An ID/address no longer resolves.                                                                                                                                                                                |
-| `RevisionConflict`  | `expected_revision` does not match.                                                                                                                                                                              |
-| `ResourceLimit`     | A documented byte, count or result limit was exceeded.                                                                                                                                                           |
-| `EditRejected`      | An edit violates notation or layout constraints.                                                                                                                                                                 |
-| `Poisoned`          | An unexpected engine failure after writes started poisoned the document; reads, queries and non-native exports still work, while edits, `checkpoint` and native saves require `restore_checkpoint` or reopening. |
-| `EngineFailure`     | Engine-level failure with no more specific code.                                                                                                                                                                 |
-| `Io`                | Filesystem failure; check `published_artifacts`.                                                                                                                                                                 |
-| `Cancelled`         | The client cancelled before publication.                                                                                                                                                                         |
-| `DeadlineExceeded`  | The advisory export deadline expired.                                                                                                                                                                            |
-| `WorkerFailed`      | Retained in the advertised enum for wire compatibility; the live-only host does not produce it.                                                                                                                  |
+`score_export` takes a document, format and local path. PNG and SVG use a directory containing one file per page. Other formats take a file path. PNG defaults to an opaque white background. Set `options.background` to false and `options.transparent` to true for transparency. Use `first_page`, `last_page` and PNG `dpi` in `options` to control rendering.
+
+Available formats are `mscz`, `mscx`, `musicxml`, `mxl`, `midi`, `pdf`, `png`, `svg`, `wav`, `flac`, `opus`, `mp3`, `aac`, `measure_positions` and `segment_positions`. Position exports contain page-local 1200-DPI geometry and repeat-expanded playback times in milliseconds. Success reports the source revision, published artifacts with integer byte sizes and any engine warnings. Publication failures identify files already visible.
+
+Native exports use version 5.00 by default. Set `options.native_version` to `"4.70"` for compatibility export. Inspect degradation warnings and refusals before distributing the result. [Engine compatibility details](../../vendor/engrave/docs/write470.md)
+
+`runtime_info` returns capabilities, limits and tool revision. Select `templates`, `instruments`, `types`, `type`, `styles` or `ops` with `scope`. Instrument lookup accepts a substring `query`. For a single type use its `type` name, or use `op` to look up a single operation. `runtime_configure` accepts an `add_font` path and an ordered `soundfonts` list. An empty list clears the SoundFont selection.

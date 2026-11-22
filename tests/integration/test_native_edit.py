@@ -9,16 +9,16 @@ import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from engrave_mcp_testing.mcp_client import VALIDATORS, Client
+from engrave_mcp_testing.mcp_client import Client
 from engrave_mcp_testing.native_edit_fixture import fixture
 
 
 def pitch(note):
-    return int(note["props"][0]["value"]["value"])
+    return int(note["props"][0]["value"])
 
 
 def change(note, value):
-    return {"op": "set_pitch", "note": {"kind": "id", "id": note["id"]}, "pitch": value}
+    return {"op": "set_pitch", "note": note["id"], "pitch": value}
 
 
 async def check_dynamics_edit(client, out):
@@ -46,7 +46,7 @@ async def check_dynamics_edit(client, out):
                 },
             )
             assert len(found["elements"]) == 1, found
-            target = {"kind": "id", "id": found["elements"][0]["id"]}
+            target = found["elements"][0]["id"]
             result = await client.tool(
                 "score_query",
                 {
@@ -56,10 +56,10 @@ async def check_dynamics_edit(client, out):
                     "props": ["DYNAMIC_TYPE", "VELOCITY"],
                 },
             )
-            return target, {item["name"]: item["value"]["value"] for item in result["properties"]}
+            return target, {item["name"]: item["value"] for item in result["properties"]}
 
         target, before = await properties(doc)
-        assert before == {"DYNAMIC_TYPE": expected_type, "VELOCITY": "96"}, before
+        assert before == {"DYNAMIC_TYPE": expected_type, "VELOCITY": 96}, before
         await client.tool(
             "score_edit",
             {
@@ -69,22 +69,17 @@ async def check_dynamics_edit(client, out):
                         "op": "set_property",
                         "target": target,
                         "property": "VELOCITY",
-                        "value": {"kind": "int", "value": "73"},
+                        "value": int("73"),
                     }
                 ],
             },
         )
         _, edited = await properties(doc)
-        assert edited == {"DYNAMIC_TYPE": expected_type, "VELOCITY": "73"}, edited
+        assert edited == {"DYNAMIC_TYPE": expected_type, "VELOCITY": 73}, edited
         path = out / f"dynamics-{label}.mscx"
         await client.tool(
             "score_export",
-            {
-                "document": doc,
-                "kind": "score",
-                "options": {"format": "mscx"},
-                "destination": {"kind": "file", "path": str(path)},
-            },
+            {"document": doc, "format": "mscx", "path": str(path)},
         )
         await client.tool("score_close", {"document": doc})
         reopened = (await client.tool("score_open", {"path": str(path)}))["document"]
@@ -107,8 +102,8 @@ async def run(args):
                     "mode": "elements",
                     "query": {
                         "types": ["Note"],
-                        "staves": [staff],
-                        "first_measure": 0,
+                        "staves": [staff + 1],
+                        "first_measure": 1,
                         "measure_count": 2,
                         "props": ["pitch"],
                         "limit": 100,
@@ -121,7 +116,6 @@ async def run(args):
             assert "error" not in response, response
             result = response["result"]
             payload = result["structuredContent"]
-            VALIDATORS["score_edit"].validate(payload)
             assert bool(result["isError"]) != payload["ok"]
             return payload
 
@@ -157,7 +151,7 @@ async def run(args):
             assert pitch(item) == expected.get(identity, pitch(old[identity]))
             for field in (
                 "measure",
-                "measure_index",
+                "measure_number",
                 "staff",
                 "voice",
                 "tick",
@@ -191,9 +185,9 @@ async def run(args):
                     change(clean["elements"][0], 80),
                     {
                         "op": "set_property",
-                        "target": {"kind": "id", "id": measure},
+                        "target": measure,
                         "property": "pitch",
-                        "value": {"kind": "int", "value": "80"},
+                        "value": int("80"),
                     },
                 ],
             }
@@ -208,29 +202,25 @@ async def run(args):
         before_mscx = out / "before-checkpoint.mscx"
         await client.tool(
             "score_export",
-            {
-                "document": doc,
-                "kind": "score",
-                "options": {"format": "mscx"},
-                "destination": {"kind": "file", "path": str(before_mscx)},
-            },
+            {"document": doc, "format": "mscx", "path": str(before_mscx)},
         )
         await client.tool("checkpoint", {"document": doc, "name": "clean"})
-        blue = {"kind": "color", "value": {"r": 0, "g": 0, "b": 255, "a": 255}}
+        blue = {"r": 0, "g": 0, "b": 255, "a": 255}
         invalid_batch = await raw_edit(
             {
+                "atomic": False,
                 "document": doc,
                 "expected_revision": clean["revision"],
                 "ops": [
                     {
                         "op": "set_property",
-                        "target": {"kind": "id", "id": clean["elements"][0]["id"]},
+                        "target": clean["elements"][0]["id"],
                         "property": "color",
                         "value": blue,
                     },
                     {
                         "op": "set_pitch",
-                        "note": {"kind": "id", "id": measure},
+                        "note": measure,
                         "pitch": 80,
                     },
                 ],
@@ -249,7 +239,7 @@ async def run(args):
             {
                 "document": doc,
                 "mode": "properties",
-                "target": {"kind": "id", "id": clean["elements"][0]["id"]},
+                "target": clean["elements"][0]["id"],
                 "props": ["color"],
             },
         )
@@ -266,23 +256,13 @@ async def run(args):
         during_mscx = out / "during-checkpoint.mscx"
         await client.tool(
             "score_export",
-            {
-                "document": doc,
-                "kind": "score",
-                "options": {"format": "mscx"},
-                "destination": {"kind": "file", "path": str(during_mscx)},
-            },
+            {"document": doc, "format": "mscx", "path": str(during_mscx)},
         )
         assert during_mscx.read_bytes() != before_mscx.read_bytes()
         export = out / "edited.musicxml"
         await client.tool(
             "score_export",
-            {
-                "document": doc,
-                "kind": "score",
-                "options": {"format": "musicxml"},
-                "destination": {"kind": "file", "path": str(export)},
-            },
+            {"document": doc, "format": "musicxml", "path": str(export)},
         )
         xml = ET.parse(export).getroot()
         assert len(xml.findall("./part")) == 2 and len(xml.findall("./part/measure/note")) == 16
@@ -292,12 +272,7 @@ async def run(args):
         restored_mscx = out / "restored-checkpoint.mscx"
         await client.tool(
             "score_export",
-            {
-                "document": doc,
-                "kind": "score",
-                "options": {"format": "mscx"},
-                "destination": {"kind": "file", "path": str(restored_mscx)},
-            },
+            {"document": doc, "format": "mscx", "path": str(restored_mscx)},
         )
         assert restored_mscx.read_bytes() == before_mscx.read_bytes()
         await client.tool("drop_checkpoint", {"document": doc, "name": "clean"})
@@ -321,7 +296,7 @@ async def run(args):
             {
                 "document": prefix_doc,
                 "mode": "elements",
-                "query": {"types": ["Rest"], "first_measure": 0, "measure_count": 1},
+                "query": {"types": ["Rest"], "first_measure": 1, "measure_count": 1},
             },
         )
         assert len(prefix_rests["elements"]) == 1
@@ -329,6 +304,7 @@ async def run(args):
         prefix_fail = await raw_edit(
             {
                 "document": prefix_doc,
+                "atomic": False,
                 "expected_revision": "1",
                 "ops": [
                     {
@@ -336,17 +312,17 @@ async def run(args):
                         "at": {
                             "kind": "segment",
                             "measure": prefix_m0,
-                            "staff": 0,
-                            "voice": 0,
-                            "tick": {"num": "0", "den": "1"},
+                            "staff": 1,
+                            "voice": 1,
+                            "tick": "0/1",
                             "segment_kind": "ChordRest",
                         },
-                        "duration": {"num": "1", "den": "4"},
+                        "duration": "1/4",
                         "pitches": [{"pitch": 60}],
                     },
                     {
                         "op": "remove",
-                        "target": {"kind": "id", "id": prefix_rest},
+                        "target": prefix_rest,
                     },
                 ],
             }
@@ -381,7 +357,7 @@ async def run(args):
                 "ops": [
                     {
                         "op": "set_pitch",
-                        "note": {"kind": "id", "id": created_note_id},
+                        "note": created_note_id,
                         "pitch": 67,
                     }
                 ],
@@ -390,12 +366,7 @@ async def run(args):
         prefix_xml = out / "prefix-followup.musicxml"
         await client.tool(
             "score_export",
-            {
-                "document": prefix_doc,
-                "kind": "score",
-                "options": {"format": "musicxml"},
-                "destination": {"kind": "file", "path": str(prefix_xml)},
-            },
+            {"document": prefix_doc, "format": "musicxml", "path": str(prefix_xml)},
         )
         xml_notes = ET.parse(prefix_xml).getroot().findall("./part/measure/note")
         pitched_steps = [

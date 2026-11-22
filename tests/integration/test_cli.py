@@ -60,6 +60,32 @@ async def probe_server(
                 return initialized.server_info.version, soundfonts
 
 
+async def phrase_session(binary, resources, env, options, expected):
+    params = StdioServerParameters(command=str(binary), args=["--resources", str(resources), *options], env=env)
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            init = await session.initialize()
+            tools = {t.name: t for t in (await session.list_tools()).tools}
+            assert len(tools) == 14
+            structured = expected == "json"
+            field = "events" if structured else "content"
+            assert field in init.instructions
+            lane_schema = tools["score_write_phrase"].input_schema["properties"]["lanes"]["items"]
+            assert set(lane_schema["required"]) == {"measure", field}
+            document = (await session.call_tool("score_create", {})).structured_content["document"]
+            lane = {"measure": 1, field: [{"pitches": ["Eb4"]}] if structured else "Eb4:q"}
+            edit = await session.call_tool("score_write_phrase", {"document": document, "lanes": [lane]})
+            assert not edit.is_error, edit
+            response = await session.call_tool("score_read_music", {"document": document, "count": 1})
+            assert "Bar 1" in response.content[0].text and "Eb4" in response.content[0].text, response
+            note = response.structured_content["measures"][0]["voices"][0]["events"][0]["notes"][0]
+            assert note["concert"] == "Eb4" and "id" not in note
+            response = await session.call_tool(
+                "score_read_music", {"document": document, "count": 1, "include_ids": True}
+            )
+            assert response.structured_content["measures"][0]["voices"][0]["events"][0]["notes"][0]["id"]
+
+
 async def run_tests(args: argparse.Namespace) -> None:
     binary = args.binary.resolve()
     resources = args.resources.resolve()
@@ -68,6 +94,10 @@ async def run_tests(args: argparse.Namespace) -> None:
     output.mkdir(parents=True, exist_ok=True)
     env = server_env()
     version = read_host_version(REPO_ROOT)
+    await phrase_session(binary, resources, {**env, "ENGRAVE_MCP_PHRASE_SYNTAX": "dsl"}, [], "dsl")
+    await phrase_session(
+        binary, resources, {**env, "ENGRAVE_MCP_PHRASE_SYNTAX": "dsl"}, ["--phrase-syntax", "json"], "json"
+    )
 
     for flag in ("--help", "-h"):
         res = run_cli(binary, [flag], env)

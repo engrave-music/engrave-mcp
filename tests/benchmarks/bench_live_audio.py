@@ -35,12 +35,7 @@ def main():
         doc = c.tool("score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx")})[
             "document"
         ]
-        args = dict(
-            document=doc,
-            kind="audio",
-            options={"format": "wav"},
-            destination={"kind": "file", "path": str(a.output / (label + ".wav"))},
-        )
+        args = {"document": doc, "format": "wav", "path": str(a.output / (label + ".wav"))}
         return c, args
 
     def save():
@@ -64,14 +59,15 @@ def main():
                 save()
         for i in range(30):
             path = a.output / f"cancel-{i}.wav"
-            args["destination"]["path"] = str(path)
+            args["path"] = str(path)
             ident = c.send("tools/call", dict(name="score_export", arguments=args))
             time.sleep(0.05)
             start = time.perf_counter()
             c.send("notifications/cancelled", dict(requestId=ident), True)
-            response = c.receive(ident)
+            c.cancelled(ident, args["document"])
+            response = None
             result["cancel"].append(dict(ms=(time.perf_counter() - start) * 1000, response=response))
-            assert response.get("error", {}).get("code") == -32800, response
+
             assert not path.exists()
     finally:
         c.close()

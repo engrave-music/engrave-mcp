@@ -87,9 +87,9 @@ async def corpus_parity(args, session, output, binary, assets, oracle_env):
                     {
                         "document": doc,
                         "expected_revision": opened["revision"],
-                        "kind": "score",
-                        "options": {"format": path.suffix[1:], "native_version": version},
-                        "destination": {"kind": "file", "path": str(path)},
+                        "format": path.suffix[1:],
+                        "path": str(path),
+                        "options": {"native_version": version},
                     },
                 )
                 require(result["source_revision"] == opened["revision"], "exported the wrong revision")

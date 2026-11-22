@@ -338,9 +338,8 @@ async def _export(session, document, fmt, path):
         "score_export",
         {
             "document": document,
-            "kind": "score",
-            "options": {"format": fmt},
-            "destination": {"kind": "file", "path": str(path)},
+            "format": fmt,
+            "path": str(path),
         },
     )
     assert not result.is_error, result

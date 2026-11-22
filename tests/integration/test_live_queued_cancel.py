@@ -36,12 +36,7 @@ def main():
         def args(path):
             return dict(
                 name="score_export",
-                arguments=dict(
-                    document=doc,
-                    kind="audio",
-                    options={"format": "wav"},
-                    destination={"kind": "file", "path": str(path)},
-                ),
+                arguments={"document": doc, "format": "wav", "path": str(path)},
             )
 
         running_path, queued_path = out / "running.wav", out / "queued.wav"
@@ -52,13 +47,8 @@ def main():
         c.rpc("ping", {})  # Let the tool coroutine register its queued dispatch.
         cancel_start = time.perf_counter()
         c.send("notifications/cancelled", {"requestId": queued}, True)
-        # Inspect every response directly to detect duplicates and wrong IDs.
-        response = c.q.get(timeout=10)
-        result.update(cancel_seconds=time.perf_counter() - cancel_start, queued_response=response)
-        if response.get("error", {}).get("code") == -32603:
-            result["exit"] = c.p.wait(timeout=3)
-            raise AssertionError(result)
-        assert response.get("id") == queued and response.get("error", {}).get("code") == -32800, response
+        c.cancelled(queued)
+        result["cancel_seconds"] = time.perf_counter() - cancel_start
         assert result["cancel_seconds"] < 1, result
         assert not queued_path.exists()
         # Flood more queued cancellations beyond queue capacity. This tests
@@ -67,9 +57,8 @@ def main():
             ident = c.send("tools/call", args(queued_path))
             c.rpc("ping", {})
             c.send("notifications/cancelled", {"requestId": ident}, True)
-            reply = c.q.get(timeout=3)
-            assert reply.get("id") == ident and reply.get("error", {}).get("code") == -32800, reply
-        response = c.q.get(timeout=150)
+            c.cancelled(ident)
+        response = c.receive(running)
         assert response.get("id") == running and response.get("result", {}).get("structuredContent", {}).get("ok"), (
             response
         )
@@ -99,11 +88,9 @@ def main():
                 time.sleep(0.01)
             for _ in range(2):
                 c.send("notifications/cancelled", {"requestId": ident}, True)
-            reply = c.q.get(timeout=20)
-            assert reply.get("id") == ident, reply
-            assert reply.get("error", {}).get("code") == -32800 or reply.get("result", {}).get(
-                "structuredContent", {}
-            ).get("ok"), reply
+            c.tool("score_outline", {"document": doc})
+            reply = c.pending.pop(ident, None)
+            assert reply is None or reply["result"]["structuredContent"]["ok"], reply
         c.tool("score_outline", {"document": doc})
         assert c.q.empty() and not c.pending, "duplicate response"
         assert not list(out.rglob(".engrave-stage-*"))

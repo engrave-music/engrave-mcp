@@ -11,6 +11,8 @@
 
 #include <gtest/gtest.h>
 
+#include "phrase.h"
+
 namespace fs = std::filesystem;
 using music::api::HostApi;
 using music::api::Json;
@@ -42,15 +44,15 @@ std::string b64(const std::string &s) {
     return out;
 }
 
-Json idref(const std::string &id) { return {{"kind", "id"}, {"id", id}}; }
+Json idref(const std::string &id) { return Json(id); }
 
-Json opref(int op, int item) { return {{"kind", "op"}, {"op", op}, {"item", item}}; }
+Json opref(int op, int item) { return {{"from_op", op}, {"item", item}}; }
 
-Json fraction(const char *num, const char *den) { return {{"num", num}, {"den", den}}; }
+Json fraction(const char *num, const char *den) { return Json(std::string(num) + "/" + den); }
 
 Json address(const std::string &measure, const char *num, const char *den) {
-    return {{"kind", "segment"}, {"measure", measure},         {"staff", 0},
-            {"voice", 0},        {"tick", fraction(num, den)}, {"segment_kind", "ChordRest"}};
+    return {{"kind", "segment"}, {"measure", measure},         {"staff", 1},
+            {"voice", 1},        {"tick", fraction(num, den)}, {"segment_kind", "ChordRest"}};
 }
 
 std::string path_text(const fs::path &p) {
@@ -70,8 +72,8 @@ Json call(HostApi &host, const std::string &tool, const Json &arg) {
         out = host.outline(arg);
     } else if (tool == "score_query") {
         out = host.query(arg);
-    } else if (tool == "score_describe") {
-        out = host.describe(arg);
+    } else if (tool == "runtime_configure") {
+        out = host.configure(arg);
     } else if (tool == "score_edit") {
         out = host.edit(arg);
     } else if (tool == "checkpoint") {
@@ -103,6 +105,109 @@ Json error(HostApi &host, const std::string &tool, const Json &arg, const std::s
     return out;
 }
 } // namespace
+
+TEST(Phrase, BothSpellingsAtPickupBoundary) {
+    engrave::Outline outline{};
+    outline.measure_count = 2;
+    outline.measures = {{{}, 0, {0, 1}, {1, 4}}, {{}, 1, {1, 4}, {1, 1}}};
+    const auto structured = music::parse_json(
+        R"([{"measure":1,"events":[{"pitches":["Eb4","B#3"],"tie":["Eb4"],"grace_before":[{"kind":"acciac","pitches":["D5","F#5"],"duration":"1/8"}]},{"bar":true},{"tuplet":"3:2","events":[{"drums":[36,42],"duration":"1/8"},{"pitches":[],"duration":"1/8"},{"pitches":["Cb4"],"duration":"1/8"}]}]}])");
+    const auto textual =
+        music::parse_json(R"dsl([{"measure":1,"content":"acciac([D5 F#5]:e) [Eb4~ B#3]:q | 3:2([d36 d42]:e r:e Cb4:e)"}])dsl");
+    ASSERT_TRUE(structured && textual);
+    for (auto syntax : {music::api::PhraseSyntax::JSON, music::api::PhraseSyntax::DSL}) {
+        auto phrase = music::api::decode_phrase(syntax == music::api::PhraseSyntax::JSON ? *structured : *textual, outline, {}, syntax);
+        ASSERT_TRUE(phrase) << phrase.error().message;
+        ASSERT_EQ(phrase->lanes.size(), 1u);
+        const auto &items = phrase->lanes.front().items;
+        ASSERT_EQ(items.size(), 2u);
+        const auto &chord = std::get<engrave::PhraseEvent>(items[0]);
+        ASSERT_EQ(chord.notes.size(), 2u);
+        EXPECT_TRUE(chord.notes[0].tie_to_next);
+        EXPECT_FALSE(chord.notes[1].tie_to_next);
+        EXPECT_EQ(std::get<engrave::SpelledPitch>(chord.notes[0].pitch).alter, -1);
+        EXPECT_EQ(std::get<engrave::SpelledPitch>(chord.notes[1].pitch).step, engrave::StepName::B);
+        ASSERT_EQ(chord.before.size(), 1u);
+        EXPECT_EQ(chord.before.front().kind, engrave::GraceKind::Acciaccatura);
+        EXPECT_EQ(chord.before.front().notes.size(), 2u);
+        const auto &tuplet = std::get<engrave::TupletGroup>(items[1]);
+        EXPECT_EQ(tuplet.actual, 3);
+        EXPECT_EQ(tuplet.normal, 2);
+        ASSERT_EQ(tuplet.members.size(), 3u);
+        ASSERT_EQ(tuplet.members[0].notes.size(), 2u);
+        EXPECT_EQ(std::get<engrave::DrumKey>(tuplet.members[0].notes[1].pitch).key, 42);
+        EXPECT_TRUE(tuplet.members[1].notes.empty());
+    }
+    outline.measures[0].duration = {1, 1};
+    auto a = music::api::decode_phrase(*structured, outline, {}, music::api::PhraseSyntax::JSON);
+    auto b = music::api::decode_phrase(*textual, outline, {}, music::api::PhraseSyntax::DSL);
+    ASSERT_FALSE(a);
+    ASSERT_FALSE(b);
+    EXPECT_EQ(a.error().message, b.error().message);
+    EXPECT_TRUE(a.error().message.starts_with("lanes[0].events[1]:"));
+}
+
+TEST(Phrase, AtomicWritesHaveMatchingReadback) {
+    ASSERT_FALSE(g_args.empty());
+    engrave::EngineOptions options;
+    options.resources = fs::absolute(fs::u8path(g_args.front()));
+    auto engine = engrave::Engine::create(options);
+    ASSERT_TRUE(engine) << engine.error().message;
+    const std::string clarinet = R"(<museScore version="4.70"><Score><Division>480</Division>
+<Part id="1"><Staff/><trackName>Clarinet</trackName><Instrument id="clarinet">
+<transposeDiatonic>-1</transposeDiatonic><transposeChromatic>-2</transposeChromatic></Instrument></Part>
+<Staff id="1"><Measure len="1/8"><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+<Rest><durationType>eighth</durationType></Rest></voice></Measure>
+<Measure><voice><Rest><durationType>measure</durationType></Rest></voice></Measure></Staff></Score></museScore>)";
+    const std::string kit = R"(<museScore version="4.70"><Score><Division>480</Division>
+<Part id="1"><Staff><StaffType group="percussion"/></Staff><trackName>Kit</trackName><Instrument id="drumset"><useDrumset>1</useDrumset>
+<Drum pitch="36"><name>Custom low drum</name><head>normal</head><line>4</line><stem>1</stem><voice>0</voice></Drum></Instrument></Part>
+<Staff id="1"><Measure><voice><Rest><durationType>measure</durationType></Rest></voice></Measure></Staff></Score></museScore>)";
+    auto compare = [&](const std::string &source, const Json &events, const char *content, bool drums) {
+        Json first;
+        for (auto syntax : {music::api::PhraseSyntax::JSON, music::api::PhraseSyntax::DSL}) {
+            auto bytes = std::as_bytes(std::span(source.data(), source.size()));
+            auto doc = (*engine)->open(bytes, {.format = engrave::Format::MSCX});
+            ASSERT_TRUE(doc) << doc.error().message;
+            auto outline = (*doc)->outline();
+            ASSERT_TRUE(outline);
+            Json lane = {{"measure", 1}, {"pitch_mode", "written"}};
+            if (syntax == music::api::PhraseSyntax::DSL) {
+                lane["content"] = content;
+            } else {
+                lane["events"] = events;
+            }
+            auto phrase = music::api::decode_phrase(music::json_array<Json>({lane}), *outline, {}, syntax);
+            ASSERT_TRUE(phrase) << phrase.error().message;
+            auto edit = (*doc)->write_phrase(*phrase, {1, engrave::EditMode::Atomic});
+            ASSERT_TRUE(edit) << edit.error().message;
+            ASSERT_FALSE(edit->rejection) << edit->rejection->error.message;
+            auto read = (*doc)->read_music({.measure_count = outline->measure_count});
+            ASSERT_TRUE(read) << read.error().message;
+            auto window = music::api::music_result(*read, *outline, false);
+            const auto &note = window.at("measures")[0].at("voices")[0].at("events")[0].at("notes")[0];
+            if (drums) {
+                EXPECT_EQ(note.at("drum"), 36);
+                EXPECT_EQ(note.at("kit_name"), "Custom low drum");
+            } else {
+                EXPECT_EQ(note.at("written"), "B#3");
+                EXPECT_NE(note.at("concert"), note.at("written"));
+                EXPECT_EQ(window.at("tuplets").size(), 1u);
+            }
+            if (syntax == music::api::PhraseSyntax::JSON) {
+                first = window;
+            } else {
+                EXPECT_EQ(window, first);
+            }
+        }
+    };
+    compare(
+        clarinet,
+        *music::parse_json(
+            R"([{"duration":"1/8","pitches":["B#3","Eb4"],"tie":["Eb4"]},{"bar":true},{"pitches":["Cb4","Eb4"]},{"tuplet":"3:2","events":[{"pitches":["A4"],"duration":"1/8"},{"pitches":["G4"],"duration":"1/8"},{"pitches":["F4"],"duration":"1/8"}]},{"pitches":["C4"],"grace_before":[{"kind":"acciac","duration":"1/8","pitches":["D5"]},{"kind":"grace16","duration":"1/16","pitches":["F5"]}],"grace_after":[{"kind":"after8","duration":"1/8","pitches":["E5"]}]}])"),
+        "[B#3 Eb4~]:e | [Cb4 Eb4] 3:2(A4:e G4:e F4:e) acciac(D5:e) grace16(F5:s) C4 after8(E5:e)", false);
+    compare(kit, *music::parse_json(R"([{"drums":[36],"duration":"1/8"},{"drums":[],"duration":"1/8"}])"), "d36:e r:e", true);
+}
 
 TEST(HostApi, EndToEndToolContract) {
     ASSERT_EQ(g_args.size(), 4u) << "usage: host_api_test ASSETS SOUNDFONT REPLACEMENT_SOUNDFONT DATA_ROOT";
@@ -149,10 +254,10 @@ TEST(HostApi, EndToEndToolContract) {
     }
     require(read(initial_font) == font_bytes && read(initial_sf) == sf_bytes, "startup asset changed with caller input");
 
-    auto info = ok(*host, "runtime_info", music::make_object<Json>());
-    require(info.at("tool_revision") == "2" && !info.at("templates").empty(), "runtime catalogue is empty");
+    auto info = ok(*host, "runtime_info", {{"scope", "templates"}});
+    require(info.at("tool_revision") == "3" && !info.at("templates").empty(), "runtime catalogue is empty");
     const auto &limits = info.at("limits");
-    require(limits.at("output_bytes") == "234567" && limits.at("deadline_ms") == 3456 && limits.at("transport_request_bytes") == 4194304,
+    require(limits.at("output_bytes") == 234567 && limits.at("deadline_ms") == 3456 && limits.at("transport_request_bytes") == 4194304,
             "runtime limits differ from configuration");
     for (const auto *field : {"title", "subtitle", "composer", "lyricist"}) {
         for (const auto &text : {std::string("bad\xef\xbf\xbe"), std::string("bad\xef\xbf\xbf"), std::string("bad\x01")}) {
@@ -166,6 +271,13 @@ TEST(HostApi, EndToEndToolContract) {
     auto outline = ok(*host, "score_outline", {{"document", doc}, {"expected_revision", "1"}});
     require(outline.at("outline").at("title") == "Store test", "template metadata missing");
     auto measure = outline.at("outline").at("measures")[0].at("id").get<std::string>();
+    const Json phrase_lane = {{"measure", 1}, {"events", music::json_array<Json>({Json{{"pitches", music::json_array<Json>({"Eb4"})}}})}};
+    std::atomic<bool> cancelled{true};
+    auto interrupted = host->write_phrase(Json{{"document", doc}, {"lanes", music::json_array<Json>({phrase_lane})}}, &cancelled);
+    EXPECT_EQ(interrupted.at("error").at("code"), "Cancelled");
+    auto after_cancel = host->read_music(Json{{"document", doc}, {"count", 1}, {"expected_revision", "1"}});
+    EXPECT_TRUE(after_cancel.at("ok").get<bool>());
+    EXPECT_TRUE(after_cancel.at("measures")[0].at("voices")[0].at("events")[0].at("rest").get<bool>());
     auto foreign = error(*host, "score_outline", {{"document", "doc-foreign-1"}}, "NotFound");
     require(foreign.at("error").at("document") == "doc-foreign-1", "foreign document omitted");
     auto conflict = error(*host, "score_outline", {{"document", doc}, {"expected_revision", "2"}}, "RevisionConflict");
@@ -186,10 +298,10 @@ TEST(HostApi, EndToEndToolContract) {
             "pagination did not advance");
     ok(*host, "score_query", {{"document", doc}, {"mode", "properties"}, {"target", idref(measure)}});
     ok(*host, "score_query", {{"document", doc}, {"mode", "audio_tracks"}});
-    ok(*host, "score_describe", {{"scope", "types"}});
-    ok(*host, "score_describe", {{"scope", "type"}, {"type", "Note"}});
-    ok(*host, "score_describe", {{"scope", "styles"}});
-    error(*host, "score_describe", {{"scope", "type"}, {"type", "NoSuchType"}}, "NotFound");
+    ok(*host, "runtime_info", {{"scope", "types"}});
+    ok(*host, "runtime_info", {{"scope", "type"}, {"type", "Note"}});
+    ok(*host, "runtime_info", {{"scope", "styles"}});
+    error(*host, "runtime_info", {{"scope", "type"}, {"type", "NoSuchType"}}, "NotFound");
     bool visited = false;
     auto visit = host->with_document(doc, 1, [&](engrave::Document &d) -> music::api::Result<void> {
         visited = d.revision() == 1;
@@ -220,9 +332,9 @@ TEST(HostApi, EndToEndToolContract) {
         {{{"op", "set_property"}, {"target", r}, {"property", "color"}, {"value", nullptr}},
          {{"op", "reset_property"}, {"target", r}, {"property", "color"}},
          {{"op", "set_style"},
-          {"score", music::make_object<Json>()},
+
           {"style", "staffDistance"},
-          {"value", {{"kind", "real"}, {"value", 9.0}}}},
+          {"value", 9.0}},
          {{"op", "enter_notes"}, {"at", a}, {"duration", f}, {"pitches", music::json_array<Json>({Json{{"pitch", 60}}})}},
          {{"op", "set_pitch"}, {"note", r}, {"pitch", 62}},
          {{"op", "set_duration"}, {"chord_rest", r}, {"duration", f}},
@@ -242,11 +354,23 @@ TEST(HostApi, EndToEndToolContract) {
          {{"op", "add_tie"}, {"note", r}},
          {{"op", "add_tuplet"}, {"first", r}, {"last", r}},
          {{"op", "add_text"}, {"at", a}, {"style", "staff"}, {"text", "hello"}},
-         {{"op", "add"}, {"anchor", r}, {"type", "Dynamic"}}});
+         {{"op", "add"}, {"anchor", r}, {"type", "Dynamic"}},
+         {{"op", "add_spanner_to_bar_end"}, {"type", "Pedal"}, {"start", r}, {"end", r}},
+         {{"op", "set_repeat_barlines"}, {"measure", r}, {"start", true}},
+         {{"op", "add_volta"}, {"first_measure", r}, {"last_measure", r}, {"endings", music::json_array<Json>({1})}},
+         {{"op", "add_grace_chord"},
+          {"principal", r},
+          {"kind", "acciac"},
+          {"duration", "1/8"},
+          {"pitches", music::json_array<Json>({Json{{"pitch", 62}}})}},
+         {{"op", "enter_drums"}, {"at", a}, {"duration", f}, {"keys", music::json_array<Json>({36})}}});
+    music::api::ValueCatalogue catalogue;
+    catalogue.properties["color"] = engrave::ValueKind::COLOR;
+    catalogue.styles["staffDistance"] = engrave::ValueKind::REAL;
     require(samples.size() == music::api::operation_names.size(), "operation coverage count differs");
     for (std::size_t i = 0; i < samples.size(); ++i) {
-        auto decoded = music::api::decode_batch(music::json_array<Json>({samples[i]}));
-        require(decoded && decoded->ops[0].index() == i && samples[i].at("op") == std::string(music::api::operation_names[i]),
+        auto decoded = music::api::decode_batch(music::json_array<Json>({samples[i]}), catalogue);
+        require(decoded && samples[i].at("op") == std::string(music::api::operation_names[decoded->ops[0].index()]),
                 "operation failed codec coverage: " + music::dump_json(samples[i]));
         auto extra = samples[i];
         extra["unknown"] = 1;
@@ -255,23 +379,28 @@ TEST(HostApi, EndToEndToolContract) {
     require(!music::api::decode_batch(music::json_array<Json>({Json{{"op", "remove"}, {"target", opref(0, 0)}}})),
             "forward OpRef accepted");
     auto bad_fraction = samples[3];
-    bad_fraction["duration"]["num"] = "9223372036854775808";
+    bad_fraction["duration"] = "9223372036854775808/4";
     require(!music::api::decode_batch(music::json_array<Json>({bad_fraction})), "overflowing int64 accepted");
     auto malformed = error(*host, "score_edit", {{"document", doc}, {"ops", music::json_array<Json>({bad_fraction})}}, "InvalidArgument");
     require(malformed.at("error").at("op_index") == 0, "invalid operation omitted its index");
-    const Json values = music::json_array<Json>(
-        {nullptr, Json{{"kind", "bool"}, {"value", true}}, Json{{"kind", "int"}, {"value", "-9223372036854775808"}},
-         Json{{"kind", "int"}, {"value", "9223372036854775807"}}, Json{{"kind", "real"}, {"value", 1.5}},
-         Json{{"kind", "string"}, {"value", "text"}}, Json{{"kind", "fraction"}, {"value", fraction("-1", "4")}},
-         Json{{"kind", "point"}, {"value", {{"x", 1.5}, {"y", -2.0}}}}, Json{{"kind", "size"}, {"value", {{"w", 4.0}, {"h", 5.0}}}},
-         Json{{"kind", "color"}, {"value", {{"r", 1}, {"g", 2}, {"b", 3}, {"a", 4}}}}, Json{{"kind", "enum"}, {"value", "up"}},
-         Json{{"kind", "int_list"}, {"value", music::json_array<Json>({"-1", "0", "9223372036854775807"})}}});
-    for (const auto &value : values.get_array()) {
+    for (const auto &[kind, v] :
+         std::vector<std::pair<engrave::ValueKind, Json>>{{engrave::ValueKind::BOOL, true},
+                                                          {engrave::ValueKind::INT, INT64_MIN},
+                                                          {engrave::ValueKind::REAL, 1.5},
+                                                          {engrave::ValueKind::STRING, "text"},
+                                                          {engrave::ValueKind::FRACTION, "-1/4"},
+                                                          {engrave::ValueKind::POINT, Json{{"x", 1.5}, {"y", -2}}},
+                                                          {engrave::ValueKind::SIZE, Json{{"w", 4}, {"h", 5}}},
+                                                          {engrave::ValueKind::COLOR, Json{{"r", 1}, {"g", 2}, {"b", 3}, {"a", 4}}},
+                                                          {engrave::ValueKind::ENUM, "up"},
+                                                          {engrave::ValueKind::INT_LIST, music::json_array<Json>({-1, 0, INT64_MAX})}}) {
         auto item = samples[0];
-        item["value"] = value;
-        auto decoded = music::api::decode_batch(music::json_array<Json>({item}));
-        require(decoded && music::api::encode(std::get<engrave::SetProperty>(decoded->ops[0]).value) == value,
-                "value codec changed a tagged value");
+        item["property"] = "test";
+        item["value"] = v;
+        catalogue.properties["test"] = kind;
+        auto decoded = music::api::decode_batch(music::json_array<Json>({item}), catalogue);
+        require(decoded && music::api::encode(std::get<engrave::SetProperty>(decoded->ops[0]).value) == v,
+                "native property codec mismatch");
     }
     auto opaque = samples[0];
     opaque["value"] = Json{{"kind", "opaque"}, {"type", "path"}};
@@ -280,12 +409,10 @@ TEST(HostApi, EndToEndToolContract) {
                 !music::api::decode_revision("18446744073709551616").has_value() && !music::api::decode_revision("01").has_value(),
             "revision decimal bounds not enforced");
     const Json addresses =
-        music::json_array<Json>({a, Json{{"kind", "page"}, {"score", music::make_object<Json>()}, {"index", 0}},
-                                 Json{{"kind", "system"}, {"score", music::make_object<Json>()}, {"page", 0}, {"index", 0}},
+        music::json_array<Json>({a, Json{{"kind", "page"}, {"index", 0}}, Json{{"kind", "system"}, {"page", 0}, {"index", 0}},
                                  Json{{"kind", "spanner_segment"}, {"spanner", measure}, {"index", 0}}});
     for (const auto &addr : addresses.get_array()) {
-        require(music::api::decode_ref(Json{{"kind", "address"}, {"address", addr}}).has_value(),
-                "address codec rejected a declared address");
+        require(music::api::decode_ref(addr).has_value(), "address codec rejected a declared address");
     }
     engrave::Positions positions;
     positions.page_width = 100;
@@ -323,10 +450,8 @@ TEST(HostApi, EndToEndToolContract) {
     require(bad_text.at("error").at("op_index") == 0, "invalid text did not identify its operation");
     error(*host, "score_edit",
           {{"document", doc},
-           {"ops", music::json_array<Json>({Json{{"op", "set_property"},
-                                                 {"target", r},
-                                                 {"property", "text"},
-                                                 {"value", {{"kind", "string"}, {"value", std::string("bad\x01")}}}}})}},
+           {"ops", music::json_array<Json>(
+                       {Json{{"op", "set_property"}, {"target", r}, {"property", "text"}, {"value", std::string("bad\x01")}}})}},
           "InvalidArgument");
     Json enter2 = {{"op", "enter_notes"},
                    {"at", address(measure, "1", "4")},
@@ -335,6 +460,7 @@ TEST(HostApi, EndToEndToolContract) {
     auto entered =
         ok(*host, "score_edit",
            {{"document", doc},
+            {"detail", true},
             {"ops", music::json_array<Json>({enter1, enter2, Json{{"op", "set_pitch"}, {"note", opref(0, 1)}, {"pitch", 60}}})}});
     auto first_chord = entered.at("ops")[0].at("created")[0].get<std::string>();
     auto first_note = entered.at("ops")[0].at("created")[1].get<std::string>();
@@ -348,6 +474,7 @@ TEST(HostApi, EndToEndToolContract) {
     ok(*host, "checkpoint", {{"document", doc}, {"name", "before_stale_opref"}});
     auto stale_opref = error(*host, "score_edit",
                              {{"document", doc},
+                              {"atomic", false},
                               {"ops", music::json_array<Json>({Json{{"op", "add_tie"}, {"note", idref(first_note)}},
                                                                Json{{"op", "remove"}, {"target", opref(0, 0)}},
                                                                Json{{"op", "remove"}, {"target", opref(0, 0)}}})}},
@@ -361,13 +488,15 @@ TEST(HostApi, EndToEndToolContract) {
     ok(*host, "drop_checkpoint", {{"document", doc}, {"name", "before_stale_opref"}});
     auto ephemeral_tie = ok(*host, "score_edit",
                             {{"document", doc},
+                             {"detail", true},
                              {"ops", music::json_array<Json>({Json{{"op", "add_tie"}, {"note", idref(first_note)}},
                                                               Json{{"op", "remove"}, {"target", opref(0, 0)}}})}});
     require(ephemeral_tie.at("ops")[0].at("created").size() == 1 && ephemeral_tie.at("ops")[0].at("created")[0].is_null() &&
                 ephemeral_tie.at("created").empty() && ephemeral_tie.at("removed").empty(),
             "in-batch removal did not yield a null created slot");
-    auto tie = ok(*host, "score_edit",
-                  {{"document", doc}, {"ops", music::json_array<Json>({Json{{"op", "add_tie"}, {"note", idref(first_note)}}})}});
+    auto tie =
+        ok(*host, "score_edit",
+           {{"document", doc}, {"detail", true}, {"ops", music::json_array<Json>({Json{{"op", "add_tie"}, {"note", idref(first_note)}}})}});
     require(tie.at("ops")[0].at("created").size() == 1 && tie.at("ops")[0].at("created")[0].is_string(),
             "tie did not return a persisted created ID");
     const auto tie_id = tie.at("ops")[0].at("created")[0].get<std::string>();
@@ -384,6 +513,7 @@ TEST(HostApi, EndToEndToolContract) {
     const auto pitch_rejection =
         error(*host, "score_edit",
               {{"document", doc},
+               {"atomic", false},
                {"ops", music::json_array<Json>({Json{{"op", "set_pitch"}, {"note", idref(first_note)}, {"pitch", 62}, {"tpc", 16}},
                                                 Json{{"op", "add_tie"}, {"note", idref(first_note)}}})}},
               "EditRejected");
@@ -400,9 +530,9 @@ TEST(HostApi, EndToEndToolContract) {
     ok(*host, "score_edit",
        {{"document", doc},
         {"ops", music::json_array<Json>({Json{{"op", "set_style"},
-                                              {"score", music::make_object<Json>()},
+
                                               {"style", "staffDistance"},
-                                              {"value", {{"kind", "real"}, {"value", 9.0}}}}})}});
+                                              {"value", 9.0}}})}});
     ok(*host, "score_edit", {{"document", doc}, {"ops", music::json_array<Json>({Json{{"op", "insert_measures"}, {"count", 1}}})}});
     ok(*host, "score_edit", {{"document", doc}, {"ops", music::json_array<Json>({Json{{"op", "add_part"}, {"instrument_id", "piano"}}})}});
 
@@ -426,10 +556,10 @@ TEST(HostApi, EndToEndToolContract) {
                                   {"props", music::json_array<Json>({"color", "pitch"})}});
     const Json initial_color = initial_note_props.at("properties")[0].at("value");
     const Json initial_pitch = initial_note_props.at("properties")[1].at("value");
-    require(initial_pitch != Json({{"kind", "int"}, {"value", "74"}}), "fixture note already at test pitch");
+    require(initial_pitch != Json(74), "fixture note already at test pitch");
 
     ok(*host, "checkpoint", {{"document", linked_doc}, {"name", "initial"}});
-    Json color = {{"kind", "color"}, {"value", {{"r", 12}, {"g", 34}, {"b", 56}, {"a", 255}}}};
+    Json color = {{"r", 12}, {"g", 34}, {"b", 56}, {"a", 255}};
     ok(*host, "score_edit",
        {{"document", linked_doc},
         {"ops",
@@ -439,7 +569,7 @@ TEST(HostApi, EndToEndToolContract) {
     auto linked_prop =
         ok(*host, "score_query",
            {{"document", linked_doc}, {"mode", "properties"}, {"target", idref(copy)}, {"props", music::json_array<Json>({"pitch"})}});
-    require(linked_prop.at("properties")[0].at("value") == Json({{"kind", "int"}, {"value", "74"}}), "linked pitch did not propagate");
+    require(linked_prop.at("properties")[0].at("value") == Json(74), "linked pitch did not propagate");
 
     auto restored = ok(*host, "restore_checkpoint", {{"document", linked_doc}, {"name", "initial"}});
     require(restored.at("revision") != linked_prop.at("revision"), "restore_checkpoint did not advance revision");
@@ -470,7 +600,7 @@ TEST(HostApi, EndToEndToolContract) {
     const auto mscx_before = export_mscx(linked_doc);
 
     // Preflight failures change nothing and leave the document unpoisoned.
-    Json blue = {{"kind", "color"}, {"value", {{"r", 0}, {"g", 0}, {"b", 255}, {"a", 255}}}};
+    Json blue = {{"r", 0}, {"g", 0}, {"b", 255}, {"a", 255}};
     const auto before_preflight_rev = after_restore.at("revision");
     auto preflight_fail = error(
         *host, "score_edit",
@@ -479,7 +609,7 @@ TEST(HostApi, EndToEndToolContract) {
                                           Json{{"op", "set_property"},
                                                {"target", idref(target.at("measure").get<std::string>())},
                                                {"property", "pitch"},
-                                               {"value", {{"kind", "int"}, {"value", "72"}}}}})}},
+                                               {"value", 72}}})}},
         "InvalidArgument");
     require(preflight_fail.at("error").at("op_index") == 1 && !preflight_fail.at("error").contains("poisoned") &&
                 preflight_fail.at("error").at("applied") == 0,
@@ -494,6 +624,7 @@ TEST(HostApi, EndToEndToolContract) {
     auto mid_fail = error(
         *host, "score_edit",
         {{"document", linked_doc},
+         {"atomic", false},
          {"ops",
           music::json_array<Json>({Json{{"op", "set_property"}, {"target", idref(note)}, {"property", "color"}, {"value", blue}},
                                    Json{{"op", "set_pitch"}, {"note", idref(target.at("measure").get<std::string>())}, {"pitch", 72}}})}},
@@ -516,8 +647,7 @@ TEST(HostApi, EndToEndToolContract) {
     auto after_followup =
         ok(*host, "score_query",
            {{"document", linked_doc}, {"mode", "properties"}, {"target", idref(note)}, {"props", music::json_array<Json>({"pitch"})}});
-    require(after_followup.at("properties")[0].at("value") == Json({{"kind", "int"}, {"value", "75"}}),
-            "follow-up edit after mid-batch rejection failed");
+    require(after_followup.at("properties")[0].at("value") == Json(75), "follow-up edit after mid-batch rejection failed");
 
     ok(*host, "restore_checkpoint", {{"document", linked_doc}, {"name", "initial"}});
     require(export_mscx(linked_doc) == mscx_before, "restore_checkpoint did not restore original native export bytes");
@@ -530,12 +660,13 @@ TEST(HostApi, EndToEndToolContract) {
     auto prefix_rests = ok(*host, "score_query",
                            {{"document", prefix_doc},
                             {"mode", "elements"},
-                            {"query", {{"types", music::json_array<Json>({"Rest"})}, {"first_measure", 0}, {"measure_count", 1}}}});
+                            {"query", {{"types", music::json_array<Json>({"Rest"})}, {"first_measure", 1}, {"measure_count", 1}}}});
     require(prefix_rests.at("elements").size() == 1, "expected one initial rest in template measure");
     const auto prefix_rest = prefix_rests.at("elements")[0].at("id").get<std::string>();
     auto prefix_fail = error(*host, "score_edit",
                              {{"document", prefix_doc},
                               {"expected_revision", "1"},
+                              {"atomic", false},
                               {"ops", music::json_array<Json>({Json{{"op", "enter_notes"},
                                                                     {"at", address(prefix_m0, "0", "1")},
                                                                     {"duration", fraction("1", "4")},
@@ -554,7 +685,7 @@ TEST(HostApi, EndToEndToolContract) {
     require(prefix_notes.at("elements").size() == 1, "expected one created note in score");
     const auto created_note = prefix_notes.at("elements")[0].at("id").get<std::string>();
     const auto &created_ids = prefix_err.at("created").get_array();
-    require(prefix_notes.at("elements")[0].at("props")[0].at("value") == Json({{"kind", "int"}, {"value", "60"}}) &&
+    require(prefix_notes.at("elements")[0].at("props")[0].at("value") == Json(60) &&
                 std::ranges::find(created_ids, Json(created_note)) != created_ids.end(),
             "created note ID or pitch missing from score after prefix rejection");
     ok(*host, "score_edit",
@@ -565,8 +696,7 @@ TEST(HostApi, EndToEndToolContract) {
                             {{"document", prefix_doc},
                              {"mode", "elements"},
                              {"query", {{"types", music::json_array<Json>({"Note"})}, {"props", music::json_array<Json>({"pitch"})}}}});
-    require(pitched_notes.at("elements").size() == 1 &&
-                pitched_notes.at("elements")[0].at("props")[0].at("value") == Json({{"kind", "int"}, {"value", "67"}}),
+    require(pitched_notes.at("elements").size() == 1 && pitched_notes.at("elements")[0].at("props")[0].at("value") == Json(67),
             "follow-up edit using prefix-created note ID did not update score");
     ok(*host, "score_close", {{"document", prefix_doc}});
     auto recovered_props = ok(*host, "score_query",
@@ -631,17 +761,19 @@ TEST(HostApi, EndToEndToolContract) {
                 reached,
             "healthy document was not recovered after callback failure");
     const Json style = {{"op", "set_style"},
-                        {"score", music::make_object<Json>()},
+
                         {"style", "staffDistance"},
-                        {"value", {{"kind", "real"}, {"value", 9.0}}}};
+                        {"value", 9.0}};
     ok(*host, "score_edit", {{"document", recovery_doc}, {"ops", music::json_array<Json>({style})}});
     ok(*host, "score_close", {{"document", recovery_doc}});
     fs::remove(corrupt_path);
 
     const auto revision_before_assets = ok(*host, "score_outline", {{"document", doc}}).at("revision");
-    auto font_info = ok(*host, "runtime_info", {{"action", "add_font"}, {"path", path_text(add_font_input)}});
+    ok(*host, "runtime_configure", {{"add_font", path_text(add_font_input)}});
+    auto font_info = ok(*host, "runtime_info", music::make_object<Json>());
     require(font_info.at("fonts").size() == 2, "runtime font missing");
-    auto duplicate_font = ok(*host, "runtime_info", {{"action", "add_font"}, {"path", path_text(add_font_input)}});
+    ok(*host, "runtime_configure", {{"add_font", path_text(add_font_input)}});
+    auto duplicate_font = ok(*host, "runtime_info", music::make_object<Json>());
     require(duplicate_font.at("fonts") == font_info.at("fonts"), "duplicate font was not idempotent");
     auto font_capture = host->runtime_options();
     require(bool(font_capture), "font capture failed");
@@ -652,19 +784,17 @@ TEST(HostApi, EndToEndToolContract) {
         f << "changed";
     }
     require(read(new_font) == new_font_bytes && initial->fonts.size() == 1, "font snapshot changed");
-    error(*host, "runtime_info", {{"action", "add_font"}, {"path", path_text(add_font_input)}}, "InvalidInput");
+    error(*host, "runtime_configure", {{"add_font", path_text(add_font_input)}}, "InvalidInput");
     require(host->runtime_options()->fonts.size() == 2, "failed font change altered the selection");
-    auto selected =
-        ok(*host, "runtime_info", {{"action", "set_soundfonts"}, {"files", music::json_array<Json>({path_text(replacement_sf)})}});
+    auto selected = ok(*host, "runtime_configure", {{"soundfonts", music::json_array<Json>({path_text(replacement_sf)})}});
     auto replacement = host->runtime_options();
     require(bool(replacement), "soundfont capture failed");
     const auto selected_path = replacement->soundfonts[0];
     require(read(selected_path) == read(replacement_sf), "selected SoundFont bytes differ");
-    error(*host, "runtime_info", {{"action", "set_soundfonts"}, {"files", music::json_array<Json>({path_text(invalid_sf)})}},
-          "InvalidInput");
+    error(*host, "runtime_configure", {{"soundfonts", music::json_array<Json>({path_text(invalid_sf)})}}, "InvalidInput");
     auto retained = host->runtime_options();
     require(retained && retained->soundfonts[0] == selected_path, "failed SoundFont change replaced selection");
-    ok(*host, "runtime_info", {{"action", "set_soundfonts"}, {"files", music::make_array<Json>()}});
+    ok(*host, "runtime_configure", {{"soundfonts", music::make_array<Json>()}});
     require(!fs::exists(initial_sf) && !fs::exists(selected_path), "replaced assets survived selection removal");
     auto still_open = ok(*host, "score_outline", {{"document", doc}});
     require(still_open.at("revision") == revision_before_assets, "runtime assets changed document revision");

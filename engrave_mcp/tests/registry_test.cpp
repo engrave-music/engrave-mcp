@@ -50,6 +50,15 @@ TEST(Registry, SyntheticPublicationBoundary) {
     EXPECT_LT(music::dump_json(music::make_tool_result(payload)).size(), over);
 }
 
+TEST(Registry, MusicSummaryAndTypedEvents) {
+    Json bar{{"measure", 1}, {"duration", "3/4"}};
+    auto result = music::make_tool_result(
+        Json{{"ok", true}, {"revision", "2"}, {"summary", "Bar 1  s1v1 Eb4:3/4"}, {"measures", music::json_array<Json>({bar})}});
+    EXPECT_EQ(result.at("content")[0].at("text"), "Bar 1  s1v1 Eb4:3/4");
+    EXPECT_EQ(result.at("structuredContent").at("measures")[0], bar);
+    EXPECT_FALSE(result.at("structuredContent").contains("summary"));
+}
+
 TEST(Registry, InvalidUtf8Replacement) {
     const std::string invalid = std::string("bad") + "\xFF" + "\xFE" + "tail";
     const std::string replaced = music::replace_invalid_utf8(invalid);

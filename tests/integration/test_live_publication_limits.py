@@ -31,7 +31,7 @@ def prepare(c):
             "ops": [
                 {
                     "op": "set_layout_break",
-                    "measure": {"kind": "id", "id": measure},
+                    "measure": measure,
                     "kind": "page",
                     "on": True,
                 }

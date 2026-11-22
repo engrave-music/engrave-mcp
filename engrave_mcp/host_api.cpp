@@ -9,6 +9,7 @@
 #include <ankerl/unordered_dense.h>
 
 #include "api_json_internal.h"
+#include "phrase.h"
 
 namespace music::api {
 
@@ -106,6 +107,10 @@ Result<std::vector<std::byte>> base64(const std::string &s) {
     usize padding = 0;
     if (!s.empty() && s.back() == '=') ++padding;
     if (s.size() > 1 && s[s.size() - 2] == '=') ++padding;
+    constexpr std::string_view alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (s.size() % 4 || s.find_first_not_of(alphabet) < s.size() - padding) {
+        return std::unexpected(invalid_error("data: invalid encoding; expected padded base64"));
+    }
     const auto size = s.size() / 4 * 3 - padding;
     if (size > engrave::max_input_bytes) return std::unexpected(HostError{"ResourceLimit", "decoded score exceeds 8 MiB"});
     std::vector<std::byte> bytes;
@@ -174,6 +179,7 @@ struct HostApi::Impl {
     u64 next = 1;
     engrave::EngineOptions options;
     ExportLimits limits;
+    std::optional<ValueCatalogue> catalogue;
     std::shared_ptr<const RuntimeAssets> assets;
     std::unique_ptr<engrave::Engine> engine; // destroyed after documents, before assets
     ankerl::unordered_dense::map<std::string, std::unique_ptr<engrave::Document>> documents;
@@ -200,7 +206,10 @@ struct HostApi::Impl {
     Result<Json> publish(std::unique_ptr<engrave::Document> doc) {
         if (next == 0) return std::unexpected(HostError{"ResourceLimit", "document token space exhausted"});
         auto token = "doc-" + session + "-" + std::to_string(next++);
+        auto outline = doc->outline();
+        if (!outline) return std::unexpected(api_error(outline.error()));
         Json out = {{"ok", true},
+                    {"outline", encode(*outline)},
                     {"document", token},
                     {"revision", std::to_string(doc->revision())},
                     {"diagnostics", encoded_array(doc->diagnostics())}};
@@ -297,7 +306,7 @@ Json HostApi::create_document(const Json &j) {
         if (auto ok = detail::validate_tool("score_create", j); !ok) return std::unexpected(std::move(ok.error()));
         if (auto ok = impl_->capacity(); !ok) return std::unexpected(std::move(ok.error()));
         engrave::CreateOptions o;
-        if (j.contains("template_id")) o.template_id = j.at("template_id").get<std::string>();
+        if (!j.contains("template_path")) o.template_id = json_value<std::string>(j, "template_id", "Treble_Clef");
         if (j.contains("template_path")) {
             auto tp = detail::path(j.at("template_path"));
             if (!tp) return std::unexpected(std::move(tp.error()));
@@ -307,9 +316,6 @@ Json HostApi::create_document(const Json &j) {
         o.subtitle = json_value<std::string>(j, "subtitle", {});
         o.composer = json_value<std::string>(j, "composer", {});
         o.lyricist = json_value<std::string>(j, "lyricist", {});
-        for (const auto *value : {&o.title, &o.subtitle, &o.composer, &o.lyricist}) {
-            if (auto ok = detail::validate_xml_text(*value); !ok) return std::unexpected(std::move(ok.error()));
-        }
         auto doc = impl_->engine->create_document(o);
         if (!doc) return std::unexpected(api_error(doc.error()));
         return impl_->publish(std::move(*doc));
@@ -339,8 +345,8 @@ Json HostApi::outline(const Json &j) {
         auto doc = impl_->get(token, *expected);
         if (!doc) return std::unexpected(std::move(doc.error()));
         engrave::ScoreSel selection{};
-        if (j.contains("score")) {
-            auto sel = decode_score(j.at("score"));
+        if (j.contains("excerpt")) {
+            auto sel = decode_score(j);
             if (!sel) return std::unexpected(std::move(sel.error()));
             selection = *sel;
         }
@@ -387,8 +393,8 @@ Json HostApi::query(const Json &j) {
             result["properties"] = encoded_array(*out);
         } else if (mode == "page_count") {
             engrave::ScoreSel selection{};
-            if (j.contains("score")) {
-                auto sel = decode_score(j.at("score"));
+            if (j.contains("excerpt")) {
+                auto sel = decode_score(j);
                 if (!sel) return std::unexpected(std::move(sel.error()));
                 selection = *sel;
             }
@@ -401,8 +407,8 @@ Json HostApi::query(const Json &j) {
             result["pages"] = *out;
         } else {
             engrave::ScoreSel selection{};
-            if (j.contains("score")) {
-                auto sel = decode_score(j.at("score"));
+            if (j.contains("excerpt")) {
+                auto sel = decode_score(j);
                 if (!sel) return std::unexpected(std::move(sel.error()));
                 selection = *sel;
             }
@@ -418,10 +424,57 @@ Json HostApi::query(const Json &j) {
     });
 }
 
+Json HostApi::read_music(const Json &j) {
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
+        if (auto ok = detail::validate_tool("score_read_music", j); !ok) return std::unexpected(ok.error());
+        auto doc = impl_->get(j.at("document").get<std::string>(), *revision_arg(j));
+        if (!doc) return std::unexpected(doc.error());
+        engrave::MusicRange range;
+        range.score = *detail::score(j);
+        range.first_measure = json_value<int>(j, "measure", 1) - 1;
+        auto outline = (*doc)->outline(range.score);
+        if (!outline) return std::unexpected(api_error(outline.error()));
+        if (range.first_measure >= outline->measure_count)
+            return std::unexpected(invalid_error("measure: outside score; expected an existing bar"));
+        range.measure_count = json_value<int>(j, "count", std::min(4, outline->measure_count - range.first_measure));
+        if (range.measure_count > outline->measure_count - range.first_measure)
+            return std::unexpected(invalid_error("count: window extends past score; expected a count within the remaining bars"));
+        for (auto key : {"staves", "voices"}) {
+            if (!j.contains(key)) continue;
+            auto &indices = std::string_view(key) == "staves" ? range.staves : range.voices;
+            for (const auto &n : j.at(key).get_array()) indices.push_back(n.as<int>() - 1);
+        }
+        auto window = (*doc)->read_music(range);
+        if (!window) return std::unexpected(api_error(window.error()));
+        return music_result(*window, *outline, json_value<bool>(j, "include_ids", false));
+    });
+}
+
+Json HostApi::write_phrase(const Json &j, const std::atomic<bool> *cancelled) {
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
+        if (auto ok = detail::validate_tool("score_write_phrase", j); !ok) return std::unexpected(ok.error());
+        auto expected = *revision_arg(j);
+        auto doc = impl_->get(j.at("document").get<std::string>(), expected);
+        if (!doc) return std::unexpected(doc.error());
+        auto score = *detail::score(j);
+        auto outline = (*doc)->outline(score);
+        if (!outline) return std::unexpected(api_error(outline.error()));
+        auto phrase = decode_phrase(j.at("lanes"), *outline, score, dsl_phrase_syntax ? PhraseSyntax::DSL : PhraseSyntax::JSON);
+        if (!phrase) return std::unexpected(phrase.error());
+        if (cancelled && cancelled->load()) return std::unexpected(HostError{"Cancelled", "phrase cancelled before edit"});
+        auto edited = (*doc)->write_phrase(*phrase, {expected, engrave::EditMode::Atomic});
+        if (!edited) return std::unexpected(api_error(edited.error()));
+        if (edited->rejection) return std::unexpected(api_error(edited->rejection->error));
+        return Json{{"ok", true}, {"revision", std::to_string(edited->revision)}, {"diagnostics", encoded_array(edited->diagnostics)}};
+    });
+}
+
 Json HostApi::describe(const Json &j) {
     return boundary([&]() -> Result<Json> {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
-        if (auto ok = detail::validate_tool("score_describe", j); !ok) return std::unexpected(std::move(ok.error()));
+
         auto scope = j.at("scope").get<std::string>();
         if (scope == "types") return Json{{"ok", true}, {"scope", scope}, {"types", encoded_array(impl_->engine->describe())}};
         if (scope == "type") {
@@ -433,29 +486,41 @@ Json HostApi::describe(const Json &j) {
     });
 }
 
-Json HostApi::edit(const Json &j) {
+Json HostApi::edit(const Json &j, const std::atomic<bool> *cancelled) {
     return boundary([&]() -> Result<Json> {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
         // Validate the envelope separately so the batch decoder can report the
         // index of malformed operations while still decoding the whole batch
         // before looking up or mutating a document.
-        auto envelope = j;
-        if (envelope.is_object() && envelope.contains("ops")) envelope["ops"] = make_array<Json>();
-        if (auto ok = detail::validate_tool("score_edit", envelope); !ok) return std::unexpected(std::move(ok.error()));
-        auto batch_res = decode_batch(j.at("ops"));
-        if (!batch_res) {
-            auto err = std::move(batch_res.error());
-            err.applied = 0;
-            return std::unexpected(std::move(err));
+
+        if (auto ok = detail::validate_tool("score_edit", j); !ok) return std::unexpected(std::move(ok.error()));
+        if (!impl_->catalogue) {
+            ValueCatalogue catalogue;
+            for (const auto &t : impl_->engine->describe()) {
+                for (const auto &p : t.props) catalogue.properties.emplace(p.name, p.kind);
+            }
+            for (const auto &s : impl_->engine->describe_styles()) catalogue.styles.emplace(s.name, s.kind);
+            impl_->catalogue = std::move(catalogue);
         }
         auto expected = revision_arg(j);
         if (!expected) return std::unexpected(std::move(expected.error()));
         const auto token = j.at("document").get<std::string>();
         auto doc = impl_->get(token, *expected);
         if (!doc) return std::unexpected(std::move(doc.error()));
+        auto outline = (*doc)->outline();
+        if (!outline) return std::unexpected(api_error(outline.error()));
+        auto batch_res = decode_batch(j.at("ops"), *impl_->catalogue, &*outline);
+        if (!batch_res) {
+            auto err = std::move(batch_res.error());
+            err.applied = 0;
+            return std::unexpected(std::move(err));
+        }
         engrave::Result<engrave::EditResult> out = engrave::EditResult{};
         try {
-            out = (*doc)->edit(*batch_res, *expected);
+            if (cancelled && cancelled->load()) return std::unexpected(HostError{"Cancelled", "batch cancelled before edit"});
+            out =
+                (*doc)->edit(*batch_res, engrave::EditOptions{*expected, json_value<bool>(j, "atomic", true) ? engrave::EditMode::Atomic :
+                                                                                                               engrave::EditMode::Prefix});
         } catch (const std::exception &e) {
             return std::unexpected(HostError{"EngineFailure", e.what(), {}, token});
         } catch (...) {
@@ -484,6 +549,7 @@ Json HostApi::edit(const Json &j) {
             return std::unexpected(std::move(e));
         }
         auto result = encode(*out);
+        if (!json_value<bool>(j, "detail", false)) json_erase(result, "ops");
         result["ok"] = true;
         return result;
     });
@@ -528,13 +594,189 @@ Json HostApi::drop_checkpoint(const Json &j) {
     });
 }
 
+Json operation_catalogue(std::string_view requested) {
+    Json entries = make_array<Json>();
+    auto add = [&](const char *op, Json fields, Json required, Json example) {
+        if (!requested.empty() && requested != op) return;
+        example["op"] = op;
+        json_push(entries,
+                  Json{{"op", op}, {"fields", std::move(fields)}, {"required", std::move(required)}, {"example", std::move(example)}});
+    };
+    add("set_property",
+        {{"target", "EID, layout address or {from_op,item}"},
+         {"property", "string"},
+         {"value", "native value of the named property or style"}},
+        json_array<Json>({"target", "property", "value"}), {{"target", "A_A"}, {"property", "visible"}, {"value", true}});
+    add("reset_property", {{"target", "EID, layout address or {from_op,item}"}, {"property", "string"}},
+        json_array<Json>({"target", "property"}), {{"target", "A_A"}, {"property", "visible"}});
+    add("set_style", {{"excerpt", "persistent element ID"}, {"style", "string"}, {"value", "native value of the named property or style"}},
+        json_array<Json>({"style", "value"}), {{"style", "pageWidth"}, {"value", 8.5}});
+    add("enter_notes",
+        {{"at", "{measure, offset?, staff?, voice?}; measure, staff and voice are 1-based"},
+         {"duration", "exact whole-note fraction string"},
+         {"pitches", "array of {pitch, tpc?}"}},
+        json_array<Json>({"at", "duration", "pitches"}),
+        {{"at", Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}},
+         {"duration", "1/4"},
+         {"pitches", json_array<Json>({Json{{"pitch", 60}}})}});
+    add("set_pitch",
+        {{"note", "EID, layout address or {from_op,item}"},
+         {"pitch", "MIDI integer, 0 through 127"},
+         {"tpc", "tonal pitch class integer, -1 through 33"}},
+        json_array<Json>({"note", "pitch"}), {{"note", "A_A"}, {"pitch", 60}});
+    add("set_duration", {{"chord_rest", "EID, layout address or {from_op,item}"}, {"duration", "exact whole-note fraction string"}},
+        json_array<Json>({"chord_rest", "duration"}), {{"chord_rest", "A_A"}, {"duration", "1/4"}});
+    add("remove", {{"target", "EID, layout address or {from_op,item}"}}, json_array<Json>({"target"}), {{"target", "A_A"}});
+    add("insert_measures",
+        {{"before", "EID, layout address or {from_op,item}"},
+         {"count", "integer, 1 through 1024"},
+         {"kind", "Measure | VBox | HBox | TBox | FBox"}},
+        json_array<Json>({"count"}), {{"count", 2}});
+    add("remove_measures", {{"first", "EID, layout address or {from_op,item}"}, {"last", "EID, layout address or {from_op,item}"}},
+        json_array<Json>({"first", "last"}), {{"first", "A_A"}, {"last", "A_A"}});
+    add("set_time_sig",
+        {{"measure", "EID, layout address or {from_op,item} or 1-based position"}, {"sig", "exact whole-note fraction string"}},
+        json_array<Json>({"measure", "sig"}), {{"measure", 1}, {"sig", "6/8"}});
+    add("set_key_sig",
+        {{"measure", "EID, layout address or {from_op,item} or 1-based position"},
+         {"key", "integer, -7 through 7"},
+         {"staff", "EID, layout address or {from_op,item} or 1-based position"}},
+        json_array<Json>({"measure", "key"}), {{"measure", "A_A"}, {"key", 0}});
+    add("insert_clef", {{"at", "{measure, offset?, staff?, voice?}; measure, staff and voice are 1-based"}, {"clef", "string"}},
+        json_array<Json>({"at", "clef"}), {{"at", Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}}, {"clef", "G"}});
+    add("set_layout_break",
+        {{"measure", "EID, layout address or {from_op,item} or 1-based position"},
+         {"kind", "line | page | section | nobreak"},
+         {"on", "boolean"}},
+        json_array<Json>({"measure", "kind", "on"}), {{"measure", "A_A"}, {"kind", "page"}, {"on", true}});
+    add("add_part", {{"instrument_id", "string"}, {"before", "EID, layout address or {from_op,item}"}}, json_array<Json>({"instrument_id"}),
+        {{"instrument_id", "piano"}});
+    add("remove_part", {{"part", "EID, layout address or {from_op,item}"}}, json_array<Json>({"part"}), {{"part", "A_A"}});
+    add("add_staff", {{"part", "EID, layout address or {from_op,item}"}}, json_array<Json>({"part"}), {{"part", "A_A"}});
+    add("remove_staff", {{"staff", "EID, layout address or {from_op,item} or 1-based position"}}, json_array<Json>({"staff"}),
+        {{"staff", "A_A"}});
+    add("generate_excerpts", {{"parts", "array of EID, layout address or {from_op,item}"}}, json_array<Json>({"parts"}),
+        {{"parts", json_array<Json>({"A_A"})}});
+    add("add_spanner",
+        {{"type", "string"},
+         {"start", "EID, layout address or {from_op,item}"},
+         {"end", "EID, layout address or {from_op,item}"},
+         {"props", "array of {name, value}"}},
+        json_array<Json>({"type", "start", "end"}), {{"type", "HairPin"}, {"start", "A_A"}, {"end", "A_A"}});
+    add("add_tie", {{"note", "EID, layout address or {from_op,item}"}, {"end_note", "EID, layout address or {from_op,item}"}},
+        json_array<Json>({"note"}), {{"note", "A_A"}});
+    add("add_tuplet",
+        {{"first", "EID, layout address or {from_op,item}"},
+         {"last", "EID, layout address or {from_op,item}"},
+         {"actual", "integer, 1 through 1024"},
+         {"normal", "integer, 1 through 1024"}},
+        json_array<Json>({"first", "last"}), {{"first", "A_A"}, {"last", "A_A"}});
+    add("add_text",
+        {{"at", "{measure, offset?, staff?, voice?}; measure, staff and voice are 1-based"},
+         {"style", "string"},
+         {"text", "XML-compatible string"}},
+        json_array<Json>({"at", "style", "text"}),
+        {{"at", Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}}, {"style", "staff"}, {"text", "text"}});
+    add("add", {{"anchor", "EID, layout address or {from_op,item}"}, {"type", "string"}, {"props", "array of {name, value}"}},
+        json_array<Json>({"anchor", "type"}), {{"anchor", "A_A"}, {"type", "HairPin"}});
+    add("add_spanner_to_bar_end",
+        {{"type", "string"},
+         {"start", "EID, layout address or {from_op,item}"},
+         {"end", "measure EID or 1-based bar"},
+         {"props", "array of {name, value}"}},
+        json_array<Json>({"type", "start", "end"}), {{"type", "HairPin"}, {"start", "A_A"}, {"end", "A_A"}});
+    add("set_repeat_barlines",
+        {{"measure", "EID, layout address or {from_op,item} or 1-based position"},
+         {"start", "boolean"},
+         {"end", "boolean"},
+         {"count", "integer, 1 through 1024"}},
+        json_array<Json>({"measure"}), {{"measure", "A_A"}});
+    add("add_volta",
+        {{"first_measure", "EID, layout address or {from_op,item} or 1-based position"},
+         {"last_measure", "EID, layout address or {from_op,item} or 1-based position"},
+         {"endings", "array of integer, 1 through 1024"},
+         {"closed", "boolean"}},
+        json_array<Json>({"first_measure", "last_measure", "endings"}),
+        {{"first_measure", "A_A"}, {"last_measure", "A_A"}, {"endings", json_array<Json>({2})}});
+    add("add_grace_chord",
+        {{"principal", "EID, layout address or {from_op,item}"},
+         {"kind", "acciac | appog | grace4 | grace16 | grace32 | after8 | after16 | after32"},
+         {"duration", "exact whole-note fraction string"},
+         {"pitches", "array of {pitch, tpc?}"},
+         {"event_end", "exact whole-note fraction string"}},
+        json_array<Json>({"principal", "kind", "duration", "pitches"}),
+        {{"principal", "A_A"}, {"kind", "acciac"}, {"duration", "1/4"}, {"pitches", json_array<Json>({Json{{"pitch", 60}}})}});
+    add("enter_drums",
+        {{"at", "{measure, offset?, staff?, voice?}; measure, staff and voice are 1-based"},
+         {"duration", "exact whole-note fraction string"},
+         {"keys", "array of MIDI integer, 0 through 127"}},
+        json_array<Json>({"at", "duration", "keys"}),
+        {{"at", Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}}, {"duration", "1/4"}, {"keys", json_array<Json>({60})}});
+    return entries;
+}
+
 Json HostApi::runtime_info(const Json &j) {
     return boundary([&]() -> Result<Json> {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
         if (auto ok = detail::validate_tool("runtime_info", j); !ok) return std::unexpected(std::move(ok.error()));
-        const auto action = json_value<std::string>(j, "action", "get");
-        if (action == "add_font") {
-            auto p = detail::path(j.at("path"));
+        const auto scope = json_value<std::string>(j, "scope", "overview");
+        Json catalog = make_object<Json>();
+        if (scope == "templates") catalog["templates"] = encoded_array(impl_->engine->templates());
+        if (scope == "type" || scope == "types" || scope == "styles") catalog = describe(j);
+        if (scope == "ops") {
+            auto ops = operation_catalogue(json_value<std::string>(j, "op", {}));
+            if (ops.empty()) return std::unexpected(invalid_error("op: unknown operation; expected a registered edit operation"));
+            catalog["ops"] = std::move(ops);
+        }
+        if (scope == "instruments") {
+            Json instruments = make_array<Json>();
+            auto query = json_value<std::string>(j, "query", {});
+            for (const auto &i : impl_->engine->instruments()) {
+                if (!i.id.contains(query) && !i.name.contains(query) && !i.group_id.contains(query)) continue;
+                Json drums = make_array<Json>();
+                for (const auto &d : i.drums) {
+                    json_push(drums, Json{{"key", d.key}, {"name", d.name}, {"line", d.line}, {"voice", d.default_voice + 1}});
+                }
+                json_push(instruments, Json{{"id", i.id},
+                                            {"name", i.name},
+                                            {"group_id", i.group_id},
+                                            {"staff_count", i.staff_count},
+                                            {"uses_drumset", i.uses_drumset},
+                                            {"transpose", {{"diatonic", i.transpose.diatonic}, {"chromatic", i.transpose.chromatic}}},
+                                            {"drums", std::move(drums)}});
+            }
+            catalog["instruments"] = std::move(instruments);
+        }
+        auto caps = impl_->engine->capabilities();
+        auto opts = impl_->asset_options();
+        caps.soundfonts = opts.soundfonts;
+        Json fonts = make_array<Json>();
+        for (const auto &path : opts.fonts) json_push(fonts, detail::path_text(path));
+        Json result{{"ok", true},
+                    {"tool_revision", "3"},
+                    {"capabilities", encode(caps)},
+                    {"fonts", fonts},
+                    {"limits",
+                     {{"input_bytes", engrave::max_input_bytes},
+                      {"base64_chars", ((engrave::max_input_bytes + 2) / 3) * 4},
+                      {"batch_ops", 1024},
+                      {"query_results", engrave::max_query_results},
+                      {"output_bytes", impl_->limits.output_bytes},
+                      {"deadline_ms", impl_->limits.deadline.count()},
+                      {"cancellation", "cooperative"},
+                      {"transport_request_bytes", transport_request_limit}}}};
+        json_merge(result, catalog);
+        return result;
+    });
+}
+
+Json HostApi::configure(const Json &j) {
+    return boundary([&]() -> Result<Json> {
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
+        if (auto ok = detail::validate_tool("runtime_configure", j); !ok) return std::unexpected(ok.error());
+
+        if (j.contains("add_font")) {
+            auto p = detail::path(j.at("add_font"));
             if (!p) return std::unexpected(std::move(p.error()));
             auto font = copy_asset(*p);
             if (!font) return std::unexpected(std::move(font.error()));
@@ -554,11 +796,12 @@ Json HostApi::runtime_info(const Json &j) {
                 if (!applied) return std::unexpected(api_error(applied.error()));
                 impl_->assets = std::move(next);
             }
-        } else if (action == "set_soundfonts") {
+        }
+        if (j.contains("soundfonts")) {
             auto next = std::make_shared<RuntimeAssets>(*impl_->assets);
             next->soundfonts.clear();
             std::vector<fs::path> paths;
-            for (const auto &item : j.at("files").get_array()) {
+            for (const auto &item : j.at("soundfonts").get_array()) {
                 auto p = detail::path(item);
                 if (!p) return std::unexpected(std::move(p.error()));
                 auto f = copy_asset(*p);
@@ -570,25 +813,7 @@ Json HostApi::runtime_info(const Json &j) {
             if (!applied) return std::unexpected(api_error(applied.error()));
             impl_->assets = std::move(next);
         }
-        auto caps = impl_->engine->capabilities();
-        auto opts = impl_->asset_options();
-        caps.soundfonts = opts.soundfonts;
-        Json fonts = make_array<Json>();
-        for (const auto &path : opts.fonts) json_push(fonts, detail::path_text(path));
-        return Json{{"ok", true},
-                    {"tool_revision", "2"},
-                    {"capabilities", encode(caps)},
-                    {"templates", encoded_array(impl_->engine->templates())},
-                    {"fonts", fonts},
-                    {"limits",
-                     {{"input_bytes", engrave::max_input_bytes},
-                      {"base64_chars", ((engrave::max_input_bytes + 2) / 3) * 4},
-                      {"batch_ops", 1024},
-                      {"query_results", engrave::max_query_results},
-                      {"output_bytes", std::to_string(impl_->limits.output_bytes)},
-                      {"deadline_ms", impl_->limits.deadline.count()},
-                      {"cancellation", "cooperative"},
-                      {"transport_request_bytes", transport_request_limit}}}};
+        return runtime_info(make_object<Json>());
     });
 }
 

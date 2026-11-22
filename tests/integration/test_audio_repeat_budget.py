@@ -23,34 +23,19 @@ async def capture(args, repeats):
         duration = (await client.tool("score_outline", {"document": doc}))["outline"]["duration"]
         await client.tool(
             "score_export",
-            {
-                "document": doc,
-                "kind": "score",
-                "options": {"format": "mscz"},
-                "destination": {"kind": "file", "path": str(snapshot)},
-            },
+            {"document": doc, "format": "mscz", "path": str(snapshot)},
         )
         if repeats == 1000:
             no_repeat = (args.output / "no-repeat-live.wav").resolve()
             await client.tool(
                 "score_export",
-                {
-                    "document": doc,
-                    "kind": "audio",
-                    "options": {"format": "wav", "use_repeats": False},
-                    "destination": {"kind": "file", "path": str(no_repeat)},
-                },
+                {"document": doc, "format": "wav", "path": str(no_repeat), "options": {"use_repeats": False}},
             )
             assert 0 < no_repeat.stat().st_size < 1024**3
             repeated = (args.output / "repeated-live.wav").resolve()
             failed = await client.tool(
                 "score_export",
-                {
-                    "document": doc,
-                    "kind": "audio",
-                    "options": {"format": "wav", "use_repeats": True},
-                    "destination": {"kind": "file", "path": str(repeated)},
-                },
+                {"document": doc, "format": "wav", "path": str(repeated), "options": {"use_repeats": True}},
                 error=True,
             )
             assert failed["error"]["code"] == "ResourceLimit" and not repeated.exists(), failed
@@ -76,21 +61,11 @@ async def capture_mid_measure_end(args):
         doc = (await client.tool("score_open", {"path": str(source)}))["document"]
         await client.tool(
             "score_export",
-            {
-                "document": doc,
-                "kind": "score",
-                "options": {"format": "mscz"},
-                "destination": {"kind": "file", "path": str(snapshot)},
-            },
+            {"document": doc, "format": "mscz", "path": str(snapshot)},
         )
         await client.tool(
             "score_export",
-            {
-                "document": doc,
-                "kind": "audio",
-                "options": {"format": "wav", "use_repeats": False},
-                "destination": {"kind": "file", "path": str(output)},
-            },
+            {"document": doc, "format": "wav", "path": str(output), "options": {"use_repeats": False}},
         )
         await client.tool("score_close", {"document": doc})
     return snapshot, output.stat().st_size

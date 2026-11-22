@@ -385,6 +385,17 @@ def main() -> int:
         "clientInfo": {"name": "test", "version": "1"},
     }
 
+    for requested in ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2099-01-01"):
+        request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {**initialize_params, "protocolVersion": requested},
+        }
+        reply = json.loads(_run_server(exe, _compact(request) + "\n")["stdout"])
+        assert reply["result"]["protocolVersion"] == (PROTOCOL_VERSION if requested == "2099-01-01" else requested)
+        assert "score_write_phrase" in reply["result"]["instructions"]
+
     main_lines = [
         '{"jsonrpc":"2.0","id":0,"method":"ping"',
         _compact([{"jsonrpc": "2.0", "id": 100, "method": "ping"}]),

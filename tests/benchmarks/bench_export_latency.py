@@ -54,7 +54,7 @@ def main():
                             "ops": [
                                 {
                                     "op": "set_layout_break",
-                                    "measure": {"kind": "id", "id": measure},
+                                    "measure": measure,
                                     "kind": "page",
                                     "on": True,
                                 }
@@ -102,7 +102,7 @@ def main():
                         "ops": [
                             {
                                 "op": "set_layout_break",
-                                "measure": {"kind": "id", "id": measure},
+                                "measure": measure,
                                 "kind": "page",
                                 "on": bool(_ % 2),
                             }

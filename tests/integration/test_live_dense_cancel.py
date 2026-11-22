@@ -118,12 +118,7 @@ def main():
             doc = c.tool("score_open", {"path": str(score)})["document"]
 
             def args(path):
-                return dict(
-                    document=doc,
-                    kind="audio",
-                    options={"format": "wav"},
-                    destination={"kind": "file", "path": str(path)},
-                )
+                return {"document": doc, "format": "wav", "path": str(path)}
 
             # Environment changes apply only to newly launched clients.
             os.environ.pop("ENGRAVE_M2_PHASE_OBSERVER", None)
@@ -154,10 +149,11 @@ def main():
                         time.sleep(0.001)
                 start = time.perf_counter()
                 c.send("notifications/cancelled", {"requestId": ident}, True)
-                reply = c.receive(ident)
+                c.cancelled(ident, doc)
+                reply = None
                 row["samples_ms"].append((time.perf_counter() - start) * 1000)
                 row["responses"].append(reply)
-                assert reply.get("error", {}).get("code") == -32800, reply
+
                 assert not path.exists()
                 assert not list(out.rglob(".engrave-stage-*"))
                 save()

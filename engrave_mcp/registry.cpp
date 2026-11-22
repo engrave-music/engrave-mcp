@@ -14,13 +14,15 @@ constexpr std::array specs = {ToolSpec{"score_open", HandlerId::OPEN, Scheduling
                               ToolSpec{"score_close", HandlerId::CLOSE, Scheduling::OWNER},
                               ToolSpec{"score_outline", HandlerId::OUTLINE, Scheduling::OWNER},
                               ToolSpec{"score_query", HandlerId::QUERY, Scheduling::OWNER},
-                              ToolSpec{"score_describe", HandlerId::DESCRIBE, Scheduling::OWNER},
+                              ToolSpec{"score_read_music", HandlerId::READ_MUSIC, Scheduling::OWNER},
                               ToolSpec{"score_edit", HandlerId::EDIT, Scheduling::OWNER},
                               ToolSpec{"score_export", HandlerId::EXPORT, Scheduling::OWNER},
                               ToolSpec{"runtime_info", HandlerId::RUNTIME_INFO, Scheduling::OWNER},
                               ToolSpec{"checkpoint", HandlerId::CHECKPOINT, Scheduling::OWNER},
                               ToolSpec{"restore_checkpoint", HandlerId::RESTORE_CHECKPOINT, Scheduling::OWNER},
-                              ToolSpec{"drop_checkpoint", HandlerId::DROP_CHECKPOINT, Scheduling::OWNER}};
+                              ToolSpec{"drop_checkpoint", HandlerId::DROP_CHECKPOINT, Scheduling::OWNER},
+                              ToolSpec{"score_write_phrase", HandlerId::WRITE_PHRASE, Scheduling::OWNER},
+                              ToolSpec{"runtime_configure", HandlerId::CONFIGURE, Scheduling::OWNER}};
 
 consteval bool complete() {
     std::array<int, static_cast<std::size_t>(HandlerId::COUNT)> counts{};
@@ -79,19 +81,18 @@ void validate_registry() {
         const auto name = tool.at("name").get<std::string>();
         if (!names.insert(name).second || !find_tool(name)) throw std::logic_error("duplicate or unknown schema definition");
     }
+    const auto &published =
+        definition("score_edit").at("inputSchema").at("properties").at("ops").at("items").at("properties").at("op").at("enum");
+    if (published.size() != operation_names.size()) throw std::logic_error("edit operation count mismatch");
+    for (auto name : operation_names) {
+        if (std::ranges::none_of(published.get_array(), [&](const Json &entry) { return entry == name; }))
+            throw std::logic_error("missing edit operation");
+    }
     names.clear();
     for (usize i = 0; i < specs.size(); ++i) {
         if (tools[i].at("name").get<std::string>() != specs[i].name || !names.insert(std::string(specs[i].name)).second) {
             throw std::logic_error("tool table mismatch");
         }
-    }
-    ankerl::unordered_dense::set<std::string> declared;
-    for (auto &op : tools[6]["inputSchema"]["$defs"]["op"]["oneOf"].get_array()) {
-        if (!declared.insert(op["properties"]["op"]["const"].get<std::string>()).second) throw std::logic_error("duplicate op");
-    }
-    if (declared.size() != operation_names.size()) throw std::logic_error("op count mismatch");
-    for (auto name : operation_names) {
-        if (!declared.contains(std::string(name))) throw std::logic_error("missing op schema");
     }
 }
 } // namespace music::api

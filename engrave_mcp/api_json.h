@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include <ankerl/unordered_dense.h>
 #include <engrave/document.h>
 #include <engrave/engine.h>
 
@@ -15,9 +16,6 @@
 
 namespace music::api {
 
-// Decimal codecs must enforce int64/uint64 bounds after schema validation.
-// EIDs use element_id_from_string, never split JSON numbers. Unknown keys and
-// forward/out-of-range OpRefs fail before Document::edit is entered.
 struct HostError {
     std::string code, message;
     std::optional<std::size_t> op_index;
@@ -37,7 +35,11 @@ struct HostError {
 template <class T>
 using Result = std::expected<T, HostError>;
 
-Result<engrave::Batch> decode_batch(const Json &ops);
+struct ValueCatalogue {
+    ankerl::unordered_dense::map<std::string, engrave::ValueKind> properties, styles;
+};
+
+Result<engrave::Batch> decode_batch(const Json &ops, const ValueCatalogue &catalogue = {}, const engrave::Outline *outline = nullptr);
 Result<engrave::Query> decode_query(const Json &query);
 Result<engrave::Ref> decode_ref(const Json &);
 Result<engrave::ScoreSel> decode_score(const Json &);
@@ -93,6 +95,11 @@ MUSIC_OP(AddTie, "add_tie")
 MUSIC_OP(AddTuplet, "add_tuplet")
 MUSIC_OP(AddText, "add_text")
 MUSIC_OP(Add, "add")
+MUSIC_OP(AddGraceChord, "add_grace_chord")
+MUSIC_OP(AddVolta, "add_volta")
+MUSIC_OP(AddSpannerToBarEnd, "add_spanner_to_bar_end")
+MUSIC_OP(EnterDrums, "enter_drums")
+MUSIC_OP(SetRepeatBarlines, "set_repeat_barlines")
 #undef MUSIC_OP
 
 template <std::size_t... I>

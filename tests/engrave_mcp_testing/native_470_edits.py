@@ -166,7 +166,7 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                         "mode": "elements",
                                         "query": {
                                             "types": ["Note"],
-                                            "staves": [0],
+                                            "staves": [1],
                                             "props": ["pitch"],
                                             "limit": 100,
                                         },
@@ -181,10 +181,10 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                             )
 
                             def op(note):
-                                pitch = int(note["props"][0]["value"]["value"])
+                                pitch = int(note["props"][0]["value"])
                                 operation = {
                                     "op": "set_pitch",
-                                    "note": {"kind": "id", "id": note["id"]},
+                                    "note": note["id"],
                                     "pitch": pitch + delta,
                                 }
                                 if chromatic:
@@ -222,7 +222,7 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                             op(clean["elements"][0]),
                                             {
                                                 "op": "set_pitch",
-                                                "note": {"kind": "id", "id": measure},
+                                                "note": measure,
                                                 "pitch": 80,
                                             },
                                         ],
@@ -267,15 +267,9 @@ async def live_edits(args, root, output, binary, assets, oracle_env):
                                     {
                                         "document": doc,
                                         "expected_revision": revision,
-                                        "kind": "score",
-                                        "options": {
-                                            "format": fmt,
-                                            "native_version": "4.70",
-                                        },
-                                        "destination": {
-                                            "kind": "file",
-                                            "path": str(path),
-                                        },
+                                        "format": fmt,
+                                        "path": str(path),
+                                        "options": {"native_version": "4.70"},
                                     },
                                     ok=not refused,
                                 )

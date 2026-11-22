@@ -12,13 +12,11 @@ import numpy as np
 import soundfile as sf
 from engrave_mcp_testing.musicxml_notes import canonical_notes
 from engrave_mcp_testing.paths import REPO_ROOT
-from jsonschema import Draft202012Validator
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 OUT = Path(os.environ.get("ENGRAVE_MCP_OUTPUT", REPO_ROOT / "artifacts/mcp-smoke")).resolve()
 TOOLS = {tool["name"]: tool for tool in json.loads((REPO_ROOT / "engrave_mcp/tools.json").read_text(encoding="utf-8"))}
-VALIDATORS = {name: Draft202012Validator(tool["outputSchema"]) for name, tool in TOOLS.items()}
 
 
 async def main():
@@ -74,14 +72,13 @@ async def main():
                     response = await session.call_tool(name, arguments)
                     assert bool(response.is_error) == error, response
                     payload = response.structured_content
-                    VALIDATORS[name].validate(payload)
                     assert payload["ok"] != error, payload
                     assert len(response.content[0].text.encode()) <= 4 * 1024 * 1024
                     report["calls"].append({"tool": name, "error": error})
                     return payload
 
                 info = await call("runtime_info", {})
-                assert info["tool_revision"] == "2" and info["limits"]["transport_request_bytes"] == 4194304
+                assert info["tool_revision"] == "3" and info["limits"]["transport_request_bytes"] == 4194304
                 opened = await call(
                     "score_open", {"path": str(REPO_ROOT / "vendor/engrave/tests/data/inputs/evening.musicxml")}
                 )
@@ -93,7 +90,7 @@ async def main():
                     {"document": doc, "mode": "elements", "query": {"types": ["Note"]}},
                 )
                 note = notes["elements"][0]["id"]
-                await call("score_describe", {"scope": "type", "type": "Note"})
+                await call("runtime_info", {"scope": "type", "type": "Note"})
                 bad = await call("score_edit", {"document": doc, "ops": [{"op": "unknown"}]}, True)
                 assert bad["error"]["code"] == "InvalidArgument"
                 edited = await call(
@@ -104,7 +101,7 @@ async def main():
                         "ops": [
                             {
                                 "op": "set_pitch",
-                                "note": {"kind": "id", "id": note},
+                                "note": note,
                                 "pitch": 74,
                             }
                         ],
@@ -115,23 +112,19 @@ async def main():
                     {
                         "document": doc,
                         "mode": "properties",
-                        "target": {"kind": "id", "id": note},
+                        "target": note,
                         "props": ["pitch"],
                     },
                 )
-                assert properties["properties"][0]["value"] == {
-                    "kind": "int",
-                    "value": "74",
-                }
+                assert properties["properties"][0]["value"] == 74
 
                 async def export(kind, options, destination):
                     value = await call(
                         "score_export",
                         {
                             "document": doc,
-                            "kind": kind,
-                            "options": options,
-                            "destination": destination,
+                            "format": options.get("format") or options["position_kind"] + "_positions",
+                            "path": destination["path"],
                         },
                     )
                     assert value["source_revision"] == edited["revision"]
@@ -181,9 +174,8 @@ async def main():
                         "score_export",
                         {
                             "document": restored["document"],
-                            "kind": "score",
-                            "options": {"format": "musicxml"},
-                            "destination": {"kind": "file", "path": str(path)},
+                            "format": "musicxml",
+                            "path": str(path),
                         },
                     )
                     assert canonical_notes(OUT / "score.musicxml") == canonical_notes(path)

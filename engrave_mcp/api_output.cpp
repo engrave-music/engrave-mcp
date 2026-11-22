@@ -242,9 +242,8 @@ Result<engrave::AudioOptions> effective_mix(engrave::Document &document, const E
 
 Result<ExportRequest> decode_export(const Json &j) {
     auto destination_error = [&](HostError error) -> Result<ExportRequest> {
-        if (j.contains("destination") && j.at("destination").is_object() && j.at("destination").contains("path") &&
-            j.at("destination").at("path").is_string()) {
-            error.message = destination_message(j.at("destination").at("path").get<std::string>(), error.message);
+        if (j.contains("path") && j.at("path").is_string()) {
+            error.message = destination_message(j.at("path").get<std::string>(), error.message);
         }
         return std::unexpected(std::move(error));
     };
@@ -257,49 +256,70 @@ Result<ExportRequest> decode_export(const Json &j) {
             if (!revision) return std::unexpected(std::move(revision.error()));
             result.expected_revision = *revision;
         }
-        const auto &destination = j.at("destination");
-        result.destination.directory = destination.at("kind").get<std::string>() == "directory";
-        auto dest_path = detail::path(destination.at("path"));
+        const auto &format = j.at("format").get<std::string>();
+        result.destination.directory = format == "png" || format == "svg";
+        auto dest_path = detail::path(j.at("path"));
         if (!dest_path) return destination_error(std::move(dest_path.error()));
         result.destination.path = std::move(*dest_path);
-        result.destination.requested_path = destination.at("path").get<std::string>();
+        result.destination.requested_path = j.at("path").get<std::string>();
         if (result.destination.path.empty()) return destination_error(invalid_error("destination path is empty"));
-        const auto &options = j.at("options");
+        const auto options = json_value<Json>(j, "options", make_object<Json>());
+        for (const auto &[key, value] : options.get_object()) {
+            bool valid = false;
+            if (key == "midi_expand_repeats" || key == "midi_rpns") {
+                valid = format == "midi";
+            } else if (key == "native_version") {
+                valid = format == "mscx" || format == "mscz";
+            } else if (key == "dpi" || key == "transparent") {
+                valid = format == "png";
+            } else if (key == "first_page" || key == "last_page" || key == "background") {
+                valid = bool(render_format(format));
+            } else {
+                valid = bool(audio_format(format));
+            }
+            if (!valid) {
+                return destination_error(
+                    invalid_error("options." + key + ": unsupported for " + format + "; expected a format-specific option"));
+            }
+        }
         engrave::ScoreSel selection{};
-        if (options.contains("score")) {
-            auto sel = detail::score(options.at("score"));
+        if (j.contains("excerpt")) {
+            auto sel = detail::score(j);
             if (!sel) return destination_error(std::move(sel.error()));
             selection = *sel;
         }
-        const auto &kind = j.at("kind").get<std::string>();
-        if (kind == "score") {
+        if (score_format(format)) {
             result.kind = ExportKind::SCORE;
             auto &o = result.score_options;
             o.score = selection;
-            auto fmt = score_format(options.at("format").get<std::string>());
+            auto fmt = score_format(format);
             if (!fmt) return destination_error(std::move(fmt.error()));
             o.format = *fmt;
             assign_if(options, "midi_expand_repeats", o.midi_expand_repeats);
             assign_if(options, "midi_rpns", o.midi_rpns);
             assign_if(options, "native_version", o.native_version);
-        } else if (kind == "render") {
+        } else if (render_format(format)) {
             result.kind = ExportKind::RENDER;
             auto &o = result.render_options;
             o.score = selection;
-            auto fmt = render_format(options.at("format").get<std::string>());
+            auto fmt = render_format(format);
             if (!fmt) return destination_error(std::move(fmt.error()));
             o.format = *fmt;
             assign_if(options, "first_page", o.first_page);
             assign_if(options, "last_page", o.last_page);
             assign_if(options, "dpi", o.dpi);
+            if (o.format == engrave::RenderFormat::PNG) {
+                o.background = !json_value<bool>(options, "transparent", false);
+                o.transparent = false;
+            }
             assign_if(options, "background", o.background);
             assign_if(options, "transparent", o.transparent);
             if (o.last_page != -1 && o.last_page < o.first_page) return destination_error(invalid_error("last_page precedes first_page"));
-        } else if (kind == "audio") {
+        } else if (audio_format(format)) {
             result.kind = ExportKind::AUDIO;
             auto &o = result.audio_options;
             o.score = selection;
-            auto fmt = audio_format(options.at("format").get<std::string>());
+            auto fmt = audio_format(format);
             if (!fmt) return destination_error(std::move(fmt.error()));
             o.format = *fmt;
             assign_if(options, "bitrate_kbps", o.bitrate_kbps);
@@ -330,8 +350,7 @@ Result<ExportRequest> decode_export(const Json &j) {
         } else {
             result.kind = ExportKind::POSITIONS;
             result.position_score = selection;
-            result.position_kind = options.at("position_kind").get<std::string>() == "measure" ? engrave::PositionKind::MEASURE :
-                                                                                                 engrave::PositionKind::SEGMENT;
+            result.position_kind = format == "measure_positions" ? engrave::PositionKind::MEASURE : engrave::PositionKind::SEGMENT;
         }
         return result;
     } catch (const std::exception &e) {
@@ -340,7 +359,7 @@ Result<ExportRequest> decode_export(const Json &j) {
 }
 
 Json encode(const Artifact &artifact) {
-    return {{"mime", artifact.mime}, {"path", detail::path_text(artifact.path)}, {"size", std::to_string(artifact.size)}};
+    return {{"mime", artifact.mime}, {"path", detail::path_text(artifact.path)}, {"size", artifact.size}};
 }
 
 Result<Json> live_export(engrave::Document &document, const ExportRequest &request, const ExportLimits &limits, FnRef<bool()> cancelled,

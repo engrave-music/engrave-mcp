@@ -96,6 +96,17 @@ class Client:
             if "id" in msg:
                 self.pending[msg["id"]] = msg
 
+    def cancelled(self, ident, document=None):
+        if document is None:
+            self.rpc("ping", {})
+        else:
+            # A revision guard reaches the owner after the cancelled export, without traversing the score.
+            probe = self.tool(
+                "score_query", {"document": document, "mode": "page_count", "expected_revision": "0"}, False
+            )
+            assert probe["error"]["code"] == "RevisionConflict"
+        assert ident not in self.pending, self.pending.get(ident)
+
     def rpc(self, method, params):
         return self.receive(self.send(method, params))
 
@@ -174,13 +185,12 @@ def summary(samples):
 
 
 def export_args(doc, fmt, path, all_pages=False):
-    directory = fmt == "svg"
-    options = {"format": fmt}
+    options = {}
     if fmt != "mscz":
         options.update(first_page=0, last_page=-1 if all_pages else 0)
     return dict(
         document=doc,
-        kind="score" if fmt == "mscz" else "render",
+        format=fmt,
         options=options,
-        destination=dict(kind="directory" if directory else "file", path=str(path.resolve())),
+        path=str(path.resolve()),
     )

@@ -100,7 +100,7 @@ class Host:
                     ops=[
                         dict(
                             op="set_layout_break",
-                            measure=dict(kind="id", id=measure),
+                            measure=measure,
                             kind="page",
                             on=True,
                         )
@@ -200,11 +200,11 @@ def barrier(a, dead, report=True):
             assert not list(out.rglob(".engrave-stage-*"))
         else:
             seen = {}
-            while not {30, 31, 12} <= seen.keys():
+            while not {30, 12} <= seen.keys():
                 r = h.read()
                 seen[r["id"]] = r
             assert seen[30]["result"]["structuredContent"]["ok"]
-            assert seen[31]["error"]["code"] == -32800
+            assert 31 not in seen
         return dict(dead=dead, report=report, exit=h.p.returncode)
     finally:
         h.close()
@@ -265,12 +265,12 @@ def diagnostic_cycles(a):
         base = proc.num_threads()
         samples = []
         for i in range(80):
-            args = dict(
-                document=h.doc,
-                kind="render",
-                options=dict(format="svg", first_page=1000, last_page=1000),
-                destination=dict(kind="directory", path=str(pages)),
-            )
+            args = {
+                "document": h.doc,
+                "format": "svg",
+                "path": str(pages),
+                "options": {"first_page": 1000, "last_page": 1000},
+            }
             h.send("tools/call", dict(name="score_export", arguments=args), i + 100)
             result = h.read()["result"]["structuredContent"]
             assert result["error"]["code"] == "InvalidArgument", result

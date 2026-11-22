@@ -44,12 +44,7 @@ def main():
         ]
 
     def args(doc, kind, fmt, path, overrides=None):
-        return dict(
-            document=doc,
-            kind=kind,
-            options=dict(format=fmt, **(overrides or {})),
-            destination=dict(kind="file", path=str(path)),
-        )
+        return {"document": doc, "format": fmt, "path": str(path), "options": {**(overrides or {})}}
 
     def wait_marker(c, marker, offset):
         until = time.monotonic() + 20
@@ -109,11 +104,11 @@ def main():
         selection_args = args(doc, "audio", "wav", selected_path)
         c.tool("score_export", selection_args)
         selected_hash = hashlib.sha256(selected_path.read_bytes()).hexdigest()
-        c.tool("runtime_info", {"action": "set_soundfonts", "files": []})
+        c.tool("runtime_configure", {"soundfonts": []})
         assert c.tool("score_export", selection_args, False)["error"]["code"] == "Unsupported"
         c.tool(
-            "runtime_info",
-            {"action": "set_soundfonts", "files": [str(a.soundfont.resolve())]},
+            "runtime_configure",
+            {"soundfonts": [str(a.soundfont.resolve())]},
         )
         c.tool("score_export", selection_args)
         assert hashlib.sha256(selected_path.read_bytes()).hexdigest() == selected_hash
@@ -158,9 +153,10 @@ def main():
                 wait_marker(c, "LIVE_CANCEL_POLL", offset)
                 start = time.perf_counter()
                 c.send("notifications/cancelled", dict(requestId=ident), True)
-                response = c.receive(ident)
+                c.cancelled(ident, doc)
+                response = None
                 samples.append((time.perf_counter() - start) * 1000)
-                assert response.get("error", {}).get("code") == -32800, response
+
                 assert not path.exists()
             c.tool(
                 "score_export",

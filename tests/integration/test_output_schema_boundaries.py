@@ -7,7 +7,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from engrave_mcp_testing.mcp_client import TOOLS, VALIDATORS, Client
+from engrave_mcp_testing.mcp_client import TOOLS, Client
 from engrave_mcp_testing.paths import REPO_ROOT
 
 
@@ -28,7 +28,7 @@ async def run(args):
         listed = await client.call("tools/list", {})
         live = {tool["name"]: tool for tool in listed["result"]["tools"]}
         for name, definition in TOOLS.items():
-            assert live[name]["outputSchema"] == definition["outputSchema"], name
+            assert live[name] == definition and "outputSchema" not in definition, name
         doc = (await client.tool("score_open", {"path": str(path.resolve())}))["document"]
         outline = await client.tool("score_outline", {"document": doc})
         assert outline["outline"]["title"] == title
@@ -43,14 +43,10 @@ async def run(args):
             {
                 "document": doc,
                 "mode": "properties",
-                "target": {"kind": "id", "id": elements["elements"][0]["id"]},
+                "target": elements["elements"][0]["id"],
             },
         )
-        strings = [
-            p["value"]["value"]
-            for p in properties["properties"]
-            if isinstance(p["value"], dict) and p["value"].get("kind") == "string"
-        ]
+        strings = [p["value"] for p in properties["properties"] if isinstance(p["value"], str)]
         assert any(lyric in value for value in strings), [
             (p["name"], p["value"].get("kind")) for p in properties["properties"] if isinstance(p["value"], dict)
         ]
@@ -63,21 +59,6 @@ async def run(args):
         assert len(tracks["audio_tracks"]["tracks"]) == 261
         await client.tool("score_close", {"document": doc})
 
-    # These DTO-shaped mutations independently exercise the remaining removed
-    # collection bounds. They test the declared schema, not live engine output.
-    synthetic = json.loads(json.dumps(outline))
-    synthetic["outline"]["measures"] *= 100001
-    synthetic["outline"]["parts"] *= 4097
-    synthetic["outline"]["signatures"] *= 4097
-    VALIDATORS["score_outline"].validate(synthetic)
-    synthetic_edit = json.loads(json.dumps(edited))
-    synthetic_edit["created"] = ["A_A"] * 65537
-    synthetic_edit["diagnostics"] = [{"severity": "warning", "message": "test"}] * 4097
-    synthetic_edit["diagnostics"][0] = {"severity": "warning", "message": "D" * 65537}
-    VALIDATORS["score_edit"].validate(synthetic_edit)
-    synthetic_properties = json.loads(json.dumps(properties))
-    synthetic_properties["properties"] = synthetic_properties["properties"][:1] * 4097
-    VALIDATORS["score_query"].validate(synthetic_properties)
     print(
         json.dumps(
             {
@@ -85,8 +66,7 @@ async def run(args):
                 "part_name_characters": len(part_name),
                 "lyric_characters": len(lyric),
                 "audio_tracks": 261,
-                "synthetic_schema_measures": len(synthetic["outline"]["measures"]),
-                "synthetic_created_ids": len(synthetic_edit["created"]),
+                "applied_edits": edited["applied"],
             }
         )
     )

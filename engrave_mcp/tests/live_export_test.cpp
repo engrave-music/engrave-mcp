@@ -52,12 +52,11 @@ int main(int argc, char **argv) {
                 const bool svg = std::string(fmt) == "svg" || std::string(fmt) == "png", pdf = std::string(fmt) == "pdf";
                 auto target = out / fmt;
                 if (svg) fs::create_directories(target);
-                auto request =
-                    decode_export({{"document", "doc-oracle-1"},
-                                   {"kind", svg || pdf ? "render" : "score"},
-                                   {"options", svg || pdf ? Json{{"format", fmt}, {"first_page", 0}, {"last_page", pdf ? -1 : 0}} :
-                                                            Json{{"format", fmt}}},
-                                   {"destination", {{"kind", svg ? "directory" : "file"}, {"path", target.generic_string()}}}});
+                auto request = decode_export(
+                    {{"document", "doc-oracle-1"},
+                     {"format", fmt},
+                     {"options", svg || pdf ? Json{{"first_page", 0}, {"last_page", pdf ? -1 : 0}} : music::make_object<Json>()},
+                     {"path", target.generic_string()}});
                 if (!request) throw std::runtime_error(request.error().message);
                 std::vector<std::byte> expected;
                 if (svg || pdf) {

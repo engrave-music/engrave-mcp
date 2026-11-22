@@ -14,13 +14,15 @@ enum class HandlerId {
     CLOSE,
     OUTLINE,
     QUERY,
-    DESCRIBE,
+    READ_MUSIC,
     EDIT,
     EXPORT,
     RUNTIME_INFO,
     CHECKPOINT,
     RESTORE_CHECKPOINT,
     DROP_CHECKPOINT,
+    WRITE_PHRASE,
+    CONFIGURE,
     COUNT
 };
 enum class Scheduling { OWNER };

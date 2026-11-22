@@ -35,15 +35,7 @@ async def valid_score_imports(binary, resources, out, upstream):
                 document = opened.structured_content["document"]
                 exported = await session.call_tool(
                     "score_export",
-                    {
-                        "document": document,
-                        "kind": "score",
-                        "options": {"format": "mscz"},
-                        "destination": {
-                            "kind": "file",
-                            "path": str(out / "valid.mscz"),
-                        },
-                    },
+                    {"document": document, "format": "mscz", "path": str(out / "valid.mscz")},
                 )
                 assert not exported.is_error, exported.content
                 assert exported.structured_content["artifacts"] and (out / "valid.mscz").stat().st_size > 0

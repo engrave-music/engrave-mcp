@@ -58,12 +58,12 @@ def main():
             for fmt in ("mscx", "mscz"):
                 for reason in ("cancel", "deadline"):
                     destination = out / f"{action}-{fmt}.test-470-{reason}.{fmt}"
-                    arguments = dict(
-                        document=opened["document"],
-                        kind="score",
-                        options=dict(format=fmt, native_version="4.70"),
-                        destination=dict(kind="file", path=str(destination)),
-                    )
+                    arguments = {
+                        "document": opened["document"],
+                        "format": fmt,
+                        "path": str(destination),
+                        "options": {"native_version": "4.70"},
+                    }
                     offset = (out / "stderr.log").stat().st_size
                     request = client.send("tools/call", dict(name="score_export", arguments=arguments))
                     until = time.monotonic() + 15
@@ -79,11 +79,15 @@ def main():
                             dict(requestId=request),
                             notification=True,
                         )
-                    response = client.receive(request)
+                    if reason == "cancel":
+                        assert client.call("score_outline", {"document": opened["document"]})["ok"]
+                        response = None
+                    else:
+                        response = client.receive(request)
                     trace = (out / "stderr.log").read_bytes()[offset:].decode(errors="replace")
                     assert "WRITE470_RETURN units=2 error=Cancelled" in trace, trace
                     if reason == "cancel":
-                        assert response.get("error", {}).get("code") == -32800, response
+                        assert request not in client.seen
                     else:
                         value = response["result"]["structuredContent"]
                         assert not value["ok"] and value["error"]["code"] == "DeadlineExceeded", value
@@ -93,12 +97,12 @@ def main():
         destination = out / "recovery.mscx"
         recovery = client.call(
             "score_export",
-            dict(
-                document=opened["document"],
-                kind="score",
-                options=dict(format="mscx", native_version="4.70"),
-                destination=dict(kind="file", path=str(destination)),
-            ),
+            {
+                "document": opened["document"],
+                "format": "mscx",
+                "path": str(destination),
+                "options": {"native_version": "4.70"},
+            },
         )
         assert recovery["ok"], recovery
         assert ET.parse(destination).getroot().attrib["version"] == "4.70"

@@ -151,22 +151,12 @@ async def export(session, identity, fmt, dest, **options):
     page = options.pop("page", 0)
     if options:
         raise ValueError(f"unsupported capture options: {options}")
-    score = {"excerpt": selected} if selected is not None else None
-    if fmt in ("measurePositions", "segmentPositions"):
-        kind, export_options = (
-            "positions",
-            {"position_kind": "measure" if fmt.startswith("measure") else "segment"},
-        )
-    elif fmt in ("svg", "png", "pdf"):
-        kind, export_options = "render", {"format": fmt}
-        if fmt != "pdf":
-            export_options.update(first_page=page, last_page=page)
-    elif fmt == "wav":
-        kind, export_options = "audio", {"format": fmt}
-    else:
-        kind, export_options = "score", {"format": fmt}
-    if score is not None:
-        export_options["score"] = score
+    wire_format = {"measurePositions": "measure_positions", "segmentPositions": "segment_positions"}.get(fmt, fmt)
+    export_options = {}
+    if fmt in ("png", "svg"):
+        export_options.update(first_page=page, last_page=page)
+    if fmt == "png":
+        export_options.update(background=False, transparent=True)
     directory = fmt in ("svg", "png")
     with tempfile.TemporaryDirectory(prefix="render-", dir=dest.parent) as tmp:
         location = Path(tmp) if directory else dest
@@ -175,12 +165,10 @@ async def export(session, identity, fmt, dest, **options):
             "score_export",
             {
                 **identity,
-                "kind": kind,
+                "format": wire_format,
+                "path": str(location),
                 "options": export_options,
-                "destination": {
-                    "kind": "directory" if directory else "file",
-                    "path": str(location),
-                },
+                **({"excerpt": selected} if selected else {}),
             },
         )
         if error:
@@ -230,7 +218,7 @@ async def open_fixture(session, source):
 
 async def generate_excerpts(session, identity):
     outline = await required(session, "score_outline", identity)
-    parts = [{"kind": "id", "id": part["id"]} for part in outline["outline"]["parts"]]
+    parts = [part["id"] for part in outline["outline"]["parts"]]
     await required(
         session,
         "score_edit",
@@ -609,7 +597,7 @@ async def apply_edit_scenario(session, identity, name, scenario, raw):
     outline = await required(session, "score_outline", identity)
     if scenario["kind"] == "replace-measures":
         measure = outline["outline"]["measures"][scenario["start_measure"]]
-        tick = Fraction(int(measure["tick"]["num"]), int(measure["tick"]["den"]))
+        tick = Fraction(measure["tick"])
         ops = []
         for item in scenario["notes"]:
             duration = Fraction(item["ticks"], 1920)
@@ -619,18 +607,12 @@ async def apply_edit_scenario(session, identity, name, scenario, raw):
                     "at": {
                         "kind": "segment",
                         "measure": measure["id"],
-                        "staff": 0,
-                        "voice": 0,
-                        "tick": {
-                            "num": str(tick.numerator),
-                            "den": str(tick.denominator),
-                        },
+                        "staff": 1,
+                        "voice": 1,
+                        "tick": str(str(tick.numerator)) + "/" + str(str(tick.denominator)),
                         "segment_kind": "ChordRest",
                     },
-                    "duration": {
-                        "num": str(duration.numerator),
-                        "den": str(duration.denominator),
-                    },
+                    "duration": str(str(duration.numerator)) + "/" + str(str(duration.denominator)),
                     "pitches": [{"pitch": pitch} for pitch in item["pitches"]],
                 }
             )
@@ -647,7 +629,7 @@ async def apply_edit_scenario(session, identity, name, scenario, raw):
             revision = result["revision"]
         return
     else:
-        staves = [staff["index"] for staff in outline["outline"]["parts"][scenario["part"]]["staves"]]
+        staves = [staff["staff"] for staff in outline["outline"]["parts"][scenario["part"]]["staves"]]
         view = await required(
             session,
             "score_query",
@@ -657,7 +639,7 @@ async def apply_edit_scenario(session, identity, name, scenario, raw):
                 "query": {
                     "types": ["Note"],
                     "staves": staves,
-                    "first_measure": 0,
+                    "first_measure": 1,
                     "measure_count": scenario["measures"],
                     "props": ["pitch"],
                     "limit": 100,
@@ -687,7 +669,7 @@ async def apply_edit_scenario(session, identity, name, scenario, raw):
         candidates = [n for n in view["elements"] if n["parent"] not in grace]
         candidates.sort(
             key=lambda n: (
-                Fraction(int(n["tick"]["num"]), int(n["tick"]["den"])),
+                Fraction(n["tick"]),
                 n["staff"],
                 n["voice"],
             )
@@ -695,8 +677,8 @@ async def apply_edit_scenario(session, identity, name, scenario, raw):
         targets = candidates[: scenario["notes"]]
         signatures = [
             (
-                int(n["props"][0]["value"]["value"]),
-                Fraction(int(n["tick"]["num"]), int(n["tick"]["den"])),
+                int(n["props"][0]["value"]),
+                Fraction(n["tick"]),
                 n["staff"],
             )
             for n in targets
@@ -719,8 +701,8 @@ async def apply_edit_scenario(session, identity, name, scenario, raw):
         ops = [
             {
                 "op": "set_pitch",
-                "note": {"kind": "id", "id": n["id"]},
-                "pitch": int(n["props"][0]["value"]["value"]) + scenario["delta"],
+                "note": n["id"],
+                "pitch": int(n["props"][0]["value"]) + scenario["delta"],
             }
             for n in targets
         ]

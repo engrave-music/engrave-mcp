@@ -135,9 +135,8 @@ async def run(args):
                         "score_export",
                         {
                             "document": document,
-                            "kind": "score",
-                            "options": {"format": fmt},
-                            "destination": {"kind": "file", "path": str(target)},
+                            "format": fmt,
+                            "path": str(target),
                         },
                     )
 

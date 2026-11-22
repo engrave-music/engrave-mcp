@@ -57,12 +57,12 @@ def main():
         assert opened["ok"], opened
 
         def arguments(action, fmt, destination):
-            return dict(
-                document=opened["document"],
-                kind="score",
-                options=dict(format=fmt, native_version="4.70"),
-                destination=dict(kind="file", path=str(destination)),
-            )
+            return {
+                "document": opened["document"],
+                "format": fmt,
+                "path": str(destination),
+                "options": {"native_version": "4.70"},
+            }
 
         for action in ("live",):
             for fmt in ("mscx", "mscz"):
@@ -104,12 +104,16 @@ def main():
                             dict(requestId=request),
                             notification=True,
                         )
-                    response = client.receive(request)
+                    if reason == "cancel":
+                        assert client.call("score_outline", {"document": opened["document"]})["ok"]
+                        response = None
+                    else:
+                        response = client.receive(request)
                     trace = (out / "stderr.log").read_bytes()[offset:].decode(errors="replace")
                     record.update(trace=trace, response=response)
                     assert "WRITE470_RETURN units=2 error=Cancelled" in trace, trace
                     if reason == "cancel":
-                        assert response.get("error", {}).get("code") == -32800, response
+                        assert request not in client.seen
                     else:
                         value = response["result"]["structuredContent"]
                         assert not value["ok"] and value["error"]["code"] == "DeadlineExceeded", value

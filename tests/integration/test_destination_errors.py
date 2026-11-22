@@ -38,7 +38,7 @@ def main():
                 ops=[
                     dict(
                         op="set_layout_break",
-                        measure=dict(kind="id", id=measure),
+                        measure=measure,
                         kind="page",
                         on=True,
                     )
@@ -47,17 +47,7 @@ def main():
         )
 
         def export(fmt, dest, ok=True):
-            score = fmt in ("mscx", "mscz", "musicxml", "mxl", "midi")
-            kind = "score" if score else ("audio" if fmt == "wav" else "render")
-            args = dict(
-                document=doc,
-                kind=kind,
-                options=dict(format=fmt),
-                destination=dict(
-                    kind="directory" if fmt in ("svg", "png") else "file",
-                    path=str(dest),
-                ),
-            )
+            args = {"document": doc, "format": fmt, "path": str(dest)}
             return c.tool("score_export", args, ok)
 
         for fmt in (
@@ -86,7 +76,7 @@ def main():
             errors = {}
             for fmt, dest in [("svg", target), ("pdf", target / "out.pdf")]:
                 args = export_args(doc, fmt, a.output, True)
-                args["destination"]["path"] = str(dest)  # Never resolve away a failing probe.
+                args["path"] = str(dest)  # Never resolve away a failing probe.
                 error = c.tool("score_export", args, False)["error"]
                 assert error["code"] == code, error
                 assert not error.get("published_artifacts"), error
@@ -127,7 +117,7 @@ def main():
                     ]:
                         dest = str(root / position / "missing") + "/" + suffix
                         args = export_args(doc, fmt, a.output, True)
-                        args["destination"]["path"] = dest
+                        args["path"] = dest
                         error = c.tool("score_export", args, False)["error"]
                         assert error["code"] == "InvalidArgument", error
                         assert dest in error["message"], error
@@ -148,7 +138,7 @@ def main():
             ]
             for index, (fmt, dest) in enumerate(namespace_cases):
                 args = export_args(doc, fmt, a.output, True)
-                args["destination"]["path"] = dest
+                args["path"] = dest
                 error = c.tool("score_export", args, False)["error"]
                 assert error["code"] == "InvalidArgument", error
                 assert dest in error["message"], error
@@ -162,7 +152,7 @@ def main():
             long_name = "\U0001f600" * 4082 + "?"
             long_dest = "long-invalid/" + long_name
             args = export_args(doc, "pdf", a.output, True)
-            args["destination"]["path"] = long_dest
+            args["path"] = long_dest
             error = c.tool("score_export", args, False)["error"]
             assert error["code"] == "InvalidArgument", error
             message = error["message"]
@@ -179,7 +169,7 @@ def main():
             root = a.output / f"invalid-nul-{fmt}"
             for dest in ("", str(root / "missing") + "/bad\0name"):
                 args = export_args(doc, fmt, a.output, True)
-                args["destination"]["path"] = dest
+                args["path"] = dest
                 error = c.tool("score_export", args, False)["error"]
                 assert error["code"] == "InvalidArgument", error
                 assert "destination '" + dest + "'" in error["message"], error

@@ -275,9 +275,9 @@ async def run_roundtrip_for_target(
         "score_export",
         {
             "document": doc,
-            "kind": "positions",
-            "options": {"position_kind": "measure", **opt_score},
-            "destination": {"kind": "file", "path": str(src_pos_m_path.resolve())},
+            "format": ("measure" + "_positions"),
+            "path": str(src_pos_m_path.resolve()),
+            "options": {**(opt_score)},
         },
     )
     src_pos_m = json.loads(src_pos_m_path.read_text("utf-8"))
@@ -288,9 +288,9 @@ async def run_roundtrip_for_target(
         "score_export",
         {
             "document": doc,
-            "kind": "positions",
-            "options": {"position_kind": "segment", **opt_score},
-            "destination": {"kind": "file", "path": str(src_pos_s_path.resolve())},
+            "format": ("segment" + "_positions"),
+            "path": str(src_pos_s_path.resolve()),
+            "options": {**(opt_score)},
         },
     )
     src_pos_s = json.loads(src_pos_s_path.read_text("utf-8"))
@@ -299,12 +299,7 @@ async def run_roundtrip_for_target(
     src_pdf_path = out_dir / f"{target_desc}_src.pdf"
     await session.call_tool(
         "score_export",
-        {
-            "document": doc,
-            "kind": "render",
-            "options": {"format": "pdf", **opt_score},
-            "destination": {"kind": "file", "path": str(src_pdf_path.resolve())},
-        },
+        {"document": doc, "format": "pdf", "path": str(src_pdf_path.resolve()), "options": {**(opt_score)}},
     )
     src_pdf_desc = describe_pdf(src_pdf_path)
 
@@ -315,15 +310,9 @@ async def run_roundtrip_for_target(
         "score_export",
         {
             "document": doc,
-            "kind": "render",
-            "options": {
-                "format": "png",
-                "dpi": 144,
-                "first_page": 0,
-                "last_page": 0,
-                **opt_score,
-            },
-            "destination": {"kind": "directory", "path": str(src_png_dir.resolve())},
+            "format": "png",
+            "path": str(src_png_dir.resolve()),
+            "options": {"dpi": 144, "first_page": 0, "last_page": 0, **(opt_score)},
         },
     )
     src_png_file = next(src_png_dir.glob("page-*.png"))
@@ -336,9 +325,9 @@ async def run_roundtrip_for_target(
             "score_export",
             {
                 "document": doc,
-                "kind": "score",
-                "options": {"format": fmt, "native_version": VERSION, **opt_score},
-                "destination": {"kind": "file", "path": str(export_path.resolve())},
+                "format": fmt,
+                "path": str(export_path.resolve()),
+                "options": {"native_version": VERSION, **(opt_score)},
             },
         )
         value = response.structured_content
@@ -364,24 +353,14 @@ async def run_roundtrip_for_target(
         reop_pos_m_path = out_dir / f"{target_desc}_{fmt}_pos_m.json"
         await session.call_tool(
             "score_export",
-            {
-                "document": doc_reop,
-                "kind": "positions",
-                "options": {"position_kind": "measure"},
-                "destination": {"kind": "file", "path": str(reop_pos_m_path.resolve())},
-            },
+            {"document": doc_reop, "format": ("measure" + "_positions"), "path": str(reop_pos_m_path.resolve())},
         )
         reop_pos_m = json.loads(reop_pos_m_path.read_text("utf-8"))
 
         reop_pos_s_path = out_dir / f"{target_desc}_{fmt}_pos_s.json"
         await session.call_tool(
             "score_export",
-            {
-                "document": doc_reop,
-                "kind": "positions",
-                "options": {"position_kind": "segment"},
-                "destination": {"kind": "file", "path": str(reop_pos_s_path.resolve())},
-            },
+            {"document": doc_reop, "format": ("segment" + "_positions"), "path": str(reop_pos_s_path.resolve())},
         )
         reop_pos_s = json.loads(reop_pos_s_path.read_text("utf-8"))
 
@@ -389,12 +368,7 @@ async def run_roundtrip_for_target(
         reop_pdf_path = out_dir / f"{target_desc}_{fmt}.pdf"
         await session.call_tool(
             "score_export",
-            {
-                "document": doc_reop,
-                "kind": "render",
-                "options": {"format": "pdf"},
-                "destination": {"kind": "file", "path": str(reop_pdf_path.resolve())},
-            },
+            {"document": doc_reop, "format": "pdf", "path": str(reop_pdf_path.resolve())},
         )
         reop_pdf_desc = describe_pdf(reop_pdf_path)
         pdf_comparison = compare_vectors_pdf(src_pdf_path, reop_pdf_path)
@@ -406,17 +380,9 @@ async def run_roundtrip_for_target(
             "score_export",
             {
                 "document": doc_reop,
-                "kind": "render",
-                "options": {
-                    "format": "png",
-                    "dpi": 144,
-                    "first_page": 0,
-                    "last_page": 0,
-                },
-                "destination": {
-                    "kind": "directory",
-                    "path": str(reop_png_dir.resolve()),
-                },
+                "format": "png",
+                "path": str(reop_png_dir.resolve()),
+                "options": {"dpi": 144, "first_page": 0, "last_page": 0},
             },
         )
         reop_png_file = next(reop_png_dir.glob("page-*.png"))

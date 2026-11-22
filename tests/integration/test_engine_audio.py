@@ -107,12 +107,7 @@ async def capture_current_audio(
                     _, error = await golden.call_tool(
                         session,
                         "score_export",
-                        {
-                            "document": proof_document,
-                            "kind": "score",
-                            "options": {"format": "mscx"},
-                            "destination": {"kind": "file", "path": str(proof)},
-                        },
+                        {"document": proof_document, "format": "mscx", "path": str(proof)},
                     )
                     assert not error, f"export version proof: {error}"
                     await golden.call_tool(session, "score_close", {"document": proof_document})
@@ -171,12 +166,7 @@ async def capture_current_audio(
                                     _, error = await golden.call_tool(
                                         session,
                                         "score_export",
-                                        {
-                                            "document": document,
-                                            "kind": "audio",
-                                            "options": {"format": "wav"},
-                                            "destination": {"kind": "file", "path": str(wav)},
-                                        },
+                                        {"document": document, "format": "wav", "path": str(wav)},
                                     )
                                     assert not error, f"{name}: audio export failed: {error}"
                                     golden.write_json(target / name / "audio.json", golden.describe_audio(wav))
@@ -282,18 +272,12 @@ async def test_mcp_level_integration(
     async with Client(args, out_dir) as client:
 
         async def export(doc, fmt, path, options=None, score=None):
-            kind = "score" if fmt == "midi" else "audio"
-            values = {"format": fmt, **(options or {})}
+            values = {"document": doc, "format": fmt, "path": str(path.resolve()), "options": options or {}}
             if score is not None:
-                values["score"] = {"excerpt": score}
+                values["excerpt"] = score
             await client.tool(
                 "score_export",
-                {
-                    "document": doc,
-                    "kind": kind,
-                    "options": values,
-                    "destination": {"kind": "file", "path": str(path.resolve())},
-                },
+                values,
             )
             assert path.is_file() and path.stat().st_size > 0
             return path

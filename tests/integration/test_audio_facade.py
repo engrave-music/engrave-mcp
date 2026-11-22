@@ -72,7 +72,7 @@ async def run(args):
         async def tracks(doc, score=None):
             values = {"document": doc, "mode": "audio_tracks"}
             if score is not None:
-                values["score"] = {"excerpt": score}
+                values["excerpt"] = score
             return (await client.tool("score_query", values))["audio_tracks"]
 
         async def export(doc, filename, options=None, score=None):
@@ -80,17 +80,12 @@ async def run(args):
             fmt = path.suffix.lstrip(".")
             if fmt == "ogg":
                 fmt = "opus"
-            values = {"format": fmt, **(options or {})}
+            values = {"document": doc, "format": fmt, "path": str(path), "options": options or {}}
             if score is not None:
-                values["score"] = {"excerpt": score}
+                values["excerpt"] = score
             await client.tool(
                 "score_export",
-                {
-                    "document": doc,
-                    "kind": "audio",
-                    "options": values,
-                    "destination": {"kind": "file", "path": str(path)},
-                },
+                values,
             )
             assert path.is_file() and path.stat().st_size > 0
             return path
@@ -229,7 +224,7 @@ async def run(args):
                 "ops": [
                     {
                         "op": "generate_excerpts",
-                        "parts": [{"kind": "id", "id": part["id"]} for part in parts],
+                        "parts": [part["id"] for part in parts],
                     }
                 ],
             },
@@ -259,12 +254,7 @@ async def run(args):
                 path.write_bytes(b"unchanged")
                 await client.tool(
                     "score_export",
-                    {
-                        "document": doc,
-                        "kind": "audio",
-                        "options": {"format": "wav", **bad},
-                        "destination": {"kind": "file", "path": str(path)},
-                    },
+                    {"document": doc, "format": "wav", "path": str(path), "options": {**bad}},
                     error=True,
                 )
                 assert path.read_bytes() == b"unchanged"
@@ -284,15 +274,7 @@ async def run(args):
                     path.write_bytes(b"unchanged")
                 await client.tool(
                     "score_export",
-                    {
-                        "document": doc,
-                        "kind": kind,
-                        "options": {"format": fmt, "master_volume_db": 0},
-                        "destination": {
-                            "kind": "directory" if directory else "file",
-                            "path": str(path),
-                        },
-                    },
+                    {"document": doc, "format": fmt, "path": str(path), "options": {"master_volume_db": 0}},
                     error=True,
                 )
                 if directory:

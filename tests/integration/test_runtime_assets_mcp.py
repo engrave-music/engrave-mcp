@@ -52,12 +52,10 @@ async def run(args):
                 "score_export",
                 {
                     "document": doc,
-                    "kind": kind,
-                    "options": options,
-                    "destination": {
-                        "kind": "directory" if directory else "file",
-                        "path": str(path),
-                    },
+                    "format": options.get("format") or options.get("position_kind", "") + "_positions",
+                    "path": str(path),
+                    "options": {k: v for k, v in options.items() if k not in ("score", "format", "position_kind")},
+                    **options.get("score", {}),
                 },
             )
 
@@ -74,10 +72,10 @@ async def run(args):
         await export(doc, "render", "svg", control)
         await export(doc, "render", "svg", excerpt_before, excerpt=excerpt)
         await export(doc, "render", "svg", before)
-        font = await client.tool("runtime_info", {"action": "add_font", "path": str(font_input)})
+        font = await client.tool("runtime_configure", {"add_font": str(font_input)})
         font_path = Path(font["fonts"][-1])
         assert font_path != font_input and font_path.read_bytes() == font_input.read_bytes()
-        again = await client.tool("runtime_info", {"action": "add_font", "path": str(font_input)})
+        again = await client.tool("runtime_configure", {"add_font": str(font_input)})
         assert again["fonts"] == font["fonts"]
         font_input.write_bytes(b"invalid font")
         await export(doc, "render", "svg", after)
@@ -110,8 +108,8 @@ async def run(args):
         await export(audio_doc, "audio", "wav", fluid)
         await export(audio_doc, "audio", "wav", captured_path)
         selected = await client.tool(
-            "runtime_info",
-            {"action": "set_soundfonts", "files": [str(soundfont_input)]},
+            "runtime_configure",
+            {"soundfonts": [str(soundfont_input)]},
         )
         retained_sf = Path(selected["capabilities"]["soundfonts"][0])
         assert retained_sf != soundfont_input and retained_sf.read_bytes() == soundfont_input.read_bytes()
@@ -123,8 +121,8 @@ async def run(args):
             audio, rate = sf.read(path, always_2d=True)
             assert rate == 44100 and np.isfinite(audio).all() and np.max(np.abs(audio)) > 0.001
         await client.tool(
-            "runtime_info",
-            {"action": "set_soundfonts", "files": [str(soundfont_input)]},
+            "runtime_configure",
+            {"soundfonts": [str(soundfont_input)]},
             error=True,
         )
         await export(audio_doc, "audio", "wav", again_path)

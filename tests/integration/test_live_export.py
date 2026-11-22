@@ -164,10 +164,9 @@ def main():
             if fmt in ("svg", "png"):
                 path.mkdir(exist_ok=True)
             args = export_args(doc, "svg" if fmt == "png" else fmt, path)
-            args["options"]["format"] = fmt
+            args["format"] = fmt
             if fmt in ("mscx", "musicxml", "mxl", "midi"):
-                args["kind"] = "score"
-                args["options"] = {"format": fmt}
+                args["options"] = {}
             r = c.tool("score_export", args)
             artifact = Path(r["artifacts"][0]["path"])
             content = artifact.read_bytes()
@@ -192,12 +191,7 @@ def main():
         positions = out / "positions.json"
         c.tool(
             "score_export",
-            dict(
-                document=doc,
-                kind="positions",
-                options={"position_kind": "measure"},
-                destination={"kind": "file", "path": str(positions)},
-            ),
+            {"document": doc, "format": ("measure" + "_positions"), "path": str(positions)},
         )
         hashes["positions"] = hashlib.sha256(positions.read_bytes()).hexdigest()
         outline = c.tool("score_outline", {"document": doc})["outline"]
@@ -209,7 +203,7 @@ def main():
                 "ops": [
                     {
                         "op": "set_layout_break",
-                        "measure": {"kind": "id", "id": measure},
+                        "measure": measure,
                         "kind": "page",
                         "on": True,
                     }
@@ -248,7 +242,7 @@ def main():
             while "CANCEL_HANDLED" not in c.log_path.read_text(encoding="utf-8", errors="replace"):
                 assert time.monotonic() < deadline, "queued export cancellation not handled"
                 time.sleep(0.001)
-            assert c.receive(ident)["error"]["code"] == -32800
+            c.cancelled(ident)
         finally:
             owner_barrier.touch()
         sleeper_msg = c.receive(sleeper)

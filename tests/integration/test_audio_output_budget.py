@@ -24,12 +24,7 @@ async def open_source(args):
         path = (args.output / "source.mscz").resolve()
         await client.tool(
             "score_export",
-            {
-                "document": doc,
-                "kind": "score",
-                "options": {"format": "mscz"},
-                "destination": {"kind": "file", "path": str(path)},
-            },
+            {"document": doc, "format": "mscz", "path": str(path)},
         )
         await client.tool("score_close", {"document": doc})
     return path, duration

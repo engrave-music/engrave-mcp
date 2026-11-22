@@ -150,12 +150,9 @@ async def produce(args, cases, fixture_root, output, binary, assets, oracle_env)
                                 path = folder / f"score.{fmt}"
                                 arguments = {
                                     "document": doc,
-                                    "kind": "score",
-                                    "options": {
-                                        "format": fmt,
-                                        "native_version": version,
-                                    },
-                                    "destination": {"kind": "file", "path": str(path)},
+                                    "format": fmt,
+                                    "path": str(path),
+                                    "options": {"native_version": version},
                                 }
                                 request = json.dumps(
                                     {"name": "score_export", "arguments": arguments},

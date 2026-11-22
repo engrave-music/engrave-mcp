@@ -28,9 +28,9 @@ def live_budget(args, source, audio_options, limit, expected):
                         "score_export",
                         {
                             "document": doc,
-                            "kind": "audio",
-                            "options": audio_options,
-                            "destination": {"kind": "file", "path": str(path)},
+                            "format": audio_options["format"],
+                            "path": str(path),
+                            "options": {k: v for k, v in audio_options.items() if k != "format"},
                         },
                         error=expected != "success",
                     )

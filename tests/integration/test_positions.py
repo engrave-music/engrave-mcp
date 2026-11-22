@@ -138,30 +138,14 @@ async def run(args):
 
                 async def export(doc, fmt, name, **kw):
                     path = out / name
-                    if fmt in ("measurePositions", "segmentPositions"):
-                        kind, options = (
-                            "positions",
-                            {"position_kind": "measure" if fmt == "measurePositions" else "segment"},
-                        )
-                    elif fmt == "png":
-                        kind, options = "render", {"format": fmt}
-                    else:
-                        kind, options = "score", {"format": fmt}
-                    options.update(kw)
-                    directory = fmt == "png"
-                    if directory:
+                    wire_format = {
+                        "measurePositions": "measure_positions",
+                        "segmentPositions": "segment_positions",
+                    }.get(fmt, fmt)
+                    if fmt == "png":
                         path.mkdir(exist_ok=True)
                     r = await call(
-                        "score_export",
-                        {
-                            "document": doc,
-                            "kind": kind,
-                            "options": options,
-                            "destination": {
-                                "kind": "directory" if directory else "file",
-                                "path": str(path),
-                            },
-                        },
+                        "score_export", {"document": doc, "format": wire_format, "path": str(path), "options": kw}
                     )
                     assert len(r["artifacts"]) == 1
                     artifact = Path(r["artifacts"][0]["path"])
@@ -182,7 +166,7 @@ async def run(args):
 
                 tools = await client.list_tools()
                 schema = next(t.input_schema for t in tools.tools if t.name == "score_export")
-                assert any(x["properties"]["kind"].get("const") == "positions" for x in schema["oneOf"])
+                assert {"measure_positions", "segment_positions"} <= set(schema["properties"]["format"]["enum"])
                 doc = (await open_xml(timed_fixture()))["document"]
                 before = await export(doc, "midi", "before.mid", midi_expand_repeats=False)
                 mappings = {}
@@ -227,6 +211,7 @@ async def run(args):
                 after = await export(doc, "midi", "after.mid", midi_expand_repeats=False)
                 assert before.read_bytes() == after.read_bytes()
                 png = await export(doc, "png", "png-page", dpi=144)
+                assert describe_png(png)["mode"] == "RGB"
                 w, h = read_png_dimensions(png)
                 size = mappings["measurePositions"]["page_size"]
                 assert (w, h) == (
@@ -245,12 +230,9 @@ async def run(args):
                             "score_export",
                             {
                                 "document": doc,
-                                "kind": "positions",
-                                "options": {
-                                    "position_kind": "measure" if fmt == "measurePositions" else "segment",
-                                    **option,
-                                },
-                                "destination": {"kind": "file", "path": str(sentinel)},
+                                "format": "measure_positions" if fmt == "measurePositions" else "segment_positions",
+                                "options": option,
+                                "path": str(sentinel),
                             },
                             True,
                         )
@@ -259,7 +241,7 @@ async def run(args):
                 engine_data = args.upstream / "tests/data"
                 fixture = engine_data / "inputs/golden/pedal.mscx"
                 opened = await call("score_open", {"path": str(fixture.resolve())})
-                png = await export(opened["document"], "png", "pedal")
+                png = await export(opened["document"], "png", "pedal", transparent=True, background=False)
                 platform = "windows" if sys.platform == "win32" else "linux"
                 baseline = engine_data / "golden" / platform / fixture.name / "page-0.png.json"
                 expected = json.loads(baseline.read_text(encoding="utf-8"))

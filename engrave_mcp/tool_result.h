@@ -21,10 +21,22 @@ inline Json make_tool_result(Json payload, bool publication = false) {
     if (test_hooks_enabled() && publication && std::getenv("ENGRAVE_MCP_TEST_THROW_WRAPPER")) {
         throw std::runtime_error("Injected failure inside completed export wrapper");
     }
-    std::string text = dump_json(payload);
-    if (text.size() > (4u * 1024u * 1024u)) {
-        text = "Tool result is available in structuredContent; its "
-               "serialized form exceeds the legacy text budget.";
+    std::string text = payload.contains("summary") ? payload.at("summary").get<std::string>() : dump_json(payload);
+    json_erase(payload, "summary");
+    if (text.size() > (256u * 1024u)) {
+        if (payload.contains("error")) {
+            const auto &e = payload.at("error");
+            text = e.at("code").get<std::string>() + ": " + e.at("message").get<std::string>();
+        } else {
+            text = "Result exceeds the text budget. Read structuredContent or request a smaller range.";
+            for (const auto &[key, field] : payload.get_object()) {
+                if (field.is_array()) text += " " + key + "=" + std::to_string(field.size()) + " items.";
+            }
+            if (payload.contains("next_cursor")) text += " next_cursor=" + dump_json(payload.at("next_cursor"));
+            for (auto key : {"document", "revision", "source_revision"}) {
+                if (payload.contains(key)) text += " " + std::string(key) + "=" + dump_json(payload.at(key));
+            }
+        }
     }
     Json content_item = make_object<Json>();
     content_item["type"] = "text";

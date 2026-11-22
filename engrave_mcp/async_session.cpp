@@ -36,6 +36,7 @@ using namespace api;
 
 struct HandlerContext {
     HostApi *host = nullptr;
+    const std::atomic<bool> *cancelled = nullptr;
 };
 
 Json open(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->open(a); }
@@ -48,9 +49,19 @@ Json outline(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->
 
 Json query(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->query(a); }
 
-Json describe(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->describe(a); }
+Json read_music(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->read_music(a); }
 
-Json edit(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->edit(a); }
+Json write_phrase(void *p, const Json &a) {
+    auto &ctx = *static_cast<HandlerContext *>(p);
+    return ctx.host->write_phrase(a, ctx.cancelled);
+}
+
+Json configure(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->configure(a); }
+
+Json edit(void *p, const Json &a) {
+    auto &ctx = *static_cast<HandlerContext *>(p);
+    return ctx.host->edit(a, ctx.cancelled);
+}
 
 Json runtime_info(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->runtime_info(a); }
 
@@ -62,8 +73,20 @@ Json drop_checkpoint(void *p, const Json &a) { return static_cast<HandlerContext
 
 Json export_request(void *, const Json &) { throw std::logic_error("export must route through owner"); }
 
-const HandlerTable handlers{
-    open, create, close, outline, query, describe, edit, export_request, runtime_info, checkpoint, restore_checkpoint, drop_checkpoint};
+const HandlerTable handlers{open,
+                            create,
+                            close,
+                            outline,
+                            query,
+                            read_music,
+                            edit,
+                            export_request,
+                            runtime_info,
+                            checkpoint,
+                            restore_checkpoint,
+                            drop_checkpoint,
+                            write_phrase,
+                            configure};
 } // namespace
 
 struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
@@ -275,7 +298,10 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
     if (!spec) throw ToolCallError("InvalidArgument", "Unknown tool");
     const auto handler = handlers[static_cast<std::size_t>(spec->handler)];
     const auto submitted = std::chrono::steady_clock::now();
-    auto request_cancel = spec->handler == HandlerId::EXPORT ? std::make_shared<std::atomic<bool>>(false) : nullptr;
+    auto request_cancel =
+        (spec->handler == HandlerId::EXPORT || spec->handler == HandlerId::EDIT || spec->handler == HandlerId::WRITE_PHRASE) ?
+            std::make_shared<std::atomic<bool>>(false) :
+            nullptr;
     if (spec->handler == HandlerId::EXPORT) {
         auto request = decode_export(arguments);
         if (!request) co_return error_envelope(request.error());
@@ -359,11 +385,16 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
     }
     co_return co_await self->dispatch<Json>(
         self->owner_io,
-        [self, handler, arguments = std::move(arguments)] {
+        [self, handler, request_cancel, arguments = std::move(arguments)] {
             HandlerContext context;
             context.host = self->host.get();
-            return handler(&context, arguments);
+            context.cancelled = request_cancel.get();
+            auto result = handler(&context, arguments);
+            if (request_cancel && result.contains("error") && result.at("error").at("code") == "Cancelled") {
+                throw asio::system_error(asio::error::operation_aborted);
+            }
+            return result;
         },
-        true);
+        true, request_cancel, true);
 }
 } // namespace music
