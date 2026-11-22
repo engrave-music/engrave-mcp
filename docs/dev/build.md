@@ -114,10 +114,12 @@ an MCP tool:
 
 Both the engine (`vendor/engrave/bazel/pch/engraving_pch.h`) and Ring 2 host
 (`bazel/pch/host_pch.h`) use relocatable Clang binary PCH
-(`-fpch-instantiate-templates`, `-Xclang -fno-pch-timestamp`,
-`-Xclang -fmodule-file-home-is-cwd`) containing only stable STL and third-party
-headers (`@glaze`, `@ngcpp_proxy`, `@unordered_dense` for the host), so edits to
-project headers never invalidate the PCH.
+containing only stable STL and third-party headers (`@glaze`, `@ngcpp_proxy`,
+`@unordered_dense` for the host), so edits to project headers never invalidate
+the PCH. The engine's PCH rule passes `-Xclang -relocatable-pch` and
+`-Xclang -isysroot -Xclang .`. Consumers use the same sysroot so
+Clang resolves cached input paths relative to the current Bazel execroot.
+Host CI enables PCH when the engine pin includes the relocatable rule.
 
 A module-first C++23 prototype (`export module music.json` / `music.registry`
 with `import std;` via `@xclang//bazel:std` and zero consumer `#include`s) was

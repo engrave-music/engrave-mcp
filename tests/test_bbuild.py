@@ -152,6 +152,10 @@ class BBuildTests(unittest.TestCase):
                             "-fno-validate-pch",
                             "-include-pch",
                             "bazel-out/engraving.pch",
+                            "-Xclang",
+                            "-isysroot",
+                            "-Xclang",
+                            ".",
                             "-fPIC",
                             "-c",
                             str(src),
@@ -198,6 +202,7 @@ class BBuildTests(unittest.TestCase):
             args = entries[0]["arguments"]
             self.assertNotIn("-include-pch", args)
             self.assertNotIn("-fno-validate-pch", args)
+            self.assertNotIn("-isysroot", args)
             self.assertFalse(any(a.startswith("--config=") for a in args))
             self.assertIn("--target=x86_64-unknown-linux-gnu", args)
             self.assertIn(f"--sysroot={str(sysroot_dir.resolve()).replace(chr(92), '/')}", args)
