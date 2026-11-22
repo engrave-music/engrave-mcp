@@ -291,7 +291,7 @@ def main():
     entries = ldd_entries(ldd, binary, CLEAN_LDD_ENV)
     bundled = classify_dependencies(entries)
     glibc = glibc_metadata(ldd, entries)
-    notices.extend(collect_pixi_runtime_notices(NATIVE_ENV, list(bundled.values())))
+    notices.extend(collect_pixi_runtime_notices(ROOT, NATIVE_ENV, list(bundled.values())))
 
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):

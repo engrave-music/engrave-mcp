@@ -115,7 +115,8 @@ def check_package(packager: Path, source: Path, directory: Path, no_strip: bool,
     assert (licenses / "freetype/FTL.TXT").is_file()
     assert (licenses / "engine-THIRD_PARTY_NOTICES.md").is_file()
     for path in licenses.rglob("*"):
-        assert path.name.lower() != "gplv2.txt" and "fdk-aac" not in path.name.lower(), path
+        rel = path.relative_to(licenses).as_posix().lower()
+        assert path.name.lower() != "gplv2.txt" and "fdk-aac" not in rel, path
     if soundfont.is_file():
         assert sha256(directory / "soundfonts" / soundfont.name) == sha256(soundfont)
 

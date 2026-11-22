@@ -1,11 +1,14 @@
 """Notices and assets shared by the native package builders."""
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from bootstrap import SOUNDFONT_SHA256
 
 Notice = tuple[str, Path, str]
 
@@ -20,11 +23,13 @@ REQUIRED_HOST_NOTICES = (
     "codecs/lame/LICENSE",
     "codecs/opus/COPYING",
     "codecs/opusenc/COPYING",
+    "codecs/opusenc/RESAMPLE-COPYING",
     "deps/amc/LICENSE",
     "deps/asio/COPYING",
     "deps/asio/LICENSE_1_0.txt",
     "deps/glaze/LICENSE",
     "deps/harfbuzz/COPYING",
+    "deps/harfbuzz/hb-ucd-COPYING",
     "deps/harfbuzz/ms-use-COPYING",
     "deps/ngcpp_proxy/LICENSE",
     "deps/pugixml/LICENSE.md",
@@ -32,6 +37,22 @@ REQUIRED_HOST_NOTICES = (
     "deps/utfcpp/LICENSE",
     "engine/mnxdom-LICENSE",
     "freetype/FTL.TXT",
+)
+
+REQUIRED_RUNTIME_LICENSE_PACKAGES = (
+    "cairo",
+    "fontconfig",
+    "libexpat",
+    "libiconv",
+    "libintl",
+    "libpng",
+    "libxcb",
+    "libzlib",
+    "pixman",
+    "vc14_runtime",
+    "xorg-libx11",
+    "xorg-libxau",
+    "xorg-libxdmcp",
 )
 
 ENGINE_THIRDPARTY_NOTICES = (
@@ -42,18 +63,17 @@ ENGINE_THIRDPARTY_NOTICES = (
     ("src/engraving/thirdparty/intervaltree/LICENSE", "thirdparty-intervaltree-LICENSE"),
 )
 
-STAGED_FONT_DIRS = (
-    "bravura",
-    "campania",
-    "edwin",
-    "finalebroadway",
-    "finalemaestro",
-    "gootville",
-    "leland",
-    "mscore",
-    "musejazz",
-    "petaluma",
-)
+
+def staged_font_dirs(engine_root: Path) -> tuple[str, ...]:
+    manifest = json.loads((engine_root / "engrave/assets.json").read_text(encoding="utf-8"))
+    dirs = set()
+    for target in manifest.get("files", {}):
+        parts = Path(target).parts
+        if len(parts) >= 3 and parts[0] == "fonts" and parts[1] != "smufl":
+            dirs.add(parts[1])
+    if not dirs:
+        raise RuntimeError(f"No staged font directories found in {engine_root / 'engrave/assets.json'}")
+    return tuple(sorted(dirs))
 
 
 def resolve_engine_root(root: Path, override: Path | None = None) -> Path:
@@ -76,17 +96,29 @@ def _validate_destinations(notices: list[Notice]) -> None:
         seen.add(key)
 
 
+def _checked_in_runtime_licenses(root: Path, package: str) -> list[Path]:
+    directory = root / "licenses/runtime" / package
+    files = [path for path in sorted(directory.rglob("*")) if path.is_file()] if directory.is_dir() else []
+    if not files:
+        raise RuntimeError(f"Missing checked-in runtime license files for {package} under {directory}")
+    return files
+
+
 def collect_package_notices(root: Path, engine_root: Path) -> list[Notice]:
     """Return (category, source, path relative to the package's license directory)."""
     host_notices = root / "licenses"
     _require_notice(root / "LICENSE")
     for relative in REQUIRED_HOST_NOTICES:
         _require_notice(host_notices / relative)
+    for package in REQUIRED_RUNTIME_LICENSE_PACKAGES:
+        _checked_in_runtime_licenses(root, package)
+
+    runtime_dir = host_notices / "runtime"
     notices = [("host", root / "LICENSE", "LICENSE")]
     notices.extend(
         ("host", path, path.relative_to(host_notices).as_posix())
         for path in sorted(host_notices.rglob("*"))
-        if path.is_file()
+        if path.is_file() and not path.is_relative_to(runtime_dir)
     )
 
     engine_license = engine_root / "LICENSE.txt"
@@ -102,14 +134,15 @@ def collect_package_notices(root: Path, engine_root: Path) -> list[Notice]:
         notices.append(("engine", path, destination))
 
     fonts_root = engine_root / "fonts"
-    for source, destination in (("README.md", "font-README.md"), ("OFL.txt", "font-OFL.txt")):
+    for source, destination in (
+        ("README.md", "font-README.md"),
+        ("OFL.txt", "font-OFL.txt"),
+        ("smufl/README.md", "font-smufl-README.md"),
+    ):
         path = fonts_root / source
         _require_notice(path)
         notices.append(("font", path, destination))
-    smufl = fonts_root / "smufl/README.md"
-    if smufl.is_file():
-        notices.append(("font", smufl, "font-smufl-README.md"))
-    for font in STAGED_FONT_DIRS:
+    for font in staged_font_dirs(engine_root):
         directory = fonts_root / font
         found = [
             path
@@ -135,23 +168,8 @@ def _environment_paths(environment: Path, path: Path) -> tuple[str, ...]:
     )
 
 
-def _pixi_package_license_files(record: dict, source: Path) -> list[Path]:
-    package = record["name"]
-    extracted = record.get("extracted_package_dir")
-    if not extracted:
-        raise RuntimeError(f"Missing extracted package directory in {source}")
-    directory = Path(extracted) / "info/licenses"
-    files = [path for path in sorted(directory.rglob("*")) if path.is_file()]
-    if not files:
-        raise RuntimeError(f"Missing runtime license files for {package} under {directory}")
-    text_directories = {path.parent for path in files if path.suffix.lower() == ".txt"}
-    return [
-        path for path in files if not (path.suffix.lower() in {".docx", ".rtf"} and path.parent in text_directories)
-    ]
-
-
-def collect_pixi_runtime_notices(environment: Path, bundled_paths: list[Path]) -> list[Notice]:
-    """Read provenance and licenses for the Pixi packages that supply bundled libraries."""
+def collect_pixi_runtime_notices(root: Path, environment: Path, bundled_paths: list[Path]) -> list[Notice]:
+    """Read conda-meta provenance and checked-in licenses for bundled Pixi libraries."""
     installed_paths = {path: keys for path in bundled_paths if (keys := _environment_paths(environment, path))}
     if not installed_paths:
         return []
@@ -181,15 +199,15 @@ def collect_pixi_runtime_notices(environment: Path, bundled_paths: list[Path]) -
         notices.append(("pixi", source, f"conda-meta/{source.name}"))
         if package in {"freetype", "libfreetype", "libfreetype6"}:
             continue
-        directory = Path(record["extracted_package_dir"]) / "info/licenses"
-        for path in _pixi_package_license_files(record, source):
+        directory = root / "licenses/runtime" / package
+        for path in _checked_in_runtime_licenses(root, package):
             notices.append(("pixi", path, f"runtime/{package}/{path.relative_to(directory).as_posix()}"))
 
     _validate_destinations(notices)
     return notices
 
 
-def collect_vc_redist_notices(vc_redist_dir: str, environment: Path) -> list[Notice]:
+def collect_vc_redist_notices(root: Path, vc_redist_dir: str) -> list[Notice]:
     """Locate the Visual C++ Runtime license for DLLs bundled from VCToolsRedistDir."""
     redist = Path(vc_redist_dir).resolve()
     direct = [
@@ -202,24 +220,18 @@ def collect_vc_redist_notices(vc_redist_dir: str, environment: Path) -> list[Not
         _validate_destinations(notices)
         return notices
 
-    conda_meta = environment / "conda-meta"
-    if conda_meta.is_dir():
-        for source in sorted(conda_meta.glob("vc14_runtime-*.json")):
-            record = json.loads(source.read_text(encoding="utf-8"))
-            if record.get("name") != "vc14_runtime":
-                continue
-            directory = Path(record["extracted_package_dir"]) / "info/licenses"
-            notices = [
-                ("vcredist", path, f"runtime/vcredist/{path.relative_to(directory).as_posix()}")
-                for path in _pixi_package_license_files(record, source)
-            ]
-            _validate_destinations(notices)
-            return notices
+    directory = root / "licenses/runtime/vc14_runtime"
+    notices = [
+        ("vcredist", path, f"runtime/vcredist/{path.relative_to(directory).as_posix()}")
+        for path in _checked_in_runtime_licenses(root, "vc14_runtime")
+    ]
+    _validate_destinations(notices)
+    return notices
 
-    raise RuntimeError(
-        f"Missing Visual C++ Runtime license for DLLs bundled from {redist}; "
-        "expected a license .txt file in VCToolsRedistDir or vc14_runtime metadata in Pixi"
-    )
+
+def _file_sha256(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def validate_soundfont(soundfont: Path | None, soundfont_license: Path | None = None) -> list[Notice]:
@@ -233,7 +245,7 @@ def validate_soundfont(soundfont: Path | None, soundfont_license: Path | None = 
         if not soundfont_license.is_file():
             raise RuntimeError(f"SoundFont license is not a regular file: {soundfont_license}")
         return [("soundfont", soundfont_license, f"soundfont-{soundfont_license.name}")]
-    if soundfont.name == "FluidR3Mono_GM.sf3":
+    if _file_sha256(soundfont) == SOUNDFONT_SHA256:
         return []
     raise RuntimeError(f"Custom SoundFont {soundfont.name} requires --soundfont-license")
 

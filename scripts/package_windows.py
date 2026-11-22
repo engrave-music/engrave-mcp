@@ -89,9 +89,14 @@ def build_windows_dll_map(library_bin: Path, vc_redist_dir: str | None) -> dict[
     available = {path.name.lower(): path for path in library_bin.glob("*.dll") if path.is_file()}
     if vc_redist_dir:
         redist = Path(vc_redist_dir).resolve() / "x64"
-        for path in sorted(redist.rglob("*.dll")):
-            if path.is_file() and not any("debug" in part.lower() for part in path.relative_to(redist).parts):
-                available[path.name.lower()] = path
+        if redist.is_dir():
+            # Prefer Microsoft.VC*.CRT release subdirectories over auxiliary redist folders.
+            crt_dirs = [path for path in sorted(redist.glob("Microsoft.VC*.CRT")) if path.is_dir()]
+            search_roots = crt_dirs or [redist]
+            for root in search_roots:
+                for path in sorted(root.rglob("*.dll")):
+                    if path.is_file() and not any("debug" in part.lower() for part in path.relative_to(redist).parts):
+                        available[path.name.lower()] = path
     return available
 
 
@@ -171,13 +176,13 @@ def main():
         for name, path in bundled.items()
         if path.is_relative_to(environment) or path.resolve().is_relative_to(env_resolved)
     }
-    notices.extend(collect_pixi_runtime_notices(environment, list(pixi_dlls.values())))
+    notices.extend(collect_pixi_runtime_notices(ROOT, environment, list(pixi_dlls.values())))
     redist_dlls = {name: path for name, path in bundled.items() if name not in pixi_dlls}
     redist_root = Path(vc_redist_dir).resolve() if vc_redist_dir else None
     if redist_dlls:
         if not vc_redist_dir:
             raise RuntimeError(f"Bundled DLLs outside Pixi without VCToolsRedistDir: {sorted(redist_dlls)}")
-        notices.extend(collect_vc_redist_notices(vc_redist_dir, environment))
+        notices.extend(collect_vc_redist_notices(ROOT, vc_redist_dir))
     stage_engine_assets(engine_root, output / "assets")
     stage_soundfont(args.soundfont, output / "soundfonts")
     stage_package_notices(output / "licenses", notices)
@@ -185,17 +190,19 @@ def main():
     def relative_origin(name: str, path: Path) -> str:
         resolved = path.resolve()
         if name in pixi_dlls:
+            if path.is_relative_to(environment):
+                return path.relative_to(environment).as_posix()
             return resolved.relative_to(env_resolved).as_posix()
         if redist_root is not None and resolved.is_relative_to(redist_root):
-            return resolved.relative_to(redist_root).as_posix()
+            return f"{redist_root.name}/{resolved.relative_to(redist_root).as_posix()}"
         return path.name
 
     manifest = {
-        str(p.relative_to(output)): {
+        p.relative_to(output).as_posix(): {
             "bytes": p.stat().st_size,
             "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
         }
-        for p in output.rglob("*")
+        for p in sorted(output.rglob("*"))
         if p.is_file()
     }
     (output / "manifest.json").write_text(
