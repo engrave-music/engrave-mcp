@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "api_json_internal.h"
+#include "utf8_text.h"
 
 namespace music::api::detail {
 namespace {
@@ -47,7 +48,7 @@ template <int Max>
 void text(const Json &j, const std::string &p) {
     if (!j.is_string()) fail(p, "wrong type", "a string");
     const auto &s = j.get<std::string>();
-    if (s.size() > Max && std::count_if(s.begin(), s.end(), [](unsigned char c) { return (c & 0xc0) != 0x80; }) > Max) {
+    if (utf8_exceeds_length(s, Max)) {
         fail(p, "text too long", "at most " + std::to_string(Max) + " Unicode characters");
     }
 }
@@ -247,7 +248,7 @@ void check_query(const Json &j, const std::string &p) {
             {"cursor", integer<0, 4096>}});
 }
 
-void check_midinote(const Json &j, const std::string &p) { object(j, p, {{"pitch", integer<0, 127>, true}, {"tpc", integer<-1, 33>}}); }
+void check_midinote(const Json &j, const std::string &p) { object(j, p, {{"pitch", integer<0, 127>, true}, {"tpc", integer<-8, 40>}}); }
 
 void check_prop(const Json &j, const std::string &p) { object(j, p, {{"name", text<4096>, true}, {"value", any, true}}); }
 
@@ -401,7 +402,7 @@ Result<void> validate_op(const Json &j, usize index) {
         }
         if (name == "set_pitch") {
             object(j, path,
-                   {{"op", text<4096>, true}, {"note", check_ref, true}, {"pitch", integer<0, 127>, true}, {"tpc", integer<-1, 33>}});
+                   {{"op", text<4096>, true}, {"note", check_ref, true}, {"pitch", integer<0, 127>, true}, {"tpc", integer<-8, 40>}});
             return {};
         }
         if (name == "set_duration") {

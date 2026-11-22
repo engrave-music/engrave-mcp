@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include "export_timing.h"
 #include "phrase.h"
 
 namespace fs = std::filesystem;
@@ -120,7 +121,7 @@ TEST(Phrase, BothSpellingsAtPickupBoundary) {
         ASSERT_TRUE(phrase) << phrase.error().message;
         ASSERT_EQ(phrase->lanes.size(), 1u);
         const auto &items = phrase->lanes.front().items;
-        ASSERT_EQ(items.size(), 2u);
+        ASSERT_EQ(items.size(), 3u);
         const auto &chord = std::get<engrave::PhraseEvent>(items[0]);
         ASSERT_EQ(chord.notes.size(), 2u);
         EXPECT_TRUE(chord.notes[0].tie_to_next);
@@ -130,7 +131,8 @@ TEST(Phrase, BothSpellingsAtPickupBoundary) {
         ASSERT_EQ(chord.before.size(), 1u);
         EXPECT_EQ(chord.before.front().kind, engrave::GraceKind::Acciaccatura);
         EXPECT_EQ(chord.before.front().notes.size(), 2u);
-        const auto &tuplet = std::get<engrave::TupletGroup>(items[1]);
+        EXPECT_TRUE(std::holds_alternative<engrave::BarCheck>(items[1]));
+        const auto &tuplet = std::get<engrave::TupletGroup>(items[2]);
         EXPECT_EQ(tuplet.actual, 3);
         EXPECT_EQ(tuplet.normal, 2);
         ASSERT_EQ(tuplet.members.size(), 3u);
@@ -138,13 +140,26 @@ TEST(Phrase, BothSpellingsAtPickupBoundary) {
         EXPECT_EQ(std::get<engrave::DrumKey>(tuplet.members[0].notes[1].pitch).key, 42);
         EXPECT_TRUE(tuplet.members[1].notes.empty());
     }
-    outline.measures[0].duration = {1, 1};
-    auto a = music::api::decode_phrase(*structured, outline, {}, music::api::PhraseSyntax::JSON);
-    auto b = music::api::decode_phrase(*textual, outline, {}, music::api::PhraseSyntax::DSL);
-    ASSERT_FALSE(a);
-    ASSERT_FALSE(b);
-    EXPECT_EQ(a.error().message, b.error().message);
-    EXPECT_TRUE(a.error().message.starts_with("lanes[0].events[1]:"));
+}
+
+TEST(Phrase, CanonicalNumbersAndStringLimits) {
+    using music::api::PhraseSyntax;
+    engrave::Outline outline{.measure_count = 1, .measures = {{{}, 0, {0, 1}, {1, 1}}}};
+    auto rejects = [&](const Json &lane, PhraseSyntax syntax, std::string_view message) {
+        auto decoded = music::api::decode_phrase(music::json_array<Json>({lane}), outline, {}, syntax);
+        ASSERT_FALSE(decoded);
+        EXPECT_NE(decoded.error().message.find(message), std::string::npos);
+    };
+    for (auto spelling : {"C0004", "C-0"}) {
+        rejects({{"measure", 1}, {"content", spelling}}, PhraseSyntax::DSL, "canonical decimal integer");
+        rejects({{"measure", 1}, {"events", music::json_array<Json>({Json{{"pitches", music::json_array<Json>({spelling})}}})}},
+                PhraseSyntax::JSON, "canonical decimal integer");
+    }
+    rejects({{"measure", 1}, {"content", std::string(65535, ' ') + "C4"}}, PhraseSyntax::DSL, "65536 Unicode characters");
+    std::string long_pitch;
+    for (int i = 0; i < 4097; ++i) long_pitch += "\xc3\xa9";
+    rejects({{"measure", 1}, {"events", music::json_array<Json>({Json{{"pitches", music::json_array<Json>({long_pitch})}}})}},
+            PhraseSyntax::JSON, "4096 Unicode characters");
 }
 
 TEST(Phrase, AtomicWritesHaveMatchingReadback) {
@@ -193,6 +208,10 @@ TEST(Phrase, AtomicWritesHaveMatchingReadback) {
                 EXPECT_EQ(note.at("written"), "B#3");
                 EXPECT_NE(note.at("concert"), note.at("written"));
                 EXPECT_EQ(window.at("tuplets").size(), 1u);
+                const auto &principal = window.at("measures")[1].at("voices")[0].at("events")[4];
+                EXPECT_EQ(principal.at("grace_before")[0].at("duration"), "1/8");
+                EXPECT_EQ(principal.at("grace_before")[1].at("duration"), "1/16");
+                EXPECT_EQ(principal.at("grace_after")[0].at("duration"), "1/16");
             }
             if (syntax == music::api::PhraseSyntax::JSON) {
                 first = window;
@@ -204,9 +223,113 @@ TEST(Phrase, AtomicWritesHaveMatchingReadback) {
     compare(
         clarinet,
         *music::parse_json(
-            R"([{"duration":"1/8","pitches":["B#3","Eb4"],"tie":["Eb4"]},{"bar":true},{"pitches":["Cb4","Eb4"]},{"tuplet":"3:2","events":[{"pitches":["A4"],"duration":"1/8"},{"pitches":["G4"],"duration":"1/8"},{"pitches":["F4"],"duration":"1/8"}]},{"pitches":["C4"],"grace_before":[{"kind":"acciac","duration":"1/8","pitches":["D5"]},{"kind":"grace16","duration":"1/16","pitches":["F5"]}],"grace_after":[{"kind":"after8","duration":"1/8","pitches":["E5"]}]}])"),
-        "[B#3 Eb4~]:e | [Cb4 Eb4] 3:2(A4:e G4:e F4:e) acciac(D5:e) grace16(F5:s) C4 after8(E5:e)", false);
+            R"([{"duration":"1/8","pitches":["B#3","Eb4"],"tie":["Eb4"]},{"bar":true},{"pitches":["Cb4","Eb4"]},{"tuplet":"3:2","events":[{"pitches":["A4"],"duration":"1/8"},{"pitches":["G4"],"duration":"1/8"},{"pitches":["F4"],"duration":"1/8"}]},{"pitches":["C4"],"grace_before":[{"kind":"acciac","pitches":["D5"]},{"kind":"grace16","pitches":["F5"]}],"grace_after":[{"kind":"after16","pitches":["E5"]}]}])"),
+        "[B#3 Eb4~]:e | [Cb4 Eb4] 3:2(A4:e G4:e F4:e) acciac(D5) grace16(F5) C4 after16(E5)", false);
     compare(kit, *music::parse_json(R"([{"drums":[36],"duration":"1/8"},{"drums":[],"duration":"1/8"}])"), "d36:e r:e", true);
+}
+
+TEST(MusicWindow, NestedGroupsGapsAndNotation) {
+    using namespace engrave;
+    const ElementId bar_id{0, 1}, first_group{0, 2}, inner_group{0, 3}, excerpt{0, 4};
+    const ElementId event_id{0, 5}, note_id{0, 6}, spanner_id{0, 7}, volta_id{0, 8};
+    const MeasureInfo bar{bar_id, 0, {0, 1}, {1, 1}};
+    auto note = [](StepName step, int octave, ElementId id = {}) {
+        const SpelledPitch pitch{step, 0, octave};
+        return NoteMusic{id, PitchedNote{0, pitch, pitch}};
+    };
+    auto tied = note(StepName::E, 4, note_id);
+    tied.outgoing = TieLink{};
+    const ChordMusic main{{tied},
+                          {{ElementId{}, GraceKind::Acciaccatura, {1, 8}, {note(StepName::D, 5)}}},
+                          {{ElementId{}, GraceKind::Grace16After, {1, 16}, {note(StepName::D, 5)}}}};
+    const ChordMusic drums{{NoteMusic{{}, DrumNote{36}}, NoteMusic{{}, DrumNote{42}}}};
+    const Position start{bar_id, {1, 8}}, end{bar_id, {1, 1}};
+    MusicWindow window{
+        .score = {excerpt},
+        .revision = 7,
+        .measures = {{bar,
+                      true,
+                      true,
+                      3,
+                      {{"TimeSig", {0, 1}, 0, Fraction{4, 4}}, {"KeySig", {0, 1}, 0, {}, -2}, {"Tempo", {1, 4}, -1, {}, 0, 96}},
+                      {{0,
+                        0,
+                        {{event_id, {1, 8}, {1, 8}, {1, 12}, {first_group}, main},
+                         {{}, {5, 24}, {1, 8}, {1, 20}, {first_group, inner_group}, drums},
+                         {{}, {1, 2}, {1, 4}, {1, 4}, {}, RestMusic{true, 2}}}}}}},
+        .tuplets = {{first_group, 3, 2, {1, 8}}, {inner_group, 5, 3, {1, 8}}},
+        .spanners = {{spanner_id, "Slur", start, end}},
+        .voltas = {{{volta_id, "Volta", start, end}, {1, 2}, true}}};
+    const Outline outline{.measures = {bar}};
+    const auto result = music::api::music_result(window, outline, false);
+    EXPECT_EQ(result.at("score"), "excerpt");
+    EXPECT_EQ(result.at("excerpt"), to_string(excerpt));
+    const auto &summary = result.at("summary").get<std::string>();
+    EXPECT_TRUE(summary.starts_with("Excerpt " + to_string(excerpt) + "\nBar 1 len=1/1 |:"));
+    EXPECT_NE(summary.find("time(s1)=4/4@0 key(s1)=-2@0 tempo=96bpm@1/4"), std::string::npos);
+    EXPECT_NE(summary.find("s1v1 @1/8 3:2(acciac(D5:1/8) E4~:1/8 after16(D5:1/16) 5:3([d36 d42]:1/8)) "
+                           "@1/2 repeat(2):1/4 :|x3"),
+              std::string::npos);
+    EXPECT_NE(summary.find("\nSpanners: Slur 1@1/8(s1v1)-1@1/1(s1v1)\nVoltas: Volta 1@1/8(s1v1)-1@1/1(s1v1) endings=[1,2] closed"),
+              std::string::npos);
+    const auto tagged = music::api::music_result(window, outline, true).at("summary").get<std::string>();
+    for (auto id : {bar_id, event_id, note_id, spanner_id, volta_id}) EXPECT_NE(tagged.find("#" + to_string(id)), std::string::npos);
+
+    auto &events = window.measures[0].voices[0].events;
+    events.resize(4000, MusicEvent{{}, {}, {1, 4}, {1, 4}, {}, main});
+    const auto truncated = music::api::music_result(window, outline, true);
+    const auto &text = truncated.at("summary").get<std::string>();
+    EXPECT_LE(text.size(), 32768u);
+    EXPECT_TRUE(text.ends_with("\n... [truncated]"));
+    EXPECT_EQ(truncated.at("measures")[0].at("voices")[0].at("events").size(), 4000u);
+}
+
+TEST(Phrase, HostTripleAccidentalsAndBarDiagnostics) {
+    ASSERT_FALSE(g_args.empty());
+    auto made = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(made) << made.error().message;
+    auto &host = **made;
+    const auto document = ok(host, "score_create", music::make_object<Json>()).at("document");
+    auto write = [&](std::string_view events) {
+        const auto lanes = music::parse_json("[{\"measure\":1,\"events\":" + std::string(events) + "}]");
+        return host.write_phrase({{"document", document}, {"lanes", *lanes}});
+    };
+    const auto bad = write(R"([{"pitches":["C###4"],"duration":"1/1"},{"bar":true},{"pitches":["C4"],"duration":"1/3"}])");
+    ASSERT_FALSE(bad.at("ok").get<bool>());
+    EXPECT_TRUE(bad.at("error").at("message").get<std::string>().starts_with("lane 0, item 2: "));
+    EXPECT_FALSE(bad.at("error").contains("op_index"));
+    const auto entry = write(R"([{"pitches":["C###4"]}])");
+    ASSERT_TRUE(entry.at("ok").get<bool>()) << music::dump_json(entry);
+    const auto inside_note = host.write_phrase(
+        {{"document", document}, {"lanes", *music::parse_json(R"([{"measure":1,"offset":"1/8","events":[{"pitches":["F4"]}]}])")}});
+    ASSERT_FALSE(inside_note.at("ok").get<bool>());
+    const auto &rejection = inside_note.at("error");
+    EXPECT_TRUE(rejection.at("message").get<std::string>().starts_with("lane 0, item 0: "));
+    EXPECT_NE(rejection.at("message").get<std::string>().find("inside a sounding event"), std::string::npos);
+    EXPECT_FALSE(rejection.contains("op_index"));
+
+    music::api::dsl_phrase_syntax = true;
+    const auto dsl_entry =
+        host.write_phrase({{"document", document}, {"lanes", *music::parse_json(R"([{"measure":1,"offset":"1/4","content":"C###4"}])")}});
+    music::api::dsl_phrase_syntax = false;
+    ASSERT_TRUE(dsl_entry.at("ok").get<bool>()) << music::dump_json(dsl_entry);
+    auto read_first = [&] { return host.read_music({{"document", document}, {"count", 1}, {"include_ids", true}}); };
+    const auto window = read_first();
+    EXPECT_EQ(window.at("score"), "master");
+    EXPECT_TRUE(window.at("excerpt").is_null());
+    const auto &events = window.at("measures")[0].at("voices")[0].at("events");
+    EXPECT_EQ(events[1].at("notes")[0].at("concert"), "C###4");
+    const auto &note = events[0].at("notes")[0];
+    ASSERT_EQ(note.at("concert"), "C###4");
+    auto set_pitch = [&](int pitch, int tpc) {
+        ok(host, "score_edit",
+           {{"document", document},
+            {"ops", music::json_array<Json>({Json{{"op", "set_pitch"}, {"note", note.at("id")}, {"pitch", pitch}, {"tpc", tpc}}})}});
+    };
+    set_pitch(60, 14);
+    set_pitch(63, 35);
+    const auto edited = read_first();
+    EXPECT_EQ(edited.at("measures")[0].at("voices")[0].at("events")[0].at("notes")[0].at("concert"), "C###4");
 }
 
 TEST(HostApi, EndToEndToolContract) {
@@ -241,7 +364,8 @@ TEST(HostApi, EndToEndToolContract) {
     auto initial = host->runtime_options();
     require(bool(initial), "initial capture failed");
     require(initial->fonts.size() == 1 && initial->soundfonts.size() == 1, "startup assets absent");
-    const auto initial_font = initial->fonts[0], initial_sf = initial->soundfonts[0];
+    const auto initial_font = initial->fonts[0], initial_sf = initial->soundfonts[0].copy;
+    EXPECT_EQ(initial->soundfonts[0].source, sf_input);
     require(initial_font != font_input && initial_sf != sf_input, "startup assets were not copied");
     const auto font_bytes = read(initial_font), sf_bytes = read(initial_sf);
     {
@@ -538,6 +662,12 @@ TEST(HostApi, EndToEndToolContract) {
 
     auto linked = ok(*host, "score_open", {{"path", path_text(input)}});
     const auto linked_doc = linked.at("document").get<std::string>();
+    const auto excerpt = linked.at("outline").at("excerpts")[0].at("id");
+    const auto part_window = host->read_music({{"document", linked_doc}, {"excerpt", excerpt}, {"count", 1}, {"include_ids", true}});
+    ASSERT_TRUE(part_window.at("ok").get<bool>()) << music::dump_json(part_window);
+    EXPECT_EQ(part_window.at("score"), "excerpt");
+    EXPECT_EQ(part_window.at("excerpt"), excerpt);
+    EXPECT_TRUE(part_window.at("summary").get<std::string>().starts_with("Excerpt " + excerpt.get<std::string>() + "\n"));
     auto notes = ok(*host, "score_query",
                     {{"document", linked_doc}, {"mode", "elements"}, {"query", {{"types", music::json_array<Json>({"Note"})}}}});
     Json target;
@@ -769,6 +899,9 @@ TEST(HostApi, EndToEndToolContract) {
     fs::remove(corrupt_path);
 
     const auto revision_before_assets = ok(*host, "score_outline", {{"document", doc}}).at("revision");
+    error(*host, "runtime_configure",
+          {{"add_font", path_text(add_font_input)}, {"soundfonts", music::json_array<Json>({path_text(invalid_sf)})}}, "InvalidInput");
+    ASSERT_EQ(host->runtime_options()->fonts.size(), 1u);
     ok(*host, "runtime_configure", {{"add_font", path_text(add_font_input)}});
     auto font_info = ok(*host, "runtime_info", music::make_object<Json>());
     require(font_info.at("fonts").size() == 2, "runtime font missing");
@@ -786,14 +919,42 @@ TEST(HostApi, EndToEndToolContract) {
     require(read(new_font) == new_font_bytes && initial->fonts.size() == 1, "font snapshot changed");
     error(*host, "runtime_configure", {{"add_font", path_text(add_font_input)}}, "InvalidInput");
     require(host->runtime_options()->fonts.size() == 2, "failed font change altered the selection");
-    auto selected = ok(*host, "runtime_configure", {{"soundfonts", music::json_array<Json>({path_text(replacement_sf)})}});
+    ok(*host, "runtime_configure", {{"soundfonts", music::json_array<Json>({path_text(replacement_sf)})}});
     auto replacement = host->runtime_options();
     require(bool(replacement), "soundfont capture failed");
-    const auto selected_path = replacement->soundfonts[0];
+    const auto selected_path = replacement->soundfonts[0].copy;
     require(read(selected_path) == read(replacement_sf), "selected SoundFont bytes differ");
     error(*host, "runtime_configure", {{"soundfonts", music::json_array<Json>({path_text(invalid_sf)})}}, "InvalidInput");
     auto retained = host->runtime_options();
-    require(retained && retained->soundfonts[0] == selected_path, "failed SoundFont change replaced selection");
+    require(retained && retained->soundfonts[0].copy == selected_path, "failed SoundFont change replaced selection");
+    error(*host, "runtime_configure", {{"add_font", path_text(add_font_input)}, {"soundfonts", music::make_array<Json>()}}, "InvalidInput");
+    ASSERT_EQ(host->runtime_options()->soundfonts[0].copy, selected_path);
+    ASSERT_EQ(host->runtime_options()->fonts.size(), 2u);
+
+    const auto export_doc = ok(*host, "score_create", music::make_object<Json>()).at("document").get<std::string>();
+    ASSERT_TRUE(host->write_phrase({{"document", export_doc}, {"lanes", music::json_array<Json>({phrase_lane})}}).at("ok").get<bool>());
+    const std::vector<fs::path> selectors{replacement_sf, replacement_sf.parent_path() / "." / replacement_sf.filename(), selected_path,
+                                          replacement_sf.filename(), replacement_sf.stem()};
+    for (const auto &selector : selectors) {
+        auto target = scratch / "soundfont-selection.wav";
+        auto request = music::api::decode_export(
+            {{"document", export_doc},
+             {"format", "wav"},
+             {"path", path_text(target)},
+             {"options", {{"tracks", music::json_array<Json>({Json{{"track", 0}, {"soundfont", path_text(selector)}}})}}}});
+        ASSERT_TRUE(request) << request.error().message;
+        const auto rendered = host->with_document(export_doc, {}, [&](engrave::Document &document) -> music::api::Result<void> {
+            music::api::ExportTiming timing("test", target);
+            auto result = music::api::live_export(
+                document, *request, {}, [] { return false; }, music::api::ExportTiming::Clock::now(), timing, *retained);
+            if (!result) return std::unexpected(result.error());
+            return {};
+        });
+        ASSERT_TRUE(rendered) << path_text(selector) << ": " << rendered.error().message;
+        EXPECT_TRUE(read(target).starts_with("RIFF"));
+        fs::remove(target);
+    }
+    ok(*host, "score_close", {{"document", export_doc}});
     ok(*host, "runtime_configure", {{"soundfonts", music::make_array<Json>()}});
     require(!fs::exists(initial_sf) && !fs::exists(selected_path), "replaced assets survived selection removal");
     auto still_open = ok(*host, "score_outline", {{"document", doc}});

@@ -1,10 +1,16 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <string_view>
 
 namespace music {
+
+inline bool utf8_exceeds_length(std::string_view text, std::size_t limit) {
+    return text.size() > limit &&
+           static_cast<std::size_t>(std::ranges::count_if(text, [](unsigned char c) { return (c & 0xC0) != 0x80; })) > limit;
+}
 
 // Largest prefix of [text] that ends on a UTF-8 code-point boundary.
 inline std::size_t utf8_prefix(std::string_view text, std::size_t limit) {

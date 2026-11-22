@@ -38,7 +38,9 @@ def inspect_schema(node):
         for item in node:
             inspect_schema(item)
     if isinstance(node, dict):
-        assert not {"unevaluatedProperties", "not", "if", "then", "else", "const"} & node.keys(), node
+        assert (
+            not {"oneOf", "unevaluatedProperties", "not", "if", "then", "else", "const", "outputSchema"} & node.keys()
+        ), node
         for item in node.values():
             inspect_schema(item)
 
@@ -72,7 +74,15 @@ def main():
         read = name in {"score_read_music", "score_outline", "score_query", "runtime_info"}
         assert tool["annotations"] == dict(
             readOnlyHint=read,
-            destructiveHint=name in {"score_export", "score_close", "restore_checkpoint", "drop_checkpoint"},
+            destructiveHint=name
+            in {
+                "score_export",
+                "score_close",
+                "score_edit",
+                "score_write_phrase",
+                "restore_checkpoint",
+                "drop_checkpoint",
+            },
             idempotentHint=read,
             openWorldHint=False,
         )
@@ -86,8 +96,30 @@ def main():
     by_name = {t["name"]: Draft202012Validator(t["inputSchema"]) for t in tools}
     by_name["score_create"].validate({})
     by_name["score_write_phrase"].validate(
-        {"document": "doc-A-1", "lanes": [{"measure": 1, "events": [{"pitches": ["Eb4"], "duration": "3/8"}]}]}
+        {
+            "document": "doc-A-1",
+            "lanes": [
+                {
+                    "measure": 1,
+                    "events": [
+                        {"pitches": ["C###4"], "grace_before": [{"kind": "grace16", "pitches": ["D4"]}]},
+                        {"drums": [36], "tie": [36]},
+                        {"tuplet": "3:2", "events": [{"pitches": [], "duration": "1/8"}]},
+                        {"bar": True},
+                    ],
+                }
+            ],
+        }
     )
+    events = by_name["score_write_phrase"].schema["properties"]["lanes"]["items"]["properties"]["events"]
+    for term in ("pitches", "C###4", "drums", "127", "1/4", "tie", "3:2", '{"bar":true}', "grace16", "after16", "1/32"):
+        assert term in events["description"], term
+    edit = by_name["score_edit"]
+    assert edit.is_valid(
+        {"document": "doc-A-1", "ops": [{"op": "set_pitch", "tpc": -8}, {"op": "enter_notes", "tpc": 40}]}
+    )
+    assert not edit.is_valid({"document": "doc-A-1", "ops": [{"op": "set_pitch", "tpc": 41}]})
+    assert not edit.is_valid({"document": "doc-A-1", "ops": [{"op": "remove"}] * 1025})
     assert not by_name["score_read_music"].is_valid({"document": "doc-A-1", "measure": "1"})
     assert not by_name["score_export"].is_valid({"document": "doc-A-1", "format": "exe", "path": "out"})
     with tempfile.TemporaryDirectory(prefix="registry-contract-") as temp:

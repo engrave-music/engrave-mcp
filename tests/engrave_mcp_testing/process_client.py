@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 class Client:
-    def __init__(self, binary, resources, output, mode=None, soundfont=None):
+    def __init__(self, binary, resources, output, mode=None, soundfont=None, *, protocol_version="2025-11-25"):
         output.mkdir(parents=True, exist_ok=True)
         self.log_path = output / "stderr.log"
         self.log = self.log_path.open("w", encoding="utf-8")
@@ -68,7 +68,7 @@ class Client:
         self.rpc(
             "initialize",
             {
-                "protocolVersion": "2025-11-25",
+                "protocolVersion": protocol_version,
                 "capabilities": {},
                 "clientInfo": {"name": "latency", "version": "1"},
             },

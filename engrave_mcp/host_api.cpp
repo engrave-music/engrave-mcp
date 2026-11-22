@@ -29,7 +29,7 @@ std::string nonce() {
 }
 
 struct AssetFile {
-    fs::path directory, file;
+    fs::path source, directory, file;
 
     ~AssetFile() {
         std::error_code ec;
@@ -45,6 +45,7 @@ Result<std::shared_ptr<const AssetFile>> copy_asset(const fs::path &source) {
         return std::unexpected(HostError{"NotFound", "runtime asset is not a file: " + detail::path_text(source)});
     }
     auto result = std::make_shared<AssetFile>();
+    result->source = source;
     const auto temp = fs::temp_directory_path(ec);
     if (ec) return std::unexpected(HostError{"Io", "cannot locate runtime asset directory: " + ec.message()});
     for (i32 attempt = 0; attempt < 16; ++attempt) {
@@ -465,8 +466,11 @@ Json HostApi::write_phrase(const Json &j, const std::atomic<bool> *cancelled) {
         if (!phrase) return std::unexpected(phrase.error());
         if (cancelled && cancelled->load()) return std::unexpected(HostError{"Cancelled", "phrase cancelled before edit"});
         auto edited = (*doc)->write_phrase(*phrase, {expected, engrave::EditMode::Atomic});
-        if (!edited) return std::unexpected(api_error(edited.error()));
-        if (edited->rejection) return std::unexpected(api_error(edited->rejection->error));
+        if (!edited || edited->rejection) {
+            auto error = api_error(edited ? edited->rejection->error : edited.error());
+            error.op_index.reset();
+            return std::unexpected(std::move(error));
+        }
         return Json{{"ok", true}, {"revision", std::to_string(edited->revision)}, {"diagnostics", encoded_array(edited->diagnostics)}};
     });
 }
@@ -622,7 +626,7 @@ Json operation_catalogue(std::string_view requested) {
     add("set_pitch",
         {{"note", "EID, layout address or {from_op,item}"},
          {"pitch", "MIDI integer, 0 through 127"},
-         {"tpc", "tonal pitch class integer, -1 through 33"}},
+         {"tpc", "tonal pitch class integer, -8 through 40"}},
         json_array<Json>({"note", "pitch"}), {{"note", "A_A"}, {"pitch", 60}});
     add("set_duration", {{"chord_rest", "EID, layout address or {from_op,item}"}, {"duration", "exact whole-note fraction string"}},
         json_array<Json>({"chord_rest", "duration"}), {{"chord_rest", "A_A"}, {"duration", "1/4"}});
@@ -775,6 +779,8 @@ Json HostApi::configure(const Json &j) {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
         if (auto ok = detail::validate_tool("runtime_configure", j); !ok) return std::unexpected(ok.error());
 
+        auto next = std::make_shared<RuntimeAssets>(*impl_->assets);
+        std::shared_ptr<const AssetFile> new_font;
         if (j.contains("add_font")) {
             auto p = detail::path(j.at("add_font"));
             if (!p) return std::unexpected(std::move(p.error()));
@@ -790,15 +796,13 @@ Json HostApi::configure(const Json &j) {
                 }
             }
             if (!exists) {
-                auto next = std::make_shared<RuntimeAssets>(*impl_->assets);
-                next->fonts.push_back(*font);
-                auto applied = impl_->engine->add_font((*font)->file);
-                if (!applied) return std::unexpected(api_error(applied.error()));
-                impl_->assets = std::move(next);
+                new_font = std::move(*font);
+                next->fonts.push_back(new_font);
             }
         }
-        if (j.contains("soundfonts")) {
-            auto next = std::make_shared<RuntimeAssets>(*impl_->assets);
+        const bool replace_soundfonts = j.contains("soundfonts");
+        std::vector<fs::path> previous_paths;
+        if (replace_soundfonts) {
             next->soundfonts.clear();
             std::vector<fs::path> paths;
             for (const auto &item : j.at("soundfonts").get_array()) {
@@ -809,10 +813,23 @@ Json HostApi::configure(const Json &j) {
                 paths.push_back((*f)->file);
                 next->soundfonts.push_back(std::move(*f));
             }
+            for (const auto &previous : impl_->assets->soundfonts) previous_paths.push_back(previous->file);
             auto applied = impl_->engine->set_soundfonts(paths);
             if (!applied) return std::unexpected(api_error(applied.error()));
-            impl_->assets = std::move(next);
         }
+        if (new_font) {
+            auto applied = impl_->engine->add_font(new_font->file);
+            if (!applied) {
+                if (replace_soundfonts) {
+                    auto restored = impl_->engine->set_soundfonts(previous_paths);
+                    if (!restored) {
+                        return std::unexpected(HostError{"EngineFailure", "SoundFont rollback failed: " + restored.error().message});
+                    }
+                }
+                return std::unexpected(api_error(applied.error()));
+            }
+        }
+        impl_->assets = std::move(next);
         return runtime_info(make_object<Json>());
     });
 }
@@ -847,10 +864,13 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<u64> e
     }
 }
 
-Result<engrave::EngineOptions> HostApi::runtime_options() const {
+Result<RuntimeOptions> HostApi::runtime_options() const {
     try {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
-        return impl_->asset_options();
+        RuntimeOptions result{.audio_sample_rate = impl_->options.audio_sample_rate};
+        for (const auto &font : impl_->assets->fonts) result.fonts.push_back(font->file);
+        for (const auto &font : impl_->assets->soundfonts) result.soundfonts.push_back({font->source, font->file});
+        return result;
     } catch (const std::exception &e) {
         return std::unexpected(HostError{"EngineFailure", e.what()});
     }

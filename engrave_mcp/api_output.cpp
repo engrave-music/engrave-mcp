@@ -178,8 +178,7 @@ Result<engrave::AudioFormat> audio_format(const std::string &s) {
     return std::unexpected(invalid_error("unknown audio format"));
 }
 
-// Resolve names and paths against the engine's current private asset copies.
-Result<engrave::SoundFontSelection> resolve_soundfont(const engrave::SoundFontSelection &selection, const engrave::EngineOptions &runtime) {
+Result<engrave::SoundFontSelection> resolve_soundfont(const engrave::SoundFontSelection &selection, const RuntimeOptions &runtime) {
     if (std::holds_alternative<std::monostate>(selection)) return selection;
     if (const auto *index = std::get_if<i32>(&selection)) {
         if (*index < 0 || static_cast<usize>(*index) >= runtime.soundfonts.size()) {
@@ -188,17 +187,24 @@ Result<engrave::SoundFontSelection> resolve_soundfont(const engrave::SoundFontSe
         return engrave::SoundFontSelection{*index};
     }
     const auto &name = std::get<std::string>(selection);
+    const auto path = std::filesystem::u8path(name);
+    const auto normalized = path.lexically_normal();
     for (usize i = 0; i < runtime.soundfonts.size(); ++i) {
-        const auto &file = runtime.soundfonts[i];
-        if (detail::path_text(file) == name || detail::path_text(file.stem()) == name) {
+        const auto &font = runtime.soundfonts[i];
+        if (path == font.source || normalized == font.source.lexically_normal() || path == font.copy) {
+            return engrave::SoundFontSelection{static_cast<i32>(i)};
+        }
+    }
+    for (usize i = 0; i < runtime.soundfonts.size(); ++i) {
+        const auto &file = runtime.soundfonts[i].copy;
+        if (path == file.filename() || path == file.stem()) {
             return engrave::SoundFontSelection{static_cast<i32>(i)};
         }
     }
     return std::unexpected(HostError{"NotFound", "no SoundFont named '" + name + "'"});
 }
 
-Result<engrave::AudioOptions> effective_mix(engrave::Document &document, const ExportRequest &request,
-                                            const engrave::EngineOptions &runtime) {
+Result<engrave::AudioOptions> effective_mix(engrave::Document &document, const ExportRequest &request, const RuntimeOptions &runtime) {
     auto result = request.audio_options;
     auto defaults_res = document.audio_tracks(result.score);
     if (!defaults_res) return std::unexpected(api_error(defaults_res.error()));
@@ -363,7 +369,7 @@ Json encode(const Artifact &artifact) {
 }
 
 Result<Json> live_export(engrave::Document &document, const ExportRequest &request, const ExportLimits &limits, FnRef<bool()> cancelled,
-                         std::chrono::steady_clock::time_point submitted, ExportTiming &timing, const engrave::EngineOptions &runtime,
+                         std::chrono::steady_clock::time_point submitted, ExportTiming &timing, const RuntimeOptions &runtime,
                          FnRef<bool()> begin_publication, std::vector<std::string> *visible_paths) {
     namespace fs = std::filesystem;
     const bool hooks = test_hooks_enabled();

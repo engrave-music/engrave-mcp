@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include "types.h"
+#include "utf8_text.h"
 
 namespace music::api {
 namespace {
@@ -41,9 +42,11 @@ const Json::array_t &items(const Json &j, const std::string &path) {
     return j.get_array();
 }
 
-string_view string(const Json &j, const std::string &path) {
+string_view string(const Json &j, const std::string &path, usize limit = 4096) {
     if (!j.is_string()) reject(path, "a string");
-    return j.get<std::string>();
+    const auto &value = j.get<std::string>();
+    if (utf8_exceeds_length(value, limit)) reject(path, "at most " + std::to_string(limit) + " Unicode characters");
+    return value;
 }
 
 int number(const Json &j, const std::string &path, int low, int high) {
@@ -55,7 +58,9 @@ int decimal(string_view s, const std::string &path) {
     int n{};
     if (s.empty()) reject(path, "an integer");
     auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), n);
-    if (ec != std::errc{} || end != s.data() + s.size()) reject(path, "an integer");
+    if (ec != std::errc{} || end != s.data() + s.size() || (s.starts_with('0') && s.size() > 1) || s.starts_with("-0")) {
+        reject(path, "a canonical decimal integer");
+    }
     return n;
 }
 
@@ -68,7 +73,7 @@ Fraction ratio(string_view s, char sep, const std::string &path) {
     return {n, d};
 }
 
-// Limiting reduced cursor components to engine tick bounds also leaves room for two cross-products in int64.
+// The engine's fractional tick terms must fit in an int.
 Fraction reduced(i64 n, i64 d, const std::string &path) {
     const auto divisor = std::gcd(n, d);
     n /= divisor;
@@ -76,8 +81,6 @@ Fraction reduced(i64 n, i64 d, const std::string &path) {
     if (n > INT32_MAX || n < -INT32_MAX || d > INT32_MAX) reject(path, "a duration representable in engine ticks");
     return {n, d};
 }
-
-Fraction add(Fraction a, Fraction b, const std::string &path) { return reduced(a.num * b.den + b.num * a.den, a.den * b.den, path); }
 
 SpelledPitch pitch(string_view s, const std::string &path) {
     constexpr string_view names = "CDEFGAB";
@@ -93,7 +96,7 @@ SpelledPitch pitch(string_view s, const std::string &path) {
         }
     }
     const int octave = decimal(s, path);
-    if (alter < -2 || alter > 2 || octave < -2 || octave > 10) reject(path, "a pitch within the supported spelling range");
+    if (alter < -3 || alter > 3 || octave < -2 || octave > 10) reject(path, "a pitch within the supported spelling range");
     return {step, alter, octave};
 }
 
@@ -121,6 +124,7 @@ std::vector<PhraseNote> notes(const Json &j, const std::string &path) {
         } else {
             const auto &ties = items(tie, path + ".tie");
             for (usize i = 0; i < ties.size(); ++i) {
+                if (!drums) string(ties[i], indexed(path + ".tie", i));
                 auto found = std::find(array.begin(), array.end(), ties[i]);
                 if (found == array.end()) reject(indexed(path + ".tie", i), "a member of this chord");
                 result[static_cast<usize>(found - array.begin())].tie_to_next = true;
@@ -130,11 +134,22 @@ std::vector<PhraseNote> notes(const Json &j, const std::string &path) {
     return result;
 }
 
-Fraction duration(const Json &j, const std::string &path) {
-    if (!j.contains("duration")) return {1, 4};
+Fraction duration(const Json &j, const std::string &path, int default_denominator = 4) {
+    if (!j.contains("duration")) return {1, default_denominator};
     auto f = ratio(string(j.at("duration"), path + ".duration"), '/', path + ".duration");
     if (!f.num) reject(path + ".duration", "a positive written duration");
     return f;
+}
+
+int grace_denominator(GraceKind kind) {
+    switch (kind) {
+        case GraceKind::Grace4: return 4;
+        case GraceKind::Grace16:
+        case GraceKind::Grace16After: return 16;
+        case GraceKind::Grace32:
+        case GraceKind::Grace32After: return 32;
+        default: return 8;
+    }
 }
 
 PhraseEvent event(const Json &j, const std::string &path) {
@@ -153,7 +168,7 @@ PhraseEvent event(const Json &j, const std::string &path) {
             if (found == std::end(grace_kinds) || after != kind.starts_with("after")) {
                 reject(at + ".kind", "a grace kind on this side of the chord");
             }
-            PhraseGrace grace{found->second, duration(g, at), {}};
+            PhraseGrace grace{found->second, duration(g, at, grace_denominator(found->second)), {}};
             for (auto note : notes(g, at)) grace.notes.push_back(note.pitch);
             (after ? result.after : result.before).push_back(std::move(grace));
         }
@@ -305,28 +320,17 @@ PhraseLane lane(const Json &j, const std::string &path, const Outline &outline, 
     }
     const auto base = path + ".events";
     Json parsed;
-    if (dsl) parsed = Dsl(string(required(j, "content", path), path + ".content"), base).parse();
+    if (dsl) parsed = Dsl(string(required(j, "content", path), path + ".content", 65536), base).parse();
     const auto &events = items(dsl ? parsed : required(j, "events", path), base);
-    auto cursor = result.start.offset;
-    if (cursor >= outline.measures[measure].duration) reject(path + ".offset", "an offset inside the starting bar");
     for (usize i = 0; i < events.size(); ++i) {
         auto at = indexed(base, i);
         const auto &e = events[i];
         if (e.contains("bar")) {
             fields(e, at, {"bar"});
-            if (!e.at("bar").is_boolean() || !e.at("bar").get<bool>() || cursor.num) {
-                reject(at, "a checked barline at an exact measure boundary");
-            }
+            if (!e.at("bar").is_boolean() || !e.at("bar").get<bool>()) reject(at, "{\"bar\":true}");
+            result.items.emplace_back(BarCheck{});
             continue;
         }
-        auto advance = [&](Fraction duration, Fraction scale) {
-            auto delta = reduced(duration.num * scale.num, duration.den * scale.den, at);
-            cursor = add(cursor, delta, at);
-            while (measure < outline.measures.size() && cursor >= outline.measures[measure].duration) {
-                auto bar = outline.measures[measure++].duration;
-                cursor = add(cursor, {-bar.num, bar.den}, at);
-            }
-        };
         if (e.contains("tuplet")) {
             fields(e, at, {"tuplet", "events"});
             auto r = ratio(string(e.at("tuplet"), at + ".tuplet"), ':', at + ".tuplet");
@@ -335,13 +339,10 @@ PhraseLane lane(const Json &j, const std::string &path, const Outline &outline, 
             const auto &members = items(required(e, "events", at), at + ".events");
             for (usize k = 0; k < members.size(); ++k) {
                 g.members.push_back(event(members[k], indexed(at + ".events", k)));
-                advance(g.members.back().written_duration, {r.den, r.num});
             }
             result.items.emplace_back(std::move(g));
         } else {
-            auto member = event(e, at);
-            advance(member.written_duration, {1, 1});
-            result.items.emplace_back(std::move(member));
+            result.items.emplace_back(event(e, at));
         }
     }
     return result;

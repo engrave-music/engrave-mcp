@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "schema_defs.h"
 #include "tool_result.h"
 
 namespace {
@@ -52,11 +53,36 @@ TEST(Registry, SyntheticPublicationBoundary) {
 
 TEST(Registry, MusicSummaryAndTypedEvents) {
     Json bar{{"measure", 1}, {"duration", "3/4"}};
-    auto result = music::make_tool_result(
-        Json{{"ok", true}, {"revision", "2"}, {"summary", "Bar 1  s1v1 Eb4:3/4"}, {"measures", music::json_array<Json>({bar})}});
+    const Json payload{{"ok", true}, {"revision", "2"}, {"summary", "Bar 1  s1v1 Eb4:3/4"}, {"measures", music::json_array<Json>({bar})}};
+    auto result = music::make_tool_result(payload);
     EXPECT_EQ(result.at("content")[0].at("text"), "Bar 1  s1v1 Eb4:3/4");
     EXPECT_EQ(result.at("structuredContent").at("measures")[0], bar);
     EXPECT_FALSE(result.at("structuredContent").contains("summary"));
+    const auto legacy = music::make_tool_result(payload, false, music::ToolResultFormat::LEGACY);
+    EXPECT_FALSE(legacy.contains("structuredContent"));
+    const auto decoded = music::parse_json(legacy.at("content")[0].at("text").get<std::string>());
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(*decoded, payload);
+}
+
+TEST(Registry, DslSchemaDescribesItsEntryGrammar) {
+    dsl_phrase_syntax = true;
+    const auto tools = declared_tools();
+    dsl_phrase_syntax = false;
+    for (const auto &tool : tools.get_array()) {
+        if (tool.at("name") != "score_write_phrase") continue;
+        EXPECT_TRUE(tool.at("annotations").at("destructiveHint").get<bool>());
+        const auto &lane = tool.at("inputSchema").at("properties").at("lanes").at("items");
+        const auto &content = lane.at("properties").at("content");
+        EXPECT_EQ(content.at("maxLength"), 65536);
+        const auto &description = content.at("description").get<std::string>();
+        for (auto token : {"Eb4", "F#5", "C###4", "d36", "[C4~ E4]", ":h..", ":3/8", "3:2(A4:e G4:e F4:e)", "|", "acciac(D5)", "appog(E5)",
+                           "grace4(F5)", "grace16(G5)", "grace32(A5)", "after8(D5)", "after16(E5)", "after32(F5)"}) {
+            EXPECT_NE(description.find(token), std::string::npos) << token;
+        }
+        return;
+    }
+    ADD_FAILURE() << "DSL phrase tool missing";
 }
 
 TEST(Registry, InvalidUtf8Replacement) {

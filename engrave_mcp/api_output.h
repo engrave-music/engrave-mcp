@@ -37,12 +37,23 @@ struct Artifact {
     std::uint64_t size = 0;
 };
 
+struct SoundFontAsset {
+    std::filesystem::path source;
+    std::filesystem::path copy;
+};
+
+struct RuntimeOptions {
+    int audio_sample_rate = engrave::EngineOptions{}.audio_sample_rate;
+    std::vector<std::filesystem::path> fonts;
+    std::vector<SoundFontAsset> soundfonts;
+};
+
 // Strict full decode, including option/format and destination compatibility.
 Result<ExportRequest> decode_export(const Json &);
 Json encode(const Artifact &);
 
 Result<Json> live_export(engrave::Document &, const ExportRequest &, const ExportLimits &, FnRef<bool()> cancelled,
-                         std::chrono::steady_clock::time_point submitted, ExportTiming &, const engrave::EngineOptions &runtime = {},
+                         std::chrono::steady_clock::time_point submitted, ExportTiming &, const RuntimeOptions &runtime = {},
                          FnRef<bool()> begin_publication = {}, std::vector<std::string> *visible_paths = nullptr);
 
 } // namespace music::api

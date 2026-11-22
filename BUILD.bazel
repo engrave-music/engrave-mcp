@@ -224,7 +224,7 @@ cc_binary(
     copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS,
     deps = [
-        ":document_store",
+        ":engrave_mcp_core",
         "@glaze",
         "@gtest",
     ] + WIN_MANIFEST_DEPS,

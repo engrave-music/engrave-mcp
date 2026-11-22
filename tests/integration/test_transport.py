@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_mcp_testing.process_client import Client
 
 PROTOCOL_VERSION = "2025-11-25"
 # The advertised tool list must match the checked-in schema exactly.
@@ -364,6 +365,54 @@ def _check_edge_cases(exe: str, failures: list[str]) -> dict[str, dict]:
     return records
 
 
+def _check_music_protocol(exe: str, output: Path, version: str) -> None:
+    resources = Path(os.environ.get("ENGRAVE_MCP_RESOURCES", REPO_ROOT / ".runtime/assets"))
+    client = Client(Path(exe), resources, output, protocol_version=version)
+    legacy = version in ("2024-11-05", "2025-03-26")
+
+    def call(name, arguments):
+        result = client.rpc("tools/call", {"name": name, "arguments": arguments})["result"]
+        assert not result["isError"], result
+        text = result["content"][0]["text"]
+        if legacy:
+            assert "structuredContent" not in result
+            return json.loads(text), text
+        return result["structuredContent"], text
+
+    try:
+        opened, _ = call("score_create", {})
+        document = opened["document"]
+        call(
+            "score_write_phrase",
+            {
+                "document": document,
+                "lanes": [
+                    {
+                        "measure": 1,
+                        "events": [
+                            {"pitches": ["C###4"], "grace_before": [{"kind": "acciac", "pitches": ["D5"]}]},
+                            {
+                                "tuplet": "3:2",
+                                "events": [{"pitches": [pitch], "duration": "1/8"} for pitch in ("D4", "E4", "F4")],
+                            },
+                        ],
+                    }
+                ],
+            },
+        )
+        window, text = call("score_read_music", {"document": document, "count": 1, "include_ids": True})
+        assert window["score"] == "master" and window["excerpt"] is None
+        assert ("summary" in window) == legacy
+        events = window["measures"][0]["voices"][0]["events"]
+        assert events[0]["notes"][0]["concert"] == "C###4" and events[0]["notes"][0]["id"]
+        assert events[0]["grace_before"][0]["duration"] == "1/8" and window["tuplets"][0]["actual"] == 3
+        summary = window["summary"] if legacy else text
+        for token in ("Bar 1#", "acciac(D5#", "C###4#", "3:2(D4#"):
+            assert token in summary, summary
+    finally:
+        client.close()
+
+
 def main() -> int:
     if len(sys.argv) not in (2, 3):
         print(
@@ -395,6 +444,10 @@ def main() -> int:
         reply = json.loads(_run_server(exe, _compact(request) + "\n")["stdout"])
         assert reply["result"]["protocolVersion"] == (PROTOCOL_VERSION if requested == "2099-01-01" else requested)
         assert "score_write_phrase" in reply["result"]["instructions"]
+        for term in ("C###4", "grace_before", "after16", "3:2", '"bar":true'):
+            assert term in reply["result"]["instructions"], term
+        if requested != "2099-01-01":
+            _check_music_protocol(exe, output_path.parent / f"{output_path.stem}.{requested}", requested)
 
     main_lines = [
         '{"jsonrpc":"2.0","id":0,"method":"ping"',

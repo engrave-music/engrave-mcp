@@ -12,23 +12,27 @@
 
 namespace music {
 
-// Successful results carry the payload both as legacy text and as
-// structuredContent. Duplicating a large query payload
-// would exceed the 16 MiB wire cap even though the structured payload itself
-// fits. Above this threshold the legacy text becomes a short pointer to
-// structuredContent, keeping the authoritative structured result intact.
-inline Json make_tool_result(Json payload, bool publication = false) {
+enum class ToolResultFormat { STRUCTURED, LEGACY };
+
+// The text cap leaves room for the typed payload within the wire budget.
+inline Json make_tool_result(Json payload, bool publication = false, ToolResultFormat format = ToolResultFormat::STRUCTURED) {
     if (test_hooks_enabled() && publication && std::getenv("ENGRAVE_MCP_TEST_THROW_WRAPPER")) {
         throw std::runtime_error("Injected failure inside completed export wrapper");
     }
-    std::string text = payload.contains("summary") ? payload.at("summary").get<std::string>() : dump_json(payload);
-    json_erase(payload, "summary");
+    const bool structured = format == ToolResultFormat::STRUCTURED;
+    std::string text;
+    if (structured && payload.contains("summary")) {
+        text = payload.at("summary").get<std::string>();
+        json_erase(payload, "summary");
+    }
+    if (text.empty()) text = dump_json(payload);
     if (text.size() > (256u * 1024u)) {
         if (payload.contains("error")) {
             const auto &e = payload.at("error");
             text = e.at("code").get<std::string>() + ": " + e.at("message").get<std::string>();
         } else {
-            text = "Result exceeds the text budget. Read structuredContent or request a smaller range.";
+            text = structured ? "Result exceeds the text budget. Read structuredContent or request a smaller range." :
+                                "Result exceeds the text budget. Request a smaller range.";
             for (const auto &[key, field] : payload.get_object()) {
                 if (field.is_array()) text += " " + key + "=" + std::to_string(field.size()) + " items.";
             }
@@ -45,7 +49,7 @@ inline Json make_tool_result(Json payload, bool publication = false) {
     Json result = make_object<Json>();
     result["content"] = json_array(std::move(content_item));
     result["isError"] = payload.contains("ok") && payload["ok"].is_boolean() && !payload["ok"].get<bool>();
-    result["structuredContent"] = std::move(payload);
+    if (structured) result["structuredContent"] = std::move(payload);
     return result;
 }
 

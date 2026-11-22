@@ -31,7 +31,7 @@ Json declared_tools() {
     const Json voice = integer(1, 4);
     const Json key = integer(-7, 7);
     const Json pitch = integer(0, 127);
-    const Json tpc = integer(-1, 33);
+    const Json tpc = integer(-8, 40);
     const Json n1024 = integer(1, 1024);
     const Json format = choices({"mscz", "mscx", "musicxml", "mxl", "midi", "guitarpro", "mnx"});
     const Json output = choices({"mscz", "mscx", "musicxml", "mxl", "midi", "pdf", "png", "svg", "wav", "flac", "opus", "mp3", "aac",
@@ -43,9 +43,9 @@ Json declared_tools() {
     const Json ref = Json{{"description", "Persistent EID or a batch-local reference {from_op,item}."}};
     const Json pos = Json{{"description", "Use {measure,offset,staff,voice} with a 1-based measure number and exact measure-local offset. "
                                           "Layout addresses use kind and zero-based index."}};
-    const Json duration = Json{{"type", "string"}, {"maxLength", 42}};
+    const Json duration = Json{{"type", "string"}, {"maxLength", 4096}};
     const Json grace = choices({"acciac", "appog", "grace4", "grace16", "grace32", "after8", "after16", "after32"});
-    const Json tie = Json{{"description", "true ties the chord, or supply an array of chord pitches to tie."}};
+    const Json tie = Json{{"description", "true ties the chord. An array selects chord members by pitch spelling or MIDI drum key."}};
     const Json num = Json{{"type", "number"}};
     const Json volume = Json{{"type", "number"}, {"minimum", -120}, {"maximum", 24}};
     const Json balance = Json{{"type", "number"}, {"minimum", -1}, {"maximum", 1}};
@@ -117,12 +117,20 @@ Json declared_tools() {
                                {"events", array(note)},
                                {"bar", boolean}},
                               json_array<Json>({}));
-    const Json lane = object(
-        {{"measure", bar}, {"offset", fraction}, {"staff", bar}, {"voice", voice}, {"pitch_mode", pitch_mode}, {"events", array(event)}},
-        json_array<Json>({"measure", "events"}));
-    const Json dsl_lane = object(
-        {{"measure", bar}, {"offset", fraction}, {"staff", bar}, {"voice", voice}, {"pitch_mode", pitch_mode}, {"content", long_text}},
-        json_array<Json>({"measure", "content"}));
+    auto phrase_events = array(event);
+    phrase_events["description"] = std::string(json_phrase_grammar) + " " + phrase_grace_defaults;
+    const Json lane = object({{"measure", bar},
+                              {"offset", fraction},
+                              {"staff", bar},
+                              {"voice", voice},
+                              {"pitch_mode", pitch_mode},
+                              {"events", std::move(phrase_events)}},
+                             json_array<Json>({"measure", "events"}));
+    auto content = long_text;
+    content["description"] = std::string(dsl_phrase_grammar) + " " + phrase_grace_defaults;
+    const Json dsl_lane =
+        object({{"measure", bar}, {"offset", fraction}, {"staff", bar}, {"voice", voice}, {"pitch_mode", pitch_mode}, {"content", content}},
+               json_array<Json>({"measure", "content"}));
     Json op_fields = make_object<Json>();
     op_fields["op"] = choices({"set_property",
                                "reset_property",
@@ -195,6 +203,8 @@ Json declared_tools() {
     op_fields["event_end"] = fraction;
     op_fields["keys"] = array(pitch);
     const Json op = object(std::move(op_fields), json_array<Json>({"op"}));
+    auto ops = array(op);
+    ops["maxItems"] = 1024;
     Json tools = make_array<Json>();
     auto tool = [&](const char *name, const char *description, Json schema, bool read, bool destructive) {
         json_push(tools,
@@ -239,9 +249,9 @@ Json declared_tools() {
                 json_array<Json>({"document"})),
          true, false);
     tool("score_edit", "Apply a batch atomically by default. Use runtime_info scope ops for operation shapes.",
-         object({{"document", document}, {"expected_revision", revision}, {"atomic", boolean}, {"detail", boolean}, {"ops", array(op)}},
+         object({{"document", document}, {"expected_revision", revision}, {"atomic", boolean}, {"detail", boolean}, {"ops", ops}},
                 json_array<Json>({"document", "ops"})),
-         false, false);
+         false, true);
     tool("score_export", "Write a score, image, audio file or position map. PNG and SVG paths name directories of page files.",
          object({{"document", document},
                  {"expected_revision", revision},
@@ -268,7 +278,7 @@ Json declared_tools() {
                  {"excerpt", eid},
                  {"lanes", array(dsl_phrase_syntax ? dsl_lane : lane)}},
                 json_array<Json>({"document", "lanes"})),
-         false, false);
+         false, true);
     tool("runtime_configure", "Add a font or replace the ordered SoundFont list.",
          object({{"add_font", text}, {"soundfonts", array(text)}}, json_array<Json>({})), false, false);
     return tools;

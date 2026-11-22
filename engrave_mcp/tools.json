@@ -336,7 +336,7 @@
   },
   {
     "annotations": {
-      "destructiveHint": false,
+      "destructiveHint": true,
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": false
@@ -525,8 +525,8 @@
                         "type": "integer"
                       },
                       "tpc": {
-                        "maximum": 33,
-                        "minimum": -1,
+                        "maximum": 40,
+                        "minimum": -8,
                         "type": "integer"
                       }
                     },
@@ -588,8 +588,8 @@
                 "type": "string"
               },
               "tpc": {
-                "maximum": 33,
-                "minimum": -1,
+                "maximum": 40,
+                "minimum": -8,
                 "type": "integer"
               },
               "type": {
@@ -605,6 +605,7 @@
             ],
             "type": "object"
           },
+          "maxItems": 1024,
           "type": "array"
         }
       },
@@ -931,7 +932,7 @@
   },
   {
     "annotations": {
-      "destructiveHint": false,
+      "destructiveHint": true,
       "idempotentHint": false,
       "openWorldHint": false,
       "readOnlyHint": false
@@ -958,6 +959,7 @@
             "additionalProperties": false,
             "properties": {
               "events": {
+                "description": "Give each lane an events array. A note, chord or rest has pitches (C through B, up to three # or b accidentals, then octave, e.g. Eb4 or C###4) or drums (MIDI keys 0 through 127). An empty pitches or drums array enters a rest. The duration is an exact whole-note fraction such as 1/4 or 3/8 and defaults to 1/4 for main events. Use tie: true for a whole chord or give an array of its tied pitches or drum keys. Use {\"tuplet\":\"3:2\",\"events\":[...]} for an actual:normal group of notes, chords or rests, and {\"bar\":true} to check a measure boundary. Attach grace_before or grace_after arrays to a main chord, with each grace specifying kind, pitches or drums, and optional duration. Before-grace kinds are acciac, appog, grace4, grace16, grace32. After-grace kinds are after8, after16, after32. Omitted grace durations are 1/8 for acciac, appog and after8, 1/4 for grace4, 1/16 for grace16 and after16, and 1/32 for grace32 and after32.",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
@@ -973,7 +975,7 @@
                       "type": "array"
                     },
                     "duration": {
-                      "maxLength": 42,
+                      "maxLength": 4096,
                       "type": "string"
                     },
                     "events": {
@@ -989,7 +991,7 @@
                             "type": "array"
                           },
                           "duration": {
-                            "maxLength": 42,
+                            "maxLength": 4096,
                             "type": "string"
                           },
                           "grace_after": {
@@ -1005,7 +1007,7 @@
                                   "type": "array"
                                 },
                                 "duration": {
-                                  "maxLength": 42,
+                                  "maxLength": 4096,
                                   "type": "string"
                                 },
                                 "kind": {
@@ -1049,7 +1051,7 @@
                                   "type": "array"
                                 },
                                 "duration": {
-                                  "maxLength": 42,
+                                  "maxLength": 4096,
                                   "type": "string"
                                 },
                                 "kind": {
@@ -1088,7 +1090,7 @@
                             "type": "array"
                           },
                           "tie": {
-                            "description": "true ties the chord, or supply an array of chord pitches to tie."
+                            "description": "true ties the chord. An array selects chord members by pitch spelling or MIDI drum key."
                           }
                         },
                         "required": [],
@@ -1109,7 +1111,7 @@
                             "type": "array"
                           },
                           "duration": {
-                            "maxLength": 42,
+                            "maxLength": 4096,
                             "type": "string"
                           },
                           "kind": {
@@ -1153,7 +1155,7 @@
                             "type": "array"
                           },
                           "duration": {
-                            "maxLength": 42,
+                            "maxLength": 4096,
                             "type": "string"
                           },
                           "kind": {
@@ -1192,7 +1194,7 @@
                       "type": "array"
                     },
                     "tie": {
-                      "description": "true ties the chord, or supply an array of chord pitches to tie."
+                      "description": "true ties the chord. An array selects chord members by pitch spelling or MIDI drum key."
                     },
                     "tuplet": {
                       "maxLength": 4096,

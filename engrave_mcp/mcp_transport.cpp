@@ -687,16 +687,20 @@ private:
             if (payload.is_null()) post_writer_failure("published report unavailable", true);
             Json result;
             try {
-                result = make_tool_result(payload, true);
+                result = make_tool_result(payload, true, tool_result_format());
             } catch (...) {
-                result = make_tool_error_result("EngineFailure", "Completed export wrapper failed");
                 Json paths = make_array<Json>();
                 if (payload.contains("artifacts")) {
                     for (const auto &a : payload.at("artifacts").get_array()) json_push(paths, a.at("path"));
                 } else {
                     paths = json_value<Json>(payload.at("error"), "published_artifacts", make_array<Json>());
                 }
-                result["structuredContent"]["error"]["published_artifacts"] = std::move(paths);
+                result = make_tool_result(Json{{"ok", false},
+                                               {"error",
+                                                {{"code", "EngineFailure"},
+                                                 {"message", "Completed export wrapper failed"},
+                                                 {"published_artifacts", std::move(paths)}}}},
+                                          false, tool_result_format());
             }
             auto wire = dump_json(Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}});
             wire.push_back('\n');
@@ -1231,7 +1235,8 @@ private:
 
                 auto version = params["protocolVersion"].get<std::string>();
                 if (version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18") version = "2025-11-25";
-                Json result = {{"protocolVersion", version},
+                protocol_version_ = std::move(version);
+                Json result = {{"protocolVersion", protocol_version_},
                                {"capabilities", {{"tools", make_object<Json>()}}},
                                {"serverInfo", {{"name", "engrave-mcp"}, {"version", std::string(host_version)}}}};
                 std::string instructions =
@@ -1240,16 +1245,11 @@ private:
                     "note entry, then score_read_music to check the result in short windows. Positions use exact whole-note fractions "
                     "relative to the start of the measure: 0, 1/4 and 3/8 are valid offsets. A pickup uses its actual duration. "
                     "Pitch defaults to concert. Choose written pitch_mode on a lane when copying a transposed part. ";
+                instructions += api::dsl_phrase_syntax ? api::dsl_phrase_grammar : api::json_phrase_grammar;
+                instructions += " ";
+                instructions += api::phrase_grace_defaults;
                 instructions +=
-                    api::dsl_phrase_syntax ?
-                        "Each lane has a starting measure and content such as '[C4 E4 G4]:h r:q Eb4:q |'. Use d36 for a drum key, "
-                        "3:2(A4:e G4:e F4:e) for a triplet and ~ for a tie. " :
-                        "Each lane has a starting measure and an events array. Give a note or chord a pitches array such as "
-                        "[\"Eb4\",\"G4\"] "
-                        "and duration such as 1/4. Empty pitches enter a rest. Use drums for MIDI drum keys, tuplet and events for a "
-                        "group, and {\"bar\":true} to check a measure boundary. ";
-                instructions +=
-                    "Echo the last revision as expected_revision to guard writes and reads. Phrase writes and default score_edit "
+                    " Echo the last revision as expected_revision to guard writes and reads. Phrase writes and default score_edit "
                     "batches are atomic. Save a named checkpoint before experimenting and use restore_checkpoint to return to it. "
                     "Use runtime_info with scope ops for detailed edit operations or instruments to find instrument IDs. "
                     "Request include_ids on a music window when an edit needs an element ID. Export the finished document with "
@@ -1531,7 +1531,7 @@ private:
                 co_return;
             }
 
-            Json result = make_tool_result(std::move(payload));
+            Json result = make_tool_result(std::move(payload), false, tool_result_format());
             co_await deliver_tool_result(call, std::move(result));
             co_return;
         } catch (const ToolCallError &error) {
@@ -1580,17 +1580,17 @@ private:
         co_return;
     }
 
-    static Json make_tool_error_result(const std::string &code, const std::string &message) {
-        Json content_item = make_object<Json>();
-        content_item["type"] = "text";
+    ToolResultFormat tool_result_format() const {
+        return protocol_version_ == "2024-11-05" || protocol_version_ == "2025-03-26" ? ToolResultFormat::LEGACY :
+                                                                                        ToolResultFormat::STRUCTURED;
+    }
+
+    Json make_tool_error_result(const std::string &code, const std::string &message) const {
         std::string bounded_message = message;
         bounded_message.resize(utf8_prefix(bounded_message, 16384));
-        content_item["text"] = bounded_message;
-
-        Json result = make_object<Json>();
-        result["content"] = json_array(std::move(content_item));
-        result["structuredContent"] = Json{{"ok", false}, {"error", {{"code", code}, {"message", bounded_message}}}};
-        result["isError"] = true;
+        auto result =
+            make_tool_result(Json{{"ok", false}, {"error", {{"code", code}, {"message", bounded_message}}}}, false, tool_result_format());
+        if (tool_result_format() == ToolResultFormat::STRUCTURED) result["content"][0]["text"] = std::move(bounded_message);
         return result;
     }
 
@@ -1775,6 +1775,7 @@ private:
     asio::executor_work_guard<asio::io_context::executor_type> work_;
 
     ServerState state_ = ServerState::UNINITIALIZED;
+    std::string protocol_version_;
     std::vector<CallStatePtr> inflight_;
 
     // Reader admission queue. Only the reader thread waits on queue_cv_; the

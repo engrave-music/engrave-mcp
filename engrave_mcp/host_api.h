@@ -4,7 +4,7 @@
 #include <memory>
 #include <thread>
 
-#include "api_json.h"
+#include "api_output.h"
 #include "runtime_limits.h"
 #include "types.h"
 
@@ -40,7 +40,7 @@ struct HostApi {
                                const std::vector<std::string> *visible_paths = nullptr);
 
     // Current private asset paths; valid until the next owner-thread runtime change.
-    Result<engrave::EngineOptions> runtime_options() const;
+    Result<RuntimeOptions> runtime_options() const;
 
 private:
     struct Impl;
