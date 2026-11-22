@@ -19,6 +19,16 @@ NATIVE_PINNED_PACKAGES = ("cairo", "freetype", "libfreetype", "libfreetype6", "z
 _LOCKED_PACKAGE = re.compile(r"^- conda: (\S+/(win-64|linux-64)/([A-Za-z0-9_.-]+?)-\d\S*\.conda)$", re.MULTILINE)
 _HEADER_VERSION = re.compile(r'\bhost_version\s*=\s*"([^"]+)"')
 _MODULE_VERSION = re.compile(r'\bmodule\s*\([^)]*?\bversion\s*=\s*"([^"]+)"', re.DOTALL)
+_CPP_COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+_STARLARK_COMMENT = re.compile(r"#[^\n]*")
+
+
+def _strip_cpp_comments(text: str) -> str:
+    return _CPP_COMMENT.sub("", text)
+
+
+def _strip_starlark_comments(text: str) -> str:
+    return _STARLARK_COMMENT.sub("", text)
 
 
 def _find_native_root(project_root: Path) -> Path:
@@ -58,14 +68,14 @@ def _check_host_version(project_root: Path) -> list[str]:
     errors: list[str] = []
 
     if version_header.is_file():
-        match = _HEADER_VERSION.search(version_header.read_text(encoding="utf-8"))
+        match = _HEADER_VERSION.search(_strip_cpp_comments(version_header.read_text(encoding="utf-8")))
         if match:
             versions["engrave_mcp/version.h"] = match.group(1)
         else:
             errors.append(f"could not parse host_version from {version_header}")
 
     if module_bazel.is_file():
-        match = _MODULE_VERSION.search(module_bazel.read_text(encoding="utf-8"))
+        match = _MODULE_VERSION.search(_strip_starlark_comments(module_bazel.read_text(encoding="utf-8")))
         if match:
             versions["MODULE.bazel"] = match.group(1)
         else:

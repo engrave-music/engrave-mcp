@@ -99,7 +99,15 @@ async def run_tests(args: argparse.Namespace) -> None:
         assert res.stderr == "", (flag, res.stderr)
         assert res.stdout.strip() == f"engrave-mcp {version}", (flag, res.stdout)
 
-    for bad_args in (["--unknown-flag"], ["--soundfont"], ["--resources"], ["unexpected"]):
+    bad_cases = (
+        ["--unknown-flag"],
+        ["--soundfont"],
+        ["--resources"],
+        ["--soundfont", "--help"],
+        ["--resources", "--version"],
+        ["unexpected"],
+    )
+    for bad_args in bad_cases:
         res = run_cli(binary, bad_args, env)
         assert res.returncode == 1, (bad_args, res.returncode)
         assert res.stdout == "", (bad_args, res.stdout)
@@ -164,7 +172,7 @@ async def run_tests(args: argparse.Namespace) -> None:
         "version": version,
         "help_flags": ["--help", "-h"],
         "version_flags": ["--version", "-V"],
-        "invalid_cases": 4,
+        "invalid_cases": len(bad_cases),
         "soundfont_auto_discovery": True,
         "soundfont_explicit_override": True,
     }

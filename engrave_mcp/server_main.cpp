@@ -36,6 +36,10 @@ void print_help() {
                 usage_text);
 }
 
+bool is_known_flag(std::string_view arg) {
+    return arg == "--soundfont" || arg == "--resources" || arg == "--help" || arg == "-h" || arg == "--version" || arg == "-V";
+}
+
 } // namespace
 
 int run_server(int argc, char **argv) {
@@ -45,10 +49,16 @@ int run_server(int argc, char **argv) {
         std::string resources;
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg(argv[i]);
-            if (arg == "--soundfont" && i + 1 < argc) {
+            if (arg == "--soundfont") {
+                if (i + 1 >= argc || is_known_flag(argv[i + 1])) {
+                    throw std::invalid_argument(usage_text);
+                }
                 soundfont = argv[++i];
                 has_soundfont = true;
-            } else if (arg == "--resources" && i + 1 < argc) {
+            } else if (arg == "--resources") {
+                if (i + 1 >= argc || is_known_flag(argv[i + 1])) {
+                    throw std::invalid_argument(usage_text);
+                }
                 resources = argv[++i];
             } else if (arg == "--help" || arg == "-h") {
                 print_help();
@@ -65,7 +75,10 @@ int run_server(int argc, char **argv) {
             throw std::runtime_error("Cannot configure binary stdio");
         }
 #endif
-        const auto exe_dir = current_executable_path().parent_path();
+        std::filesystem::path exe_dir;
+        if (resources.empty() || !has_soundfont) {
+            exe_dir = current_executable_path().parent_path();
+        }
         engrave::EngineOptions options;
         options.resources = resources.empty() ? exe_dir / "assets" : std::filesystem::absolute(std::filesystem::u8path(resources));
         if (has_soundfont) {
