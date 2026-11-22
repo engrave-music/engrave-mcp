@@ -50,6 +50,7 @@ def main() -> int:
     inputs = {name: Draft202012Validator(t["inputSchema"]) for name, t in tools.items()}
 
     counts: Counter[str] = Counter()
+    ops_examples_checked = 0
     for line in result.stdout.splitlines():
         if not line.startswith("HOST_CASE "):
             continue
@@ -58,6 +59,10 @@ def main() -> int:
         assert isinstance(payload["ok"], bool)
         if payload["ok"]:
             inputs[name].validate(arguments)
+            if name == "runtime_info" and arguments == {"scope": "ops"}:
+                for entry in payload["ops"]:
+                    inputs["score_edit"].validate({"document": "doc-A-1", "ops": [entry["example"]]})
+                    ops_examples_checked += 1
         counts[name] += 1
     required = {
         "score_open",
@@ -74,12 +79,14 @@ def main() -> int:
     }
     if set(counts) != required or "host_api_test passed" not in result.stdout:
         raise AssertionError(f"incomplete host test output: {counts}")
+    assert ops_examples_checked > 0, "missing runtime_info operation examples"
     print(
         json.dumps(
             {
                 "status": "passed",
                 "native_exit": result.returncode,
                 "schema_checked_responses": sum(counts.values()),
+                "schema_checked_op_examples": ops_examples_checked,
                 "tools": counts,
             },
             indent=2,

@@ -6,6 +6,10 @@ Json schema_array(const Json &item) { return {{"type", "array"}, {"items", item}
 
 Json choices(std::initializer_list<Json> values) { return {{"type", "string"}, {"enum", json_array<Json>(values)}}; }
 
+Json alternatives(std::initializer_list<Json> schemas, const char *description) {
+    return {{"anyOf", json_array<Json>(schemas)}, {"description", description}};
+}
+
 Json integer(int low, int high) { return {{"type", "integer"}, {"minimum", low}, {"maximum", high}}; }
 
 Json object(Json props, Json required) {
@@ -39,19 +43,27 @@ Json declared_tools() {
     const Json scope = choices({"overview", "templates", "instruments", "types", "type", "styles", "ops"});
     const Json mode = choices({"elements", "properties", "page_count", "audio_tracks"});
     const Json pitch_mode = choices({"concert", "written"});
-    const Json value = Json{{"description", "Native JSON value matching the engine property or style descriptor."}};
-    const Json ref = Json{{"description", "Persistent EID or a batch-local reference {from_op,item}."}};
-    const Json pos = Json{{"description", "Use {measure,offset,staff,voice} with a 1-based measure number and exact measure-local offset. "
-                                          "Layout addresses use kind and zero-based index."}};
     const Json num = Json{{"type", "number"}};
+    const Json object_type = Json{{"type", "object"}};
+    const Json null_type = Json{{"type", "null"}};
+    const Json value =
+        alternatives({boolean, num, Json{{"type", "string"}}, schema_array(Json{{"type", "integer"}}), object_type, null_type},
+                     "Native JSON value matching the engine property or style descriptor.");
+    const Json query_target = alternatives({eid, object_type}, "Persistent EID or layout address.");
+    const Json ref = alternatives({eid, object_type}, "Persistent EID, layout address, or batch-local reference {from_op,item}.");
+    const Json score_pos_ref =
+        alternatives({bar, eid, object_type}, "1-based position, persistent EID, layout address, or {from_op,item}.");
+    const Json pos = Json{{"type", "object"},
+                          {"description", "Use {measure,offset,staff,voice} with a 1-based measure number and exact measure-local offset, "
+                                          "or a layout address with kind."}};
     const Json volume = Json{{"type", "number"}, {"minimum", -120}, {"maximum", 24}};
     const Json balance = Json{{"type", "number"}, {"minimum", -1}, {"maximum", 1}};
     const Json dpi = integer(36, 1200);
     const Json last = integer(-1, 2147483647);
     const Json limit = integer(1, 4096);
     const Json cursor = integer(0, 4096);
-    const Json sf = Json{{"description", "SoundFont index, path, name, or null."}};
-    const Json bit_depth = Json{{"enum", json_array<Json>({0, 16, 24, 32})}};
+    const Json sf = alternatives({idx, text, null_type}, "SoundFont index, path, name, or null.");
+    const Json bit_depth = Json{{"type", "integer"}, {"enum", json_array<Json>({0, 16, 24, 32})}};
     const Json bitrate = integer(0, 512);
     const Json sample_rate = integer(1, 384000);
     const Json track = object({{"track", idx},
@@ -145,29 +157,38 @@ Json declared_tools() {
     op_fields["chord_rest"] = ref;
     op_fields["before"] = ref;
     op_fields["count"] = n1024;
-    op_fields["kind"] = Json{{"description", "See the named operation in runtime_info scope ops."}};
+    op_fields["kind"] =
+        Json{{"type", "string"},
+             {"maxLength", 4096},
+             {"description", "Measure kind (Measure|VBox|HBox|TBox|FBox), layout break (line|page|section|nobreak), or grace "
+                             "kind (acciac|appog|grace4|grace16|grace32|after8|after16|after32)."}};
     op_fields["first"] = ref;
     op_fields["last"] = ref;
-    op_fields["measure"] = ref;
+    op_fields["measure"] = score_pos_ref;
     op_fields["sig"] = fraction;
     op_fields["key"] = key;
-    op_fields["staff"] = ref;
+    op_fields["staff"] = score_pos_ref;
     op_fields["clef"] = text;
     op_fields["on"] = boolean;
     op_fields["instrument_id"] = text;
     op_fields["part"] = ref;
     op_fields["parts"] = schema_array(ref);
     op_fields["type"] = text;
-    op_fields["start"] = Json{{"description", "See the named operation in runtime_info scope ops."}};
-    op_fields["end"] = Json{{"description", "See the named operation in runtime_info scope ops."}};
+    op_fields["start"] =
+        alternatives({boolean, eid, object_type},
+                     "Repeat-start flag for set_repeat_barlines, or spanner start anchor (EID, layout address, or {from_op,item}).");
+    op_fields["end"] =
+        alternatives({boolean, bar, eid, object_type},
+                     "Repeat-end flag for set_repeat_barlines, end anchor (EID, layout address, or {from_op,item}) for add_spanner, "
+                     "or 1-based bar number or measure EID for add_spanner_to_bar_end.");
     op_fields["props"] = schema_array(object({{"name", text}, {"value", value}}, json_array<Json>({"name", "value"})));
     op_fields["end_note"] = ref;
     op_fields["actual"] = n1024;
     op_fields["normal"] = n1024;
     op_fields["text"] = long_text;
     op_fields["anchor"] = ref;
-    op_fields["first_measure"] = ref;
-    op_fields["last_measure"] = ref;
+    op_fields["first_measure"] = score_pos_ref;
+    op_fields["last_measure"] = score_pos_ref;
     op_fields["endings"] = schema_array(n1024);
     op_fields["closed"] = boolean;
     op_fields["principal"] = ref;
@@ -203,7 +224,7 @@ Json declared_tools() {
                  {"expected_revision", revision},
                  {"mode", mode},
                  {"query", query},
-                 {"target", ref},
+                 {"target", query_target},
                  {"props", schema_array(text)},
                  {"excerpt", eid}},
                 json_array<Json>({"document", "mode"})),

@@ -34,15 +34,132 @@ NAMES = [
 
 
 def inspect_schema(node):
-    if isinstance(node, list):
-        for item in node:
-            inspect_schema(item)
-    if isinstance(node, dict):
-        assert (
-            not {"oneOf", "unevaluatedProperties", "not", "if", "then", "else", "const", "outputSchema"} & node.keys()
-        ), node
-        for item in node.values():
-            inspect_schema(item)
+    assert isinstance(node, dict), node
+    assert not {"oneOf", "unevaluatedProperties", "not", "if", "then", "else", "const", "outputSchema"} & node.keys(), (
+        node
+    )
+    if "type" in node:
+        assert isinstance(node["type"], str), node
+    else:
+        assert node.get("anyOf"), node
+    if "enum" in node:
+        assert "type" in node, node
+    if node.get("type") == "array":
+        assert "items" in node, node
+    for keyword in ("properties", "patternProperties", "$defs", "definitions", "dependentSchemas"):
+        for sub in node.get(keyword, {}).values():
+            inspect_schema(sub)
+    for keyword in ("items", "additionalProperties", "contains", "propertyNames"):
+        if keyword in node and isinstance(node[keyword], dict):
+            inspect_schema(node[keyword])
+    for keyword in ("anyOf", "allOf", "prefixItems"):
+        for branch in node.get(keyword, []):
+            inspect_schema(branch)
+
+
+def check_values(validator, arguments, accepted, rejected):
+    for value in accepted:
+        validator.validate(arguments(value))
+    for value in rejected:
+        case = arguments(value)
+        assert not validator.is_valid(case), case
+
+
+def check_typed_fields(by_name):
+    document = "doc-A-1"
+    eid = "A_A"
+    layout = {"kind": "page", "index": 0}
+    op_ref = {"from_op": 0, "item": 0}
+    long_eid = "A" * 33
+    long_text = "A" * 4097
+    int32_max = 2_147_483_647
+    export = by_name["score_export"]
+    wav = {"document": document, "format": "wav", "path": "out.wav"}
+    check_values(export, lambda v: {**wav, "options": {"bit_depth": v}}, [0, 16, 24, 32], [8, "16", False, None])
+    check_values(
+        export,
+        lambda v: {**wav, "options": {"tracks": [{"track": 0, "soundfont": v}]}},
+        [0, int32_max, "FluidR3Mono_GM.sf3", None],
+        [-1, int32_max + 1, 1.5, False, {}, [], long_text],
+    )
+    check_values(
+        by_name["score_query"],
+        lambda v: {"document": document, "mode": "properties", "target": v},
+        [eid, layout],
+        [1, None, [], long_eid],
+    )
+
+    edit = by_name["score_edit"]
+    spanner = {"op": "add_spanner", "type": "HairPin", "start": eid, "end": eid}
+    key_sig = {"op": "set_key_sig", "measure": 1, "staff": 1, "key": 0}
+    volta = {"op": "add_volta", "first_measure": 1, "last_measure": 2, "endings": [1]}
+    position_values = [1, int32_max, eid, layout, op_ref]
+    invalid_positions = [0, -1, int32_max + 1, 1.5, False, [], long_eid]
+    for op, field, accepted, rejected in [
+        (
+            {"op": "enter_notes", "duration": "1/4", "pitches": [{"pitch": 60}]},
+            "at",
+            [{"measure": 1}, layout],
+            [1, eid, [], None],
+        ),
+        ({"op": "insert_measures", "count": 1}, "kind", ["VBox"], [1, {}, None, long_text]),
+        ({"op": "remove"}, "target", [eid, layout, op_ref], [1, False, [], long_eid]),
+        ({"op": "generate_excerpts"}, "parts", [[eid, op_ref]], [[1], [None]]),
+        (spanner, "start", [eid, layout, op_ref], [1, [], None, long_eid]),
+        (spanner, "end", [eid, layout, op_ref], [0, int32_max + 1, 1.5, [], None, long_eid]),
+        ({**spanner, "op": "add_spanner_to_bar_end"}, "end", [1, int32_max], [-1, 0, int32_max + 1]),
+        ({"op": "set_repeat_barlines", "measure": 1}, "start", [True, False], [[], None]),
+        ({"op": "set_repeat_barlines", "measure": 1}, "end", [True, False], [[], None]),
+        (key_sig, "measure", position_values, invalid_positions),
+        (key_sig, "staff", position_values, invalid_positions),
+        (volta, "first_measure", position_values, invalid_positions),
+        (volta, "last_measure", position_values, invalid_positions),
+    ]:
+        check_values(edit, lambda v: {"document": document, "ops": [{**op, field: v}]}, accepted, rejected)
+
+    typed_values = [
+        ("visible", True),
+        ("scale", 2.5),
+        ("text", "text"),
+        ("endings", [-1, 2]),
+        ("offset", {"x": 0.5, "y": 0}),
+        ("color", {"r": 0, "g": 0, "b": 255, "a": 255}),
+        ("color", None),
+    ]
+    invalid_values = [["bad"], [1.5], [True], [[1]]]
+    for prop_name, value in typed_values:
+        edit.validate(
+            {
+                "document": document,
+                "ops": [{"op": "set_property", "target": eid, "property": prop_name, "value": value}],
+            }
+        )
+        edit.validate(
+            {
+                "document": document,
+                "ops": [
+                    {"op": "add", "anchor": eid, "type": "Dynamic", "props": [{"name": prop_name, "value": value}]}
+                ],
+            }
+        )
+    check_values(
+        edit,
+        lambda v: {
+            "document": document,
+            "ops": [{"op": "set_property", "target": eid, "property": "endings", "value": v}],
+        },
+        [],
+        invalid_values,
+    )
+    check_values(
+        edit,
+        lambda v: {
+            "document": document,
+            "ops": [{"op": "add", "anchor": eid, "type": "Dynamic", "props": [{"name": "endings", "value": v}]}],
+        },
+        [],
+        invalid_values,
+    )
 
 
 def main():
@@ -96,6 +213,7 @@ def main():
         Draft202012Validator.check_schema(schema)
         inspect_schema(schema)
     by_name = {t["name"]: Draft202012Validator(t["inputSchema"]) for t in tools}
+    check_typed_fields(by_name)
     by_name["score_create"].validate({})
     phrase = by_name["score_write_phrase"]
     phrase.validate(
