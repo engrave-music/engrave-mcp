@@ -12,12 +12,12 @@
 #include <thread>
 #include <utility>
 
-#include <ankerl/unordered_dense.h>
 #include <engrave/testing/write470.h>
 #include <glaze/json/write.hpp>
 
 #include "api_json_internal.h"
 #include "audio_budget.h"
+#include "containers.h"
 #include "export_timing.h"
 #include "publication.h"
 #include "publication_gate.h"
@@ -216,7 +216,7 @@ Result<engrave::AudioOptions> effective_mix(engrave::Document &document, const E
     if (defaults.tracks.size() > 256) return std::unexpected(HostError{"ResourceLimit", "audio track count exceeds 256"});
     result.master_volume_db = result.master_volume_db.value_or(defaults.master.volume_db);
     result.master_balance = result.master_balance.value_or(defaults.master.balance);
-    ankerl::unordered_dense::set<i32> seen;
+    HashSet<i32> seen;
     for (const auto &track : result.tracks) {
         if (!seen.insert(track.track).second) return std::unexpected(invalid_error("duplicate audio track"));
         if (std::none_of(defaults.tracks.begin(), defaults.tracks.end(), [&](const auto &t) { return t.track == track.track; })) {

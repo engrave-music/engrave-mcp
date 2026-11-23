@@ -6,6 +6,7 @@
 
 #include "json.h"
 #include "types.h"
+#include "unique_fn.h"
 
 namespace music {
 

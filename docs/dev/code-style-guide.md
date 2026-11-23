@@ -42,20 +42,23 @@ Always use `struct`, do not use `class` for custom types. This avoids `public:` 
 - **Owned value semantics**: Value types own their data. Do not add copy-on-write wrappers, reference-counted buffers, or `std::shared_ptr` ownership graphs where single ownership or flat storage works. Avoid copies on hot paths by passing views (`std::string_view`, `std::span`) or references.
 - **Data-oriented layout**: Prefer contiguous flat arrays (`amc::vector`, `std::vector`) and integer indices/offsets over pointer-chasing node graphs.
 
-## Polymorphism and Type Erasure
+## Polymorphism and Callables
 
 Never introduce `virtual` functions, abstract base classes, or vtable hierarchies.
 
-- **Dynamic dispatch and type erasure via `ngcpp-proxy`**: When runtime polymorphism or callable/interface type erasure is genuinely needed, use `pro::proxy` (owning) or `pro::proxy_view` (non-owning) from `<proxy/proxy.h>` instead of virtual interfaces or `std::function`. `proxy` keeps structs plain data without interfering with their memory layout.
-- **Non-storing inline callbacks**: When a callback does not cross a compilation boundary and is not stored, prefer a template parameter (`template <class Fn>`).
+- **Multi-method value-semantic interfaces via `ngcpp-proxy`**: When runtime polymorphism across multiple methods (or a specialized move-once proxy like `OutputWaiter`) is genuinely needed, use `pro::proxy` (owning) or `pro::proxy_view` (non-owning) from `<proxy/proxy.h>` instead of virtual interfaces. `proxy` keeps structs plain data without interfering with their memory layout.
+- **Single-signature callables**:
+  - **Non-storing inline callbacks**: When a callback does not cross a compilation boundary and is not stored, prefer a template parameter (`template <class Fn>`).
+  - **Non-owning synchronous callbacks**: Use `music::FnRef<Sig>` (`"types.h"` in the host) or `muse::FnRef<Sig>` (`"global/fn.h"` in the engine) — a 16-byte trivially copyable view with zero heap allocation and no `<proxy/proxy.h>` include.
+  - **Owning stored callbacks**: Use `music::UniqueFn<Sig>` (`"unique_fn.h"` in the host) or `muse::UniqueFn<Sig>` (`"global/unique_fn.h"` in the engine) instead of `std::function`. Public `<engrave/...>` headers stay on standard C++ (`std::function`) so they carry no third-party header dependencies.
 - **Closed sets**: When the set of alternatives is closed and known statically, use `std::variant` or enum dispatch.
 
 ## Containers and JSON
 
-- **No node-based associative containers**: Do not use `std::map`, `std::unordered_map`, `std::set`, `std::unordered_set`, `std::multimap`, or `std::multiset`. Use:
-  - `ankerl::unordered_dense::map` or `set` (`<ankerl/unordered_dense.h>`) for lookup-only hash maps and sets (or `segmented_map` / `segmented_set` when references or pointers must survive insertion).
-  - `gtl::btree_map`, `btree_set`, `btree_multimap`, or `btree_multiset` (`<gtl/btree.hpp>`) for large or dynamically mutated ordered containers (available in `vendor/engrave`).
-  - `amc` flat containers (`<amc/vector.hpp>`, `<amc/flatset.hpp>`) or sorted vectors (`muse::FlatMap`) for small or monotonically built ordered data.
+- **No node-based associative containers**: Do not use `std::map`, `std::unordered_map`, `std::set`, `std::unordered_set`, `std::multimap`, or `std::multiset`. Use the thin internal vocabulary headers instead of including third-party container headers directly:
+  - `music::HashMap`, `music::HashSet`, `music::SegmentedHashMap`, `music::SegmentedHashSet` (`"containers.h"` in the host) and `muse::HashMap`, `muse::HashSet`, `muse::SegmentedHashMap`, `muse::SegmentedHashSet` (`"global/hashmap.h"` in the engine, backed by `ankerl::unordered_dense`) for lookup-only data (`std::string` keys support transparent `std::string_view` lookup; use `Segmented*` when references or pointers must survive insertion).
+  - `muse::BTreeMap`, `muse::BTreeSet`, `muse::BTreeMultiMap`, `muse::BTreeMultiSet` (`"global/btree.h"` in `vendor/engrave`, backed by `gtl::btree_*`) for large or dynamically mutated ordered containers (`BTreeMap` provides aliasing-safe `insert_or_assign`).
+  - `muse::FlatMap` (`"global/flatmap.h"`) and `muse::FlatSet` (`"global/flatset.h"`, backed by `amc::FlatSet`) for small or monotonically built ordered data in `vendor/engrave`.
 - **JSON via typed `glaze` structs**: Define plain C++ structs and read/write JSON directly with `glaze` compile-time reflection rather than building or walking untyped dynamic DOM maps. Public `<engrave/...>` headers must not expose any JSON library.
 - **No Boost**: Do not introduce Boost dependencies.
 
@@ -74,11 +77,11 @@ Use `#pragma once` (never `#ifndef` include guards). Group includes in the follo
 #include <vector>
 
 // 3. Third-party headers (including <engrave/...> in host code)
-#include <ankerl/unordered_dense.h>
 #include <engrave/engrave.h>
 #include <proxy/proxy.h>
 
 // 4. Project headers
+#include "containers.h"
 #include "schema_defs.h"
 ```
 

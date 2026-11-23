@@ -362,16 +362,16 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                         if (result.error().published_artifacts.empty()) result.error().published_artifacts = std::move(visible_paths);
                         payload = error_envelope(result.error());
                     }
-                    if (publication.owns_lock() && execution && execution->report.has_value()) {
-                        (*execution->report)(std::move(payload));
+                    if (publication.owns_lock() && execution && execution->report) {
+                        execution->report(std::move(payload));
                         execution->mark_report_sent();
                         return Json{};
                     }
                     return payload;
                 } catch (...) {
                     if (publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING &&
-                        execution->report.has_value()) {
-                        (*execution->report)(Json{}); // terminal: trustworthy report unavailable
+                        execution->report) {
+                        execution->report(Json{}); // terminal: trustworthy report unavailable
                     }
                     throw;
                 }

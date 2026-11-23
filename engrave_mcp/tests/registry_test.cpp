@@ -1,12 +1,20 @@
 #include "registry.h"
 
+#include <functional>
+#include <memory>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include <gtest/gtest.h>
 
+#include "containers.h"
 #include "schema_defs.h"
 #include "tool_result.h"
+#include "types.h"
+#include "unique_fn.h"
 
 namespace {
 using namespace music::api;
@@ -143,6 +151,109 @@ TEST(Registry, Handlers) {
     for (const auto &spec : registry()) {
         EXPECT_EQ(find_tool(spec.name), &spec);
     }
+}
+
+int add_two(int x) noexcept { return x + 2; }
+
+TEST(Vocabulary, FnRefAndUniqueFn) {
+    static_assert(sizeof(music::FnRef<int(int)>) == 2 * sizeof(void *));
+    static_assert(std::is_trivially_copyable_v<music::FnRef<int(int)>>);
+    static_assert(!std::is_assignable_v<music::FnRef<int(int)> &, decltype(&add_two)>);
+    static_assert(!std::is_constructible_v<music::FnRef<const int &(int)>, decltype(&add_two)>);
+    static_assert(std::is_constructible_v<music::FnRef<int(int)>, music::FnRef<int(int) const noexcept>>);
+    static_assert(!std::is_constructible_v<music::FnRef<int(int) const>, music::FnRef<int(int)>>);
+    static_assert(!std::is_constructible_v<music::UniqueFn<int(int)>, music::FnRef<int(int)>>);
+    static_assert(!std::is_constructible_v<music::UniqueFn<int(int) const>, music::FnRef<int(int)>>);
+    static_assert(!std::is_assignable_v<music::UniqueFn<int(int)> &, music::FnRef<int(int)>>);
+
+    music::FnRef<int(int)> empty_ref;
+    EXPECT_FALSE(static_cast<bool>(empty_ref));
+    int (*null_fn)(int) = nullptr;
+    music::FnRef<int(int)> from_null_ptr(null_fn);
+    EXPECT_FALSE(static_cast<bool>(from_null_ptr));
+    std::function<int(int)> empty_std;
+    music::FnRef<int(int)> from_empty_std(empty_std);
+    EXPECT_FALSE(static_cast<bool>(from_empty_std));
+
+    music::FnRef<int(int) const noexcept> strict_ref(add_two);
+    music::FnRef<int(int)> widened_ref(strict_ref);
+    ASSERT_TRUE(static_cast<bool>(widened_ref));
+    EXPECT_EQ(widened_ref(5), 7);
+    widened_ref = nullptr;
+    EXPECT_FALSE(static_cast<bool>(widened_ref));
+
+    music::UniqueFn<int(int)> owned = [bias = std::make_unique<int>(10)](int x) mutable {
+        *bias += x;
+        return *bias;
+    };
+    ASSERT_TRUE(static_cast<bool>(owned));
+    music::FnRef<int(int)> view_owned(owned);
+    EXPECT_EQ(view_owned(3), 13);
+    EXPECT_EQ(owned(4), 17);
+    owned = nullptr;
+    EXPECT_FALSE(static_cast<bool>(owned));
+    music::FnRef<int(int)> view_empty_owned(owned);
+    EXPECT_FALSE(static_cast<bool>(view_empty_owned));
+
+    // Reassignment, conversion adapter (void discard / implicit conversion), member pointer, and std::ref unwrapping.
+    owned = [](int x) { return x * 3; };
+    ASSERT_TRUE(static_cast<bool>(owned));
+    EXPECT_EQ(owned(4), 12);
+
+    int adapted_sum = 0;
+    music::UniqueFn<void(short)> adapted = [&](int x) {
+        adapted_sum += x;
+        return adapted_sum;
+    };
+    adapted(static_cast<short>(6));
+    EXPECT_EQ(adapted_sum, 6);
+
+    struct MemberBox {
+        int value = 0;
+    };
+
+    int MemberBox::*null_mp = nullptr;
+    music::UniqueFn<int(const MemberBox &) const> empty_mp = null_mp;
+    EXPECT_FALSE(static_cast<bool>(empty_mp));
+    music::UniqueFn<int(const MemberBox &) const> live_mp = &MemberBox::value;
+    ASSERT_TRUE(static_cast<bool>(live_mp));
+    EXPECT_EQ(live_mp(MemberBox{42}), 42);
+
+    int acc = 5;
+    auto bump = [&acc](int delta) {
+        acc += delta;
+        return acc;
+    };
+    music::FnRef<int(int)> unwrapped = std::ref(bump);
+    EXPECT_EQ(unwrapped(4), 9);
+    EXPECT_EQ(acc, 9);
+}
+
+TEST(Vocabulary, HashContainersTransparentStringLookup) {
+    music::HashMap<std::string, int> map;
+    map.emplace("alpha", 1);
+    map.emplace("beta", 2);
+    const std::string_view key = "beta";
+    auto it = map.find(key);
+    ASSERT_NE(it, map.end());
+    EXPECT_EQ(it->second, 2);
+    EXPECT_EQ(map.find(std::string_view("gamma")), map.end());
+
+    music::HashSet<std::string> set;
+    set.insert("token-1");
+    EXPECT_TRUE(set.contains(std::string_view("token-1")));
+    EXPECT_FALSE(set.contains(std::string_view("token-2")));
+
+    music::SegmentedHashMap<std::string, int> smap;
+    smap.emplace("one", 11);
+    auto &ref = smap.at("one");
+    for (int i = 0; i < 64; ++i) smap.emplace("k" + std::to_string(i), i);
+    EXPECT_EQ(&smap.find(std::string_view("one"))->second, &ref);
+
+    music::SegmentedHashSet<std::string> sset;
+    sset.insert("seg-1");
+    EXPECT_TRUE(sset.contains(std::string_view("seg-1")));
+    EXPECT_FALSE(sset.contains(std::string_view("seg-2")));
 }
 
 } // namespace

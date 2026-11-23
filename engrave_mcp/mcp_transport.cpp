@@ -28,6 +28,7 @@
 #include <vector>
 
 #include <asio.hpp>
+#include <proxy/proxy.h>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -205,7 +206,7 @@ struct OutputMessage {
     std::string wire;
 };
 
-using OutputWaiterFacade = CallableFacade<void() && noexcept>;
+using OutputWaiterFacade = pro::facade_builder::add_convention<pro::operator_dispatch<"()">, void() && noexcept>::build;
 using OutputWaiter = pro::proxy<OutputWaiterFacade>;
 
 struct ArmedWaiter {
@@ -1312,7 +1313,7 @@ private:
                 bool list_tools_failed = false;
                 std::string list_tools_error;
                 try {
-                    tools_raw = (*list_tools_)();
+                    tools_raw = list_tools_();
                 } catch (const std::exception &e) {
                     list_tools_failed = true;
                     list_tools_error = std::string("Tool list callback error: ") + e.what();
@@ -1360,7 +1361,7 @@ private:
                     co_return co_await send_error(id, -32000, "Server overload: 64 outstanding tool calls already in flight");
                 }
 
-                if (!(*tool_exists_)(tool_name)) {
+                if (!tool_exists_(tool_name)) {
                     co_return co_await send_error(id, -32602, "Unknown tool: " + tool_name);
                 }
 
@@ -1498,8 +1499,9 @@ private:
             call->live_export = name == "score_export";
             call->cancel = std::make_shared<asio::cancellation_signal>();
             if (call->live_export) {
-                call->execution->report = make_unique_fn<void(Json)>(
-                    [self = shared_from_this(), id, modern](Json payload) { self->publish_report(id, std::move(payload), modern); });
+                call->execution->report = [self = shared_from_this(), id, modern](Json payload) {
+                    self->publish_report(id, std::move(payload), modern);
+                };
             }
             inflight_.push_back(call);
         } catch (...) {
@@ -1551,7 +1553,7 @@ private:
         std::string error_message;
 
         try {
-            Json payload = co_await (*call_tool_)(std::move(name), std::move(arguments), call->execution);
+            Json payload = co_await call_tool_(std::move(name), std::move(arguments), call->execution);
             call->tool_finished = true;
             if (call->watchdog) call->watchdog->cancel();
 
@@ -1754,9 +1756,9 @@ private:
             return;
         }
         shutdown_called_ = true;
-        if (shutdown_.has_value()) {
+        if (shutdown_) {
             try {
-                (*shutdown_)();
+                shutdown_();
             } catch (...) {}
         }
     }

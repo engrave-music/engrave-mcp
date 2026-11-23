@@ -7,9 +7,8 @@
 #include <random>
 #include <thread>
 
-#include <ankerl/unordered_dense.h>
-
 #include "api_json_internal.h"
+#include "containers.h"
 #include "phrase.h"
 
 namespace music::api {
@@ -205,8 +204,8 @@ struct HostApi::Impl {
     std::optional<ValueCatalogue> catalogue;
     std::shared_ptr<const RuntimeAssets> assets;
     std::unique_ptr<engrave::Engine> engine; // destroyed after documents, before assets
-    ankerl::unordered_dense::map<std::string, std::unique_ptr<engrave::Document>> documents;
-    ankerl::unordered_dense::set<std::string> borrowed;
+    HashMap<std::string, std::unique_ptr<engrave::Document>> documents;
+    HashSet<std::string> borrowed;
 
     Result<void> check_thread() const {
         if (std::this_thread::get_id() != owner) {
@@ -852,7 +851,7 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<u64> e
         }
 
         struct Guard {
-            ankerl::unordered_dense::set<std::string> &set;
+            HashSet<std::string> &set;
             const std::string &key;
 
             ~Guard() { set.erase(key); }

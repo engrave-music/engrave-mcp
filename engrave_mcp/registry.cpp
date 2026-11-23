@@ -3,9 +3,8 @@
 #include <cstddef>
 #include <stdexcept>
 
-#include <ankerl/unordered_dense.h>
-
 #include "api_json.h"
+#include "containers.h"
 
 namespace music::api {
 
@@ -77,7 +76,7 @@ void validate_handlers(const HandlerTable &handlers) {
 void validate_registry() {
     auto tools = tools_json();
     if (schemas().size() != specs.size()) throw std::logic_error("tool count mismatch");
-    ankerl::unordered_dense::set<std::string> names;
+    HashSet<std::string> names;
     for (const auto &tool : schemas().get_array()) {
         const auto name = tool.at("name").get<std::string>();
         if (!names.insert(name).second || !find_tool(name)) throw std::logic_error("duplicate or unknown schema definition");

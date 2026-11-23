@@ -2,9 +2,8 @@
 #include <format>
 #include <numeric>
 
-#include <ankerl/unordered_dense.h>
-
 #include "api_json_internal.h"
+#include "containers.h"
 #include "phrase.h"
 #include "types.h"
 #include "utf8_text.h"
@@ -123,7 +122,7 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
     Summary summary;
     if (w.score.excerpt) summary.append("Excerpt " + to_string(*w.score.excerpt) + "\n");
     for (const auto *key : {"staves", "measures", "tuplets", "spanners", "voltas"}) out[key] = make_array<Json>();
-    ankerl::unordered_dense::map<std::string, int> bars, tuplets;
+    HashMap<std::string, int> bars, tuplets;
     for (const auto &m : outline.measures) bars[to_string(m.id)] = m.index + 1;
     for (const auto &s : w.staves) {
         summary.append(std::format("Staff {} {} time={} key={}\n", s.staff + 1, s.part_name, fraction(s.time_sig, true), s.key));

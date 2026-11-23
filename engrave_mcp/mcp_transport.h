@@ -12,6 +12,7 @@
 #include "json.h"
 #include "publication_gate.h"
 #include "types.h"
+#include "unique_fn.h"
 
 namespace music {
 

@@ -115,32 +115,33 @@ int run_server(int argc, char **argv) {
         }
         AsyncSession session(std::move(options));
         const bool hooks = test_hooks_enabled();
-        return serve_stdio_async(make_unique_fn<Json()>([hooks] {
-                                     auto tools = api::tools_json();
-                                     if (hooks) {
-                                         json_push(tools, Json{{"name", "test_owner_state"},
-                                                               {"description", "Test-only owner-thread state"},
-                                                               {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
-                                         json_push(tools, Json{{"name", "test_owner_sleep"},
-                                                               {"description", "Test-only owner-thread stall"},
-                                                               {"inputSchema",
-                                                                {{"type", "object"},
-                                                                 {"properties",
-                                                                  {{"ms", {{"type", "integer"}, {"minimum", 1}, {"maximum", 60000}}},
-                                                                   {"barrier", {{"type", "string"}}}}},
-                                                                 {"additionalProperties", false}}}});
-                                     }
-                                     return tools;
-                                 }),
-                                 make_unique_fn<bool(std::string_view)>([hooks](std::string_view name) {
-                                     if (api::find_tool(name)) return true;
-                                     return hooks && (name == "test_owner_state" || name == "test_owner_sleep");
-                                 }),
-                                 make_unique_fn<asio::awaitable<Json>(std::string, Json, std::shared_ptr<RequestExecution>)>(
-                                     [&session](std::string name, Json args, std::shared_ptr<RequestExecution> execution) {
-                                         return session.call(std::move(name), std::move(args), std::move(execution));
-                                     }),
-                                 make_unique_fn<void()>([&session] { session.shutdown(); }));
+        return serve_stdio_async(
+            [hooks] {
+                auto tools = api::tools_json();
+                if (hooks) {
+                    json_push(tools, Json{{"name", "test_owner_state"},
+                                          {"description", "Test-only owner-thread state"},
+                                          {"inputSchema", {{"type", "object"}, {"additionalProperties", false}}}});
+                    json_push(
+                        tools,
+                        Json{{"name", "test_owner_sleep"},
+                             {"description", "Test-only owner-thread stall"},
+                             {"inputSchema",
+                              {{"type", "object"},
+                               {"properties",
+                                {{"ms", {{"type", "integer"}, {"minimum", 1}, {"maximum", 60000}}}, {"barrier", {{"type", "string"}}}}},
+                               {"additionalProperties", false}}}});
+                }
+                return tools;
+            },
+            [hooks](std::string_view name) {
+                if (api::find_tool(name)) return true;
+                return hooks && (name == "test_owner_state" || name == "test_owner_sleep");
+            },
+            [&session](std::string name, Json args, std::shared_ptr<RequestExecution> execution) {
+                return session.call(std::move(name), std::move(args), std::move(execution));
+            },
+            [&session] { session.shutdown(); });
     } catch (const std::exception &e) {
         std::fprintf(stderr, "%s\n", e.what());
         return 1;

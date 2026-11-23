@@ -8,7 +8,6 @@
 #include <system_error>
 #include <vector>
 
-#include <ankerl/unordered_dense.h>
 #include <gtest/gtest.h>
 
 #ifdef _WIN32
@@ -23,6 +22,7 @@
 #include <sys/stat.h>
 #endif
 
+#include "containers.h"
 #include "publication.h"
 #include "utf8_text.h"
 
@@ -31,7 +31,7 @@ namespace {
 namespace fs = std::filesystem;
 
 #ifdef _WIN32
-ankerl::unordered_dense::set<std::wstring> dacl_sids(const fs::path &path, bool *protected_dacl = nullptr) {
+music::HashSet<std::wstring> dacl_sids(const fs::path &path, bool *protected_dacl = nullptr) {
     PACL dacl = nullptr;
     PSECURITY_DESCRIPTOR descriptor = nullptr;
     const auto result =
@@ -55,7 +55,7 @@ ankerl::unordered_dense::set<std::wstring> dacl_sids(const fs::path &path, bool 
 
     ACL_SIZE_INFORMATION size{};
     EXPECT_NE(GetAclInformation(dacl, &size, sizeof(size), AclSizeInformation), FALSE);
-    ankerl::unordered_dense::set<std::wstring> sids;
+    music::HashSet<std::wstring> sids;
     for (DWORD i = 0; i < size.AceCount; ++i) {
         LPVOID ace = nullptr;
         EXPECT_NE(GetAce(dacl, i, &ace), FALSE);

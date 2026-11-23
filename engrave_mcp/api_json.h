@@ -8,10 +8,10 @@
 #include <string_view>
 #include <vector>
 
-#include <ankerl/unordered_dense.h>
 #include <engrave/document.h>
 #include <engrave/engine.h>
 
+#include "containers.h"
 #include "schema_defs.h"
 
 namespace music::api {
@@ -36,7 +36,7 @@ template <class T>
 using Result = std::expected<T, HostError>;
 
 struct ValueCatalogue {
-    ankerl::unordered_dense::map<std::string, engrave::ValueKind> properties, styles;
+    HashMap<std::string, engrave::ValueKind> properties, styles;
 };
 
 Result<engrave::Batch> decode_batch(const Json &ops, const ValueCatalogue &catalogue = {}, const engrave::Outline *outline = nullptr);

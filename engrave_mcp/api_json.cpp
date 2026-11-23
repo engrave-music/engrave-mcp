@@ -9,8 +9,6 @@
 #include <type_traits>
 #include <utility>
 
-#include <ankerl/unordered_dense.h>
-
 #include "api_json_internal.h"
 
 namespace music::api {
