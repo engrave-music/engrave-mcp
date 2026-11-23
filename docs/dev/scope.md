@@ -22,6 +22,7 @@ Do not add complexity or open defect reports for items outside this defined scop
 - Windows device namespaces (`\\.\`, `\\?\`), extended-length paths, and drive-relative edge forms.
 - Cross-volume publication transactions, multi-file atomic transactions, crash-consistent directory journaling, or automatic rollback of created parent folders.
 - Elevated token execution, service accounts, or domain policy corner cases.
+- In-server filesystem sandboxing, path allowlists, or deprecated MCP `roots` enforcement: the server runs as an ordinary local user process, and workspace confinement is owned by host-side OS sandboxing and client tool approvals.
 
 If these conditions are encountered, the host may return `Io` or `InvalidArgument` without publishing corrupt files.
 

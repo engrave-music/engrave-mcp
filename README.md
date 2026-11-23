@@ -18,17 +18,22 @@ is available for MuseScore 4.x interop where the score stays inside its document
 
 ## What it can do
 
+- Speak MCP over stdio JSON-RPC in both modern stateless mode (`2026-07-28`) and
+  legacy session mode (`2025-11-25` / `2025-06-18`).
 - Open MSCZ/MSCX, MusicXML/MXL, MIDI, Guitar Pro (GP3–GP7/GPX/PTB) and MNX.
 - Create a score from an engine template.
-- Read score outlines, query elements/measures/segments/properties/audio tracks,
-  and describe element types and style keys.
-- Apply edit batches (23 operations) with strict revisions. Each operation is
-  all-or-nothing; a batch stops at the first rejected operation and keeps the
-  operations before it. Named checkpoints give explicit rollback.
+- Read score outlines, inspect bar-aligned music windows (`score_read_music`),
+  query elements/properties/page counts/audio tracks (`score_query`), and
+  discover templates, instruments, types, styles and edit operations
+  (`runtime_info`).
+- Write musical phrases with compact notation (`score_write_phrase`) and apply
+  edit batches (28 operations) with strict revisions (`score_edit`). Batches
+  are atomic by default (`atomic: false` opts into prefix-commit). Named
+  checkpoints give explicit rollback.
 - Export score files, PDF/PNG/SVG vector and raster pages, synthesized audio
   (WAV/FLAC/Opus/MP3) and layout position data directly from the **live**
   in-memory document, with durable publication.
-- Hot-load fonts and replace SoundFonts at runtime.
+- Hot-load fonts and replace SoundFonts at runtime (`runtime_configure`).
 
 ## Quick start (Windows)
 
@@ -71,20 +76,22 @@ and Linux build, test, and packaging details are in [docs/dev/build.md](docs/dev
 
 ## Tools
 
-| Tool                 | What it does                                                                                  |
-| -------------------- | --------------------------------------------------------------------------------------------- |
-| `score_open`         | Open from `path` or base64 `data` (+ `format`, `filename_hint`, `strict_ids`).                |
-| `score_create`       | Create from `template_id` or `template_path` (+ `title`, `subtitle`, `composer`, `lyricist`). |
-| `score_close`        | Close a document and free its memory.                                                         |
-| `score_outline`      | Title/metadata, parts, measures, signatures, page count, revision.                            |
-| `score_query`        | `mode`: `elements`, `properties`, or `audio_tracks`.                                          |
-| `score_describe`     | `scope`: `types`, `type` (with `type`), or `styles`.                                          |
-| `score_edit`         | Prefix-commit `ops` batch with optional `expected_revision`.                                  |
-| `score_export`       | `kind`: `score`, `render`, `audio`, or `positions`.                                           |
-| `runtime_info`       | `action`: `get`, `add_font`, or `set_soundfonts`.                                             |
-| `checkpoint`         | Save a named in-memory snapshot of a document.                                                |
-| `restore_checkpoint` | Restore a named snapshot; clears a poisoned document.                                         |
-| `drop_checkpoint`    | Delete a named snapshot.                                                                      |
+| Tool                 | What it does                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `score_open`         | Open from `path` or base64 `data` (+ `format`, `filename_hint`, `strict_ids`).                                                  |
+| `score_create`       | Create from `template_id` or `template_path` (+ `title`, `subtitle`, `composer`, `lyricist`).                                   |
+| `score_close`        | Close a document and free its memory.                                                                                           |
+| `score_outline`      | Title/metadata, parts, measures, signatures, page count, revision.                                                              |
+| `score_read_music`   | Read a bar-aligned music window (`measure`, `count`, optional `staves`, `voices`, `excerpt`, `include_ids`).                    |
+| `score_write_phrase` | Enter compact musical notation into measure/staff/voice `lanes` (per-lane `pitch_mode`; optional `expected_revision`).          |
+| `score_query`        | `mode`: `elements`, `properties`, `page_count`, or `audio_tracks`.                                                              |
+| `score_edit`         | Apply up to 1,024 `ops` (atomic by default; set `atomic: false` for prefix-commit) with `expected_revision`.                    |
+| `score_export`       | Export `format` (`mscz`, `pdf`, `png`, `svg`, `wav`, `flac`, `opus`, `mp3`, positions, etc.) to `path`.                         |
+| `runtime_info`       | Inspect capabilities, limits, and catalogs (`scope`: `overview`, `templates`, `instruments`, `types`, `type`, `styles`, `ops`). |
+| `runtime_configure`  | Hot-load a font (`add_font`) and/or replace the ordered `soundfonts` list at runtime.                                           |
+| `checkpoint`         | Save a named in-memory snapshot of a document.                                                                                  |
+| `restore_checkpoint` | Restore a named snapshot; clears a poisoned document.                                                                           |
+| `drop_checkpoint`    | Delete a named snapshot.                                                                                                        |
 
 Every successful result carries `ok: true`. Failures carry
 `ok: false` and `error: {code, message, ...}` and set the MCP `isError` flag.
@@ -96,32 +103,31 @@ Schematic of the arguments and the `structuredContent` each call returns:
 ```json
 {"method":"tools/call","params":{"name":"score_create",
   "arguments":{"template_id":"Treble_Clef","title":"Prelude"}}}
-{"ok":true,"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1","revision":"1","diagnostics":[]}
+{"ok":true,"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1","revision":"1","outline":{"...":"..."},"diagnostics":[]}
 ```
 
 ```json
 {"method":"tools/call","params":{"name":"score_export",
-  "arguments":{"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1","kind":"render",
-    "destination":{"kind":"file","path":"C:/Scores/prelude.pdf"},
-    "options":{"format":"pdf"}}}}
+  "arguments":{"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1",
+    "format":"pdf","path":"C:/Scores/prelude.pdf"}}}
 {"ok":true,"source_revision":"1",
- "artifacts":[{"path":"C:/Scores/prelude.pdf","mime":"application/pdf","size":"48213"}]}
+ "artifacts":[{"path":"C:/Scores/prelude.pdf","mime":"application/pdf","size":48213}]}
 ```
 
 ## Client configuration
 
 After packaging (for example to `artifacts/windows-next`), register the server
-in your MCP client configuration using absolute paths:
+in your MCP client configuration using an absolute path. A packaged bundle
+automatically discovers its sibling `assets/` directory, and auto-loads
+`soundfonts/FluidR3Mono_GM.sf3` when that SoundFont was packaged alongside it
+(pass `--soundfont` or call `runtime_configure` for packages without it or to
+select another SoundFont):
 
 ```json
 {
   "mcpServers": {
     "engrave-mcp": {
-      "command": "C:/path/to/engrave-mcp/artifacts/windows-next/engrave-mcp.exe",
-      "args": [
-        "--soundfont",
-        "C:/path/to/engrave-mcp/artifacts/windows-next/soundfonts/FluidR3Mono_GM.sf3"
-      ]
+      "command": "C:/path/to/engrave-mcp/artifacts/windows-next/engrave-mcp.exe"
     }
   }
 }
@@ -154,6 +160,8 @@ inherited permissions, the documented path syntax, and scores from MuseScore 4.6
 onward.
 
 Explicit non-goals: MuseScore 1.x–4.5 readers, full MuseScore desktop feature parity,
+in-server filesystem sandboxing or deprecated MCP `roots` enforcement (workspace
+isolation is owned by host-side OS sandboxes and client tool approvals),
 complex/protected DACLs and ACL merging, SMB network share authentication, device namespaces
 and extended-length paths, cross-volume or multi-file transactional publication,
 and interactive/streaming playback. See [docs/dev/scope.md](docs/dev/scope.md) for the triage policy.
@@ -163,6 +171,7 @@ and interactive/streaming playback. See [docs/dev/scope.md](docs/dev/scope.md) f
 ```
 engrave_mcp/     MCP transport, tool registry, JSON codecs, live export, publication
 vendor/engrave/  pinned engrave engine (submodule, pinned by commit)
+licenses/        third-party and runtime license notices bundled by the packagers
 MODULE.bazel     Bzlmod dependencies and hermetic xclang toolchain
 BUILD.bazel      host targets; consumes @engrave from vendor/engrave
 clice.toml       shared host/engine editor, formatting and lint configuration

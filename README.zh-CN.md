@@ -15,13 +15,14 @@ MuseScore 的乐谱也要能被 Agent 打开并继续编辑。读取器接受 Mu
 
 ## 能力
 
+- 通过 stdio JSON-RPC 同时支持现代无状态 MCP（`2026-07-28`）与旧版会话 MCP（`2025-11-25` / `2025-06-18`）。
 - 打开 MSCZ/MSCX、MusicXML/MXL、MIDI、Guitar Pro（GP3–GP7/GPX/PTB）与 MNX。
 - 从引擎模板创建乐谱。
-- 读取大纲，查询元素/小节/段/属性/音轨，查询元素类型与样式目录。
-- 执行编辑批次（23 种操作），并校验严格版本号。每个操作要么完整生效要么不生效；批次在第一个被拒绝的操作处停止，之前的操作保留。需要回滚时使用命名检查点。
+- 读取大纲，按小节窗口读回乐谱内容（`score_read_music`），查询元素/属性/页数/音轨（`score_query`），并查询模板、乐器、元素类型、样式与编辑操作目录（`runtime_info`）。
+- 使用紧凑记谱语法写入乐句（`score_write_phrase`），或执行编辑批次（28 种操作）并校验严格版本号（`score_edit`）。编辑批次默认原子执行（传 `atomic: false` 可改为前缀提交）。需要回滚时使用命名检查点。
 - 从**内存中的实时文档**直接导出乐谱文件、PDF/PNG/SVG 矢量与栅格页面、合成音频
   （WAV/FLAC/Opus/MP3）与排版位置数据，并保证持久化发布。
-- 运行时热加载字体、替换 SoundFont。
+- 运行时热加载字体、替换 SoundFont（`runtime_configure`）。
 
 ## 快速开始（Windows）
 
@@ -64,20 +65,22 @@ build/release/engrave-mcp.exe --resources .runtime/assets `
 
 ## 工具
 
-| 工具                 | 作用                                                                                           |
-| -------------------- | ---------------------------------------------------------------------------------------------- |
-| `score_open`         | 从 `path` 或 base64 `data` 打开（可带 `format`、`filename_hint`、`strict_ids`）。              |
-| `score_create`       | 从 `template_id` 或 `template_path` 创建（可带 `title`、`subtitle`、`composer`、`lyricist`）。 |
-| `score_close`        | 关闭文档并释放内存。                                                                           |
-| `score_outline`      | 标题/元数据、声部、小节、拍号调号、页数、版本号。                                              |
-| `score_query`        | `mode`：`elements`、`properties` 或 `audio_tracks`。                                           |
-| `score_describe`     | `scope`：`types`、`type`（需带 `type`）或 `styles`。                                           |
-| `score_edit`         | 前缀提交的 `ops` 批次，可带 `expected_revision`。                                              |
-| `score_export`       | `kind`：`score`、`render`、`audio` 或 `positions`。                                            |
-| `runtime_info`       | `action`：`get`、`add_font` 或 `set_soundfonts`。                                              |
-| `checkpoint`         | 保存文档的命名内存快照。                                                                       |
-| `restore_checkpoint` | 恢复命名快照，并清除中毒状态。                                                                 |
-| `drop_checkpoint`    | 删除命名快照。                                                                                 |
+| 工具                 | 作用                                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `score_open`         | 从 `path` 或 base64 `data` 打开（可带 `format`、`filename_hint`、`strict_ids`）。                                     |
+| `score_create`       | 从 `template_id` 或 `template_path` 创建（可带 `title`、`subtitle`、`composer`、`lyricist`）。                        |
+| `score_close`        | 关闭文档并释放内存。                                                                                                  |
+| `score_outline`      | 标题/元数据、声部、小节、拍号调号、页数、版本号。                                                                     |
+| `score_read_music`   | 按小节窗口读回结构化音乐内容与小节对齐摘要（`measure`、`count`、可选 `staves`、`voices`、`excerpt`、`include_ids`）。 |
+| `score_write_phrase` | 按小节/谱表/声部轨道用紧凑记谱语法写入乐句（`lanes`，每条轨道可设 `pitch_mode`；可选 `expected_revision`）。          |
+| `score_query`        | `mode`：`elements`、`properties`、`page_count` 或 `audio_tracks`。                                                    |
+| `score_edit`         | 执行最多 1,024 条 `ops`（默认原子提交，传 `atomic: false` 为前缀提交），可带 `expected_revision`。                    |
+| `score_export`       | 将指定 `format`（`mscz`、`pdf`、`png`、`svg`、`wav`、`flac`、`opus`、`mp3`、位置数据等）导出到 `path`。               |
+| `runtime_info`       | 查询能力、配额与目录（`scope`：`overview`、`templates`、`instruments`、`types`、`type`、`styles`、`ops`）。           |
+| `runtime_configure`  | 运行时热加载字体（`add_font`）和/或替换有序 `soundfonts` 列表。                                                       |
+| `checkpoint`         | 保存文档的命名内存快照。                                                                                              |
+| `restore_checkpoint` | 恢复命名快照，并清除中毒状态。                                                                                        |
+| `drop_checkpoint`    | 删除命名快照。                                                                                                        |
 
 成功结果带 `ok: true`；失败结果带 `ok: false` 与
 `error: {code, message, ...}`，并设置 MCP 的 `isError` 标志。完整契约见
@@ -88,31 +91,29 @@ build/release/engrave-mcp.exe --resources .runtime/assets `
 ```json
 {"method":"tools/call","params":{"name":"score_create",
   "arguments":{"template_id":"Treble_Clef","title":"Prelude"}}}
-{"ok":true,"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1","revision":"1","diagnostics":[]}
+{"ok":true,"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1","revision":"1","outline":{"...":"..."},"diagnostics":[]}
 ```
 
 ```json
 {"method":"tools/call","params":{"name":"score_export",
-  "arguments":{"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1","kind":"render",
-    "destination":{"kind":"file","path":"C:/Scores/prelude.pdf"},
-    "options":{"format":"pdf"}}}}
+  "arguments":{"document":"doc-807a1e3391c253a993f2c46ac95aedb4-1",
+    "format":"pdf","path":"C:/Scores/prelude.pdf"}}}
 {"ok":true,"source_revision":"1",
- "artifacts":[{"path":"C:/Scores/prelude.pdf","mime":"application/pdf","size":"48213"}]}
+ "artifacts":[{"path":"C:/Scores/prelude.pdf","mime":"application/pdf","size":48213}]}
 ```
 
 ## 客户端配置
 
-打包后（例如输出到 `artifacts/windows-next`），在客户端配置中使用绝对路径注册服务：
+打包后（例如输出到 `artifacts/windows-next`），在客户端配置中使用绝对路径注册服务。
+打包产物会自动发现同级 `assets/` 目录；如果打包时一并包含了 `soundfonts/FluidR3Mono_GM.sf3`，
+也会自动加载该文件（未打包该 SoundFont 或需使用其他 SoundFont 时，请传 `--soundfont`
+或调用 `runtime_configure`）：
 
 ```json
 {
   "mcpServers": {
     "engrave-mcp": {
-      "command": "C:/path/to/engrave-mcp/artifacts/windows-next/engrave-mcp.exe",
-      "args": [
-        "--soundfont",
-        "C:/path/to/engrave-mcp/artifacts/windows-next/soundfonts/FluidR3Mono_GM.sf3"
-      ]
+      "command": "C:/path/to/engrave-mcp/artifacts/windows-next/engrave-mcp.exe"
     }
   }
 }
@@ -139,7 +140,8 @@ build/release/engrave-mcp.exe --resources .runtime/assets `
 支持范围：Windows 与 Linux 上普通的单用户本地文件系统、普通继承权限、文档规定的路径
 语法，以及 MuseScore 4.6 及以后版本的乐谱。
 
-明确的非目标：MuseScore 1.x–4.5 读取器、桌面完整功能同等性、复杂/受保护的
+明确的非目标：MuseScore 1.x–4.5 读取器、桌面完整功能同等性、服务内置文件系统沙箱或已废弃的
+MCP `roots` 边界强制（工作区隔离由宿主侧 OS 沙箱与客户端工具审批负责）、复杂/受保护的
 DACL 与 ACL 合并、SMB 网络共享认证、设备命名空间与超长路径、跨卷或多文件事务发布、
 交互式/流式播放。判定规则见[范围文档](docs/dev/scope.md)。
 
@@ -148,6 +150,7 @@ DACL 与 ACL 合并、SMB 网络共享认证、设备命名空间与超长路径
 ```
 engrave_mcp/     MCP 传输、工具注册表、JSON 编解码、实时导出、发布
 vendor/engrave/  固定的 engrave 引擎（子模块，按提交固定）
+licenses/        打包时随产物分发的第三方与运行时许可证声明
 MODULE.bazel     Bzlmod 依赖与 xclang 工具链配置
 BUILD.bazel      宿主构建目标；从 vendor/engrave 引入 @engrave
 scripts/         引导、Bazel 构建封装、打包等开发工具

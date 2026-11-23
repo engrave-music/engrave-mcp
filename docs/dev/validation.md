@@ -218,12 +218,15 @@ and `build/.bazel_disk_cache`:
 
 Both CI workflows run on pushes to `main`, pull requests, and manual dispatch.
 
-- **`checks`** (Ubuntu, Pixi): Verifies the submodule pin and Bazel inputs
-  (`scripts/check_build_inputs.py`), runs `pixi run format-check`, the layout
-  audit, and binary-free Python checks (`test_test_layout`,
-  `test_native_includes`, `test_engine_gate_wrapper`,
-  `test_cleanup_regressions`, `test_oracle_harness`, `test_rendered_page`,
-  `tests/test_engine_gate.py`, `tests/test_bbuild.py`).
+- **`checks`** (Ubuntu, Pixi): Verifies the submodule pin, Bazel inputs
+  (`scripts/check_build_inputs.py`), and native include boundaries, runs
+  `pixi run format-check`, then validates packaging notices
+  (`scripts/package_windows.py --check-notices`,
+  `scripts/package_linux.py --check-notices`), the layout audit, and binary-free
+  Python checks (`test_test_layout`, `test_native_includes`,
+  `test_engine_gate_wrapper`, `test_cleanup_regressions`, `test_oracle_harness`,
+  `test_rendered_page`, `tests/test_engine_gate.py`, `tests/test_bbuild.py`,
+  `tests/test_packaging.py`, `tests/test_bazel_server_mcp.py`).
 - **`build-test`** (Windows and Linux, Bazel + `xclang`): Builds `engrave_mcp`,
   `engrave_mcp_test`, `registry_dump`, `registry_check`, `host_api_test`,
   `staging_test`, and (on Linux) `publication_test`, then runs `staging_test`,
@@ -231,12 +234,13 @@ Both CI workflows run on pushes to `main`, pull requests, and manual dispatch.
   `vendor/engrave/tests/data/engine_audio/sine.sf2` so CI downloads no
   SoundFonts), and asset-only integration scripts (`cli`, `version_info`, `open_data`,
   `native_inputs`, `positions`, `imports_midi`, `imports_guitarpro`, `repeats`,
-  `transport`, plus `windows_manifest` on Windows). The positions lane compares
+  `transport`, `package_strip`, plus `windows_manifest` on Windows). The positions lane compares
   a PNG exported through MCP to the pinned engine's platform golden.
-- The host **`sanitize`** job on Linux builds the executable, staging, publication,
-  host API, and engine core tests with `--profile sanitize`. Runs the four test
-  binaries with ASan, LSan, and UBSan, using four shards for the engine core
-  suite and the checked-in sine SoundFont for the host API.
+- The host **`sanitize`** job on Linux builds the executable, `registry_test`,
+  staging, publication, host API, and engine core tests with `--profile sanitize`.
+  It runs those binaries plus `cli`, `transport`, `open_data`, and `positions`
+  with ASan, LSan, and UBSan, using four shards for the engine core suite and
+  the checked-in sine SoundFont for the host API.
 - The **fork workflow** at `vendor/engrave/.github/workflows/ci.yml` runs release unit tests
   and the SoundFont-free golden comparison on Windows and Linux. Its Linux
   `sanitize` job runs four core shards, both upstream GTest suites, and the

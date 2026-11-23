@@ -36,7 +36,7 @@ Up to 16 documents can remain open concurrently in one session; they share the e
 
 Exports run directly against the live in-memory score document on the owner thread. In-memory rendering avoids layout reflow and metadata changes that occur during file serialization and reopening, reduces export latency to milliseconds, and removes child-process lifecycle complexity.
 
-The tradeoff is deliberate: an unhandled fault in rendering, audio synthesis, or score writing terminates the server process and loses unsaved edits across open documents. There is no internal sandbox mode. For untrusted input files or isolated batch processing, isolation is handled operationally by running separate, disposable server processes.
+The tradeoff is deliberate: an unhandled fault in rendering, audio synthesis, or score writing terminates the server process and loses unsaved edits across open documents. There is no internal sandbox mode. Crash and session isolation for untrusted input files or batch processing is handled operationally by running separate, disposable server processes; filesystem confinement is owned by host-side OS sandboxing and client tool approvals.
 
 ## 4. Durable publication
 
@@ -99,7 +99,8 @@ On Windows, the host executables (`engrave-mcp.exe` and test/probe binaries) and
 ## 8. Non-goals
 
 - No concurrent editing of a single document across multiple threads.
-- No implicit batch rollback or multi-document transactional rollback.
+- No multi-document transactional rollback (single-document `score_edit` batches are atomic by default; `atomic: false` opts into prefix-commit).
+- No in-server filesystem sandboxing, path allowlists, or deprecated MCP `roots` enforcement (workspace permissions belong to the host's OS sandbox and client tool approvals).
 - No background task scheduling or streaming playback sessions.
 - No in-process memory isolation or crash recovery for corrupted score structures.
 - No support for MuseScore file formats older than version 4.60.

@@ -17,7 +17,7 @@ Create and open return `document`, `revision`, `outline` and `diagnostics`. Revi
 
 ## Phrase entry and readback
 
-`score_write_phrase` takes a document and a list of lanes. Each lane starts at a 1-based measure, staff and voice. Staff and voice default to 1. The offset defaults to `"0"` and uses an exact whole-note fraction measured from the beginning of that bar. Concert pitch is the default. Set `pitch_mode` to `written` to enter transposed notation.
+`score_write_phrase` takes a document and a list of lanes. Each lane starts at a 1-based measure, staff and voice. Staff and voice default to 1. The offset defaults to `"0"` and uses an exact whole-note fraction measured from the beginning of that bar. Concert pitch is the default; set `pitch_mode` to `written` on a lane to enter transposed notation.
 
 Supply the compact notation in each lane's `content` string.
 
@@ -55,4 +55,4 @@ Available formats are `mscz`, `mscx`, `musicxml`, `mxl`, `midi`, `pdf`, `png`, `
 
 Native exports use version 5.00 by default. Set `options.native_version` to `"4.70"` for compatibility export. Inspect degradation warnings and refusals before distributing the result. [Engine compatibility details](../../vendor/engrave/docs/write470.md)
 
-`runtime_info` returns capabilities, limits and tool revision. Select `templates`, `instruments`, `types`, `type`, `styles` or `ops` with `scope`. Only `instruments` accepts `query` and matches substrings of the instrument ID, name or group ID with ASCII case folding. For a single type use its `type` name, or use `op` to look up a single operation. `runtime_configure` accepts an `add_font` path and an ordered `soundfonts` list. A combined request applies both changes atomically. An empty list clears the SoundFont selection. An audio track can select a SoundFont by zero-based index, configured source path, private copy path, filename or stem.
+`runtime_info` returns capabilities, limits and tool revision. Select `overview` (default), `templates`, `instruments`, `types`, `type`, `styles` or `ops` with `scope`. Only `instruments` accepts `query` and matches substrings of the instrument ID, name or group ID with ASCII case folding. For a single type use its `type` name, or use `op` to look up a single operation. `runtime_configure` accepts an `add_font` path and an ordered `soundfonts` list. A combined request applies both changes atomically. An empty list clears the SoundFont selection. An audio track can select a SoundFont by zero-based index, configured source path, private copy path, filename or stem.
