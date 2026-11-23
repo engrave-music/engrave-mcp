@@ -21,5 +21,8 @@ int main() {
     } catch (const std::exception &error) {
         std::fprintf(stderr, "%s\n", error.what());
         return 1;
+    } catch (...) {
+        std::fprintf(stderr, "Unexpected error\n");
+        return 1;
     }
 }

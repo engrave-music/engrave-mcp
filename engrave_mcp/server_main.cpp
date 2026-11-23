@@ -1,7 +1,10 @@
 #include "server_main.h"
 
 #include <cstdio>
+#include <exception>
 #include <filesystem>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -26,6 +29,14 @@ namespace {
 
 constexpr const char *usage_text = "Usage: engrave-mcp [--soundfont FILE.sf2|FILE.sf3] [--resources DIR] [-h|--help] [-V|--version]";
 
+enum class EarlyExit { NONE, HELP, VERSION };
+
+struct CliOptions {
+    std::string_view soundfont;
+    std::string_view resources;
+    EarlyExit early_exit = EarlyExit::NONE;
+};
+
 void print_help() {
     std::printf("%s\n\n"
                 "Options:\n"
@@ -36,51 +47,54 @@ void print_help() {
                 usage_text);
 }
 
+std::optional<CliOptions> parse_cli(int argc, char **argv) noexcept {
+    CliOptions cli;
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg(argv[i]);
+        if (arg == "--soundfont" || arg == "--resources") {
+            auto &value = arg == "--soundfont" ? cli.soundfont : cli.resources;
+            if (!value.empty() || i + 1 >= argc) return std::nullopt;
+            const std::string_view next(argv[++i]);
+            if (next.empty() || next.starts_with('-')) return std::nullopt;
+            value = next;
+        } else if (arg == "--help" || arg == "-h") {
+            if (cli.early_exit == EarlyExit::NONE) cli.early_exit = EarlyExit::HELP;
+        } else if (arg == "--version" || arg == "-V") {
+            if (cli.early_exit == EarlyExit::NONE) cli.early_exit = EarlyExit::VERSION;
+        } else {
+            return std::nullopt;
+        }
+    }
+    return cli;
+}
+
 } // namespace
 
 int run_server(int argc, char **argv) {
-    try {
-        std::string soundfont;
-        std::string resources;
-        enum class EarlyExit { NONE, HELP, VERSION };
-        auto early_exit = EarlyExit::NONE;
-        for (int i = 1; i < argc; ++i) {
-            const std::string_view arg(argv[i]);
-            if (arg == "--soundfont" || arg == "--resources") {
-                auto &value = arg == "--soundfont" ? soundfont : resources;
-                if (!value.empty() || i + 1 >= argc) {
-                    throw std::invalid_argument(usage_text);
-                }
-                const std::string_view next(argv[++i]);
-                if (next.empty() || next.starts_with('-')) {
-                    throw std::invalid_argument(usage_text);
-                }
-                value = next;
-            } else if (arg == "--help" || arg == "-h") {
-                if (early_exit == EarlyExit::NONE) early_exit = EarlyExit::HELP;
-            } else if (arg == "--version" || arg == "-V") {
-                if (early_exit == EarlyExit::NONE) early_exit = EarlyExit::VERSION;
-            } else {
-                throw std::invalid_argument(usage_text);
-            }
-        }
-        if (early_exit == EarlyExit::HELP) {
-            print_help();
-            return 0;
-        }
-        if (early_exit == EarlyExit::VERSION) {
-            std::printf("engrave-mcp %.*s\n", static_cast<int>(host_version.size()), host_version.data());
-            return 0;
-        }
+    const auto cli = parse_cli(argc, argv);
+    if (!cli) {
+        std::fprintf(stderr, "%s\n", usage_text);
+        return 1;
+    }
+    if (cli->early_exit == EarlyExit::HELP) {
+        print_help();
+        return 0;
+    }
+    if (cli->early_exit == EarlyExit::VERSION) {
+        std::printf("engrave-mcp %.*s\n", static_cast<int>(host_version.size()), host_version.data());
+        return 0;
+    }
 #ifdef _WIN32
-        if (_setmode(_fileno(stdin), _O_BINARY) == -1 || _setmode(_fileno(stdout), _O_BINARY) == -1) {
-            throw std::runtime_error("Cannot configure binary stdio");
-        }
+    if (_setmode(_fileno(stdin), _O_BINARY) == -1 || _setmode(_fileno(stdout), _O_BINARY) == -1) {
+        std::fprintf(stderr, "Cannot configure binary stdio\n");
+        return 1;
+    }
 #endif
+    try {
         std::filesystem::path exe_dir;
-        if (resources.empty()) {
+        if (cli->resources.empty()) {
             exe_dir = current_executable_path().parent_path();
-        } else if (soundfont.empty()) {
+        } else if (cli->soundfont.empty()) {
             try {
                 exe_dir = current_executable_path().parent_path();
             } catch (const std::runtime_error &) {
@@ -88,9 +102,10 @@ int run_server(int argc, char **argv) {
             }
         }
         engrave::EngineOptions options;
-        options.resources = resources.empty() ? exe_dir / "assets" : std::filesystem::absolute(std::filesystem::u8path(resources));
-        if (!soundfont.empty()) {
-            options.soundfonts.push_back(std::filesystem::absolute(std::filesystem::u8path(soundfont)));
+        options.resources =
+            cli->resources.empty() ? exe_dir / "assets" : std::filesystem::absolute(std::filesystem::u8path(cli->resources));
+        if (!cli->soundfont.empty()) {
+            options.soundfonts.push_back(std::filesystem::absolute(std::filesystem::u8path(cli->soundfont)));
         } else if (!exe_dir.empty()) {
             const auto default_soundfont = exe_dir / "soundfonts" / "FluidR3Mono_GM.sf3";
             std::error_code ec;
@@ -128,6 +143,9 @@ int run_server(int argc, char **argv) {
                                  make_unique_fn<void()>([&session] { session.shutdown(); }));
     } catch (const std::exception &e) {
         std::fprintf(stderr, "%s\n", e.what());
+        return 1;
+    } catch (...) {
+        std::fprintf(stderr, "Unexpected error\n");
         return 1;
     }
 }
