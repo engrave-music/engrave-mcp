@@ -51,8 +51,21 @@ def check_tag(tag: str | None, binary: Path | None, clean_env: bool = False) -> 
 
 
 WINDOWS_RESERVED_NAMES = frozenset(
-    {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        "CONIN$",
+        "CONOUT$",
+        *(f"{prefix}{digit}" for prefix in ("COM", "LPT") for digit in "123456789¹²³"),
+    }
 )
+
+
+def _is_windows_reserved(name: str) -> bool:
+    stem = name.split(".", 1)[0].rstrip(" ").upper()
+    return stem in WINDOWS_RESERVED_NAMES
 
 
 def safe_name(name: str) -> str:
@@ -62,7 +75,7 @@ def safe_name(name: str) -> str:
         or name in {".", ".."}
         or name.endswith((".", " "))
         or re.search(r'[\\/:*?"<>|\x00-\x1f]', name)
-        or name.split(".", 1)[0].upper() in WINDOWS_RESERVED_NAMES
+        or _is_windows_reserved(name)
     ):
         raise ValueError(f"unsafe release filename: {name!r}")
     return name
@@ -92,6 +105,8 @@ def archive_members(source: Path, root_name: str) -> list[tuple[str, Path, int]]
 
 
 def pack(source: Path, output: Path, archive_format: str, root_name: str | None = None) -> None:
+    if archive_format not in {"zip", "tar.gz"}:
+        raise ValueError(f"unsupported archive format: {archive_format!r}")
     source = source.absolute()
     root_name = safe_name(source.name if root_name is None else root_name)
     if output.resolve().is_relative_to(source.resolve()):
@@ -113,10 +128,11 @@ def pack(source: Path, output: Path, archive_format: str, root_name: str | None 
                             archive.writestr(info, b"")
                         else:
                             info.compress_type = zipfile.ZIP_DEFLATED
-                            info.file_size = path.stat().st_size
-                            with path.open("rb") as data, archive.open(info, "w") as member:
-                                shutil.copyfileobj(data, member)
-            else:
+                            with path.open("rb") as data:
+                                info.file_size = os.fstat(data.fileno()).st_size
+                                with archive.open(info, "w") as member:
+                                    shutil.copyfileobj(data, member)
+            elif archive_format == "tar.gz":
                 with gzip.GzipFile(filename="", fileobj=stream, mode="wb", mtime=0) as gzip_stream:
                     with tarfile.open(fileobj=gzip_stream, mode="w") as archive:
                         for name, path, mode in members:

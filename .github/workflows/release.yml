@@ -39,6 +39,7 @@ jobs:
       - name: Verify build inputs, packaging notices, and release tools
         shell: bash
         run: |
+          set -euo pipefail
           py=.pixi/envs/default/bin/python
           "$py" scripts/bootstrap.py
           "$py" scripts/check_build_inputs.py --check
@@ -52,6 +53,7 @@ jobs:
         id: release
         shell: bash
         run: |
+          set -euo pipefail
           py=.pixi/envs/default/bin/python
           if [[ "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF_TYPE" == 'tag' ]]; then
             metadata=$("$py" scripts/release_archive.py check-tag --tag "$GITHUB_REF_NAME" --json)
@@ -178,15 +180,25 @@ jobs:
           if ($forbidden) { throw "Unexpected packaged license notices: $($forbidden.FullName -join ', ')" }
           if ($IsWindows) { & $py tests/integration/test_windows_manifest.py $binary }
 
+          $archive = Join-Path $env:STAGING_DIR "$env:BUNDLE_NAME.$env:ARCHIVE_FORMAT"
+          & $py scripts/release_archive.py pack --source $bundle --output $archive --format $env:ARCHIVE_FORMAT
+
+          $unpacked = Join-Path $env:STAGING_DIR 'unpacked'
+          New-Item -ItemType Directory -Path $unpacked | Out-Null
+          if ($env:ARCHIVE_FORMAT -eq 'zip') {
+            Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
+          } else {
+            tar -xzf $archive -C $unpacked
+          }
+          $unpackedBundle = Join-Path $unpacked $env:BUNDLE_NAME
+          $unpackedBinary = Join-Path $unpackedBundle $env:EXECUTABLE
+          & $py scripts/release_archive.py check-tag --binary $unpackedBinary --clean-env
           $env:ENGRAVE_MCP_CLEAN_ENV = '1'
-          $env:ENGRAVE_MCP_BINARY = $binary
-          $env:ENGRAVE_MCP_SOUNDFONT = Join-Path $bundle 'soundfonts/FluidR3Mono_GM.sf3'
+          $env:ENGRAVE_MCP_BINARY = $unpackedBinary
+          $env:ENGRAVE_MCP_SOUNDFONT = Join-Path $unpackedBundle 'soundfonts/FluidR3Mono_GM.sf3'
           $env:ENGRAVE_MCP_OUTPUT = Join-Path $env:STAGING_DIR 'smoke'
           Remove-Item Env:ENGRAVE_MCP_RESOURCES -ErrorAction SilentlyContinue
           & $py tests/integration/test_mcp_smoke.py
-
-          $archive = Join-Path $env:STAGING_DIR "$env:BUNDLE_NAME.$env:ARCHIVE_FORMAT"
-          & $py scripts/release_archive.py pack --source $bundle --output $archive --format $env:ARCHIVE_FORMAT
 
       - name: Upload release archive
         uses: actions/upload-artifact@v4
@@ -226,6 +238,7 @@ jobs:
       - name: Generate and verify release checksums
         shell: bash
         run: |
+          set -euo pipefail
           python3 scripts/release_archive.py checksums --output "$CHECKSUMS" "$WINDOWS_ARCHIVE" "$LINUX_ARCHIVE"
           python3 scripts/release_archive.py verify-checksums --checksums "$CHECKSUMS" --dir dist
 
@@ -239,7 +252,7 @@ jobs:
 
   publish:
     needs: [validate, checksums]
-    if: needs.validate.outputs.is_release == 'true'
+    if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate.outputs.is_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -266,17 +279,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           python3 scripts/release_archive.py verify-checksums --checksums "$CHECKSUMS" --dir dist
           ref_json=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
           obj_type=$(jq -r '.object.type' <<< "$ref_json")
           obj_sha=$(jq -r '.object.sha' <<< "$ref_json")
-          if [[ "$obj_type" == 'tag' ]]; then
-            tag_commit=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${obj_sha}" --jq '.object.sha')
-          else
-            tag_commit="$obj_sha"
-          fi
-          if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
-            echo "Refusing to publish: tag ${RELEASE_TAG} points to ${tag_commit}, expected built commit ${GITHUB_SHA}" >&2
+          while [[ "$obj_type" == 'tag' ]]; do
+            tag_json=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${obj_sha}")
+            obj_type=$(jq -r '.object.type' <<< "$tag_json")
+            obj_sha=$(jq -r '.object.sha' <<< "$tag_json")
+          done
+          if [[ "$obj_type" != 'commit' || "$obj_sha" != "$GITHUB_SHA" ]]; then
+            echo "Refusing to publish: tag ${RELEASE_TAG} points to ${obj_type} ${obj_sha}, expected commit ${GITHUB_SHA}" >&2
             exit 1
           fi
 
@@ -289,8 +303,9 @@ jobs:
             engrave-mcp is licensed under GPL-3.0-only and bundles FluidR3Mono_GM.sf3 (MIT).
 
             Builds are available for Windows x86_64 and Linux x86_64 (Ubuntu 24.04 glibc baseline).
-            Verify downloaded archives with `sha256sum --check SHA256SUMS.txt`.
+            Verify downloaded archives with `sha256sum --ignore-missing --check SHA256SUMS.txt`.
         run: |
+          set -euo pipefail
           args=(--verify-tag --title "engrave-mcp $RELEASE_TAG" --notes "$RELEASE_NOTES" --generate-notes)
           if [[ "$PRERELEASE" == 'true' ]]; then args+=(--prerelease); fi
           gh release create "$RELEASE_TAG" "${args[@]}" "$WINDOWS_ARCHIVE" "$LINUX_ARCHIVE" "$CHECKSUMS"

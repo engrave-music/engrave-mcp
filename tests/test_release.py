@@ -140,9 +140,8 @@ class ReleaseTest(unittest.TestCase):
                 self.assert_cli_error("bundle", *command, "--output", output)
                 bundle.mkdir()
                 self.assert_cli_error("empty", *command, "--output", output)
-                self.assert_cli_error("unsafe", *command, "--output", output, "--root-name", "../escape")
-                self.assert_cli_error("unsafe", *command, "--output", output, "--root-name", "NUL")
-                self.assert_cli_error("unsafe", *command, "--output", output, "--root-name", "con.txt")
+                for reserved in ("../escape", "NUL", "con.txt", "COM¹.txt", "LPT²", "CONIN$", "NUL .txt"):
+                    self.assert_cli_error("unsafe", *command, "--output", output, "--root-name", reserved)
                 self.assert_cli_error("outside", *command, "--output", bundle / output.name)
                 bundle.rmdir()
                 self.assertFalse(output.exists())
