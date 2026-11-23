@@ -28,6 +28,8 @@ REQUIRED_HOST_NOTICES = (
     "deps/asio/COPYING",
     "deps/asio/LICENSE_1_0.txt",
     "deps/glaze/LICENSE",
+    "deps/gtl/LICENSE",
+    "deps/gtl/NOTICE",
     "deps/harfbuzz/COPYING",
     "deps/harfbuzz/hb-ucd-COPYING",
     "deps/harfbuzz/ms-use-COPYING",
