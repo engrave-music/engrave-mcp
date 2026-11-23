@@ -387,7 +387,7 @@
     },
     "@@engrave+//bazel:deps.bzl%engrave_deps": {
       "general": {
-        "bzlTransitiveDigest": "KeM5aXa1T5tCNG7OVjUqoxBHQYVHM5lP2n1MvuNRQyE=",
+        "bzlTransitiveDigest": "LRVsBF/C5aMqnoqy2j+d+WGR/nhH4YkwlYsygSuhzEc=",
         "usagesDigest": "WMxc8k0UvBO9+4o7aO5aqexMOB2kvxYRYce8DehBGVc=",
         "recordedInputs": [
           "REPO_MAPPING:engrave+,bazel_tools bazel_tools"
@@ -401,6 +401,17 @@
               "strip_prefix": "amc-2.8.1",
               "urls": [
                 "https://github.com/AmadeusITGroup/amc/archive/refs/tags/v2.8.1.tar.gz"
+              ]
+            }
+          },
+          "gtl": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file": "@@engrave+//bazel/third_party:gtl.BUILD.bazel",
+              "sha256": "7252bddc62a9075c9f5935c8348715244a8c7573ba95eccf1ce396f67deb11b2",
+              "strip_prefix": "gtl-1.3.1",
+              "urls": [
+                "https://github.com/greg7mdp/gtl/archive/refs/tags/v1.3.1.tar.gz"
               ]
             }
           },
