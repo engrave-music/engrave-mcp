@@ -201,7 +201,7 @@ jobs:
           & $py tests/integration/test_mcp_smoke.py
 
       - name: Upload release archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
           path: ${{ runner.temp }}/release/${{ env.BUNDLE_NAME }}.${{ matrix.format }}
@@ -224,13 +224,13 @@ jobs:
           persist-credentials: false
 
       - name: Download Windows archive
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-windows-x86_64
           path: dist/
 
       - name: Download Linux archive
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-linux-x86_64
           path: dist/
@@ -243,7 +243,7 @@ jobs:
           python3 scripts/release_archive.py verify-checksums --checksums "$CHECKSUMS" --dir dist
 
       - name: Upload release checksums
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-checksums
           path: ${{ env.CHECKSUMS }}
@@ -268,7 +268,7 @@ jobs:
           persist-credentials: false
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
