@@ -209,20 +209,18 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-  checksums:
+  publish:
     needs: [validate, package]
+    if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate.outputs.is_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: write
     env:
       RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
       WINDOWS_ARCHIVE: dist/engrave-mcp-${{ needs.validate.outputs.release_tag }}-windows-x86_64.zip
       LINUX_ARCHIVE: dist/engrave-mcp-${{ needs.validate.outputs.release_tag }}-linux-x86_64.tar.gz
-      CHECKSUMS: dist/SHA256SUMS.txt
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
       - name: Download Windows archive
         uses: actions/download-artifact@v8
         with:
@@ -235,52 +233,12 @@ jobs:
           name: release-linux-x86_64
           path: dist/
 
-      - name: Generate and verify release checksums
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/release_archive.py checksums --output "$CHECKSUMS" "$WINDOWS_ARCHIVE" "$LINUX_ARCHIVE"
-          python3 scripts/release_archive.py verify-checksums --checksums "$CHECKSUMS" --dir dist
-
-      - name: Upload release checksums
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-checksums
-          path: ${{ env.CHECKSUMS }}
-          if-no-files-found: error
-          retention-days: 14
-
-  publish:
-    needs: [validate, checksums]
-    if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate.outputs.is_release == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    env:
-      RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
-      WINDOWS_ARCHIVE: dist/engrave-mcp-${{ needs.validate.outputs.release_tag }}-windows-x86_64.zip
-      LINUX_ARCHIVE: dist/engrave-mcp-${{ needs.validate.outputs.release_tag }}-linux-x86_64.tar.gz
-      CHECKSUMS: dist/SHA256SUMS.txt
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Download release artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: release-*
-          merge-multiple: true
-          path: dist/
-
-      - name: Verify checksums and tag target commit
+      - name: Verify tag target commit
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 scripts/release_archive.py verify-checksums --checksums "$CHECKSUMS" --dir dist
           ref_json=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
           obj_type=$(jq -r '.object.type' <<< "$ref_json")
           obj_sha=$(jq -r '.object.sha' <<< "$ref_json")
@@ -303,9 +261,8 @@ jobs:
             engrave-mcp is licensed under GPL-3.0-only and bundles FluidR3Mono_GM.sf3 (MIT).
 
             Builds are available for Windows x86_64 and Linux x86_64 (Ubuntu 24.04 glibc baseline).
-            Verify downloaded archives with `sha256sum --ignore-missing --check SHA256SUMS.txt`.
         run: |
           set -euo pipefail
           args=(--verify-tag --title "engrave-mcp $RELEASE_TAG" --notes "$RELEASE_NOTES" --generate-notes)
           if [[ "$PRERELEASE" == 'true' ]]; then args+=(--prerelease); fi
-          gh release create "$RELEASE_TAG" "${args[@]}" "$WINDOWS_ARCHIVE" "$LINUX_ARCHIVE" "$CHECKSUMS"
+          gh release create "$RELEASE_TAG" "${args[@]}" "$WINDOWS_ARCHIVE" "$LINUX_ARCHIVE"

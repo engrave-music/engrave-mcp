@@ -247,9 +247,9 @@ Both CI workflows run on pushes to `main`, pull requests, and manual dispatch.
   SoundFont-free golden probes with ASan, LSan, and UBSan. Both sanitizer jobs
   use disk cache keys distinct from their release jobs.
 - The [release workflow](../../.github/workflows/release.yml) validates the host
-  version and runs the 20-cycle MCP and audio smoke test against each packaged
-  Windows and Linux binary with a clean runtime environment. A manual dispatch
-  exercises packaging and checksum verification without publishing a release.
+  version and runs the 20-cycle MCP and audio smoke test against each unpacked
+  Windows and Linux release binary with a clean runtime environment. A manual
+  dispatch exercises packaging and smoke verification without publishing a release.
 - **Manual milestone checks** include the full engine gate
   (`tests/engine_gate.py`), the audio corpus and `engine_audio`, the live export
   and audio lanes, opt-in lanes, benchmarks, Windows-vs-Linux paired captures,

@@ -1,4 +1,4 @@
-"""Exercise release archive and checksum contracts without a host executable."""
+"""Exercise release archive contracts without a host executable."""
 
 import contextlib
 import io
@@ -161,41 +161,6 @@ class ReleaseTest(unittest.TestCase):
         )
         self.assertFalse(output.exists())
 
-    def test_checksums(self):
-        first = self.work / "a.zip"
-        second = self.work / "z.tar.gz"
-        first.write_bytes(b"abc")
-        second.write_bytes(b"")
-        manifest = self.work / "SHA256SUMS.txt"
-        self.run_cli("checksums", "--output", manifest, second, first)
-        self.assertEqual(
-            manifest.read_bytes(),
-            b"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  a.zip\n"
-            b"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  z.tar.gz\n",
-        )
-        verify = ("verify-checksums", "--checksums", manifest, "--dir", self.work)
-        self.run_cli(*verify)
-        duplicate = self.work / "other" / first.name
-        duplicate.parent.mkdir()
-        duplicate.write_bytes(b"different")
-        self.assert_cli_error("duplicate", "checksums", "--output", self.work / "duplicate.txt", first, duplicate)
-        first.write_bytes(b"tampered")
-        self.assert_cli_error("SHA-256 mismatch", *verify)
-        first.unlink()
-        self.assert_cli_error("expected a regular file", *verify)
-
-    def test_verify_rejects_malformed_manifests(self):
-        manifest = self.work / "SHA256SUMS.txt"
-        for text, error in (
-            ("", "empty checksum manifest"),
-            ("bad-digest  file.txt\n", "malformed checksum line"),
-            (f"{'0' * 64} file.txt\n", "malformed checksum line"),
-            (f"{'0' * 64}  ../outside\n", "unsafe release filename"),
-        ):
-            with self.subTest(text=text):
-                manifest.write_bytes(text.encode("utf-8"))
-                self.assert_cli_error(error, "verify-checksums", "--checksums", manifest, "--dir", self.work)
-
     def test_release_workflow_yaml(self):
         workflow = ROOT / ".github/workflows/release.yml"
         try:
@@ -206,7 +171,7 @@ class ReleaseTest(unittest.TestCase):
             spec = yaml.safe_load(workflow.read_text(encoding="utf-8"))
             triggers = spec.get("on", spec.get(True))  # PyYAML uses YAML 1.1 booleans.
             self.assertEqual(triggers, {"push": {"tags": ["v*"]}, "workflow_dispatch": None})
-            self.assertEqual(set(spec["jobs"]), {"validate", "package", "checksums", "publish"})
+            self.assertEqual(set(spec["jobs"]), {"validate", "package", "publish"})
             self.assertEqual(spec["permissions"], {"contents": "read"})
             for name, job in spec["jobs"].items():
                 if name == "publish":

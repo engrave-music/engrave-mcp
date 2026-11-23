@@ -1,8 +1,7 @@
-"""Validate versions and assemble release archives and checksum manifests."""
+"""Validate versions and assemble release archives."""
 
 import argparse
 import gzip
-import hashlib
 import json
 import os
 import re
@@ -14,7 +13,6 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CHECKSUM_LINE = re.compile(r"([0-9a-fA-F]{64})  (.+)")
 
 
 def clean_runtime_env() -> dict[str, str]:
@@ -150,42 +148,6 @@ def pack(source: Path, output: Path, archive_format: str, root_name: str | None 
         raise
 
 
-def sha256(path: Path) -> str:
-    with path.open("rb") as data:
-        return hashlib.file_digest(data, "sha256").hexdigest()
-
-
-def checksums(output: Path, files: list[Path]) -> None:
-    entries = {}
-    for path in files:
-        name = safe_name(path.name)
-        if name in entries:
-            raise ValueError(f"duplicate checksum filename: {name!r}")
-        entries[name] = sha256(path)
-    with output.open("x", encoding="utf-8", newline="\n") as stream:
-        stream.writelines(f"{entries[name]}  {name}\n" for name in sorted(entries))
-
-
-def verify_checksums(manifest: Path, directory: Path) -> None:
-    seen = set()
-    with manifest.open(encoding="utf-8", newline="") as stream:
-        for number, line in enumerate(stream, start=1):
-            match = CHECKSUM_LINE.fullmatch(line.removesuffix("\n"))
-            if not match:
-                raise ValueError(f"{manifest}:{number}: malformed checksum line")
-            digest, name = match.groups()
-            path = directory / safe_name(name)
-            if name in seen:
-                raise ValueError(f"duplicate checksum filename: {name!r}")
-            if not path.is_file() or path.is_symlink():
-                raise ValueError(f"expected a regular file in {directory}: {name!r}")
-            if sha256(path) != digest.lower():
-                raise ValueError(f"SHA-256 mismatch: {path}")
-            seen.add(name)
-    if not seen:
-        raise ValueError(f"empty checksum manifest: {manifest}")
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -199,12 +161,6 @@ def main(argv: list[str] | None = None) -> int:
     archive.add_argument("--output", required=True, type=Path)
     archive.add_argument("--format", required=True, choices=("zip", "tar.gz"))
     archive.add_argument("--root-name")
-    sums = commands.add_parser("checksums")
-    sums.add_argument("--output", required=True, type=Path)
-    sums.add_argument("files", nargs="+", type=Path)
-    verify = commands.add_parser("verify-checksums")
-    verify.add_argument("--checksums", required=True, type=Path)
-    verify.add_argument("--dir", required=True, type=Path)
     args = parser.parse_args(argv)
 
     try:
@@ -214,10 +170,6 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps({"version": version, "prerelease": "-" in version}) if args.json else version)
             case "pack":
                 pack(args.source, args.output, args.format, args.root_name)
-            case "checksums":
-                checksums(args.output, args.files)
-            case "verify-checksums":
-                verify_checksums(args.checksums, args.dir)
     except (OSError, ValueError) as error:
         parser.exit(1, f"{parser.prog}: {error}\n")
     return 0

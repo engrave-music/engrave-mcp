@@ -226,9 +226,8 @@ to run the [release workflow](../../.github/workflows/release.yml).
 It builds and smoke-tests a Windows x86_64 ZIP and a Linux x86_64 tarball
 (Ubuntu 24.04 glibc baseline), each with `FluidR3Mono_GM.sf3` and the required
 license notices. Versions containing `-` are published as prereleases.
-Manual dispatch runs the same checks and uploads dry-run archives and
-`SHA256SUMS.txt` as workflow artifacts without publishing a release.
-Run `sha256sum --check SHA256SUMS.txt` alongside both downloaded archives.
+Manual dispatch runs the same checks and uploads dry-run archives as workflow
+artifacts without publishing a release.
 
 ## Smoke Tests and Lanes
 
