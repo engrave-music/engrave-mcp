@@ -1,11 +1,13 @@
 #include "api_json.h"
 
 #include <algorithm>
+#include <cassert>
 #include <charconv>
 #include <cmath>
 #include <limits>
 #include <numeric>
 #include <type_traits>
+#include <utility>
 
 #include <ankerl/unordered_dense.h>
 
@@ -76,7 +78,8 @@ const char *kind(engrave::ValueKind k) {
         case engrave::ValueKind::INT_LIST: return "int_list";
         case engrave::ValueKind::OPAQUE: return "opaque";
     }
-    throw std::logic_error("unknown ValueKind");
+    assert(false);
+    std::unreachable();
 }
 
 const char *unit(engrave::Unit u) {
@@ -87,7 +90,8 @@ const char *unit(engrave::Unit u) {
         case engrave::Unit::MILLIMETRE: return "millimetre";
         case engrave::Unit::DEGREE: return "degree";
     }
-    throw std::logic_error("unknown Unit");
+    assert(false);
+    std::unreachable();
 }
 } // namespace
 
@@ -105,7 +109,8 @@ std::string_view grace_kind_name(engrave::GraceKind kind) {
         case Grace32: return "grace32";
         case Grace32After: return "after32";
     }
-    throw std::logic_error("unrecognized grace kind");
+    assert(false);
+    std::unreachable();
 }
 
 std::optional<engrave::GraceKind> grace_kind(std::string_view name) {
@@ -526,7 +531,8 @@ Json encode(const engrave::Capabilities &c) {
             case engrave::Format::GUITAR_PRO: return "guitarpro";
             case engrave::Format::MNX: return "mnx";
         }
-        throw std::logic_error("unknown Format");
+        assert(false);
+        std::unreachable();
     };
     auto render = [](engrave::RenderFormat f) -> const char * {
         switch (f) {
@@ -534,7 +540,8 @@ Json encode(const engrave::Capabilities &c) {
             case engrave::RenderFormat::PNG: return "png";
             case engrave::RenderFormat::SVG: return "svg";
         }
-        throw std::logic_error("unknown RenderFormat");
+        assert(false);
+        std::unreachable();
     };
     auto audio = [](engrave::AudioFormat f) -> const char * {
         switch (f) {
@@ -543,7 +550,8 @@ Json encode(const engrave::Capabilities &c) {
             case engrave::AudioFormat::OPUS: return "opus";
             case engrave::AudioFormat::MP3: return "mp3";
         }
-        throw std::logic_error("unknown AudioFormat");
+        assert(false);
+        std::unreachable();
     };
     return {{"engine_version", c.engine_version},
             {"import_formats", mapped(c.import_formats, [&](auto f) { return Json(format(f)); })},

@@ -1,6 +1,7 @@
 #include <algorithm>
+#include <cassert>
 #include <cmath>
-#include <stdexcept>
+#include <utility>
 
 #include "api_json_internal.h"
 #include "utf8_text.h"
@@ -8,7 +9,7 @@
 namespace music::api::detail {
 namespace {
 using View = std::string_view;
-using Check = void (*)(const Json &, const std::string &);
+using Check = Result<void> (*)(const Json &, const std::string &);
 
 struct Field {
     View name;
@@ -16,541 +17,519 @@ struct Field {
     bool required = false;
 };
 
-struct ArgumentError : public std::runtime_error {
-    using std::runtime_error::runtime_error;
-};
-
-[[noreturn]] void fail(const std::string &p, View why, View expected) {
-    throw ArgumentError((p.empty() ? "arguments" : p) + ": " + std::string(why) + "; expected " + std::string(expected));
+Result<void> fail(const std::string &p, View why, View expected) {
+    auto message = (p.empty() ? "arguments" : p) + ": " + std::string(why) + "; expected " + std::string(expected);
+    // Unknown field names may contain NUL. Preserve the original diagnostic prefix.
+    message.erase(std::ranges::find(message, '\0'), message.end());
+    return std::unexpected(invalid_error(std::move(message)));
 }
 
 std::string child(const std::string &p, View key) { return p.empty() ? std::string(key) : p + "." + std::string(key); }
 
-void object(const Json &j, const std::string &p, std::initializer_list<Field> fields) {
-    if (!j.is_object()) fail(p, "wrong type", "an object");
+Result<void> object(const Json &j, const std::string &p, std::initializer_list<Field> fields) {
+    if (!j.is_object()) return fail(p, "wrong type", "an object");
     for (const auto &field : fields) {
-        if (field.required && !j.contains(std::string(field.name))) fail(child(p, field.name), "missing field", "a value");
+        if (field.required && !j.contains(std::string(field.name))) return fail(child(p, field.name), "missing field", "a value");
     }
     for (const auto &[key, v] : j.get_object()) {
         auto it = std::ranges::find(fields, View(key), &Field::name);
-        if (it == fields.end()) fail(child(p, key), "unknown field", "a supported parameter");
-        it->check(v, child(p, key));
+        if (it == fields.end()) return fail(child(p, key), "unknown field", "a supported parameter");
+        if (auto checked = it->check(v, child(p, key)); !checked) return checked;
     }
+    return {};
 }
 
 template <Check Item>
-void list(const Json &j, const std::string &p) {
-    if (!j.is_array()) fail(p, "wrong type", "an array");
-    for (usize i = 0; i < j.size(); ++i) Item(j[i], p + "[" + std::to_string(i) + "]");
+Result<void> list(const Json &j, const std::string &p) {
+    if (!j.is_array()) return fail(p, "wrong type", "an array");
+    for (usize i = 0; i < j.size(); ++i) {
+        if (auto checked = Item(j[i], p + "[" + std::to_string(i) + "]"); !checked) return checked;
+    }
+    return {};
 }
 
 template <int Max>
-void text(const Json &j, const std::string &p) {
-    if (!j.is_string()) fail(p, "wrong type", "a string");
+Result<void> text(const Json &j, const std::string &p) {
+    if (!j.is_string()) return fail(p, "wrong type", "a string");
     const auto &s = j.get<std::string>();
     if (utf8_exceeds_length(s, Max)) {
-        fail(p, "text too long", "at most " + std::to_string(Max) + " Unicode characters");
+        return fail(p, "text too long", "at most " + std::to_string(Max) + " Unicode characters");
     }
+    return {};
 }
 
 template <int Min, int Max>
-void integer(const Json &j, const std::string &p) {
+Result<void> integer(const Json &j, const std::string &p) {
     if ((!j.holds<u64>() && !j.holds<i64>()) || j.as<double>() < Min || j.as<double>() > Max) {
-        fail(p, "invalid integer", std::to_string(Min) + ".." + std::to_string(Max));
+        return fail(p, "invalid integer", std::to_string(Min) + ".." + std::to_string(Max));
     }
+    return {};
 }
 
-void choice(const Json &j, const std::string &p, std::initializer_list<View> choices) {
+Result<void> choice(const Json &j, const std::string &p, std::initializer_list<View> choices) {
     if (!j.is_string() || std::ranges::find(choices, View(j.get<std::string>())) == choices.end()) {
-        fail(p, "invalid choice", "a listed token");
+        return fail(p, "invalid choice", "a listed token");
     }
+    return {};
 }
 
-void boolean(const Json &j, const std::string &p) {
-    if (!j.is_boolean()) fail(p, "wrong type", "true or false");
+Result<void> boolean(const Json &j, const std::string &p) {
+    if (!j.is_boolean()) return fail(p, "wrong type", "true or false");
+    return {};
 }
 
-void any(const Json &, const std::string &) {}
+Result<void> any(const Json &, const std::string &) { return {}; }
 
-void numeric(const Json &j, const std::string &p) {
-    if (!j.is_number() || !std::isfinite(j.as<double>())) fail(p, "wrong type", "a finite number");
+Result<void> numeric(const Json &j, const std::string &p) {
+    if (!j.is_number() || !std::isfinite(j.as<double>())) return fail(p, "wrong type", "a finite number");
+    return {};
 }
 
-void filename(const Json &j, const std::string &p) {
-    text<4096>(j, p);
+Result<void> filename(const Json &j, const std::string &p) {
+    if (auto checked = text<4096>(j, p); !checked) return checked;
     if (j.get<std::string>().empty() || j.get<std::string>().find('\0') != std::string::npos) {
-        fail(p, "invalid path", "a nonempty path without NUL");
+        return fail(p, "invalid path", "a nonempty path without NUL");
     }
+    return {};
 }
 
-void xml_text(const Json &j, const std::string &p) {
-    text<4096>(j, p);
-    if (!validate_xml_text(j.get<std::string>())) fail(p, "invalid XML character", "XML 1.0 text");
+Result<void> xml_text(const Json &j, const std::string &p) {
+    if (auto checked = text<4096>(j, p); !checked) return checked;
+    if (!validate_xml_text(j.get<std::string>())) return fail(p, "invalid XML character", "XML 1.0 text");
+    return {};
 }
 
-void check_eid(const Json &j, const std::string &p) {
-    if (!eid(j)) fail(p, "invalid element ID", "a canonical EID");
+Result<void> check_eid(const Json &j, const std::string &p) {
+    if (!eid(j)) return fail(p, "invalid element ID", "a canonical EID");
+    return {};
 }
 
-void check_revision(const Json &j, const std::string &p) {
-    if (!decode_revision(j)) fail(p, "invalid revision", "a canonical unsigned decimal string");
+Result<void> check_revision(const Json &j, const std::string &p) {
+    if (!decode_revision(j)) return fail(p, "invalid revision", "a canonical unsigned decimal string");
+    return {};
 }
 
-void check_fraction(const Json &j, const std::string &p) {
-    if (!fraction(j)) fail(p, "invalid fraction", "0 or numerator/positive-denominator");
+Result<void> check_fraction(const Json &j, const std::string &p) {
+    if (!fraction(j)) return fail(p, "invalid fraction", "0 or numerator/positive-denominator");
+    return {};
 }
 
-void check_pos(const Json &j, const std::string &p) {
+Result<void> check_pos(const Json &j, const std::string &p) {
     if (j.is_object() && !j.contains("kind")) {
-        object(j, p,
-               {{"measure", integer<1, INT32_MAX>, true},
-                {"offset", check_fraction},
-                {"staff", integer<1, INT32_MAX>},
-                {"voice", integer<1, 4>}});
-        return;
+        return object(j, p,
+                      {{"measure", integer<1, INT32_MAX>, true},
+                       {"offset", check_fraction},
+                       {"staff", integer<1, INT32_MAX>},
+                       {"voice", integer<1, 4>}});
     }
-    if (!j.is_object() || !j.contains("kind")) fail(child(p, "kind"), "missing address kind", "segment, page, system or spanner_segment");
+    if (!j.is_object()) return fail(child(p, "kind"), "missing address kind", "segment, page, system or spanner_segment");
     const auto &kind = j.at("kind");
     if (kind == "segment") {
-        object(j, p,
-               {{"kind", text<32>, true},
-                {"measure", check_eid, true},
-                {"staff", integer<1, INT32_MAX>, true},
-                {"voice", integer<1, 4>, true},
-                {"tick", check_fraction, true},
-                {"segment_kind", text<128>, true}});
+        return object(j, p,
+                      {{"kind", text<32>, true},
+                       {"measure", check_eid, true},
+                       {"staff", integer<1, INT32_MAX>, true},
+                       {"voice", integer<1, 4>, true},
+                       {"tick", check_fraction, true},
+                       {"segment_kind", text<128>, true}});
     } else if (kind == "page" || kind == "system") {
         if (kind == "system") {
-            object(j, p,
-                   {{"kind", text<32>, true},
-                    {"excerpt", check_eid},
-                    {"page", integer<0, INT32_MAX>, true},
-                    {"index", integer<0, INT32_MAX>, true}});
+            return object(j, p,
+                          {{"kind", text<32>, true},
+                           {"excerpt", check_eid},
+                           {"page", integer<0, INT32_MAX>, true},
+                           {"index", integer<0, INT32_MAX>, true}});
         } else {
-            object(j, p, {{"kind", text<32>, true}, {"excerpt", check_eid}, {"index", integer<0, INT32_MAX>, true}});
+            return object(j, p, {{"kind", text<32>, true}, {"excerpt", check_eid}, {"index", integer<0, INT32_MAX>, true}});
         }
     } else if (kind == "spanner_segment") {
-        object(j, p, {{"kind", text<32>, true}, {"spanner", check_eid, true}, {"index", integer<0, INT32_MAX>, true}});
+        return object(j, p, {{"kind", text<32>, true}, {"spanner", check_eid, true}, {"index", integer<0, INT32_MAX>, true}});
     } else {
-        fail(child(p, "kind"), "unknown address kind", "segment, page, system or spanner_segment");
+        return fail(child(p, "kind"), "unknown address kind", "segment, page, system or spanner_segment");
     }
 }
 
-void check_ref(const Json &j, const std::string &p) {
+Result<void> check_ref(const Json &j, const std::string &p) {
     if (j.is_string()) {
-        check_eid(j, p);
+        return check_eid(j, p);
     } else if (j.is_object() && j.contains("kind")) {
-        check_pos(j, p);
+        return check_pos(j, p);
     } else {
-        object(j, p, {{"from_op", integer<0, 1023>, true}, {"item", integer<0, 65535>, true}});
+        return object(j, p, {{"from_op", integer<0, 1023>, true}, {"item", integer<0, 65535>, true}});
     }
 }
 
-void score_position(const Json &j, const std::string &p) {
+Result<void> score_position(const Json &j, const std::string &p) {
     if (j.is_number()) {
-        integer<1, INT32_MAX>(j, p);
+        return integer<1, INT32_MAX>(j, p);
     } else {
-        check_ref(j, p);
+        return check_ref(j, p);
     }
 }
 
-void check_sf(const Json &j, const std::string &p) {
+Result<void> check_sf(const Json &j, const std::string &p) {
     if (j.is_string()) {
-        text<4096>(j, p);
-        if (j.get<std::string>().contains('\0')) fail(p, "invalid SoundFont selector", "a string without NUL");
+        if (auto checked = text<4096>(j, p); !checked) return checked;
+        if (j.get<std::string>().contains('\0')) return fail(p, "invalid SoundFont selector", "a string without NUL");
     } else if (!j.is_null()) {
-        integer<0, INT32_MAX>(j, p);
+        return integer<0, INT32_MAX>(j, p);
     }
+    return {};
 }
 
-void check_bit_depth(const Json &j, const std::string &p) {
-    integer<0, 32>(j, p);
-    if (j != 0 && j != 16 && j != 24 && j != 32) fail(p, "invalid bit depth", "0, 16, 24 or 32");
+Result<void> check_bit_depth(const Json &j, const std::string &p) {
+    if (auto checked = integer<0, 32>(j, p); !checked) return checked;
+    if (j != 0 && j != 16 && j != 24 && j != 32) return fail(p, "invalid bit depth", "0, 16, 24 or 32");
+    return {};
 }
 
-void check_format(const Json &j, const std::string &p) { choice(j, p, {"mscz", "mscx", "musicxml", "mxl", "midi", "guitarpro", "mnx"}); }
-
-void check_output(const Json &j, const std::string &p) {
-    choice(j, p,
-           {"mscz", "mscx", "musicxml", "mxl", "midi", "pdf", "png", "svg", "wav", "flac", "opus", "mp3", "measure_positions",
-            "segment_positions"});
+Result<void> check_format(const Json &j, const std::string &p) {
+    return choice(j, p, {"mscz", "mscx", "musicxml", "mxl", "midi", "guitarpro", "mnx"});
 }
 
-void check_scope(const Json &j, const std::string &p) {
-    choice(j, p, {"overview", "templates", "instruments", "types", "type", "styles", "ops"});
+Result<void> check_output(const Json &j, const std::string &p) {
+    return choice(j, p,
+                  {"mscz", "mscx", "musicxml", "mxl", "midi", "pdf", "png", "svg", "wav", "flac", "opus", "mp3", "measure_positions",
+                   "segment_positions"});
 }
 
-void check_mode(const Json &j, const std::string &p) { choice(j, p, {"elements", "properties", "page_count", "audio_tracks"}); }
-
-void check_pitch_mode(const Json &j, const std::string &p) { choice(j, p, {"concert", "written"}); }
-
-void check_grace(const Json &j, const std::string &p) {
-    if (!j.is_string() || !grace_kind(j.get<std::string>())) fail(p, "invalid choice", "a listed grace kind");
+Result<void> check_scope(const Json &j, const std::string &p) {
+    return choice(j, p, {"overview", "templates", "instruments", "types", "type", "styles", "ops"});
 }
 
-void check_num(const Json &j, const std::string &p) { numeric(j, p); }
-
-void check_volume(const Json &j, const std::string &p) {
-    numeric(j, p);
-    if (j.as<double>() < -120 || j.as<double>() > 24) fail(p, "out of range", "-120..24");
+Result<void> check_mode(const Json &j, const std::string &p) {
+    return choice(j, p, {"elements", "properties", "page_count", "audio_tracks"});
 }
 
-void check_balance(const Json &j, const std::string &p) {
-    numeric(j, p);
-    if (j.as<double>() < -1 || j.as<double>() > 1) fail(p, "out of range", "-1..1");
+Result<void> check_grace(const Json &j, const std::string &p) {
+    if (!j.is_string() || !grace_kind(j.get<std::string>())) return fail(p, "invalid choice", "a listed grace kind");
+    return {};
 }
 
-void check_track(const Json &j, const std::string &p) {
-    object(j, p,
-           {{"track", integer<0, 2147483647>, true},
-            {"volume_db", check_volume},
-            {"balance", check_balance},
-            {"mute", boolean},
-            {"solo", boolean},
-            {"soundfont", check_sf},
-            {"preset", text<4096>}});
+Result<void> check_volume(const Json &j, const std::string &p) {
+    if (auto checked = numeric(j, p); !checked) return checked;
+    if (j.as<double>() < -120 || j.as<double>() > 24) return fail(p, "out of range", "-120..24");
+    return {};
 }
 
-void check_opt(const Json &j, const std::string &p) {
-    object(j, p,
-           {{"midi_expand_repeats", boolean},
-            {"midi_rpns", boolean},
-            {"native_version", text<4096>},
-            {"first_page", integer<0, 2147483647>},
-            {"last_page", integer<-1, 2147483647>},
-            {"dpi", integer<36, 1200>},
-            {"background", boolean},
-            {"transparent", boolean},
-            {"bitrate_kbps", integer<0, 512>},
-            {"bit_depth", check_bit_depth},
-            {"use_repeats", boolean},
-            {"master_volume_db", check_volume},
-            {"master_balance", check_balance},
-            {"tracks", list<check_track>},
-            {"reverb", boolean},
-            {"reverb_send", check_num},
-            {"sample_rate", integer<1, 384000>}});
+Result<void> check_balance(const Json &j, const std::string &p) {
+    if (auto checked = numeric(j, p); !checked) return checked;
+    if (j.as<double>() < -1 || j.as<double>() > 1) return fail(p, "out of range", "-1..1");
+    return {};
 }
 
-void check_query(const Json &j, const std::string &p) {
+Result<void> check_track(const Json &j, const std::string &p) {
+    return object(j, p,
+                  {{"track", integer<0, 2147483647>, true},
+                   {"volume_db", check_volume},
+                   {"balance", check_balance},
+                   {"mute", boolean},
+                   {"solo", boolean},
+                   {"soundfont", check_sf},
+                   {"preset", text<4096>}});
+}
+
+Result<void> check_opt(const Json &j, const std::string &p) {
+    return object(j, p,
+                  {{"midi_expand_repeats", boolean},
+                   {"midi_rpns", boolean},
+                   {"native_version", text<4096>},
+                   {"first_page", integer<0, 2147483647>},
+                   {"last_page", integer<-1, 2147483647>},
+                   {"dpi", integer<36, 1200>},
+                   {"background", boolean},
+                   {"transparent", boolean},
+                   {"bitrate_kbps", integer<0, 512>},
+                   {"bit_depth", check_bit_depth},
+                   {"use_repeats", boolean},
+                   {"master_volume_db", check_volume},
+                   {"master_balance", check_balance},
+                   {"tracks", list<check_track>},
+                   {"reverb", boolean},
+                   {"reverb_send", numeric},
+                   {"sample_rate", integer<1, 384000>}});
+}
+
+Result<void> check_query(const Json &j, const std::string &p) {
     if (j.is_object() && (j.contains("first_measure") || j.contains("measure_count")) &&
         (j.contains("from_measure") || j.contains("to_measure"))) {
-        fail(child(p, "first_measure"), "mixed selectors", "either measure numbers or EIDs");
+        return fail(child(p, "first_measure"), "mixed selectors", "either measure numbers or EIDs");
     }
-    object(j, p,
-           {{"excerpt", check_eid},
-            {"types", list<text<4096>>},
-            {"first_measure", integer<1, 2147483647>},
-            {"measure_count", integer<1, 128>},
-            {"from_measure", check_eid},
-            {"to_measure", check_eid},
-            {"staves", list<integer<1, 2147483647>>},
-            {"voices", list<integer<1, 4>>},
-            {"from_tick", check_fraction},
-            {"to_tick", check_fraction},
-            {"props", list<text<4096>>},
-            {"layout_boxes", boolean},
-            {"limit", integer<1, 4096>},
-            {"cursor", integer<0, 4096>}});
+    return object(j, p,
+                  {{"excerpt", check_eid},
+                   {"types", list<text<4096>>},
+                   {"first_measure", integer<1, 2147483647>},
+                   {"measure_count", integer<1, 128>},
+                   {"from_measure", check_eid},
+                   {"to_measure", check_eid},
+                   {"staves", list<integer<1, 2147483647>>},
+                   {"voices", list<integer<1, 4>>},
+                   {"from_tick", check_fraction},
+                   {"to_tick", check_fraction},
+                   {"props", list<text<4096>>},
+                   {"layout_boxes", boolean},
+                   {"limit", integer<1, 4096>},
+                   {"cursor", integer<0, 4096>}});
 }
 
-void check_midinote(const Json &j, const std::string &p) { object(j, p, {{"pitch", integer<0, 127>, true}, {"tpc", integer<-8, 40>}}); }
+Result<void> check_midinote(const Json &j, const std::string &p) {
+    return object(j, p, {{"pitch", integer<0, 127>, true}, {"tpc", integer<-8, 40>}});
+}
 
-void check_prop(const Json &j, const std::string &p) { object(j, p, {{"name", text<4096>, true}, {"value", any, true}}); }
+Result<void> check_prop(const Json &j, const std::string &p) { return object(j, p, {{"name", text<4096>, true}, {"value", any, true}}); }
 
-void validate_arguments(View name, const Json &j) {
+Result<void> validate_arguments(View name, const Json &j) {
     if (name == "score_open") {
-        object(
+        auto checked = object(
             j, "",
             {{"path", filename}, {"data", text<11184812>}, {"format", check_format}, {"filename_hint", filename}, {"strict_ids", boolean}});
-        if (j.contains("path") == j.contains("data")) fail("path", "ambiguous source", "exactly one of path or data");
-        return;
+        if (!checked) return checked;
+        if (j.contains("path") == j.contains("data")) return fail("path", "ambiguous source", "exactly one of path or data");
+        return {};
     }
     if (name == "score_create") {
-        object(j, "",
-               {{"template_id", text<4096>},
-                {"template_path", filename},
-                {"title", xml_text},
-                {"subtitle", xml_text},
-                {"composer", xml_text},
-                {"lyricist", xml_text}});
+        auto checked = object(j, "",
+                              {{"template_id", text<4096>},
+                               {"template_path", filename},
+                               {"title", xml_text},
+                               {"subtitle", xml_text},
+                               {"composer", xml_text},
+                               {"lyricist", xml_text}});
+        if (!checked) return checked;
         if (j.contains("template_id") && j.contains("template_path")) {
-            fail("template_path", "conflicting template", "only one template selector");
+            return fail("template_path", "conflicting template", "only one template selector");
         }
-        return;
+        return {};
     }
     if (name == "score_close") {
-        object(j, "", {{"document", text<128>, true}});
-        return;
+        return object(j, "", {{"document", text<128>, true}});
     }
     if (name == "score_outline") {
-        object(j, "", {{"document", text<128>, true}, {"expected_revision", check_revision}, {"excerpt", check_eid}});
-        return;
+        return object(j, "", {{"document", text<128>, true}, {"expected_revision", check_revision}, {"excerpt", check_eid}});
     }
     if (name == "score_query") {
-        object(j, "",
-               {{"document", text<128>, true},
-                {"expected_revision", check_revision},
-                {"mode", check_mode, true},
-                {"query", check_query},
-                {"target", check_ref},
-                {"props", list<text<4096>>},
-                {"excerpt", check_eid}});
+        auto checked = object(j, "",
+                              {{"document", text<128>, true},
+                               {"expected_revision", check_revision},
+                               {"mode", check_mode, true},
+                               {"query", check_query},
+                               {"target", check_ref},
+                               {"props", list<text<4096>>},
+                               {"excerpt", check_eid}});
+        if (!checked) return checked;
         auto mode = j.at("mode").get<std::string>();
-        if (mode == "properties" && !j.contains("target")) fail("target", "missing field", "an EID or address");
+        if (mode == "properties" && !j.contains("target")) return fail("target", "missing field", "an EID or address");
         for (auto key : {"props", "target", "query", "excerpt"}) {
             if (j.contains(key) && !(mode == "properties" && (View(key) == "target" || View(key) == "props")) &&
                 !(mode == "elements" && (View(key) == "query" || View(key) == "excerpt")) &&
                 !((mode == "audio_tracks" || mode == "page_count") && View(key) == "excerpt")) {
-                fail(key, "invalid for mode", mode);
+                return fail(key, "invalid for mode", mode);
             }
         }
         if (mode == "elements" && j.contains("excerpt") && j.contains("query") && j.at("query").contains("excerpt") &&
             j.at("excerpt") != j.at("query").at("excerpt")) {
-            fail("excerpt", "conflicting score selectors", "matching excerpt IDs");
+            return fail("excerpt", "conflicting score selectors", "matching excerpt IDs");
         }
-        return;
+        return {};
     }
     if (name == "score_read_music") {
-        object(j, "",
-               {{"document", text<128>, true},
-                {"expected_revision", check_revision},
-                {"excerpt", check_eid},
-                {"measure", integer<1, 2147483647>},
-                {"count", integer<1, 128>},
-                {"staves", list<integer<1, 2147483647>>},
-                {"voices", list<integer<1, 4>>},
-                {"include_ids", boolean}});
-        return;
+        return object(j, "",
+                      {{"document", text<128>, true},
+                       {"expected_revision", check_revision},
+                       {"excerpt", check_eid},
+                       {"measure", integer<1, 2147483647>},
+                       {"count", integer<1, 128>},
+                       {"staves", list<integer<1, 2147483647>>},
+                       {"voices", list<integer<1, 4>>},
+                       {"include_ids", boolean}});
     }
     if (name == "score_edit") {
-        object(j, "",
-               {{"document", text<128>, true},
-                {"expected_revision", check_revision},
-                {"atomic", boolean},
-                {"detail", boolean},
-                {"ops", list<any>, true}});
-        return;
+        return object(j, "",
+                      {{"document", text<128>, true},
+                       {"expected_revision", check_revision},
+                       {"atomic", boolean},
+                       {"detail", boolean},
+                       {"ops", list<any>, true}});
     }
     if (name == "score_export") {
-        object(j, "",
-               {{"document", text<128>, true},
-                {"expected_revision", check_revision},
-                {"format", check_output, true},
-                {"path", filename, true},
-                {"excerpt", check_eid},
-                {"options", check_opt}});
-        return;
+        return object(j, "",
+                      {{"document", text<128>, true},
+                       {"expected_revision", check_revision},
+                       {"format", check_output, true},
+                       {"path", filename, true},
+                       {"excerpt", check_eid},
+                       {"options", check_opt}});
     }
     if (name == "runtime_info") {
-        object(j, "", {{"scope", check_scope}, {"query", text<4096>}, {"type", text<4096>}, {"op", text<4096>}});
+        auto checked = object(j, "", {{"scope", check_scope}, {"query", text<4096>}, {"type", text<4096>}, {"op", text<4096>}});
+        if (!checked) return checked;
         if (j.contains("type") != (j.contains("scope") && j.at("scope") == "type")) {
-            fail("type", "invalid selector", "type only with scope type");
+            return fail("type", "invalid selector", "type only with scope type");
         }
-        if (j.contains("op") && (!j.contains("scope") || j.at("scope") != "ops")) fail("op", "invalid selector", "scope ops");
+        if (j.contains("op") && (!j.contains("scope") || j.at("scope") != "ops")) return fail("op", "invalid selector", "scope ops");
         if (j.contains("query") && (!j.contains("scope") || j.at("scope") != "instruments")) {
-            fail("query", "invalid selector", "scope instruments");
+            return fail("query", "invalid selector", "scope instruments");
         }
-        return;
+        return {};
     }
     if (name == "checkpoint") {
-        object(j, "", {{"document", text<128>, true}, {"expected_revision", check_revision}, {"name", text<4096>, true}});
-        return;
+        return object(j, "", {{"document", text<128>, true}, {"expected_revision", check_revision}, {"name", text<4096>, true}});
     }
     if (name == "restore_checkpoint") {
-        object(j, "", {{"document", text<128>, true}, {"expected_revision", check_revision}, {"name", text<4096>, true}});
-        return;
+        return object(j, "", {{"document", text<128>, true}, {"expected_revision", check_revision}, {"name", text<4096>, true}});
     }
     if (name == "drop_checkpoint") {
-        object(j, "", {{"document", text<128>, true}, {"expected_revision", check_revision}, {"name", text<4096>, true}});
-        return;
+        return object(j, "", {{"document", text<128>, true}, {"expected_revision", check_revision}, {"name", text<4096>, true}});
     }
     if (name == "score_write_phrase") {
-        object(j, "",
-               {{"document", text<128>, true}, {"expected_revision", check_revision}, {"excerpt", check_eid}, {"lanes", list<any>, true}});
-        return;
+        return object(
+            j, "",
+            {{"document", text<128>, true}, {"expected_revision", check_revision}, {"excerpt", check_eid}, {"lanes", list<any>, true}});
     }
     if (name == "runtime_configure") {
-        object(j, "", {{"add_font", filename}, {"soundfonts", list<filename>}});
-        if (j.empty()) fail("add_font", "empty configuration", "add_font or soundfonts");
-        return;
+        if (auto checked = object(j, "", {{"add_font", filename}, {"soundfonts", list<filename>}}); !checked) return checked;
+        if (j.empty()) return fail("add_font", "empty configuration", "add_font or soundfonts");
+        return {};
     }
-    throw std::logic_error("unknown tool decoder");
+    assert(false);
+    std::unreachable();
 }
 } // namespace
 
-Result<void> validate_tool(View name, const Json &j) {
-    try {
-        validate_arguments(name, j);
-        return {};
-    } catch (const ArgumentError &e) {
-        return std::unexpected(invalid_error(e.what()));
-    }
-}
+Result<void> validate_tool(View name, const Json &j) { return validate_arguments(name, j); }
 
 Result<void> validate_op(const Json &j, usize index) {
-    try {
-        const auto path = "ops[" + std::to_string(index) + "]";
-        if (!j.is_object() || !j.contains("op")) fail(path + ".op", "missing operation", "an operation name");
-        const auto &name = j.at("op");
-        if (name == "set_property") {
-            object(j, path, {{"op", text<4096>, true}, {"target", check_ref, true}, {"property", text<4096>, true}, {"value", any, true}});
-            return {};
-        }
-        if (name == "reset_property") {
-            object(j, path, {{"op", text<4096>, true}, {"target", check_ref, true}, {"property", text<4096>, true}});
-            return {};
-        }
-        if (name == "set_style") {
-            object(j, path, {{"op", text<4096>, true}, {"excerpt", check_eid}, {"style", text<4096>, true}, {"value", any, true}});
-            return {};
-        }
-        if (name == "enter_notes") {
-            object(j, path,
-                   {{"op", text<4096>, true},
-                    {"at", check_pos, true},
-                    {"duration", check_fraction, true},
-                    {"pitches", list<check_midinote>, true}});
-            return {};
-        }
-        if (name == "set_pitch") {
-            object(j, path,
-                   {{"op", text<4096>, true}, {"note", check_ref, true}, {"pitch", integer<0, 127>, true}, {"tpc", integer<-8, 40>}});
-            return {};
-        }
-        if (name == "set_duration") {
-            object(j, path, {{"op", text<4096>, true}, {"chord_rest", check_ref, true}, {"duration", check_fraction, true}});
-            return {};
-        }
-        if (name == "remove") {
-            object(j, path, {{"op", text<4096>, true}, {"target", check_ref, true}});
-            return {};
-        }
-        if (name == "insert_measures") {
-            object(j, path, {{"op", text<4096>, true}, {"before", check_ref}, {"count", integer<1, 1024>, true}, {"kind", text<4096>}});
-            return {};
-        }
-        if (name == "remove_measures") {
-            object(j, path, {{"op", text<4096>, true}, {"first", check_ref, true}, {"last", check_ref, true}});
-            return {};
-        }
-        if (name == "set_time_sig") {
-            object(j, path, {{"op", text<4096>, true}, {"measure", score_position, true}, {"sig", check_fraction, true}});
-            return {};
-        }
-        if (name == "set_key_sig") {
-            object(j, path,
-                   {{"op", text<4096>, true}, {"measure", score_position, true}, {"key", integer<-7, 7>, true}, {"staff", score_position}});
-            return {};
-        }
-        if (name == "insert_clef") {
-            object(j, path, {{"op", text<4096>, true}, {"at", check_pos, true}, {"clef", text<4096>, true}});
-            return {};
-        }
-        if (name == "set_layout_break") {
-            object(j, path,
-                   {{"op", text<4096>, true}, {"measure", score_position, true}, {"kind", text<4096>, true}, {"on", boolean, true}});
-            return {};
-        }
-        if (name == "add_part") {
-            object(j, path, {{"op", text<4096>, true}, {"instrument_id", text<4096>, true}, {"before", check_ref}});
-            return {};
-        }
-        if (name == "remove_part") {
-            object(j, path, {{"op", text<4096>, true}, {"part", check_ref, true}});
-            return {};
-        }
-        if (name == "add_staff") {
-            object(j, path, {{"op", text<4096>, true}, {"part", check_ref, true}});
-            return {};
-        }
-        if (name == "remove_staff") {
-            object(j, path, {{"op", text<4096>, true}, {"staff", score_position, true}});
-            return {};
-        }
-        if (name == "generate_excerpts") {
-            object(j, path, {{"op", text<4096>, true}, {"parts", list<check_ref>, true}});
-            return {};
-        }
-        if (name == "add_spanner") {
-            object(j, path,
-                   {{"op", text<4096>, true},
-                    {"type", text<4096>, true},
-                    {"start", check_ref, true},
-                    {"end", check_ref, true},
-                    {"props", list<check_prop>}});
-            return {};
-        }
-        if (name == "add_tie") {
-            object(j, path, {{"op", text<4096>, true}, {"note", check_ref, true}, {"end_note", check_ref}});
-            return {};
-        }
-        if (name == "add_tuplet") {
-            object(j, path,
-                   {{"op", text<4096>, true},
-                    {"first", check_ref, true},
-                    {"last", check_ref, true},
-                    {"actual", integer<1, 1024>},
-                    {"normal", integer<1, 1024>}});
-            return {};
-        }
-        if (name == "add_text") {
-            object(j, path, {{"op", text<4096>, true}, {"at", check_pos, true}, {"style", text<4096>, true}, {"text", text<65536>, true}});
-            return {};
-        }
-        if (name == "add") {
-            object(j, path,
-                   {{"op", text<4096>, true}, {"anchor", check_ref, true}, {"type", text<4096>, true}, {"props", list<check_prop>}});
-            return {};
-        }
-        if (name == "add_spanner_to_bar_end") {
-            object(j, path,
-                   {{"op", text<4096>, true},
-                    {"type", text<4096>, true},
-                    {"start", check_ref, true},
-                    {"end", score_position, true},
-                    {"props", list<check_prop>}});
-            return {};
-        }
-        if (name == "set_repeat_barlines") {
-            object(j, path,
-                   {{"op", text<4096>, true},
-                    {"measure", score_position, true},
-                    {"start", boolean},
-                    {"end", boolean},
-                    {"count", integer<1, 1024>}});
-            return {};
-        }
-        if (name == "add_volta") {
-            object(j, path,
-                   {{"op", text<4096>, true},
-                    {"first_measure", score_position, true},
-                    {"last_measure", score_position, true},
-                    {"endings", list<integer<1, 1024>>, true},
-                    {"closed", boolean}});
-            return {};
-        }
-        if (name == "add_grace_chord") {
-            object(j, path,
-                   {{"op", text<4096>, true},
-                    {"principal", check_ref, true},
-                    {"kind", check_grace, true},
-                    {"duration", check_fraction, true},
-                    {"pitches", list<check_midinote>, true},
-                    {"event_end", check_fraction}});
-            return {};
-        }
-        if (name == "enter_drums") {
-            object(j, path,
-                   {{"op", text<4096>, true},
-                    {"at", check_pos, true},
-                    {"duration", check_fraction, true},
-                    {"keys", list<integer<0, 127>>, true}});
-            return {};
-        }
-        fail(path + ".op", "unknown operation", "a runtime_info ops entry");
-    } catch (const ArgumentError &e) {
-        return std::unexpected(invalid_error(e.what()));
+    const auto path = "ops[" + std::to_string(index) + "]";
+    if (!j.is_object() || !j.contains("op")) return fail(path + ".op", "missing operation", "an operation name");
+    const auto &name = j.at("op");
+    if (name == "set_property") {
+        return object(j, path,
+                      {{"op", text<4096>, true}, {"target", check_ref, true}, {"property", text<4096>, true}, {"value", any, true}});
     }
+    if (name == "reset_property") {
+        return object(j, path, {{"op", text<4096>, true}, {"target", check_ref, true}, {"property", text<4096>, true}});
+    }
+    if (name == "set_style") {
+        return object(j, path, {{"op", text<4096>, true}, {"excerpt", check_eid}, {"style", text<4096>, true}, {"value", any, true}});
+    }
+    if (name == "enter_notes") {
+        return object(j, path,
+                      {{"op", text<4096>, true},
+                       {"at", check_pos, true},
+                       {"duration", check_fraction, true},
+                       {"pitches", list<check_midinote>, true}});
+    }
+    if (name == "set_pitch") {
+        return object(j, path,
+                      {{"op", text<4096>, true}, {"note", check_ref, true}, {"pitch", integer<0, 127>, true}, {"tpc", integer<-8, 40>}});
+    }
+    if (name == "set_duration") {
+        return object(j, path, {{"op", text<4096>, true}, {"chord_rest", check_ref, true}, {"duration", check_fraction, true}});
+    }
+    if (name == "remove") {
+        return object(j, path, {{"op", text<4096>, true}, {"target", check_ref, true}});
+    }
+    if (name == "insert_measures") {
+        return object(j, path, {{"op", text<4096>, true}, {"before", check_ref}, {"count", integer<1, 1024>, true}, {"kind", text<4096>}});
+    }
+    if (name == "remove_measures") {
+        return object(j, path, {{"op", text<4096>, true}, {"first", check_ref, true}, {"last", check_ref, true}});
+    }
+    if (name == "set_time_sig") {
+        return object(j, path, {{"op", text<4096>, true}, {"measure", score_position, true}, {"sig", check_fraction, true}});
+    }
+    if (name == "set_key_sig") {
+        return object(
+            j, path,
+            {{"op", text<4096>, true}, {"measure", score_position, true}, {"key", integer<-7, 7>, true}, {"staff", score_position}});
+    }
+    if (name == "insert_clef") {
+        return object(j, path, {{"op", text<4096>, true}, {"at", check_pos, true}, {"clef", text<4096>, true}});
+    }
+    if (name == "set_layout_break") {
+        return object(j, path,
+                      {{"op", text<4096>, true}, {"measure", score_position, true}, {"kind", text<4096>, true}, {"on", boolean, true}});
+    }
+    if (name == "add_part") {
+        return object(j, path, {{"op", text<4096>, true}, {"instrument_id", text<4096>, true}, {"before", check_ref}});
+    }
+    if (name == "remove_part") {
+        return object(j, path, {{"op", text<4096>, true}, {"part", check_ref, true}});
+    }
+    if (name == "add_staff") {
+        return object(j, path, {{"op", text<4096>, true}, {"part", check_ref, true}});
+    }
+    if (name == "remove_staff") {
+        return object(j, path, {{"op", text<4096>, true}, {"staff", score_position, true}});
+    }
+    if (name == "generate_excerpts") {
+        return object(j, path, {{"op", text<4096>, true}, {"parts", list<check_ref>, true}});
+    }
+    if (name == "add_spanner") {
+        return object(j, path,
+                      {{"op", text<4096>, true},
+                       {"type", text<4096>, true},
+                       {"start", check_ref, true},
+                       {"end", check_ref, true},
+                       {"props", list<check_prop>}});
+    }
+    if (name == "add_tie") {
+        return object(j, path, {{"op", text<4096>, true}, {"note", check_ref, true}, {"end_note", check_ref}});
+    }
+    if (name == "add_tuplet") {
+        return object(j, path,
+                      {{"op", text<4096>, true},
+                       {"first", check_ref, true},
+                       {"last", check_ref, true},
+                       {"actual", integer<1, 1024>},
+                       {"normal", integer<1, 1024>}});
+    }
+    if (name == "add_text") {
+        return object(j, path,
+                      {{"op", text<4096>, true}, {"at", check_pos, true}, {"style", text<4096>, true}, {"text", text<65536>, true}});
+    }
+    if (name == "add") {
+        return object(j, path,
+                      {{"op", text<4096>, true}, {"anchor", check_ref, true}, {"type", text<4096>, true}, {"props", list<check_prop>}});
+    }
+    if (name == "add_spanner_to_bar_end") {
+        return object(j, path,
+                      {{"op", text<4096>, true},
+                       {"type", text<4096>, true},
+                       {"start", check_ref, true},
+                       {"end", score_position, true},
+                       {"props", list<check_prop>}});
+    }
+    if (name == "set_repeat_barlines") {
+        return object(j, path,
+                      {{"op", text<4096>, true},
+                       {"measure", score_position, true},
+                       {"start", boolean},
+                       {"end", boolean},
+                       {"count", integer<1, 1024>}});
+    }
+    if (name == "add_volta") {
+        return object(j, path,
+                      {{"op", text<4096>, true},
+                       {"first_measure", score_position, true},
+                       {"last_measure", score_position, true},
+                       {"endings", list<integer<1, 1024>>, true},
+                       {"closed", boolean}});
+    }
+    if (name == "add_grace_chord") {
+        return object(j, path,
+                      {{"op", text<4096>, true},
+                       {"principal", check_ref, true},
+                       {"kind", check_grace, true},
+                       {"duration", check_fraction, true},
+                       {"pitches", list<check_midinote>, true},
+                       {"event_end", check_fraction}});
+    }
+    if (name == "enter_drums") {
+        return object(
+            j, path,
+            {{"op", text<4096>, true}, {"at", check_pos, true}, {"duration", check_fraction, true}, {"keys", list<integer<0, 127>>, true}});
+    }
+    return fail(path + ".op", "unknown operation", "a runtime_info ops entry");
 }
 } // namespace music::api::detail
