@@ -180,10 +180,12 @@ TEST(Staging, Utf8PrefixNeverSplitsCodePoint) {
 
 #ifdef _WIN32
 TEST(Staging, WindowsPathGrammar) {
-    EXPECT_NO_THROW(music::validate_output_path_syntax(fs::path(L"\\\\con.example.com\\share\\out.pdf")));
-    EXPECT_NO_THROW(music::validate_output_path_syntax(fs::path(L"\\\\server\\share")));
+    EXPECT_TRUE(music::validate_output_path_syntax(fs::path(L"\\\\con.example.com\\share\\out.pdf")));
+    EXPECT_TRUE(music::validate_output_path_syntax(fs::path(L"\\\\server\\share")));
     for (const wchar_t *text : {L"\\\\.\\device\\out.pdf", L"\\\\", L"\\\\server"}) {
-        EXPECT_THROW(music::validate_output_path_syntax(fs::path(text)), std::invalid_argument);
+        const auto result = music::validate_output_path_syntax(fs::path(text));
+        ASSERT_FALSE(result);
+        EXPECT_EQ(result.error(), "invalid Windows destination filename syntax");
     }
 }
 #endif

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <future>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
@@ -24,7 +25,6 @@
 #include "api_output.h"
 #include "export_timing.h"
 #include "host_api.h"
-#include "mcp_transport.h"
 #include "publication_gate.h"
 #include "registry.h"
 #include "test_hooks.h"
@@ -137,10 +137,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         owner_work.reset();
     }
 
-    template <class T, class Function>
-    asio::awaitable<T> dispatch(asio::io_context &target, Function function, bool owner_task,
-                                std::shared_ptr<std::atomic<bool>> running_cancel = {}, bool preserve_completed = false,
-                                std::shared_ptr<RequestExecution> execution = {}) {
+    template <class Function>
+    asio::awaitable<Json> dispatch(asio::io_context &target, Function function, bool owner_task,
+                                   std::shared_ptr<std::atomic<bool>> running_cancel = {}, bool preserve_completed = false,
+                                   std::shared_ptr<RequestExecution> execution = {}) {
         if (closing) throw asio::system_error(asio::error::operation_aborted);
         if (publication_gate.closing.load(std::memory_order_acquire)) {
             if (test_hooks_enabled()) {
@@ -149,10 +149,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             }
             throw asio::system_error(asio::error::operation_aborted);
         }
-        if (owner_task && owner_pending >= 64) throw ToolCallError("ResourceLimit", "Engine queue full (limit 64)");
+        if (owner_task && owner_pending >= 64) co_return error_envelope(HostError{"ResourceLimit", "Engine queue full (limit 64)"});
         auto self = shared_from_this();
         auto token = asio::use_awaitable;
-        co_return co_await asio::async_initiate<decltype(token), void(std::exception_ptr, T)>(
+        co_return co_await asio::async_initiate<decltype(token), void(std::exception_ptr, Json)>(
             [self, &target, function = std::move(function), owner_task, running_cancel, preserve_completed,
              execution](auto handler) mutable {
                 auto executor = asio::get_associated_executor(handler);
@@ -166,7 +166,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 auto completion_handler = std::make_shared<decltype(handler)>(std::move(handler));
                 auto guard = std::make_shared<decltype(work)>(std::move(work));
                 auto complete = [self, executor, guard, slot, completion_handler, owner_task, running_cancel,
-                                 preserve_completed](std::exception_ptr error, T result) mutable {
+                                 preserve_completed](std::exception_ptr error, Json result) mutable {
                     asio::post(executor, [self, guard, slot, completion_handler, owner_task, error, running_cancel, preserve_completed,
                                           result = std::move(result)]() mutable {
                         if (!preserve_completed && !error && running_cancel && running_cancel->load(std::memory_order_acquire)) {
@@ -184,7 +184,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         auto queued = ExecutionState::QUEUED;
                         if (state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED)) {
                             task->reset();
-                            complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), T{});
+                            complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), Json{});
                         }
                     });
                 }
@@ -201,14 +201,14 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                                 }
                                 if (!state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED)) return;
                                 task->reset();
-                                complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), T{});
+                                complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), Json{});
                                 return;
                             }
                             if (!state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) return;
                             ++publication_gate.owner_tasks;
                         }
                         std::exception_ptr error;
-                        T result{};
+                        Json result{};
                         try {
                             if (self->stopping.load(std::memory_order_acquire)) throw asio::system_error(asio::error::operation_aborted);
                             result = (**task)();
@@ -265,7 +265,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
             if (arguments.is_object() && arguments.contains("ms") && arguments.at("ms").is_number()) {
                 ms = static_cast<std::int64_t>(std::clamp(arguments.at("ms").as<double>(), 1.0, 60000.0));
             }
-            co_return co_await self->dispatch<Json>(
+            co_return co_await self->dispatch(
                 self->owner_io,
                 [self, ms, barrier = std::move(barrier)] {
                     struct ClearBusy {
@@ -295,7 +295,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
         }
     }
     const auto *spec = find_tool(name);
-    if (!spec) throw ToolCallError("InvalidArgument", "Unknown tool");
+    if (!spec) co_return error_envelope(HostError{"InvalidArgument", "Unknown tool"});
     const auto handler = handlers[static_cast<std::size_t>(spec->handler)];
     const auto submitted = std::chrono::steady_clock::now();
     auto request_cancel =
@@ -306,7 +306,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
         auto request = decode_export(arguments);
         if (!request) co_return error_envelope(request.error());
         auto timing = std::make_shared<ExportTiming>("live", request->destination.path);
-        auto payload = co_await self->dispatch<Json>(
+        auto payload = co_await self->dispatch(
             self->owner_io,
             [self, request = *request, request_cancel, timing, submitted, execution] {
                 timing->add("owner_dispatch", submitted);
@@ -390,7 +390,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
         timing->finish();
         co_return payload;
     }
-    co_return co_await self->dispatch<Json>(
+    co_return co_await self->dispatch(
         self->owner_io,
         [self, handler, request_cancel, arguments = std::move(arguments)] {
             HandlerContext context;

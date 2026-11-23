@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -16,15 +15,6 @@
 #include "types.h"
 
 namespace music {
-
-// Structured, transport-independent failure raised by AsyncSession (or any
-// tool implementation) when a call has a stable machine-readable code. The
-// transport serialises it as an error envelope and a bounded text item.
-struct ToolCallError : std::runtime_error {
-    ToolCallError(std::string code, std::string message);
-
-    std::string code;
-};
 
 using AsyncToolCall = UniqueFn<asio::awaitable<Json>(std::string, Json, std::shared_ptr<RequestExecution>)>;
 

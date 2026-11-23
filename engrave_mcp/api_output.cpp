@@ -436,20 +436,20 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
 
     try {
         if (auto ok = check(); !ok) return fail_export(std::move(ok.error()));
-        try {
-            validate_output_path_syntax(request.destination.path);
-            // Probe without mutation, then resolve existing prefixes even when
-            // the leaf or parents are missing. Encoding validation must precede
-            // recursive creation (including through symlinks).
-            if (request.destination.directory) {
-                const auto status = output_path_status(request.destination.path);
-                if (fs::exists(status) && !fs::is_directory(status)) throw std::invalid_argument("destination must be a directory");
-                cleanup.destination = fs::weakly_canonical(fs::absolute(request.destination.path));
-            } else {
-                cleanup.destination = normalize_output_path(request.destination.path);
-            }
-        } catch (const std::invalid_argument &e) {
-            return fail_export(invalid_error(destination_message(request.destination.requested_path, e.what())));
+        auto invalid_destination = [&](std::string_view reason) {
+            return fail_export(invalid_error(destination_message(request.destination.requested_path, reason)));
+        };
+        if (auto ok = validate_output_path_syntax(request.destination.path); !ok) return invalid_destination(ok.error());
+        // Resolve existing prefixes and check their encoding before creating directories.
+        if (request.destination.directory) {
+            const auto status = output_path_status(request.destination.path);
+            if (!status) return invalid_destination(status.error());
+            if (fs::exists(*status) && !fs::is_directory(*status)) return invalid_destination("destination must be a directory");
+            cleanup.destination = fs::weakly_canonical(fs::absolute(request.destination.path));
+        } else {
+            auto path = normalize_output_path(request.destination.path);
+            if (!path) return invalid_destination(path.error());
+            cleanup.destination = std::move(*path);
         }
         auto invalid_resolved_error = [&]() -> HostError {
             // Preserve the well-formed JSON request, including its separators;
@@ -474,23 +474,18 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             return {};
         };
         if (auto ok = validate_report_path(cleanup.destination); !ok) return fail_export(std::move(ok.error()));
-        try {
-            validate_output_path_syntax(cleanup.destination);
-            if (request.destination.directory) {
-                require_output_directory(cleanup.destination);
-            } else if (fs::is_directory(output_path_status(cleanup.destination))) {
-                return fail_export(
-                    invalid_error(destination_message(request.destination.requested_path, "file destination is a directory")));
-            } else {
-                require_output_directory(cleanup.destination.parent_path());
-            }
-        } catch (const std::invalid_argument &e) {
-            return fail_export(invalid_error(destination_message(request.destination.requested_path, e.what())));
+        if (auto ok = validate_output_path_syntax(cleanup.destination); !ok) return invalid_destination(ok.error());
+        if (!request.destination.directory) {
+            const auto status = output_path_status(cleanup.destination);
+            if (!status) return invalid_destination(status.error());
+            if (fs::is_directory(*status)) return invalid_destination("file destination is a directory");
         }
+        const auto directory = request.destination.directory ? cleanup.destination : cleanup.destination.parent_path();
+        if (auto ok = require_output_directory(directory); !ok) return invalid_destination(ok.error());
         if (hooks && std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING")) {
             throw std::system_error(EIO, std::generic_category(), "Injected staging directory failure");
         }
-        cleanup.stage = create_private_directory(request.destination.directory ? cleanup.destination : cleanup.destination.parent_path());
+        cleanup.stage = create_private_directory(directory);
         u64 total = 0;
 
         struct Staged {

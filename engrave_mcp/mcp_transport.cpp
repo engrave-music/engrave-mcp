@@ -75,9 +75,6 @@
 
 namespace music {
 
-ToolCallError::ToolCallError(std::string error_code, std::string message)
-    : std::runtime_error(std::move(message)), code(std::move(error_code)) {}
-
 namespace {
 
 constexpr std::size_t k_max_line_bytes = api::transport_request_limit;
@@ -192,10 +189,6 @@ std::string server_instructions() {
 void add_cache_fields(Json &result) {
     result["ttlMs"] = 3600000;
     result["cacheScope"] = "public";
-}
-
-bool is_cancellation_code(const std::string &code) {
-    return code == "operation_aborted" || code == "cancelled" || code == "canceled" || code == "aborted";
 }
 
 struct ReaderEvent {
@@ -1622,16 +1615,6 @@ private:
             Json result = make_tool_result(std::move(payload));
             co_await deliver_tool_result(call, std::move(result));
             co_return;
-        } catch (const ToolCallError &error) {
-            // A coroutine catch handler must not suspend. Record the failure
-            // here only; the response is awaited after the handler.
-            if (call->cancel_requested && is_cancellation_code(error.code)) {
-                delivery = FailureDelivery::CANCELLED;
-            } else {
-                delivery = FailureDelivery::TOOL_ERROR;
-                error_code = error.code;
-                error_message = error.what();
-            }
         } catch (const std::system_error &error) {
             if (call->cancel_requested && is_operation_aborted_code(error)) {
                 delivery = FailureDelivery::CANCELLED;

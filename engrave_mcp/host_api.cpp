@@ -396,7 +396,11 @@ Json HostApi::query(const Json &j) {
         if (mode == "elements") {
             auto q = decode_query(json_value<Json>(j, "query", make_object<Json>()));
             if (!q) return std::unexpected(std::move(q.error()));
-            if (j.contains("excerpt")) q->score = *detail::score(j);
+            if (j.contains("excerpt")) {
+                auto sel = detail::score(j);
+                if (!sel) return std::unexpected(std::move(sel.error()));
+                q->score = *sel;
+            }
             auto out = (*doc)->query(*q);
             if (!out) {
                 auto e = api_error(out.error());
@@ -451,11 +455,15 @@ Json HostApi::read_music(const Json &j) {
     return boundary([&]() -> Result<Json> {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
         if (auto ok = detail::validate_tool("score_read_music", j); !ok) return std::unexpected(ok.error());
+        auto expected = revision_arg(j);
+        if (!expected) return std::unexpected(std::move(expected.error()));
         const auto token = j.at("document").get<std::string>();
-        auto doc = impl_->get(token, *revision_arg(j));
+        auto doc = impl_->get(token, *expected);
         if (!doc) return std::unexpected(doc.error());
+        auto score = detail::score(j);
+        if (!score) return std::unexpected(std::move(score.error()));
         engrave::MusicRange range;
-        range.score = *detail::score(j);
+        range.score = *score;
         range.first_measure = json_value<int>(j, "measure", 1) - 1;
         auto outline = (*doc)->outline(range.score);
         if (!outline) return document_error(outline.error(), token);
@@ -481,17 +489,19 @@ Json HostApi::write_phrase(const Json &j, const std::atomic<bool> *cancelled) {
     return boundary([&]() -> Result<Json> {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
         if (auto ok = detail::validate_tool("score_write_phrase", j); !ok) return std::unexpected(ok.error());
-        auto expected = *revision_arg(j);
+        auto expected = revision_arg(j);
+        if (!expected) return std::unexpected(std::move(expected.error()));
         const auto token = j.at("document").get<std::string>();
-        auto doc = impl_->get(token, expected);
+        auto doc = impl_->get(token, *expected);
         if (!doc) return std::unexpected(doc.error());
-        auto score = *detail::score(j);
-        auto outline = (*doc)->outline(score);
+        auto score = detail::score(j);
+        if (!score) return std::unexpected(std::move(score.error()));
+        auto outline = (*doc)->outline(*score);
         if (!outline) return document_error(outline.error(), token);
-        auto phrase = decode_phrase(j.at("lanes"), *outline, score);
+        auto phrase = decode_phrase(j.at("lanes"), *outline, *score);
         if (!phrase) return std::unexpected(phrase.error());
         if (cancelled && cancelled->load()) return std::unexpected(HostError{"Cancelled", "phrase cancelled before edit"});
-        auto edited = (*doc)->write_phrase(*phrase, {expected, engrave::EditMode::Atomic});
+        auto edited = (*doc)->write_phrase(*phrase, {*expected, engrave::EditMode::Atomic});
         if (!edited || edited->rejection) {
             auto error = api_error(edited ? edited->rejection->error : edited.error());
             error.document = token;

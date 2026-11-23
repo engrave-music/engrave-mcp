@@ -160,23 +160,23 @@ std::filesystem::path create_private_directory(const std::filesystem::path &pare
     throw std::runtime_error("Cannot allocate unique staging directory");
 }
 
-void validate_output_path_syntax([[maybe_unused]] const std::filesystem::path &path) {
+PathResult<void> validate_output_path_syntax([[maybe_unused]] const std::filesystem::path &path) {
 #ifdef _WIN32
     const auto &text = path.native();
     auto separator = [](wchar_t c) { return c == L'/' || c == L'\\'; };
-    auto reject = [] { throw std::invalid_argument("invalid Windows destination filename syntax"); };
-    if (text.empty()) reject();
+    constexpr auto invalid_syntax = std::unexpected(std::string_view("invalid Windows destination filename syntax"));
+    if (text.empty()) return invalid_syntax;
     const bool unc = text.size() >= 2 && separator(text[0]) && separator(text[1]);
     if (unc) {
         // Device namespaces (\\., \\?) are not file destinations.
-        if (text.size() >= 4 && (text[2] == L'.' || text[2] == L'?') && separator(text[3])) reject();
+        if (text.size() >= 4 && (text[2] == L'.' || text[2] == L'?') && separator(text[3])) return invalid_syntax;
         // A UNC destination requires a non-empty server and share.
         const auto rest = text.substr(2);
         const auto first = rest.find_first_of(L"/\\");
-        if (first == std::wstring::npos || first + 1 >= rest.size()) reject();
+        if (first == std::wstring::npos || first + 1 >= rest.size()) return invalid_syntax;
         const auto share_end = rest.find_first_of(L"/\\", first + 1);
         const auto share = rest.substr(first + 1, share_end == std::wstring::npos ? share_end : share_end - first - 1);
-        if (share == L"." || share == L"..") reject();
+        if (share == L"." || share == L"..") return invalid_syntax;
     }
     std::size_t start = 0;
     // Only the drive designator and root separators are syntax, not filenames.
@@ -185,16 +185,16 @@ void validate_output_path_syntax([[maybe_unused]] const std::filesystem::path &p
         ++start;
         if (start == 1 && start < text.size() && separator(text[start])) ++start; // UNC
     }
-    if (start == text.size()) return; // root directory
+    if (start == text.size()) return {}; // root directory
     std::size_t component_index = 0;
     for (;;) {
         const auto end = text.find_first_of(L"/\\", start);
         const auto component = text.substr(start, end == std::wstring::npos ? end : end - start);
-        if (component.empty()) reject();
+        if (component.empty()) return invalid_syntax;
         if (component != L"." && component != L"..") {
-            if (component.back() == L'.' || component.back() == L' ') reject();
+            if (component.back() == L'.' || component.back() == L' ') return invalid_syntax;
             for (auto c : component) {
-                if (c < 32 || std::wstring_view(L"<>:\"|?*").find(c) != std::wstring_view::npos) reject();
+                if (c < 32 || std::wstring_view(L"<>:\"|?*").find(c) != std::wstring_view::npos) return invalid_syntax;
             }
             auto base = component.substr(0, component.find(L'.'));
             for (auto &c : base) {
@@ -209,40 +209,41 @@ void validate_output_path_syntax([[maybe_unused]] const std::filesystem::path &p
             if (!unc_server &&
                 (base == L"CON" || base == L"PRN" || base == L"AUX" || base == L"NUL" ||
                  (base.size() == 4 && (base.substr(0, 3) == L"COM" || base.substr(0, 3) == L"LPT") && device_digit(base[3])))) {
-                reject();
+                return invalid_syntax;
             }
         }
         ++component_index;
         if (end == std::wstring::npos) break;
         start = end + 1;
     }
-#else
-    // POSIX component names have no additional restrictions.
 #endif
+    return {};
 }
 
-std::filesystem::file_status output_path_status(const std::filesystem::path &path) {
+PathResult<std::filesystem::file_status> output_path_status(const std::filesystem::path &path) {
     std::error_code error;
     const auto status = std::filesystem::status(path, error);
-    if (error == std::errc::not_a_directory) throw std::invalid_argument("destination contains a non-directory component");
+    if (error == std::errc::not_a_directory) return std::unexpected("destination contains a non-directory component");
     if (error == std::errc::no_such_file_or_directory) return std::filesystem::file_status(std::filesystem::file_type::not_found);
     if (error) throw std::filesystem::filesystem_error("Cannot inspect export destination", path, error);
     return status;
 }
 
-void require_output_directory(const std::filesystem::path &path) {
+PathResult<void> require_output_directory(const std::filesystem::path &path) {
     const auto status = output_path_status(path);
-    if (std::filesystem::exists(status)) {
-        if (!std::filesystem::is_directory(status)) throw std::invalid_argument("destination must be a directory");
-        return;
+    if (!status) return std::unexpected(status.error());
+    if (std::filesystem::exists(*status)) {
+        if (!std::filesystem::is_directory(*status)) return std::unexpected("destination must be a directory");
+        return {};
     }
     // Windows may report PATH_NOT_FOUND for a child of a regular file.
     // Inspect the missing chain before creation so wrong types stay inputs,
     // while access and other metadata errors still propagate as Io.
     for (auto parent = path.parent_path(); !parent.empty();) {
         const auto ancestor = output_path_status(parent);
-        if (std::filesystem::exists(ancestor)) {
-            if (!std::filesystem::is_directory(ancestor)) throw std::invalid_argument("destination contains a non-directory component");
+        if (!ancestor) return std::unexpected(ancestor.error());
+        if (std::filesystem::exists(*ancestor)) {
+            if (!std::filesystem::is_directory(*ancestor)) return std::unexpected("destination contains a non-directory component");
             break;
         }
         const auto next = parent.parent_path();
@@ -252,13 +253,16 @@ void require_output_directory(const std::filesystem::path &path) {
     std::error_code error;
     std::filesystem::create_directories(path, error);
     if (error) throw std::filesystem::filesystem_error("Cannot create export directory; created parents may remain", path, error);
+    return {};
 }
 
-std::filesystem::path normalize_output_path(const std::filesystem::path &path) {
-    if (path.empty()) throw std::invalid_argument("Export path is required");
+PathResult<std::filesystem::path> normalize_output_path(const std::filesystem::path &path) {
+    if (path.empty()) return std::unexpected("Export path is required");
     const auto filename = path.filename();
-    if (filename.empty() || filename == "." || filename == "..") throw std::invalid_argument("Export path must name a file");
-    if (std::filesystem::exists(output_path_status(path))) return std::filesystem::canonical(path);
+    if (filename.empty() || filename == "." || filename == "..") return std::unexpected("Export path must name a file");
+    const auto status = output_path_status(path);
+    if (!status) return std::unexpected(status.error());
+    if (std::filesystem::exists(*status)) return std::filesystem::canonical(path);
     return std::filesystem::weakly_canonical(std::filesystem::absolute(path));
 }
 
