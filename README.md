@@ -52,19 +52,16 @@ pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 12
 Run the protocol smoke test against the build:
 
 ```powershell
-# The dev build links the Pixi native libraries; put them on PATH first.
-$env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
-
 $env:ENGRAVE_MCP_BINARY   = "$PWD/build/release/engrave-mcp.exe"
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
 pixi run python tests/integration/test_mcp_smoke.py
 ```
 
-To run the server manually, pass resources explicitly; `--soundfont` is optional:
+To run the development binary manually (via `pixi run` so Pixi's native DLLs are on `PATH`), pass resources explicitly; `--soundfont` is optional:
 
 ```powershell
-build/release/engrave-mcp.exe --resources .runtime/assets `
+pixi run build/release/engrave-mcp.exe --resources .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
 

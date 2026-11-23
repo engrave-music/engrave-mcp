@@ -30,8 +30,8 @@ core (`github.com/Locietta/engrave`, consumed as the submodule
 
 - Build system: Bazel + hermetic `xclang` (C++23). The engine build lives
   in `vendor/engrave` (`MODULE.bazel`, `BUILD.bazel`, `bazel/`); the host build
-  consumes `@engrave`. Validate on both native Windows (PowerShell,
-  `.pixi/envs/default/python.exe`) and native Linux — never use WSL.
+  consumes `@engrave`. Validate on both native Windows (PowerShell, `pixi run`)
+  and native Linux — never use WSL.
 - Build with `scripts/bbuild.py --profile <release|debug|releasedbg|sanitize>` into
   `build/<profile>`. Do not bypass `scripts/bbuild.py`'s shared Bazel caches
   (`build/.bazel_repo_cache` and `build/.bazel_disk_cache`).

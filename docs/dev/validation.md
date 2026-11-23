@@ -45,17 +45,11 @@ standalone test targets.
 ## Running a Single Test Directly
 
 Because `pixi install` installs `engrave-host-testing` and `engrave-testing` in
-editable mode into `.pixi/envs/default`, run scripts directly with the Pixi
-Python interpreter without setting `PYTHONPATH`:
-
-```powershell
-# Windows
-.pixi\envs\default\python.exe tests/integration/test_mcp_smoke.py
-```
+editable mode into the Pixi environment, run scripts via `pixi run python`
+without setting `PYTHONPATH` or manually adjusting `PATH`:
 
 ```bash
-# Linux
-.pixi/envs/default/bin/python tests/integration/test_mcp_smoke.py
+pixi run python tests/integration/test_mcp_smoke.py
 ```
 
 ### Windows Manifest Verification
@@ -71,8 +65,7 @@ lane skips.
 ## Running Lanes
 
 ```powershell
-$env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
-.pixi\envs\default\python.exe tests/run_lanes.py `
+pixi run python tests/run_lanes.py `
   --engine-source vendor/engrave `
   --assets .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 `
@@ -128,7 +121,7 @@ Run via `tests/run_lanes.py --only native_470_oracle` or directly via
 `--host-binary` and `--host-sha256`):
 
 ```bash
-.pixi/envs/default/bin/python tests/run_lanes.py \
+pixi run python tests/run_lanes.py \
   --engine-source vendor/engrave \
   --assets .runtime/assets \
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 \
@@ -184,17 +177,8 @@ builds `engine_tests` into `build/<profile>` via `scripts/bbuild.py` by default,
 defaults to `--pixi-manifest pixi.toml`, and shares `build/.bazel_repo_cache`
 and `build/.bazel_disk_cache`:
 
-```powershell
-# Windows (PowerShell 7)
-.pixi\envs\default\python.exe tests/engine_gate.py --engine-source vendor/engrave `
-  --assets .runtime/assets `
-  --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 `
-  --output notes/runs/gate --quick
-```
-
 ```bash
-# Linux
-.pixi/envs/default/bin/python tests/engine_gate.py --engine-source vendor/engrave \
+pixi run python tests/engine_gate.py --engine-source vendor/engrave \
   --assets .runtime/assets \
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3 \
   --output notes/runs/gate --quick

@@ -41,19 +41,16 @@ pwsh -NoProfile -File scripts/build-native.ps1 -Jobs 12
 对构建产物运行协议冒烟测试：
 
 ```powershell
-# 开发构建依赖 Pixi 原生库，先把它们加入 PATH。
-$env:PATH = "$PWD\.pixi\envs\default\Library\bin;$env:PATH"
-
 $env:ENGRAVE_MCP_BINARY   = "$PWD/build/release/engrave-mcp.exe"
 $env:ENGRAVE_MCP_RESOURCES = "$PWD/.runtime/assets"
 $env:ENGRAVE_MCP_SOUNDFONT = "$PWD/.runtime/soundfonts/FluidR3Mono_GM.sf3"
 pixi run python tests/integration/test_mcp_smoke.py
 ```
 
-手动启动服务时显式传入资源目录；`--soundfont` 可选：
+手动启动开发构建产物时（通过 `pixi run` 自动将 Pixi 原生库加入 `PATH`）显式传入资源目录；`--soundfont` 可选：
 
 ```powershell
-build/release/engrave-mcp.exe --resources .runtime/assets `
+pixi run build/release/engrave-mcp.exe --resources .runtime/assets `
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
 
