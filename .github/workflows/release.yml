@@ -1,0 +1,296 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PIXI_VERSION: v0.84.1
+  PYTHONUTF8: "1"
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      is_release: ${{ steps.release.outputs.is_release }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+
+      - name: Verify build inputs, packaging notices, and release tools
+        shell: bash
+        run: |
+          py=.pixi/envs/default/bin/python
+          "$py" scripts/bootstrap.py
+          "$py" scripts/check_build_inputs.py --check
+          "$py" scripts/check_native_includes.py --engine-source vendor/engrave
+          "$py" scripts/package_windows.py --check-notices
+          "$py" scripts/package_linux.py --check-notices
+          "$py" tests/test_packaging.py
+          "$py" tests/test_release.py
+
+      - name: Determine release label
+        id: release
+        shell: bash
+        run: |
+          py=.pixi/envs/default/bin/python
+          if [[ "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF_TYPE" == 'tag' ]]; then
+            metadata=$("$py" scripts/release_archive.py check-tag --tag "$GITHUB_REF_NAME" --json)
+            release_tag="$GITHUB_REF_NAME"
+            is_release=true
+            prerelease=$(jq -r '.prerelease' <<< "$metadata")
+          else
+            metadata=$("$py" scripts/release_archive.py check-tag --json)
+            release_tag="v$(jq -r '.version' <<< "$metadata")-dryrun.${GITHUB_SHA:0:7}"
+            is_release=false
+            prerelease=true
+          fi
+          {
+            printf 'version=%s\n' "$(jq -r '.version' <<< "$metadata")"
+            printf 'release_tag=%s\n' "$release_tag"
+            printf 'is_release=%s\n' "$is_release"
+            printf 'prerelease=%s\n' "$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+  package:
+    name: package (${{ matrix.platform }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            runner: windows-latest
+            cache_name: windows-xclang
+            executable: engrave-mcp.exe
+            packager: package_windows.py
+            format: zip
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+            cache_name: linux-xclang
+            executable: engrave-mcp
+            packager: package_linux.py
+            format: tar.gz
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      BUILD_DIR: build/release
+      REPO_CACHE: build/.bazel_repo_cache
+      DISK_CACHE: build/.bazel_disk_cache
+      BUNDLE_NAME: engrave-mcp-${{ needs.validate.outputs.release_tag }}-${{ matrix.platform }}
+      SOUNDFONT: .runtime/soundfonts/FluidR3Mono_GM.sf3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+
+      - name: Verify submodule, SoundFont, and build inputs
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          pixi run --locked python scripts/bootstrap.py --soundfont
+          pixi run --locked python scripts/check_build_inputs.py --check
+
+      - name: Restore Bazel repository cache
+        id: repo-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.REPO_CACHE }}
+          key: bazel-repo-${{ matrix.cache_name }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
+          restore-keys: bazel-repo-${{ matrix.cache_name }}-
+
+      - name: Restore Bazel disk cache
+        id: disk-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.DISK_CACHE }}
+          key: bazel-disk-${{ matrix.cache_name }}-${{ github.sha }}
+          restore-keys: bazel-disk-${{ matrix.cache_name }}-
+
+      - name: Build release executable
+        id: build
+        run: pixi run --locked python scripts/bbuild.py --profile release --build-directory $env:BUILD_DIR -j 4 build engrave_mcp
+
+      - name: Save Bazel repository cache
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.repo-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.REPO_CACHE }}
+          key: bazel-repo-${{ matrix.cache_name }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
+
+      - name: Save Bazel disk cache
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' && steps.disk-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.DISK_CACHE }}
+          key: bazel-disk-${{ matrix.cache_name }}-${{ github.sha }}
+
+      - name: Package, smoke-test, and archive the release
+        env:
+          STAGING_DIR: ${{ runner.temp }}/release
+          EXECUTABLE: ${{ matrix.executable }}
+          PACKAGER: ${{ matrix.packager }}
+          ARCHIVE_FORMAT: ${{ matrix.format }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $py = $IsWindows ? './.pixi/envs/default/python.exe' : './.pixi/envs/default/bin/python'
+          $bundle = Join-Path $env:STAGING_DIR $env:BUNDLE_NAME
+          $binary = Join-Path $bundle $env:EXECUTABLE
+          pixi run --locked python "scripts/$env:PACKAGER" --binary "$env:BUILD_DIR/$env:EXECUTABLE" --soundfont $env:SOUNDFONT --output $bundle
+
+          & $py scripts/release_archive.py check-tag --binary $binary --clean-env
+          & $py vendor/engrave/tools/install_assets.py "$bundle/assets" --verify
+          foreach ($notice in @('freetype/FTL.TXT', 'engine-THIRD_PARTY_NOTICES.md')) {
+            if (!(Test-Path -LiteralPath "$bundle/licenses/$notice" -PathType Leaf)) {
+              throw "Missing packaged license notice: $notice"
+            }
+          }
+          $forbidden = Get-ChildItem -LiteralPath "$bundle/licenses" -Recurse | Where-Object { $_.Name -match 'GPLv2\.TXT|fdk-aac' }
+          if ($forbidden) { throw "Unexpected packaged license notices: $($forbidden.FullName -join ', ')" }
+          if ($IsWindows) { & $py tests/integration/test_windows_manifest.py $binary }
+
+          $env:ENGRAVE_MCP_CLEAN_ENV = '1'
+          $env:ENGRAVE_MCP_BINARY = $binary
+          $env:ENGRAVE_MCP_SOUNDFONT = Join-Path $bundle 'soundfonts/FluidR3Mono_GM.sf3'
+          $env:ENGRAVE_MCP_OUTPUT = Join-Path $env:STAGING_DIR 'smoke'
+          Remove-Item Env:ENGRAVE_MCP_RESOURCES -ErrorAction SilentlyContinue
+          & $py tests/integration/test_mcp_smoke.py
+
+          $archive = Join-Path $env:STAGING_DIR "$env:BUNDLE_NAME.$env:ARCHIVE_FORMAT"
+          & $py scripts/release_archive.py pack --source $bundle --output $archive --format $env:ARCHIVE_FORMAT
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: ${{ runner.temp }}/release/${{ env.BUNDLE_NAME }}.${{ matrix.format }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  checksums:
+    needs: [validate, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
+      WINDOWS_ARCHIVE: dist/engrave-mcp-${{ needs.validate.outputs.release_tag }}-windows-x86_64.zip
+      LINUX_ARCHIVE: dist/engrave-mcp-${{ needs.validate.outputs.release_tag }}-linux-x86_64.tar.gz
+      CHECKSUMS: dist/SHA256SUMS.txt
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download Windows archive
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows-x86_64
+          path: dist/
+
+      - name: Download Linux archive
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux-x86_64
+          path: dist/
+
+      - name: Generate and verify release checksums
+        shell: bash
+        run: |
+          python3 scripts/release_archive.py checksums --output "$CHECKSUMS" "$WINDOWS_ARCHIVE" "$LINUX_ARCHIVE"
+          python3 scripts/release_archive.py verify-checksums --checksums "$CHECKSUMS" --dir dist
+
+      - name: Upload release checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-checksums
+          path: ${{ env.CHECKSUMS }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [validate, checksums]
+    if: needs.validate.outputs.is_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
+      WINDOWS_ARCHIVE: dist/engrave-mcp-${{ needs.validate.outputs.release_tag }}-windows-x86_64.zip
+      LINUX_ARCHIVE: dist/engrave-mcp-${{ needs.validate.outputs.release_tag }}-linux-x86_64.tar.gz
+      CHECKSUMS: dist/SHA256SUMS.txt
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Verify checksums and tag target commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release_archive.py verify-checksums --checksums "$CHECKSUMS" --dir dist
+          ref_json=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")
+          obj_type=$(jq -r '.object.type' <<< "$ref_json")
+          obj_sha=$(jq -r '.object.sha' <<< "$ref_json")
+          if [[ "$obj_type" == 'tag' ]]; then
+            tag_commit=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${obj_sha}" --jq '.object.sha')
+          else
+            tag_commit="$obj_sha"
+          fi
+          if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+            echo "Refusing to publish: tag ${RELEASE_TAG} points to ${tag_commit}, expected built commit ${GITHUB_SHA}" >&2
+            exit 1
+          fi
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+          RELEASE_NOTES: |
+            engrave-mcp is licensed under GPL-3.0-only and bundles FluidR3Mono_GM.sf3 (MIT).
+
+            Builds are available for Windows x86_64 and Linux x86_64 (Ubuntu 24.04 glibc baseline).
+            Verify downloaded archives with `sha256sum --check SHA256SUMS.txt`.
+        run: |
+          args=(--verify-tag --title "engrave-mcp $RELEASE_TAG" --notes "$RELEASE_NOTES" --generate-notes)
+          if [[ "$PRERELEASE" == 'true' ]]; then args+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" "${args[@]}" "$WINDOWS_ARCHIVE" "$LINUX_ARCHIVE" "$CHECKSUMS"

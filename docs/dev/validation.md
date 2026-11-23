@@ -226,7 +226,7 @@ Both CI workflows run on pushes to `main`, pull requests, and manual dispatch.
   Python checks (`test_test_layout`, `test_native_includes`,
   `test_engine_gate_wrapper`, `test_cleanup_regressions`, `test_oracle_harness`,
   `test_rendered_page`, `tests/test_engine_gate.py`, `tests/test_bbuild.py`,
-  `tests/test_packaging.py`, `tests/test_bazel_server_mcp.py`).
+  `tests/test_packaging.py`, `tests/test_release.py`, `tests/test_bazel_server_mcp.py`).
 - **`build-test`** (Windows and Linux, Bazel + `xclang`): Builds `engrave_mcp`,
   `engrave_mcp_test`, `registry_dump`, `registry_check`, `host_api_test`,
   `staging_test`, and (on Linux) `publication_test`, then runs `staging_test`,
@@ -246,6 +246,10 @@ Both CI workflows run on pushes to `main`, pull requests, and manual dispatch.
   `sanitize` job runs four core shards, both upstream GTest suites, and the
   SoundFont-free golden probes with ASan, LSan, and UBSan. Both sanitizer jobs
   use disk cache keys distinct from their release jobs.
+- The [release workflow](../../.github/workflows/release.yml) validates the host
+  version and runs the 20-cycle MCP and audio smoke test against each packaged
+  Windows and Linux binary with a clean runtime environment. A manual dispatch
+  exercises packaging and checksum verification without publishing a release.
 - **Manual milestone checks** include the full engine gate
   (`tests/engine_gate.py`), the audio corpus and `engine_audio`, the live export
   and audio lanes, opt-in lanes, benchmarks, Windows-vs-Linux paired captures,

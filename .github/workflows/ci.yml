@@ -67,6 +67,7 @@ jobs:
             tests/test_engine_gate.py \
             tests/test_bbuild.py \
             tests/test_packaging.py \
+            tests/test_release.py \
             tests/test_bazel_server_mcp.py; do
             echo "::group::$test"
             "$py" "$test"
