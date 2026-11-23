@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Host JSON DOM: sorted object keys (the previous serializer's order), u64 number
-// mode, glaze's writer, and the wire's UTF-8 replacement rules.
 #pragma once
 
 #include <concepts>
@@ -77,7 +75,7 @@ T json_value(const J &object, std::string_view key, T fallback) {
 }
 
 // Object merge in source order: existing keys keep their position, new keys
-// are appended (json::update semantics).
+// are appended.
 template <class J>
 void json_merge(J &target, const J &source) {
     for (const auto &[key, value] : source.get_object()) target[key] = value;
@@ -86,16 +84,18 @@ void json_merge(J &target, const J &source) {
 template <class J>
 bool json_equal(const J &left, const J &right) {
     if (left.is_number() && right.is_number()) {
-        if (left.template holds<uint64_t>() && right.template holds<uint64_t>()) {
-            return left.template get<uint64_t>() == right.template get<uint64_t>();
+        if (left.template holds<std::uint64_t>() && right.template holds<std::uint64_t>()) {
+            return left.template get<std::uint64_t>() == right.template get<std::uint64_t>();
         }
-        if (left.template holds<int64_t>() && right.template holds<int64_t>()) {
-            return left.template get<int64_t>() == right.template get<int64_t>();
+        if (left.template holds<std::int64_t>() && right.template holds<std::int64_t>()) {
+            return left.template get<std::int64_t>() == right.template get<std::int64_t>();
         }
         if (left.template holds<double>() || right.template holds<double>()) return left.as_number() == right.as_number();
-        const auto unsigned_value = left.template holds<uint64_t>() ? left.template get<uint64_t>() : right.template get<uint64_t>();
-        const auto signed_value = left.template holds<int64_t>() ? left.template get<int64_t>() : right.template get<int64_t>();
-        return signed_value >= 0 && unsigned_value == static_cast<uint64_t>(signed_value);
+        const auto unsigned_value =
+            left.template holds<std::uint64_t>() ? left.template get<std::uint64_t>() : right.template get<std::uint64_t>();
+        const auto signed_value =
+            left.template holds<std::int64_t>() ? left.template get<std::int64_t>() : right.template get<std::int64_t>();
+        return signed_value >= 0 && unsigned_value == static_cast<std::uint64_t>(signed_value);
     }
     if (left.template holds<std::string>() && right.template holds<std::string>()) {
         return left.template get<std::string>() == right.template get<std::string>();
@@ -128,8 +128,6 @@ bool json_equal(const J &left, const J &right) {
 
 namespace glz {
 
-// Convenience comparisons for the host's sorted generic; numbers compare by
-// value, as the previous integer/float comparisons did.
 inline bool operator==(const music::Json &left, const music::Json &right) { return music::json_equal(left, right); }
 
 inline bool operator!=(const music::Json &left, const music::Json &right) { return !music::json_equal(left, right); }
@@ -184,8 +182,7 @@ bool operator!=(T left, const music::Json &right) {
 
 namespace music {
 
-// UTF-8 validation and repair compatible with the previous wire encoder:
-// one U+FFFD per maximal invalid subsequence.
+// Repair emits one U+FFFD per maximal invalid subsequence.
 bool valid_utf8(std::string_view text);
 std::string replace_invalid_utf8(std::string_view text);
 

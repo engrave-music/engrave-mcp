@@ -12,7 +12,6 @@
 #include <ankerl/unordered_dense.h>
 
 #include "api_json_internal.h"
-#include "registry.h"
 
 namespace music::api {
 
@@ -133,9 +132,7 @@ Result<void> validate_xml_text(std::string_view value) {
     return {};
 }
 
-Result<i64> signed_decimal(const Json &j) {
-    if (!j.is_string()) return std::unexpected(invalid_error("integer is not a canonical int64 decimal"));
-    const auto &s = j.get<std::string>();
+Result<i64> signed_decimal(std::string_view s) {
     i64 n{};
     const auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), n);
     if (ec != std::errc{} || end != s.data() + s.size() || std::to_string(n) != s) {
@@ -154,13 +151,13 @@ Result<engrave::ElementId> eid(const Json &j) {
 
 Result<engrave::Fraction> fraction(const Json &j) {
     if (!j.is_string()) return std::unexpected(invalid_error("expected an exact fraction string"));
-    const auto &s = j.get<std::string>();
+    const std::string_view s = j.get<std::string>();
     if (s == "0") return engrave::Fraction{0, 1};
     const auto slash = s.find('/');
     if (slash == s.npos) return std::unexpected(invalid_error("expected numerator/denominator"));
-    auto n = signed_decimal(Json(s.substr(0, slash)));
+    auto n = signed_decimal(s.substr(0, slash));
     if (!n) return std::unexpected(std::move(n.error()));
-    auto d = signed_decimal(Json(s.substr(slash + 1)));
+    auto d = signed_decimal(s.substr(slash + 1));
     if (!d) return std::unexpected(std::move(d.error()));
     if (*d <= 0) return std::unexpected(invalid_error("fraction denominator must be positive"));
     return engrave::Fraction{*n, *d};
@@ -180,7 +177,12 @@ Result<engrave::Address> address(const Json &j, const engrave::Outline *outline)
             return std::unexpected(invalid_error("measure: out of range; expected an existing bar"));
         }
         const auto &m = outline->measures[number - 1];
-        const auto offset = j.contains("offset") ? *fraction(j.at("offset")) : engrave::Fraction{};
+        engrave::Fraction offset{};
+        if (j.contains("offset")) {
+            auto parsed = fraction(j.at("offset"));
+            if (!parsed) return std::unexpected(std::move(parsed.error()));
+            offset = *parsed;
+        }
         if (offset.num < 0 || offset >= m.duration || offset.num > INT32_MAX || offset.den > INT32_MAX || m.tick.num > INT32_MAX ||
             m.tick.den > INT32_MAX) {
             return std::unexpected(invalid_error("offset: outside bar; expected a representable measure-local fraction"));

@@ -28,17 +28,6 @@
 #include <vector>
 
 #include <asio.hpp>
-#include <asio/async_result.hpp>
-#include <asio/bind_cancellation_slot.hpp>
-#include <asio/cancellation_signal.hpp>
-#include <asio/cancellation_state.hpp>
-#include <asio/co_spawn.hpp>
-#include <asio/detached.hpp>
-#include <asio/executor_work_guard.hpp>
-#include <asio/io_context.hpp>
-#include <asio/post.hpp>
-#include <asio/this_coro.hpp>
-#include <asio/use_awaitable.hpp>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -147,7 +136,7 @@ bool json_nesting_exceeds(std::string_view text, int max_depth) {
     return false;
 }
 
-bool is_valid_id(const Json &id) { return id.is_string() || id.holds<uint64_t>() || id.holds<int64_t>(); }
+bool is_valid_id(const Json &id) { return id.is_string() || id.holds<std::uint64_t>() || id.holds<std::int64_t>(); }
 
 bool has_modern_meta_key(const Json &meta) {
     return meta.contains(k_protocol_version_key) || meta.contains(k_client_capabilities_key) || meta.contains(k_client_info_key) ||
@@ -324,10 +313,6 @@ struct Session : std::enable_shared_from_this<Session> {
     }
 
 private:
-    // ---------------------------------------------------------------------
-    // Reader thread
-    // ---------------------------------------------------------------------
-
     void reader_main(std::stop_token stop) noexcept {
 #if defined(_WIN32)
         HANDLE handle = ::OpenThread(THREAD_TERMINATE, FALSE, ::GetCurrentThreadId());
@@ -610,10 +595,6 @@ private:
         } catch (...) {}
     }
 
-    // ---------------------------------------------------------------------
-    // Output writer thread
-    // ---------------------------------------------------------------------
-
     void writer_main() noexcept {
 #if defined(_WIN32)
         HANDLE handle = ::OpenThread(THREAD_TERMINATE, FALSE, ::GetCurrentThreadId());
@@ -880,10 +861,6 @@ private:
         } catch (...) {}
     }
 
-    // ---------------------------------------------------------------------
-    // Owner/session-thread output queue and backpressure
-    // ---------------------------------------------------------------------
-
     bool output_closed() noexcept {
         std::lock_guard<std::mutex> lock(out_mutex_);
         return out_abort_ || out_graceful_stop_ || writer_abort_.load(std::memory_order_acquire);
@@ -990,10 +967,6 @@ private:
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Response serialisation and writer submission
-    // ---------------------------------------------------------------------
-
     asio::awaitable<WireStatus> send_wire(const Json &value) {
         if (fatal_.load(std::memory_order_acquire)) {
             co_return WireStatus::FAILED;
@@ -1078,10 +1051,6 @@ private:
         }
         co_return false;
     }
-
-    // ---------------------------------------------------------------------
-    // Draining stdin events on the session thread
-    // ---------------------------------------------------------------------
 
     void start_drain() noexcept {
         if (fatal_.load(std::memory_order_acquire)) {
@@ -1519,10 +1488,6 @@ private:
         } catch (...) {}
     }
 
-    // ---------------------------------------------------------------------
-    // Tool-call lifetime
-    // ---------------------------------------------------------------------
-
     asio::awaitable<bool> start_tool_call(const Json &id, std::string name, Json arguments, bool modern) {
         CallStatePtr call;
         bool allocation_failed = false;
@@ -1764,10 +1729,6 @@ private:
             inflight_.erase(it);
         }
     }
-
-    // ---------------------------------------------------------------------
-    // Shutdown coordination (all called on the session/io thread)
-    // ---------------------------------------------------------------------
 
     void maybe_finish_graceful() noexcept {
         if (fatal_.load(std::memory_order_acquire) || !eof_ || !inflight_.empty() || writer_stop_requested_) {

@@ -91,8 +91,7 @@ std::string replace_invalid_utf8(std::string_view text) {
 
 namespace {
 
-// nlohmann rejected trailing content and skipped one leading UTF-8 BOM; glaze
-// needs both behaviours opted in explicitly.
+// The wire accepts one leading UTF-8 BOM and rejects trailing content.
 struct ReadOpts : glz::opts {
     bool validate_trailing_whitespace = true;
 };
@@ -130,11 +129,11 @@ struct CompactOpts : glz::opts {
     bool escape_control_characters = true;
 };
 
-template <uint8_t Width>
+template <std::uint8_t Width>
 struct PrettyOpts : glz::opts {
     bool prettify = true;
     char indentation_char = ' ';
-    uint8_t indentation_width = Width;
+    std::uint8_t indentation_width = Width;
     bool escape_control_characters = true;
 };
 

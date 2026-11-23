@@ -138,9 +138,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     }
 
     template <class Function>
-    asio::awaitable<Json> dispatch(asio::io_context &target, Function function, bool owner_task,
-                                   std::shared_ptr<std::atomic<bool>> running_cancel = {}, bool preserve_completed = false,
-                                   std::shared_ptr<RequestExecution> execution = {}) {
+    asio::awaitable<Json> dispatch(Function function, std::shared_ptr<std::atomic<bool>> running_cancel = {},
+                                   bool preserve_completed = false, std::shared_ptr<RequestExecution> execution = {}) {
         if (closing) throw asio::system_error(asio::error::operation_aborted);
         if (publication_gate.closing.load(std::memory_order_acquire)) {
             if (test_hooks_enabled()) {
@@ -149,12 +148,11 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             }
             throw asio::system_error(asio::error::operation_aborted);
         }
-        if (owner_task && owner_pending >= 64) co_return error_envelope(HostError{"ResourceLimit", "Engine queue full (limit 64)"});
+        if (owner_pending >= 64) co_return error_envelope(HostError{"ResourceLimit", "Engine queue full (limit 64)"});
         auto self = shared_from_this();
         auto token = asio::use_awaitable;
         co_return co_await asio::async_initiate<decltype(token), void(std::exception_ptr, Json)>(
-            [self, &target, function = std::move(function), owner_task, running_cancel, preserve_completed,
-             execution](auto handler) mutable {
+            [self, function = std::move(function), running_cancel, preserve_completed, execution](auto handler) mutable {
                 auto executor = asio::get_associated_executor(handler);
                 auto work = asio::make_work_guard(executor);
                 auto slot = asio::get_associated_cancellation_slot(handler);
@@ -165,15 +163,15 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 auto task = std::make_shared<std::optional<Function>>(std::move(function));
                 auto completion_handler = std::make_shared<decltype(handler)>(std::move(handler));
                 auto guard = std::make_shared<decltype(work)>(std::move(work));
-                auto complete = [self, executor, guard, slot, completion_handler, owner_task, running_cancel,
+                auto complete = [self, executor, guard, slot, completion_handler, running_cancel,
                                  preserve_completed](std::exception_ptr error, Json result) mutable {
-                    asio::post(executor, [self, guard, slot, completion_handler, owner_task, error, running_cancel, preserve_completed,
+                    asio::post(executor, [self, guard, slot, completion_handler, error, running_cancel, preserve_completed,
                                           result = std::move(result)]() mutable {
                         if (!preserve_completed && !error && running_cancel && running_cancel->load(std::memory_order_acquire)) {
                             error = std::make_exception_ptr(asio::system_error(asio::error::operation_aborted));
                         }
                         if (slot.is_connected()) slot.clear();
-                        if (owner_task) --self->owner_pending;
+                        --self->owner_pending;
                         (*completion_handler)(error, std::move(result));
                     });
                 };
@@ -188,9 +186,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         }
                     });
                 }
-                if (owner_task) ++self->owner_pending;
+                ++self->owner_pending;
                 try {
-                    asio::post(target, [self, task, complete, state, running_cancel, preserve_completed]() mutable {
+                    asio::post(self->owner_io, [self, task, complete, state, running_cancel, preserve_completed]() mutable {
                         auto queued = ExecutionState::QUEUED;
                         {
                             std::lock_guard lock(publication_gate.mutex);
@@ -228,12 +226,12 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         publication_gate.changed.notify_all();
                         complete(error, std::move(result));
                     });
-                    if (test_hooks_enabled() && owner_task) {
+                    if (test_hooks_enabled()) {
                         std::fprintf(stderr, "OWNER_ENQUEUED\n");
                         std::fflush(stderr);
                     }
                 } catch (...) {
-                    if (owner_task) --self->owner_pending;
+                    --self->owner_pending;
                     if (slot.is_connected()) slot.clear();
                     throw;
                 }
@@ -265,33 +263,30 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
             if (arguments.is_object() && arguments.contains("ms") && arguments.at("ms").is_number()) {
                 ms = static_cast<std::int64_t>(std::clamp(arguments.at("ms").as<double>(), 1.0, 60000.0));
             }
-            co_return co_await self->dispatch(
-                self->owner_io,
-                [self, ms, barrier = std::move(barrier)] {
-                    struct ClearBusy {
-                        std::atomic<bool> &busy;
-                        ~ClearBusy() { busy.store(false); }
-                    };
-                    self->test_owner_busy.store(true);
-                    const ClearBusy clear_busy{self->test_owner_busy};
-                    if (!barrier.empty()) {
-                        const auto barrier_path = std::filesystem::u8path(barrier);
-                        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-                        while (!std::filesystem::exists(barrier_path)) {
-                            if (self->stopping.load(std::memory_order_acquire)) {
-                                throw asio::system_error(asio::error::operation_aborted);
-                            }
-                            if (std::chrono::steady_clock::now() >= deadline) {
-                                throw std::runtime_error("test owner barrier timed out");
-                            }
-                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            co_return co_await self->dispatch([self, ms, barrier = std::move(barrier)] {
+                struct ClearBusy {
+                    std::atomic<bool> &busy;
+                    ~ClearBusy() { busy.store(false); }
+                };
+                self->test_owner_busy.store(true);
+                const ClearBusy clear_busy{self->test_owner_busy};
+                if (!barrier.empty()) {
+                    const auto barrier_path = std::filesystem::u8path(barrier);
+                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+                    while (!std::filesystem::exists(barrier_path)) {
+                        if (self->stopping.load(std::memory_order_acquire)) {
+                            throw asio::system_error(asio::error::operation_aborted);
                         }
-                        return Json{{"ok", true}, {"barrier", barrier}};
+                        if (std::chrono::steady_clock::now() >= deadline) {
+                            throw std::runtime_error("test owner barrier timed out");
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-                    return Json{{"ok", true}, {"slept_ms", ms}};
-                },
-                true);
+                    return Json{{"ok", true}, {"barrier", barrier}};
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+                return Json{{"ok", true}, {"slept_ms", ms}};
+            });
         }
     }
     const auto *spec = find_tool(name);
@@ -307,7 +302,6 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
         if (!request) co_return error_envelope(request.error());
         auto timing = std::make_shared<ExportTiming>("live", request->destination.path);
         auto payload = co_await self->dispatch(
-            self->owner_io,
             [self, request = *request, request_cancel, timing, submitted, execution] {
                 timing->add("owner_dispatch", submitted);
                 Json payload;
@@ -317,8 +311,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                 if (!runtime) return error_envelope(runtime.error());
                 try {
                     auto result = self->host->with_document(
-                        request.document, request.expected_revision,
-                        [&](engrave::Document &document) -> Result<void> {
+                        request.document, request.expected_revision, [&](engrave::Document &document) -> Result<void> {
                             auto output = live_export(
                                 document, request, self->limits,
                                 [&] {
@@ -360,13 +353,13 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                             if (test_hooks_enabled() && !visible_paths.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
                                 throw 42; // exercise the non-standard exception boundary too
                             }
-                            if (!output) return std::unexpected(output.error());
+                            if (!output) return std::unexpected(std::move(output.error()));
                             payload = std::move(*output);
                             return {};
-                        },
-                        &visible_paths);
+                        });
                     if (!result) {
                         if (result.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
+                        if (result.error().published_artifacts.empty()) result.error().published_artifacts = std::move(visible_paths);
                         payload = error_envelope(result.error());
                     }
                     if (publication.owns_lock() && execution && execution->report.has_value()) {
@@ -383,7 +376,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                     throw;
                 }
             },
-            true, request_cancel, true, execution);
+            request_cancel, true, execution);
         if (test_hooks_enabled() && execution && execution->was_reported() && std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_REPORT")) {
             throw std::runtime_error("Injected post-report completion failure");
         }
@@ -391,7 +384,6 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
         co_return payload;
     }
     co_return co_await self->dispatch(
-        self->owner_io,
         [self, handler, request_cancel, arguments = std::move(arguments)] {
             HandlerContext context;
             context.host = self->host.get();
@@ -402,6 +394,6 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
             }
             return result;
         },
-        true, request_cancel, true);
+        request_cancel, true);
 }
 } // namespace music

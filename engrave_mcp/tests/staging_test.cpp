@@ -1,6 +1,5 @@
 // Direct regression for the private staging and publication ACL contract.
 #include <cstddef>
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -175,7 +174,6 @@ TEST(Staging, Utf8PrefixNeverSplitsCodePoint) {
     text += "\xF0\x9F\x98\x80"; // U+1F600, four bytes
     const auto cut = music::utf8_prefix(text, 1024);
     EXPECT_EQ(cut, 1023u);
-    EXPECT_EQ(text.substr(0, cut).size(), 1023u);
 }
 
 #ifdef _WIN32

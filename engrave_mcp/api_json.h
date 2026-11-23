@@ -50,7 +50,6 @@ Json encode(const engrave::QueryResult &);
 Json encode(const engrave::EditResult &);
 Json encode(const engrave::AudioTracks &);
 
-// Position artifacts use this mapping, independent of the legacy exporter.
 Json encode(const engrave::Value &);
 Json encode(const engrave::PropertyRead &);
 Json encode(const engrave::TypeInfo &);

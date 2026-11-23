@@ -1,6 +1,5 @@
 #include "registry.h"
 
-#include <cstdio>
 #include <stdexcept>
 #include <utility>
 
@@ -126,7 +125,7 @@ TEST(Registry, InvalidUtf8Replacement) {
     EXPECT_TRUE(music::valid_utf8(wrapped));
 }
 
-TEST(Registry, HandlersAndScheduling) {
+TEST(Registry, Handlers) {
     EXPECT_NO_THROW(validate_registry());
     auto bound = handlers(std::make_index_sequence<static_cast<std::size_t>(HandlerId::COUNT)>{});
     EXPECT_NO_THROW(validate_handlers(bound));
@@ -139,12 +138,10 @@ TEST(Registry, HandlersAndScheduling) {
     shared[1] = shared[0];
     EXPECT_NO_THROW(validate_handlers(shared)); // Different IDs may use the same callable.
     ASSERT_NE(find_tool("score_export"), nullptr);
-    EXPECT_EQ(find_tool("score_export")->scheduling, Scheduling::OWNER);
     EXPECT_EQ(find_tool("runtime_job"), nullptr);
     EXPECT_EQ(find_tool("unknown"), nullptr);
     for (const auto &spec : registry()) {
         EXPECT_EQ(find_tool(spec.name), &spec);
-        if (spec.handler != HandlerId::EXPORT) EXPECT_EQ(spec.scheduling, Scheduling::OWNER);
     }
 }
 

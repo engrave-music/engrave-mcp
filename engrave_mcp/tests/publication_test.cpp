@@ -2,7 +2,6 @@
 #include "publication.h"
 
 #include <cerrno>
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>

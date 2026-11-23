@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <memory>
-#include <thread>
 
 #include "api_output.h"
 #include "runtime_limits.h"
@@ -10,7 +9,7 @@
 
 namespace music::api {
 
-// S2 implementation. Construct/use/destroy only on Engine's owner thread.
+// Construct/use/destroy only on Engine's owner thread.
 // Impl owns Engine first, then Documents; close all documents before Engine.
 // Session nonce + monotonic counter tokens are never reused. No Document escapes
 // to I/O threads; with_document is synchronous on the owner thread.
@@ -35,8 +34,7 @@ struct HostApi {
     Json drop_checkpoint(const Json &);
     Json runtime_info(const Json &);
 
-    Result<void> with_document(std::string_view token, std::optional<u64> expected_revision, FnRef<Result<void>(engrave::Document &)> fn,
-                               const std::vector<std::string> *visible_paths = nullptr);
+    Result<void> with_document(std::string_view token, std::optional<u64> expected_revision, FnRef<Result<void>(engrave::Document &)> fn);
 
     // Current private asset paths; valid until the next owner-thread runtime change.
     Result<RuntimeOptions> runtime_options() const;

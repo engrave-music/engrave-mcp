@@ -17,7 +17,7 @@ Result<void> validate_op(const Json &value, usize index);
 // Text persisted to MSCX/MusicXML must satisfy XML 1.0 character rules.
 Result<void> validate_xml_text(std::string_view value);
 
-Result<i64> signed_decimal(const Json &value);
+Result<i64> signed_decimal(std::string_view value);
 Result<engrave::ElementId> eid(const Json &value);
 Result<engrave::Fraction> fraction(const Json &value);
 Result<engrave::Address> address(const Json &value, const engrave::Outline *outline = nullptr);

@@ -1,28 +1,29 @@
 #include "registry.h"
 
+#include <cstddef>
 #include <stdexcept>
 
 #include <ankerl/unordered_dense.h>
 
-#include "host_api.h"
+#include "api_json.h"
 
 namespace music::api {
 
 namespace {
-constexpr std::array specs = {ToolSpec{"score_open", HandlerId::OPEN, Scheduling::OWNER},
-                              ToolSpec{"score_create", HandlerId::CREATE, Scheduling::OWNER},
-                              ToolSpec{"score_close", HandlerId::CLOSE, Scheduling::OWNER},
-                              ToolSpec{"score_outline", HandlerId::OUTLINE, Scheduling::OWNER},
-                              ToolSpec{"score_query", HandlerId::QUERY, Scheduling::OWNER},
-                              ToolSpec{"score_read_music", HandlerId::READ_MUSIC, Scheduling::OWNER},
-                              ToolSpec{"score_edit", HandlerId::EDIT, Scheduling::OWNER},
-                              ToolSpec{"score_export", HandlerId::EXPORT, Scheduling::OWNER},
-                              ToolSpec{"runtime_info", HandlerId::RUNTIME_INFO, Scheduling::OWNER},
-                              ToolSpec{"checkpoint", HandlerId::CHECKPOINT, Scheduling::OWNER},
-                              ToolSpec{"restore_checkpoint", HandlerId::RESTORE_CHECKPOINT, Scheduling::OWNER},
-                              ToolSpec{"drop_checkpoint", HandlerId::DROP_CHECKPOINT, Scheduling::OWNER},
-                              ToolSpec{"score_write_phrase", HandlerId::WRITE_PHRASE, Scheduling::OWNER},
-                              ToolSpec{"runtime_configure", HandlerId::CONFIGURE, Scheduling::OWNER}};
+constexpr std::array specs = {ToolSpec{"score_open", HandlerId::OPEN},
+                              ToolSpec{"score_create", HandlerId::CREATE},
+                              ToolSpec{"score_close", HandlerId::CLOSE},
+                              ToolSpec{"score_outline", HandlerId::OUTLINE},
+                              ToolSpec{"score_query", HandlerId::QUERY},
+                              ToolSpec{"score_read_music", HandlerId::READ_MUSIC},
+                              ToolSpec{"score_edit", HandlerId::EDIT},
+                              ToolSpec{"score_export", HandlerId::EXPORT},
+                              ToolSpec{"runtime_info", HandlerId::RUNTIME_INFO},
+                              ToolSpec{"checkpoint", HandlerId::CHECKPOINT},
+                              ToolSpec{"restore_checkpoint", HandlerId::RESTORE_CHECKPOINT},
+                              ToolSpec{"drop_checkpoint", HandlerId::DROP_CHECKPOINT},
+                              ToolSpec{"score_write_phrase", HandlerId::WRITE_PHRASE},
+                              ToolSpec{"runtime_configure", HandlerId::CONFIGURE}};
 
 consteval bool complete() {
     std::array<int, static_cast<std::size_t>(HandlerId::COUNT)> counts{};
@@ -89,7 +90,7 @@ void validate_registry() {
             throw std::logic_error("missing edit operation");
     }
     names.clear();
-    for (usize i = 0; i < specs.size(); ++i) {
+    for (std::size_t i = 0; i < specs.size(); ++i) {
         if (tools[i].at("name").get<std::string>() != specs[i].name || !names.insert(std::string(specs[i].name)).second) {
             throw std::logic_error("tool table mismatch");
         }

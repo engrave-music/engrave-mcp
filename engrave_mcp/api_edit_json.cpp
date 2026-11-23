@@ -187,27 +187,27 @@ Result<engrave::Op> decode_op(const Json &j, usize index, const ValueCatalogue &
     }
     if (name == "add_spanner_to_bar_end") {
         auto start = ref("start");
-        if (!start) return std::unexpected(start.error());
+        if (!start) return std::unexpected(std::move(start.error()));
         auto end = ref("end");
-        if (!end) return std::unexpected(end.error());
+        if (!end) return std::unexpected(std::move(end.error()));
         auto id = std::get_if<engrave::ElementId>(&*end);
         if (!id) return std::unexpected(detail::invalid_error(path + ".end: invalid endpoint; expected a measure number or EID"));
         auto p = props();
-        if (!p) return std::unexpected(p.error());
+        if (!p) return std::unexpected(std::move(p.error()));
         return engrave::AddSpannerToBarEnd{str("type"), *start, {*id}, std::move(*p)};
     }
     if (name == "add_volta") {
         auto first = ref("first_measure");
-        if (!first) return std::unexpected(first.error());
+        if (!first) return std::unexpected(std::move(first.error()));
         auto last = ref("last_measure");
-        if (!last) return std::unexpected(last.error());
+        if (!last) return std::unexpected(std::move(last.error()));
         std::vector<int> endings;
         for (const auto &n : j.at("endings").get_array()) endings.push_back(n.as<int>());
         return engrave::AddVolta{*first, *last, std::move(endings), json_value<bool>(j, "closed", true)};
     }
     if (name == "set_repeat_barlines") {
         auto m = ref("measure");
-        if (!m) return std::unexpected(m.error());
+        if (!m) return std::unexpected(std::move(m.error()));
         engrave::SetRepeatBarlines op{*m};
         if (j.contains("start")) op.start = j.at("start").get<bool>();
         if (j.contains("end")) op.end = j.at("end").get<bool>();
@@ -216,19 +216,28 @@ Result<engrave::Op> decode_op(const Json &j, usize index, const ValueCatalogue &
     }
     if (name == "add_grace_chord") {
         auto principal = ref("principal");
-        if (!principal) return std::unexpected(principal.error());
-        engrave::GraceEntry g{*detail::grace_kind(str("kind")), *detail::fraction(j.at("duration")), {}};
+        if (!principal) return std::unexpected(std::move(principal.error()));
+        auto kind = detail::grace_kind(str("kind"));
+        if (!kind) return std::unexpected(detail::invalid_error(path + ".kind: invalid choice; expected a listed grace kind"));
+        auto duration = detail::fraction(j.at("duration"));
+        if (!duration) return std::unexpected(std::move(duration.error()));
+        engrave::GraceEntry g{*kind, *duration, {}};
         for (const auto &p : j.at("pitches").get_array()) {
             g.pitches.push_back({p.at("pitch").as<int>(), p.contains("tpc") ? std::optional(p.at("tpc").as<int>()) : std::nullopt});
         }
-        return engrave::AddGraceChord{*principal, std::move(g),
-                                      j.contains("event_end") ? std::optional(*detail::fraction(j.at("event_end"))) : std::nullopt};
+        std::optional<engrave::Fraction> event_end;
+        if (j.contains("event_end")) {
+            auto parsed = detail::fraction(j.at("event_end"));
+            if (!parsed) return std::unexpected(std::move(parsed.error()));
+            event_end = *parsed;
+        }
+        return engrave::AddGraceChord{std::move(*principal), std::move(g), event_end};
     }
     if (name == "add_tie") {
         auto note = ref("note");
         if (!note) return std::unexpected(std::move(note.error()));
         auto end = opt_ref("end_note");
-        if (!end) return std::unexpected(end.error());
+        if (!end) return std::unexpected(std::move(end.error()));
         return engrave::AddTie{std::move(*note), *end};
     }
     if (name == "add_tuplet") {

@@ -25,12 +25,10 @@ enum class HandlerId {
     CONFIGURE,
     COUNT
 };
-enum class Scheduling { OWNER };
 
 struct ToolSpec {
     std::string_view name;
     HandlerId handler;
-    Scheduling scheduling;
     std::string description() const;
     const Json &input_schema() const;
 };
@@ -42,7 +40,6 @@ Json tools_json();
 // Throws on duplicate/missing handlers, mismatched schema table, or Op coverage.
 void validate_registry();
 
-// S4 binds exactly one callable to each id; no string dispatcher is needed.
 // Known-tool decode failures return the error envelope with MCP isError=true;
 // unknown tools remain JSON-RPC invalid parameters. structuredContent is the
 // authoritative envelope; the text representation remains bounded by transport.

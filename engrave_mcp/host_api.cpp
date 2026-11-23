@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <thread>
 
 #include <ankerl/unordered_dense.h>
 
@@ -305,9 +306,7 @@ Json HostApi::open(const Json &j) {
             options.filename_hint = std::move(*hint);
         }
         if (j.contains("strict_ids")) options.strict_ids = j.at("strict_ids").get<bool>();
-        engrave::Result<std::unique_ptr<engrave::Document>> opened = [&] -> engrave::Result<std::unique_ptr<engrave::Document>> {
-            return std::unexpected(engrave::Error{engrave::ErrorCode::INVALID_ARGUMENT, ""});
-        }();
+        engrave::Result<std::unique_ptr<engrave::Document>> opened;
         if (j.contains("path")) {
             auto p = detail::path(j.at("path"));
             if (!p) return std::unexpected(std::move(p.error()));
@@ -373,11 +372,7 @@ Json HostApi::outline(const Json &j) {
             selection = *sel;
         }
         auto result = (*doc)->outline(selection);
-        if (!result) {
-            auto e = api_error(result.error());
-            e.document = token;
-            return std::unexpected(std::move(e));
-        }
+        if (!result) return document_error(result.error(), token);
         return Json{{"ok", true}, {"revision", std::to_string((*doc)->revision())}, {"outline", encode(*result)}};
     });
 }
@@ -402,21 +397,13 @@ Json HostApi::query(const Json &j) {
                 q->score = *sel;
             }
             auto out = (*doc)->query(*q);
-            if (!out) {
-                auto e = api_error(out.error());
-                e.document = token;
-                return std::unexpected(std::move(e));
-            }
+            if (!out) return document_error(out.error(), token);
             json_merge(result, encode(*out));
         } else if (mode == "properties") {
             auto target = decode_ref(j.at("target"));
             if (!target) return std::unexpected(std::move(target.error()));
             auto out = (*doc)->get(*target, j.contains("props") ? json_strings(j.at("props")) : std::vector<std::string>{});
-            if (!out) {
-                auto e = api_error(out.error());
-                e.document = token;
-                return std::unexpected(std::move(e));
-            }
+            if (!out) return document_error(out.error(), token);
             result["properties"] = encoded_array(*out);
         } else if (mode == "page_count") {
             engrave::ScoreSel selection{};
@@ -426,11 +413,7 @@ Json HostApi::query(const Json &j) {
                 selection = *sel;
             }
             auto out = (*doc)->page_count(selection);
-            if (!out) {
-                auto e = api_error(out.error());
-                e.document = token;
-                return std::unexpected(std::move(e));
-            }
+            if (!out) return document_error(out.error(), token);
             result["pages"] = *out;
         } else {
             engrave::ScoreSel selection{};
@@ -440,11 +423,7 @@ Json HostApi::query(const Json &j) {
                 selection = *sel;
             }
             auto out = (*doc)->audio_tracks(selection);
-            if (!out) {
-                auto e = api_error(out.error());
-                e.document = token;
-                return std::unexpected(std::move(e));
-            }
+            if (!out) return document_error(out.error(), token);
             result["audio_tracks"] = encode(*out);
         }
         return result;
@@ -453,13 +432,13 @@ Json HostApi::query(const Json &j) {
 
 Json HostApi::read_music(const Json &j) {
     return boundary([&]() -> Result<Json> {
-        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
-        if (auto ok = detail::validate_tool("score_read_music", j); !ok) return std::unexpected(ok.error());
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("score_read_music", j); !ok) return std::unexpected(std::move(ok.error()));
         auto expected = revision_arg(j);
         if (!expected) return std::unexpected(std::move(expected.error()));
         const auto token = j.at("document").get<std::string>();
         auto doc = impl_->get(token, *expected);
-        if (!doc) return std::unexpected(doc.error());
+        if (!doc) return std::unexpected(std::move(doc.error()));
         auto score = detail::score(j);
         if (!score) return std::unexpected(std::move(score.error()));
         engrave::MusicRange range;
@@ -487,19 +466,19 @@ Json HostApi::read_music(const Json &j) {
 
 Json HostApi::write_phrase(const Json &j, const std::atomic<bool> *cancelled) {
     return boundary([&]() -> Result<Json> {
-        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
-        if (auto ok = detail::validate_tool("score_write_phrase", j); !ok) return std::unexpected(ok.error());
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("score_write_phrase", j); !ok) return std::unexpected(std::move(ok.error()));
         auto expected = revision_arg(j);
         if (!expected) return std::unexpected(std::move(expected.error()));
         const auto token = j.at("document").get<std::string>();
         auto doc = impl_->get(token, *expected);
-        if (!doc) return std::unexpected(doc.error());
+        if (!doc) return std::unexpected(std::move(doc.error()));
         auto score = detail::score(j);
         if (!score) return std::unexpected(std::move(score.error()));
         auto outline = (*doc)->outline(*score);
         if (!outline) return document_error(outline.error(), token);
         auto phrase = decode_phrase(j.at("lanes"), *outline, *score);
-        if (!phrase) return std::unexpected(phrase.error());
+        if (!phrase) return std::unexpected(std::move(phrase.error()));
         if (cancelled && cancelled->load()) return std::unexpected(HostError{"Cancelled", "phrase cancelled before edit"});
         auto edited = (*doc)->write_phrase(*phrase, {*expected, engrave::EditMode::Atomic});
         if (!edited || edited->rejection) {
@@ -804,8 +783,8 @@ Json HostApi::runtime_info(const Json &j) {
 
 Json HostApi::configure(const Json &j) {
     return boundary([&]() -> Result<Json> {
-        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(ok.error());
-        if (auto ok = detail::validate_tool("runtime_configure", j); !ok) return std::unexpected(ok.error());
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
+        if (auto ok = detail::validate_tool("runtime_configure", j); !ok) return std::unexpected(std::move(ok.error()));
 
         auto next = std::make_shared<RuntimeAssets>(*impl_->assets);
         std::shared_ptr<const AssetFile> new_font;
@@ -862,17 +841,12 @@ Json HostApi::configure(const Json &j) {
     });
 }
 
-Result<void> HostApi::with_document(std::string_view token, std::optional<u64> expected, FnRef<Result<void>(engrave::Document &)> fn,
-                                    const std::vector<std::string> *visible_paths) {
+Result<void> HostApi::with_document(std::string_view token, std::optional<u64> expected, FnRef<Result<void>(engrave::Document &)> fn) {
     const std::string key(token);
-    auto failure = [&](HostError error) -> Result<void> {
-        if (visible_paths) error.published_artifacts = *visible_paths;
-        return std::unexpected(std::move(error));
-    };
     try {
-        if (auto ok = impl_->check_thread(); !ok) return failure(std::move(ok.error()));
+        if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
         auto doc = impl_->get(key, expected);
-        if (!doc) return failure(std::move(doc.error()));
+        if (!doc) return std::unexpected(std::move(doc.error()));
         if (!impl_->borrowed.insert(key).second) {
             return std::unexpected(HostError{"InvalidArgument", "document is already in use by with_document", {}, key});
         }
@@ -886,9 +860,9 @@ Result<void> HostApi::with_document(std::string_view token, std::optional<u64> e
 
         return fn(**doc);
     } catch (const std::exception &e) {
-        return failure(HostError{"EngineFailure", e.what(), {}, key});
+        return std::unexpected(HostError{"EngineFailure", e.what(), {}, key});
     } catch (...) {
-        return failure(HostError{"EngineFailure", "unknown engine failure", {}, key});
+        return std::unexpected(HostError{"EngineFailure", "unknown engine failure", {}, key});
     }
 }
 

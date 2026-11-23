@@ -1,16 +1,16 @@
 #include "api_output.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <limits>
 #include <sstream>
 #include <thread>
-#include <tuple>
+#include <utility>
 
 #include <ankerl/unordered_dense.h>
 #include <engrave/testing/write470.h>
@@ -153,28 +153,28 @@ Result<std::vector<std::byte>> position_json(const engrave::Positions &positions
     return result;
 }
 
-Result<engrave::Format> score_format(const std::string &s) {
+std::optional<engrave::Format> score_format(std::string_view s) {
     if (s == "mscz") return engrave::Format::MSCZ;
     if (s == "mscx") return engrave::Format::MSCX;
     if (s == "musicxml") return engrave::Format::MUSIC_XML;
     if (s == "mxl") return engrave::Format::MXL;
     if (s == "midi") return engrave::Format::MIDI;
-    return std::unexpected(invalid_error("unknown score format"));
+    return std::nullopt;
 }
 
-Result<engrave::RenderFormat> render_format(const std::string &s) {
+std::optional<engrave::RenderFormat> render_format(std::string_view s) {
     if (s == "pdf") return engrave::RenderFormat::PDF;
     if (s == "png") return engrave::RenderFormat::PNG;
     if (s == "svg") return engrave::RenderFormat::SVG;
-    return std::unexpected(invalid_error("unknown render format"));
+    return std::nullopt;
 }
 
-Result<engrave::AudioFormat> audio_format(const std::string &s) {
+std::optional<engrave::AudioFormat> audio_format(std::string_view s) {
     if (s == "wav") return engrave::AudioFormat::WAV;
     if (s == "flac") return engrave::AudioFormat::FLAC;
     if (s == "opus") return engrave::AudioFormat::OPUS;
     if (s == "mp3") return engrave::AudioFormat::MP3;
-    return std::unexpected(invalid_error("unknown audio format"));
+    return std::nullopt;
 }
 
 Result<engrave::SoundFontSelection> resolve_soundfont(const engrave::SoundFontSelection &selection, const RuntimeOptions &runtime) {
@@ -257,115 +257,113 @@ Result<ExportRequest> decode_export(const Json &j) {
         }
         return std::unexpected(std::move(error));
     };
-    try {
-        if (auto ok = detail::validate_tool("score_export", j); !ok) return destination_error(std::move(ok.error()));
-        ExportRequest result;
-        result.document = j.at("document").get<std::string>();
-        if (j.contains("expected_revision")) {
-            auto revision = decode_revision(j.at("expected_revision"));
-            if (!revision) return std::unexpected(std::move(revision.error()));
-            result.expected_revision = *revision;
-        }
-        const auto &format = j.at("format").get<std::string>();
-        result.destination.directory = format == "png" || format == "svg";
-        auto dest_path = detail::path(j.at("path"));
-        if (!dest_path) return destination_error(std::move(dest_path.error()));
-        result.destination.path = std::move(*dest_path);
-        result.destination.requested_path = j.at("path").get<std::string>();
-        if (result.destination.path.empty()) return destination_error(invalid_error("destination path is empty"));
-        const auto options = json_value<Json>(j, "options", make_object<Json>());
-        for (const auto &[key, value] : options.get_object()) {
-            bool valid = false;
-            if (key == "midi_expand_repeats" || key == "midi_rpns") {
-                valid = format == "midi";
-            } else if (key == "native_version") {
-                valid = format == "mscx" || format == "mscz";
-            } else if (key == "dpi" || key == "transparent") {
-                valid = format == "png";
-            } else if (key == "first_page" || key == "last_page" || key == "background") {
-                valid = bool(render_format(format));
-            } else {
-                valid = bool(audio_format(format));
-            }
-            if (!valid) {
-                return destination_error(
-                    invalid_error("options." + key + ": unsupported for " + format + "; expected a format-specific option"));
-            }
-        }
-        engrave::ScoreSel selection{};
-        if (j.contains("excerpt")) {
-            auto sel = detail::score(j);
-            if (!sel) return destination_error(std::move(sel.error()));
-            selection = *sel;
-        }
-        if (score_format(format)) {
-            result.kind = ExportKind::SCORE;
-            auto &o = result.score_options;
-            o.score = selection;
-            auto fmt = score_format(format);
-            if (!fmt) return destination_error(std::move(fmt.error()));
-            o.format = *fmt;
-            assign_if(options, "midi_expand_repeats", o.midi_expand_repeats);
-            assign_if(options, "midi_rpns", o.midi_rpns);
-            assign_if(options, "native_version", o.native_version);
-        } else if (render_format(format)) {
-            result.kind = ExportKind::RENDER;
-            auto &o = result.render_options;
-            o.score = selection;
-            auto fmt = render_format(format);
-            if (!fmt) return destination_error(std::move(fmt.error()));
-            o.format = *fmt;
-            assign_if(options, "first_page", o.first_page);
-            assign_if(options, "last_page", o.last_page);
-            assign_if(options, "dpi", o.dpi);
-            if (o.format == engrave::RenderFormat::PNG) {
-                o.background = !json_value<bool>(options, "transparent", false);
-                o.transparent = false;
-            }
-            assign_if(options, "background", o.background);
-            assign_if(options, "transparent", o.transparent);
-            if (o.last_page != -1 && o.last_page < o.first_page) return destination_error(invalid_error("last_page precedes first_page"));
-        } else if (audio_format(format)) {
-            result.kind = ExportKind::AUDIO;
-            auto &o = result.audio_options;
-            o.score = selection;
-            auto fmt = audio_format(format);
-            if (!fmt) return destination_error(std::move(fmt.error()));
-            o.format = *fmt;
-            assign_if(options, "bitrate_kbps", o.bitrate_kbps);
-            assign_if(options, "bit_depth", o.bit_depth);
-            assign_if(options, "use_repeats", o.use_repeats);
-            assign_if(options, "reverb", o.reverb);
-            assign_if(options, "reverb_send", o.reverb_send);
-            assign_if(options, "sample_rate", o.sample_rate);
-            if (options.contains("master_volume_db")) o.master_volume_db = options.at("master_volume_db").as<f64>();
-            if (options.contains("master_balance")) o.master_balance = options.at("master_balance").as<f64>();
-            if (options.contains("tracks")) {
-                for (const auto &t : options.at("tracks").get_array()) {
-                    engrave::AudioTrackOptions track;
-                    track.track = t.at("track").as<i32>();
-                    if (t.contains("volume_db")) track.volume_db = t.at("volume_db").as<f64>();
-                    if (t.contains("balance")) track.balance = t.at("balance").as<f64>();
-                    if (t.contains("mute")) track.mute = t.at("mute").get<bool>();
-                    if (t.contains("solo")) track.solo = t.at("solo").get<bool>();
-                    if (t.contains("preset")) track.preset = t.at("preset").get<std::string>();
-                    if (t.contains("soundfont") && !t.at("soundfont").is_null()) {
-                        const auto &sf = t.at("soundfont");
-                        track.soundfont =
-                            sf.is_string() ? engrave::SoundFontSelection(sf.get<std::string>()) : engrave::SoundFontSelection(sf.as<i32>());
-                    }
-                    o.tracks.push_back(std::move(track));
-                }
-            }
-        } else {
-            result.kind = ExportKind::POSITIONS;
-            result.position_score = selection;
-            result.position_kind = format == "measure_positions" ? engrave::PositionKind::MEASURE : engrave::PositionKind::SEGMENT;
-        }
-        return result;
-    } catch (const std::exception &e) {
-        return destination_error(HostError{"InvalidArgument", e.what()});
+    if (auto ok = detail::validate_tool("score_export", j); !ok) return destination_error(std::move(ok.error()));
+    ExportRequest result;
+    result.document = j.at("document").get<std::string>();
+    if (j.contains("expected_revision")) {
+        auto revision = decode_revision(j.at("expected_revision"));
+        if (!revision) return std::unexpected(std::move(revision.error()));
+        result.expected_revision = *revision;
     }
+    const auto &format = j.at("format").get<std::string>();
+    result.destination.directory = format == "png" || format == "svg";
+    auto dest_path = [&]() -> Result<std::filesystem::path> {
+        try {
+            return detail::path(j.at("path"));
+        } catch (const std::exception &e) {
+            return std::unexpected(invalid_error(e.what()));
+        }
+    }();
+    if (!dest_path) return destination_error(std::move(dest_path.error()));
+    result.destination.path = std::move(*dest_path);
+    result.destination.requested_path = j.at("path").get<std::string>();
+    if (result.destination.path.empty()) return destination_error(invalid_error("destination path is empty"));
+    const auto options = json_value<Json>(j, "options", make_object<Json>());
+    const auto render_fmt = render_format(format);
+    const auto audio_fmt = audio_format(format);
+    for (const auto &[key, value] : options.get_object()) {
+        bool valid = false;
+        if (key == "midi_expand_repeats" || key == "midi_rpns") {
+            valid = format == "midi";
+        } else if (key == "native_version") {
+            valid = format == "mscx" || format == "mscz";
+        } else if (key == "dpi" || key == "transparent") {
+            valid = format == "png";
+        } else if (key == "first_page" || key == "last_page" || key == "background") {
+            valid = render_fmt.has_value();
+        } else {
+            valid = audio_fmt.has_value();
+        }
+        if (!valid) {
+            return destination_error(
+                invalid_error("options." + key + ": unsupported for " + format + "; expected a format-specific option"));
+        }
+    }
+    engrave::ScoreSel selection{};
+    if (j.contains("excerpt")) {
+        auto sel = detail::score(j);
+        if (!sel) return destination_error(std::move(sel.error()));
+        selection = *sel;
+    }
+    if (auto score_fmt = score_format(format)) {
+        result.kind = ExportKind::SCORE;
+        auto &o = result.score_options;
+        o.score = selection;
+        o.format = *score_fmt;
+        assign_if(options, "midi_expand_repeats", o.midi_expand_repeats);
+        assign_if(options, "midi_rpns", o.midi_rpns);
+        assign_if(options, "native_version", o.native_version);
+    } else if (render_fmt) {
+        result.kind = ExportKind::RENDER;
+        auto &o = result.render_options;
+        o.score = selection;
+        o.format = *render_fmt;
+        assign_if(options, "first_page", o.first_page);
+        assign_if(options, "last_page", o.last_page);
+        assign_if(options, "dpi", o.dpi);
+        if (o.format == engrave::RenderFormat::PNG) {
+            o.background = !json_value<bool>(options, "transparent", false);
+            o.transparent = false;
+        }
+        assign_if(options, "background", o.background);
+        assign_if(options, "transparent", o.transparent);
+        if (o.last_page != -1 && o.last_page < o.first_page) return destination_error(invalid_error("last_page precedes first_page"));
+    } else if (audio_fmt) {
+        result.kind = ExportKind::AUDIO;
+        auto &o = result.audio_options;
+        o.score = selection;
+        o.format = *audio_fmt;
+        assign_if(options, "bitrate_kbps", o.bitrate_kbps);
+        assign_if(options, "bit_depth", o.bit_depth);
+        assign_if(options, "use_repeats", o.use_repeats);
+        assign_if(options, "reverb", o.reverb);
+        assign_if(options, "reverb_send", o.reverb_send);
+        assign_if(options, "sample_rate", o.sample_rate);
+        if (options.contains("master_volume_db")) o.master_volume_db = options.at("master_volume_db").as<f64>();
+        if (options.contains("master_balance")) o.master_balance = options.at("master_balance").as<f64>();
+        if (options.contains("tracks")) {
+            for (const auto &t : options.at("tracks").get_array()) {
+                engrave::AudioTrackOptions track;
+                track.track = t.at("track").as<i32>();
+                if (t.contains("volume_db")) track.volume_db = t.at("volume_db").as<f64>();
+                if (t.contains("balance")) track.balance = t.at("balance").as<f64>();
+                if (t.contains("mute")) track.mute = t.at("mute").get<bool>();
+                if (t.contains("solo")) track.solo = t.at("solo").get<bool>();
+                if (t.contains("preset")) track.preset = t.at("preset").get<std::string>();
+                if (t.contains("soundfont") && !t.at("soundfont").is_null()) {
+                    const auto &sf = t.at("soundfont");
+                    track.soundfont =
+                        sf.is_string() ? engrave::SoundFontSelection(sf.get<std::string>()) : engrave::SoundFontSelection(sf.as<i32>());
+                }
+                o.tracks.push_back(std::move(track));
+            }
+        }
+    } else {
+        result.kind = ExportKind::POSITIONS;
+        result.position_score = selection;
+        result.position_kind = format == "measure_positions" ? engrave::PositionKind::MEASURE : engrave::PositionKind::SEGMENT;
+    }
+    return result;
 }
 
 Json encode(const Artifact &artifact) {
@@ -686,16 +684,18 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             if (!bytes || bytes != audio->bytes || fs::file_size(path) != bytes) {
                 return fail_export(HostError{"EngineFailure", "invalid audio byte count"});
             }
-            const char *mime = nullptr;
-            switch (options.format) {
-                case engrave::AudioFormat::WAV: mime = "audio/wav"; break;
-                case engrave::AudioFormat::FLAC: mime = "audio/flac"; break;
-                case engrave::AudioFormat::OPUS: mime = "audio/ogg"; break;
-                case engrave::AudioFormat::MP3: mime = "audio/mpeg"; break;
-            }
-            if (!mime) return fail_export(HostError{"EngineFailure", "unknown audio output format"});
+            const char *mime = [&] {
+                switch (options.format) {
+                    case engrave::AudioFormat::WAV: return "audio/wav";
+                    case engrave::AudioFormat::FLAC: return "audio/flac";
+                    case engrave::AudioFormat::OPUS: return "audio/ogg";
+                    case engrave::AudioFormat::MP3: return "audio/mpeg";
+                }
+                assert(false);
+                std::unreachable();
+            }();
             timing.add("engine_call", start);
-            const auto destination = request.destination.directory ? cleanup.destination / "output" : cleanup.destination;
+            const auto &destination = cleanup.destination;
             auto dest_text = report_path_text(destination);
             if (!dest_text) return fail_export(std::move(dest_text.error()));
             if (dest_text->size() > 4096) {
