@@ -39,7 +39,8 @@ struct ValueCatalogue {
     HashMap<std::string, engrave::ValueKind> properties, styles;
 };
 
-Result<engrave::Batch> decode_batch(const Json &ops, const ValueCatalogue &catalogue = {}, const engrave::Outline *outline = nullptr);
+// Leaves Batch::scope unset; score_edit applies its top-level excerpt.
+Result<engrave::Batch> decode_batch(const Json &ops, const ValueCatalogue &catalogue = {});
 Result<engrave::Query> decode_query(const Json &query);
 Result<engrave::Ref> decode_ref(const Json &);
 Result<engrave::ScoreSel> decode_score(const Json &);

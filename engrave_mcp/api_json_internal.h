@@ -20,7 +20,11 @@ Result<void> validate_xml_text(std::string_view value);
 Result<i64> signed_decimal(std::string_view value);
 Result<engrave::ElementId> eid(const Json &value);
 Result<engrave::Fraction> fraction(const Json &value);
-Result<engrave::Address> address(const Json &value, const engrave::Outline *outline = nullptr);
+Result<engrave::Address> address(const Json &value);
+// A compact {measure, staff?, voice?, offset?} object; the engine resolves it when its operation runs.
+bool is_relative_position(const Json &value);
+Result<engrave::RelativePosition> relative_position(const Json &value);
+Result<engrave::EditAddress> edit_address(const Json &value);
 Result<engrave::Ref> ref(const Json &value, bool allow_op, usize before);
 Result<engrave::ScoreSel> score(const Json &value);
 std::string_view grace_kind_name(engrave::GraceKind kind);

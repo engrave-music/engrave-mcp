@@ -507,13 +507,16 @@ Json HostApi::edit(const Json &j, const std::atomic<bool> *cancelled) {
         const auto token = j.at("document").get<std::string>();
         auto doc = impl_->get(token, *expected);
         if (!doc) return std::unexpected(std::move(doc.error()));
-        auto outline = (*doc)->outline();
-        if (!outline) return std::unexpected(api_error(outline.error()));
-        auto batch_res = decode_batch(j.at("ops"), *impl_->catalogue, &*outline);
+        auto batch_res = decode_batch(j.at("ops"), *impl_->catalogue);
         if (!batch_res) {
             auto err = std::move(batch_res.error());
             err.applied = 0;
             return std::unexpected(std::move(err));
+        }
+        if (j.contains("excerpt")) {
+            auto scope = decode_score(j);
+            if (!scope) return std::unexpected(std::move(scope.error()));
+            batch_res->scope = *scope;
         }
         engrave::Result<engrave::EditResult> out = engrave::EditResult{};
         try {
@@ -602,119 +605,87 @@ Json operation_catalogue(std::string_view requested) {
         json_push(entries,
                   Json{{"op", op}, {"fields", std::move(fields)}, {"required", std::move(required)}, {"example", std::move(example)}});
     };
-    add("set_property",
-        {{"target", "EID, layout address or {from_op,item}"},
-         {"property", "string"},
-         {"value", "native value of the named property or style"}},
+    constexpr auto target_ref = "EID, segment address or {from_op,item}";
+    constexpr auto measure_ref = "1-based bar number, measure EID or {from_op,item}; a number names the bar when the operation runs";
+    constexpr auto staff_ref = "1-based staff number, staff EID or {from_op,item}; a number names the staff when the operation runs";
+    constexpr auto position_ref = "{measure, offset?, staff?, voice?} (1-based, resolved when the operation runs), EID, segment address or "
+                                  "{from_op,item}";
+    constexpr auto at_ref = "{measure, offset?, staff?, voice?} (1-based, resolved when the operation runs) or segment address";
+    constexpr auto fraction_text = "exact whole-note fraction string";
+    const auto first_beat = [] { return Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}; };
+    add("set_property", {{"target", target_ref}, {"property", "string"}, {"value", "native value of the named property or style"}},
         json_array<Json>({"target", "property", "value"}), {{"target", "A_A"}, {"property", "visible"}, {"value", true}});
-    add("reset_property", {{"target", "EID, layout address or {from_op,item}"}, {"property", "string"}},
-        json_array<Json>({"target", "property"}), {{"target", "A_A"}, {"property", "visible"}});
-    add("set_style", {{"excerpt", "persistent element ID"}, {"style", "string"}, {"value", "native value of the named property or style"}},
+    add("reset_property", {{"target", target_ref}, {"property", "string"}}, json_array<Json>({"target", "property"}),
+        {{"target", "A_A"}, {"property", "visible"}});
+    add("set_style",
+        {{"excerpt", "excerpt EID; omit to use the score_edit excerpt or the master, and it must match a score_edit excerpt"},
+         {"style", "string"},
+         {"value", "native value of the named property or style"}},
         json_array<Json>({"style", "value"}), {{"style", "pageWidth"}, {"value", 8.5}});
-    add("enter_notes",
-        {{"at", "{measure, offset?, staff?, voice?}; measure, staff and voice are 1-based"},
-         {"duration", "exact whole-note fraction string"},
-         {"pitches", "array of {pitch, tpc?}"}},
+    add("enter_notes", {{"at", at_ref}, {"duration", fraction_text}, {"pitches", "array of {pitch, tpc?}"}},
         json_array<Json>({"at", "duration", "pitches"}),
-        {{"at", Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}},
-         {"duration", "1/4"},
-         {"pitches", json_array<Json>({Json{{"pitch", 60}}})}});
-    add("set_pitch",
-        {{"note", "EID, layout address or {from_op,item}"},
-         {"pitch", "MIDI integer, 0 through 127"},
-         {"tpc", "tonal pitch class integer, -8 through 40"}},
+        {{"at", first_beat()}, {"duration", "1/4"}, {"pitches", json_array<Json>({Json{{"pitch", 60}}})}});
+    add("set_pitch", {{"note", target_ref}, {"pitch", "MIDI integer, 0 through 127"}, {"tpc", "tonal pitch class integer, -8 through 40"}},
         json_array<Json>({"note", "pitch"}), {{"note", "A_A"}, {"pitch", 60}});
-    add("set_duration", {{"chord_rest", "EID, layout address or {from_op,item}"}, {"duration", "exact whole-note fraction string"}},
-        json_array<Json>({"chord_rest", "duration"}), {{"chord_rest", "A_A"}, {"duration", "1/4"}});
-    add("remove", {{"target", "EID, layout address or {from_op,item}"}}, json_array<Json>({"target"}), {{"target", "A_A"}});
+    add("set_duration", {{"chord_rest", target_ref}, {"duration", fraction_text}}, json_array<Json>({"chord_rest", "duration"}),
+        {{"chord_rest", "A_A"}, {"duration", "1/4"}});
+    add("remove", {{"target", target_ref}}, json_array<Json>({"target"}), {{"target", "A_A"}});
     add("insert_measures",
-        {{"before", "EID, layout address or {from_op,item}"},
+        {{"before", std::string(measure_ref) + "; omit to append"},
          {"count", "integer, 1 through 1024"},
          {"kind", "Measure | VBox | HBox | TBox | FBox"}},
-        json_array<Json>({"count"}), {{"count", 2}});
-    add("remove_measures", {{"first", "EID, layout address or {from_op,item}"}, {"last", "EID, layout address or {from_op,item}"}},
-        json_array<Json>({"first", "last"}), {{"first", "A_A"}, {"last", "A_A"}});
-    add("set_time_sig",
-        {{"measure", "EID, layout address or {from_op,item} or 1-based position"}, {"sig", "exact whole-note fraction string"}},
-        json_array<Json>({"measure", "sig"}), {{"measure", 1}, {"sig", "6/8"}});
+        json_array<Json>({"count"}), {{"before", 2}, {"count", 2}});
+    add("remove_measures", {{"first", measure_ref}, {"last", measure_ref}}, json_array<Json>({"first", "last"}),
+        {{"first", 2}, {"last", 3}});
+    add("set_time_sig", {{"measure", measure_ref}, {"sig", fraction_text}}, json_array<Json>({"measure", "sig"}),
+        {{"measure", 1}, {"sig", "6/8"}});
     add("set_key_sig",
-        {{"measure", "EID, layout address or {from_op,item} or 1-based position"},
-         {"key", "integer, -7 through 7"},
-         {"staff", "EID, layout address or {from_op,item} or 1-based position"}},
-        json_array<Json>({"measure", "key"}), {{"measure", "A_A"}, {"key", 0}});
-    add("insert_clef", {{"at", "{measure, offset?, staff?, voice?}; measure, staff and voice are 1-based"}, {"clef", "string"}},
-        json_array<Json>({"at", "clef"}), {{"at", Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}}, {"clef", "G"}});
-    add("set_layout_break",
-        {{"measure", "EID, layout address or {from_op,item} or 1-based position"},
-         {"kind", "line | page | section | nobreak"},
-         {"on", "boolean"}},
-        json_array<Json>({"measure", "kind", "on"}), {{"measure", "A_A"}, {"kind", "page"}, {"on", true}});
-    add("add_part", {{"instrument_id", "string"}, {"before", "EID, layout address or {from_op,item}"}}, json_array<Json>({"instrument_id"}),
+        {{"measure", measure_ref}, {"key", "integer, -7 through 7"}, {"staff", std::string(staff_ref) + "; omit for every staff"}},
+        json_array<Json>({"measure", "key"}), {{"measure", 1}, {"key", 0}});
+    add("insert_clef", {{"at", at_ref}, {"clef", "string"}}, json_array<Json>({"at", "clef"}), {{"at", first_beat()}, {"clef", "G"}});
+    add("set_layout_break", {{"measure", measure_ref}, {"kind", "line | page | section | nobreak"}, {"on", "boolean"}},
+        json_array<Json>({"measure", "kind", "on"}), {{"measure", 4}, {"kind", "line"}, {"on", true}});
+    add("add_part", {{"instrument_id", "string"}, {"before", "part EID or {from_op,item}"}}, json_array<Json>({"instrument_id"}),
         {{"instrument_id", "piano"}});
-    add("remove_part", {{"part", "EID, layout address or {from_op,item}"}}, json_array<Json>({"part"}), {{"part", "A_A"}});
-    add("add_staff", {{"part", "EID, layout address or {from_op,item}"}}, json_array<Json>({"part"}), {{"part", "A_A"}});
-    add("remove_staff", {{"staff", "EID, layout address or {from_op,item} or 1-based position"}}, json_array<Json>({"staff"}),
-        {{"staff", "A_A"}});
-    add("generate_excerpts", {{"parts", "array of EID, layout address or {from_op,item}"}}, json_array<Json>({"parts"}),
+    add("remove_part", {{"part", target_ref}}, json_array<Json>({"part"}), {{"part", "A_A"}});
+    add("add_staff", {{"part", target_ref}}, json_array<Json>({"part"}), {{"part", "A_A"}});
+    add("remove_staff", {{"staff", staff_ref}}, json_array<Json>({"staff"}), {{"staff", 2}});
+    add("generate_excerpts", {{"parts", "array of part EID or {from_op,item}"}}, json_array<Json>({"parts"}),
         {{"parts", json_array<Json>({"A_A"})}});
-    add("add_spanner",
-        {{"type", "string"},
-         {"start", "EID, layout address or {from_op,item}"},
-         {"end", "EID, layout address or {from_op,item}"},
-         {"props", "array of {name, value}"}},
-        json_array<Json>({"type", "start", "end"}), {{"type", "HairPin"}, {"start", "A_A"}, {"end", "A_A"}});
-    add("add_tie", {{"note", "EID, layout address or {from_op,item}"}, {"end_note", "EID, layout address or {from_op,item}"}},
-        json_array<Json>({"note"}), {{"note", "A_A"}});
+    add("add_spanner", {{"type", "string"}, {"start", position_ref}, {"end", position_ref}, {"props", "array of {name, value}"}},
+        json_array<Json>({"type", "start", "end"}),
+        {{"type", "HairPin"}, {"start", Json{{"measure", 1}}}, {"end", Json{{"measure", 2}, {"offset", "1/2"}}}});
+    add("add_tie", {{"note", target_ref}, {"end_note", target_ref}}, json_array<Json>({"note"}), {{"note", "A_A"}});
     add("add_tuplet",
-        {{"first", "EID, layout address or {from_op,item}"},
-         {"last", "EID, layout address or {from_op,item}"},
-         {"actual", "integer, 1 through 1024"},
-         {"normal", "integer, 1 through 1024"}},
+        {{"first", target_ref}, {"last", target_ref}, {"actual", "integer, 1 through 1024"}, {"normal", "integer, 1 through 1024"}},
         json_array<Json>({"first", "last"}), {{"first", "A_A"}, {"last", "A_A"}});
-    add("add_text",
-        {{"at", "{measure, offset?, staff?, voice?}; measure, staff and voice are 1-based"},
-         {"style", "string"},
-         {"text", "XML-compatible string"}},
-        json_array<Json>({"at", "style", "text"}),
-        {{"at", Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}}, {"style", "staff"}, {"text", "text"}});
-    add("add", {{"anchor", "EID, layout address or {from_op,item}"}, {"type", "string"}, {"props", "array of {name, value}"}},
-        json_array<Json>({"anchor", "type"}),
-        {{"anchor", "A_A"},
+    add("add_text", {{"at", at_ref}, {"style", "string"}, {"text", "XML-compatible string"}}, json_array<Json>({"at", "style", "text"}),
+        {{"at", first_beat()}, {"style", "staff"}, {"text", "text"}});
+    add("add", {{"anchor", position_ref}, {"type", "string"}, {"props", "array of {name, value}"}}, json_array<Json>({"anchor", "type"}),
+        {{"anchor", Json{{"measure", 1}}},
          {"type", "Articulation"},
          {"props", json_array<Json>({Json{{"name", "symbol"}, {"value", "articStaccatoAbove"}}})}});
-    add("add_spanner_to_bar_end",
-        {{"type", "string"},
-         {"start", "EID, layout address or {from_op,item}"},
-         {"end", "measure EID or 1-based bar"},
-         {"props", "array of {name, value}"}},
-        json_array<Json>({"type", "start", "end"}), {{"type", "HairPin"}, {"start", "A_A"}, {"end", "A_A"}});
-    add("set_repeat_barlines",
-        {{"measure", "EID, layout address or {from_op,item} or 1-based position"},
-         {"start", "boolean"},
-         {"end", "boolean"},
-         {"count", "integer, 1 through 1024"}},
-        json_array<Json>({"measure"}), {{"measure", "A_A"}});
+    add("add_spanner_to_bar_end", {{"type", "string"}, {"start", position_ref}, {"end", measure_ref}, {"props", "array of {name, value}"}},
+        json_array<Json>({"type", "start", "end"}), {{"type", "Pedal"}, {"start", Json{{"measure", 1}}}, {"end", 2}});
+    add("set_repeat_barlines", {{"measure", measure_ref}, {"start", "boolean"}, {"end", "boolean"}, {"count", "integer, 1 through 1024"}},
+        json_array<Json>({"measure"}), {{"measure", 1}, {"start", true}});
     add("add_volta",
-        {{"first_measure", "EID, layout address or {from_op,item} or 1-based position"},
-         {"last_measure", "EID, layout address or {from_op,item} or 1-based position"},
+        {{"first_measure", measure_ref},
+         {"last_measure", measure_ref},
          {"endings", "array of integer, 1 through 1024"},
          {"closed", "boolean"}},
         json_array<Json>({"first_measure", "last_measure", "endings"}),
-        {{"first_measure", "A_A"}, {"last_measure", "A_A"}, {"endings", json_array<Json>({2})}});
+        {{"first_measure", 3}, {"last_measure", 4}, {"endings", json_array<Json>({1})}});
     add("add_grace_chord",
-        {{"principal", "EID, layout address or {from_op,item}"},
+        {{"principal", target_ref},
          {"kind", "acciac | appog | grace4 | grace16 | grace32 | after8 | after16 | after32"},
-         {"duration", "exact whole-note fraction string"},
+         {"duration", fraction_text},
          {"pitches", "array of {pitch, tpc?}"},
-         {"event_end", "exact whole-note fraction string"}},
+         {"event_end", fraction_text}},
         json_array<Json>({"principal", "kind", "duration", "pitches"}),
         {{"principal", "A_A"}, {"kind", "acciac"}, {"duration", "1/4"}, {"pitches", json_array<Json>({Json{{"pitch", 60}}})}});
-    add("enter_drums",
-        {{"at", "{measure, offset?, staff?, voice?}; measure, staff and voice are 1-based"},
-         {"duration", "exact whole-note fraction string"},
-         {"keys", "array of MIDI integer, 0 through 127"}},
-        json_array<Json>({"at", "duration", "keys"}),
-        {{"at", Json{{"measure", 1}, {"staff", 1}, {"voice", 1}, {"offset", "0"}}}, {"duration", "1/4"}, {"keys", json_array<Json>({60})}});
+    add("enter_drums", {{"at", at_ref}, {"duration", fraction_text}, {"keys", "array of MIDI integer, 0 through 127"}},
+        json_array<Json>({"at", "duration", "keys"}), {{"at", first_beat()}, {"duration", "1/4"}, {"keys", json_array<Json>({60})}});
     return entries;
 }
 

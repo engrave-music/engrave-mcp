@@ -4,6 +4,7 @@
 #include <cassert>
 #include <charconv>
 #include <cmath>
+#include <format>
 #include <limits>
 #include <numeric>
 #include <type_traits>
@@ -168,29 +169,35 @@ Result<engrave::ScoreSel> score(const Json &j) {
     return engrave::ScoreSel{*ex};
 }
 
-Result<engrave::Address> address(const Json &j, const engrave::Outline *outline) {
-    if (j.is_object() && !j.contains("kind")) {
-        const auto number = j.at("measure").as<usize>();
-        if (!outline || number == 0 || number > outline->measures.size()) {
-            return std::unexpected(invalid_error("measure: out of range; expected an existing bar"));
-        }
-        const auto &m = outline->measures[number - 1];
-        engrave::Fraction offset{};
-        if (j.contains("offset")) {
-            auto parsed = fraction(j.at("offset"));
-            if (!parsed) return std::unexpected(std::move(parsed.error()));
-            offset = *parsed;
-        }
-        if (offset.num < 0 || offset >= m.duration || offset.num > INT32_MAX || offset.den > INT32_MAX || m.tick.num > INT32_MAX ||
-            m.tick.den > INT32_MAX) {
-            return std::unexpected(invalid_error("offset: outside bar; expected a representable measure-local fraction"));
-        }
-        auto n = m.tick.num * offset.den + offset.num * m.tick.den;
-        auto d = m.tick.den * offset.den;
-        auto divisor = std::gcd(n, d);
-        return engrave::SegmentAddress{
-            m.id, json_value<int>(j, "staff", 1) - 1, json_value<int>(j, "voice", 1) - 1, {n / divisor, d / divisor}, "ChordRest"};
+bool is_relative_position(const Json &j) { return j.is_object() && !j.contains("kind") && !j.contains("from_op"); }
+
+Result<engrave::RelativePosition> relative_position(const Json &j) {
+    if (!is_relative_position(j) || !j.contains("measure"))
+        return std::unexpected(invalid_error("expected {measure, staff?, voice?, offset?}"));
+    engrave::Fraction offset{0, 1};
+    if (j.contains("offset")) {
+        auto parsed = fraction(j.at("offset"));
+        if (!parsed) return std::unexpected(std::move(parsed.error()));
+        offset = *parsed;
     }
+    // The wire ordinals are 1-based and validated positive; the engine counts from 0.
+    return engrave::RelativePosition{
+        {j.at("measure").as<i32>() - 1}, json_value<i32>(j, "staff", 1) - 1, json_value<i32>(j, "voice", 1) - 1, offset};
+}
+
+Result<engrave::EditAddress> edit_address(const Json &j) {
+    if (is_relative_position(j)) {
+        auto position = relative_position(j);
+        if (!position) return std::unexpected(std::move(position.error()));
+        return *position;
+    }
+    auto explicit_address = address(j);
+    if (!explicit_address) return std::unexpected(std::move(explicit_address.error()));
+    return *explicit_address;
+}
+
+Result<engrave::Address> address(const Json &j) {
+    if (!j.is_object() || !j.contains("kind")) return std::unexpected(invalid_error("missing address kind"));
     const auto &k = j.at("kind").get<std::string>();
     if (k == "segment") {
         auto measure = eid(j.at("measure"));
@@ -574,6 +581,11 @@ Json encode(const std::vector<engrave::ExportWarning> &warnings) {
 
 HostError api_error(const engrave::Error &e) {
     std::string message = e.message;
+    if (const auto &p = e.position) {
+        // The engine counts measures and staves from 0; the wire counts from 1.
+        const auto noun = p->kind == engrave::PositionError::Kind::MEASURE ? "measure" : "staff";
+        message = std::format("{}: the score has no {} {} ({} available)", p->field, noun, static_cast<i64>(p->index) + 1, p->count);
+    }
     if (e.poisoned && e.code != engrave::ErrorCode::POISONED) {
         if (!message.empty()) message += "; ";
         message += "document is poisoned: restore_checkpoint or reopen the file";

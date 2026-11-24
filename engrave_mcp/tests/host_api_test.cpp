@@ -2,12 +2,17 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -106,6 +111,60 @@ Json error(HostApi &host, const std::string &tool, const Json &arg, const std::s
             tool + " expected " + code + ": " + music::dump_json(out));
     return out;
 }
+
+Json pos(int measure, const char *offset = "0", int staff = 1, int voice = 1) {
+    return {{"measure", measure}, {"offset", offset}, {"staff", staff}, {"voice", voice}};
+}
+
+Json enter_at(const Json &at, int pitch) {
+    return {{"op", "enter_notes"}, {"at", at}, {"duration", "1/4"}, {"pitches", music::json_array<Json>({Json{{"pitch", pitch}}})}};
+}
+
+Json edit_ops(const Json &doc, std::initializer_list<Json> ops) { return {{"document", doc}, {"ops", music::json_array<Json>(ops)}}; }
+
+// The MIDI pitch of the single-note chord at a 1-based staff and voice and a bar offset of a read_music bar, or -1.
+int chord_pitch(const Json &bar, int staff, int voice, std::string_view offset) {
+    for (const auto &v : bar.at("voices").get_array()) {
+        if (v.at("staff") != staff || v.at("voice") != voice) continue;
+        for (const auto &event : v.at("events").get_array()) {
+            if (event.at("offset") == offset && event.contains("notes")) return event.at("notes")[0].at("midi").as<int>();
+        }
+    }
+    return -1;
+}
+
+// The numeric pageWidth style a native MSCX export of the master or an excerpt writes, or nullopt when it omits it.
+std::optional<double> exported_page_width(HostApi &api, const Json &doc, std::optional<Json> excerpt = {}) {
+    std::string xml;
+    const auto exported = api.with_document(doc.get<std::string>(), {}, [&](engrave::Document &d) -> music::api::Result<void> {
+        engrave::ExportOptions options{.format = engrave::Format::MSCX};
+        if (excerpt) {
+            options.score.excerpt = engrave::element_id_from_string(excerpt->get<std::string>());
+            require(options.score.excerpt.has_value(), "excerpt is not an EID");
+        }
+        auto bytes = d.export_score(options);
+        if (!bytes) return std::unexpected(music::api::api_error(bytes.error()));
+        xml.assign(reinterpret_cast<const char *>(bytes->data()), bytes->size());
+        return {};
+    });
+    require(bool(exported), exported ? "" : exported.error().message);
+    constexpr std::string_view open = "<pageWidth>";
+    const auto start = xml.find(open);
+    if (start == std::string::npos) return std::nullopt;
+    return std::stod(xml.substr(start + open.size(), xml.find('<', start + open.size()) - start - open.size()));
+}
+
+// A default score cut down to its first `bars` bars by an ordinal remove_measures.
+Json short_score(HostApi &api, int bars) {
+    const auto created = ok(api, "score_create", music::make_object<Json>());
+    const auto doc = created.at("document");
+    const auto total = created.at("outline").at("measure_count").as<int>();
+    require(total > bars, "template is shorter than the requested score");
+    ok(api, "score_edit", edit_ops(doc, {Json{{"op", "remove_measures"}, {"first", bars + 1}, {"last", total}}}));
+    require(ok(api, "score_outline", {{"document", doc}}).at("outline").at("measures").size() == static_cast<std::size_t>(bars),
+            "ordinal remove_measures left the wrong bar count");
+    return doc;
+}
 } // namespace
 
 TEST(HostApi, RuntimeOperationExamplesDecodeAndAddAnArticulation) {
@@ -119,13 +178,6 @@ TEST(HostApi, RuntimeOperationExamplesDecodeAndAddAnArticulation) {
     EXPECT_EQ(unknown.at("error").at("code"), "NotFound");
 
     const auto doc = ok(api, "score_create", music::make_object<Json>()).at("document").get<std::string>();
-    engrave::Outline outline;
-    ASSERT_TRUE(api.with_document(doc, {}, [&](engrave::Document &opened) -> music::api::Result<void> {
-        auto read = opened.outline();
-        if (!read) return std::unexpected(music::api::api_error(read.error()));
-        outline = std::move(*read);
-        return {};
-    }));
     music::api::ValueCatalogue catalogue;
     catalogue.properties = {{"visible", engrave::ValueKind::BOOL}, {"symbol", engrave::ValueKind::ENUM}};
     catalogue.styles = {{"pageWidth", engrave::ValueKind::REAL}};
@@ -136,13 +188,14 @@ TEST(HostApi, RuntimeOperationExamplesDecodeAndAddAnArticulation) {
         EXPECT_EQ(std::ranges::count_if(ops, same_op), 1) << name;
         const auto entry = std::ranges::find_if(ops, same_op);
         ASSERT_NE(entry, ops.end()) << name;
-        const auto decoded = music::api::decode_batch(music::json_array<Json>({entry->at("example")}), catalogue, &outline);
+        const auto decoded = music::api::decode_batch(music::json_array<Json>({entry->at("example")}), catalogue);
         ASSERT_TRUE(decoded) << name << ": " << decoded.error().message;
         EXPECT_EQ(music::api::operation_names.at(decoded->ops.at(0).index()), name);
     }
     const auto selected = ok(api, "runtime_info", {{"scope", "ops"}, {"op", "add"}}).at("ops");
     ASSERT_EQ(selected.size(), 1u);
-    auto example = selected[0].at("example");
+    const auto example = selected[0].at("example");
+    ASSERT_EQ(example.at("anchor"), (Json{{"measure", 1}}));
     const auto entered = ok(api, "score_edit",
                             {{"document", doc},
                              {"detail", true},
@@ -150,13 +203,12 @@ TEST(HostApi, RuntimeOperationExamplesDecodeAndAddAnArticulation) {
                                                                    {"at", Json{{"measure", 1}}},
                                                                    {"duration", "1/4"},
                                                                    {"pitches", music::json_array<Json>({Json{{"pitch", 60}}})}}})}});
-    example["anchor"] = entered.at("ops")[0].at("created")[0];
     const auto added = ok(api, "score_edit", {{"document", doc}, {"ops", music::json_array<Json>({example})}});
     EXPECT_EQ(added.at("applied"), 1);
     const auto marks = ok(api, "score_query",
                           {{"document", doc}, {"mode", "elements"}, {"query", {{"types", music::json_array<Json>({"Articulation"})}}}});
     ASSERT_EQ(marks.at("elements").size(), 1u);
-    EXPECT_EQ(marks.at("elements")[0].at("parent"), example.at("anchor"));
+    EXPECT_EQ(marks.at("elements")[0].at("parent"), entered.at("ops")[0].at("created")[0]);
 }
 
 TEST(HostApi, InstrumentFilterAndDrumMetadata) {
@@ -264,11 +316,415 @@ TEST(HostApi, ScoreEditResolvesOneBasedPositions) {
        {{"document", doc},
         {"ops", music::json_array<Json>({Json{{"op", "insert_measures"}, {"before", bar_two}, {"count", 1}},
                                          Json{{"op", "set_repeat_barlines"}, {"measure", 2}, {"start", true}}})}});
+    // Bar 2 is resolved after the insertion, so it names the inserted bar rather than the old bar two.
     const auto shifted = api.read_music({{"document", doc}, {"count", 4}, {"include_ids", true}});
     ASSERT_EQ(shifted.at("ok"), true) << music::dump_json(shifted);
-    EXPECT_EQ(shifted.at("measures")[1].at("repeat_start"), false);
+    EXPECT_EQ(shifted.at("measures")[1].at("repeat_start"), true);
     EXPECT_EQ(shifted.at("measures")[2].at("id"), bar_two);
-    EXPECT_EQ(shifted.at("measures")[2].at("repeat_start"), true);
+    EXPECT_EQ(shifted.at("measures")[2].at("repeat_start"), false);
+}
+
+TEST(EditCodec, OneBasedOrdinalsDecodeToZeroBasedSelectors) {
+    music::api::ValueCatalogue catalogue;
+    catalogue.styles["pageWidth"] = engrave::ValueKind::REAL;
+    const auto decode = [&](const Json &op) {
+        auto batch = music::api::decode_batch(music::json_array<Json>({op}), catalogue);
+        require(bool(batch), music::dump_json(op) + ": " + (batch ? "" : batch.error().message));
+        require(!batch->scope, "decode_batch set a batch scope");
+        return std::move(batch->ops.at(0));
+    };
+    const auto entered =
+        std::get<engrave::EnterNotes>(decode(enter_at(Json{{"measure", 3}, {"staff", 2}, {"voice", 4}, {"offset", "3/8"}}, 60)));
+    const auto &relative = std::get<engrave::RelativePosition>(entered.at);
+    EXPECT_EQ(relative.measure.index, 2);
+    EXPECT_EQ(relative.staff, 1);
+    EXPECT_EQ(relative.voice, 3);
+    EXPECT_EQ(relative.offset.num, 3);
+    EXPECT_EQ(relative.offset.den, 8);
+    const auto defaults = std::get<engrave::RelativePosition>(std::get<engrave::EnterNotes>(decode(enter_at(Json{{"measure", 1}}, 60))).at);
+    EXPECT_EQ(defaults.measure.index, 0);
+    EXPECT_EQ(defaults.staff, 0);
+    EXPECT_EQ(defaults.voice, 0);
+    EXPECT_EQ(defaults.offset.num, 0);
+
+    const auto segment =
+        Json{{"kind", "segment"}, {"measure", "A_A"}, {"staff", 2}, {"voice", 3}, {"tick", "1/2"}, {"segment_kind", "ChordRest"}};
+    const auto explicit_at = std::get<engrave::EnterNotes>(decode(enter_at(segment, 60))).at;
+    const auto &address = std::get<engrave::SegmentAddress>(std::get<engrave::Address>(explicit_at));
+    EXPECT_EQ(engrave::to_string(address.measure), "A_A");
+    EXPECT_EQ(address.staff, 1);
+    EXPECT_EQ(address.voice, 2);
+    EXPECT_EQ(address.tick.num, 1);
+    EXPECT_EQ(address.tick.den, 2);
+    EXPECT_EQ(address.kind, "ChordRest");
+
+    const auto key = std::get<engrave::SetKeySig>(decode({{"op", "set_key_sig"}, {"measure", 5}, {"staff", 2}, {"key", 1}}));
+    EXPECT_EQ(std::get<engrave::MeasureIndex>(key.measure).index, 4);
+    EXPECT_EQ(std::get<engrave::StaffIndex>(*key.staff).index, 1);
+    EXPECT_EQ(std::get<engrave::StaffIndex>(std::get<engrave::RemoveStaff>(decode({{"op", "remove_staff"}, {"staff", 1}})).staff).index, 0);
+    const auto inserted = std::get<engrave::InsertMeasures>(decode({{"op", "insert_measures"}, {"before", 2}, {"count", 1}}));
+    EXPECT_EQ(std::get<engrave::MeasureIndex>(*inserted.before).index, 1);
+    EXPECT_FALSE(std::get<engrave::InsertMeasures>(decode({{"op", "insert_measures"}, {"count", 1}})).before);
+    const auto removed = std::get<engrave::RemoveMeasures>(decode({{"op", "remove_measures"}, {"first", 2}, {"last", "A_A"}}));
+    EXPECT_EQ(std::get<engrave::MeasureIndex>(removed.first).index, 1);
+    EXPECT_TRUE(std::holds_alternative<engrave::ElementId>(removed.last));
+    const auto volta = std::get<engrave::AddVolta>(
+        decode({{"op", "add_volta"}, {"first_measure", 1}, {"last_measure", 2}, {"endings", music::json_array<Json>({1})}}));
+    EXPECT_EQ(std::get<engrave::MeasureIndex>(volta.first_measure).index, 0);
+    EXPECT_EQ(std::get<engrave::MeasureIndex>(volta.last_measure).index, 1);
+    const auto meter = std::get<engrave::SetTimeSig>(decode({{"op", "set_time_sig"}, {"measure", 7}, {"sig", "3/4"}}));
+    EXPECT_EQ(std::get<engrave::MeasureIndex>(meter.measure).index, 6);
+    const auto line_break =
+        std::get<engrave::SetLayoutBreak>(decode({{"op", "set_layout_break"}, {"measure", 7}, {"kind", "line"}, {"on", true}}));
+    EXPECT_EQ(std::get<engrave::MeasureIndex>(line_break.measure).index, 6);
+    const auto repeat = std::get<engrave::SetRepeatBarlines>(decode({{"op", "set_repeat_barlines"}, {"measure", 7}}));
+    EXPECT_EQ(std::get<engrave::MeasureIndex>(repeat.measure).index, 6);
+
+    const auto bar_end = std::get<engrave::AddSpannerToBarEnd>(
+        decode({{"op", "add_spanner_to_bar_end"}, {"type", "Pedal"}, {"start", pos(2, "1/4", 1, 2)}, {"end", 3}}));
+    const auto &start = std::get<engrave::RelativePosition>(bar_end.start);
+    EXPECT_EQ(start.measure.index, 1);
+    EXPECT_EQ(start.voice, 1);
+    EXPECT_EQ(start.offset.den, 4);
+    EXPECT_EQ(std::get<engrave::MeasureIndex>(bar_end.end.measure).index, 2);
+    const auto appended = music::api::decode_batch(
+        music::json_array<Json>({Json{{"op", "insert_measures"}, {"count", 1}},
+                                 Json{{"op", "add_spanner_to_bar_end"}, {"type", "Pedal"}, {"start", "A_A"}, {"end", opref(0, 0)}}}),
+        catalogue);
+    ASSERT_TRUE(appended) << appended.error().message;
+    EXPECT_TRUE(std::holds_alternative<engrave::OpRef>(std::get<engrave::AddSpannerToBarEnd>(appended->ops.at(1)).end.measure));
+    const auto spanner =
+        std::get<engrave::AddSpanner>(decode({{"op", "add_spanner"}, {"type", "Slur"}, {"start", pos(1)}, {"end", pos(2)}}));
+    EXPECT_EQ(std::get<engrave::RelativePosition>(spanner.end).measure.index, 1);
+    const auto added = std::get<engrave::Add>(decode({{"op", "add"}, {"anchor", Json{{"measure", 4}}}, {"type", "Fermata"}}));
+    EXPECT_EQ(std::get<engrave::RelativePosition>(added.anchor).measure.index, 3);
+
+    const auto inherited = std::get<engrave::SetStyle>(decode({{"op", "set_style"}, {"style", "pageWidth"}, {"value", 9.0}}));
+    EXPECT_FALSE(inherited.score);
+    const auto selected =
+        std::get<engrave::SetStyle>(decode({{"op", "set_style"}, {"excerpt", "A_B"}, {"style", "pageWidth"}, {"value", 9.0}}));
+    ASSERT_TRUE(selected.score && selected.score->excerpt);
+    EXPECT_EQ(engrave::to_string(*selected.score->excerpt), "A_B");
+
+    for (const auto &invalid : std::vector<Json>{
+             {{"op", "set_time_sig"}, {"measure", 0}, {"sig", "3/4"}},
+             {{"op", "remove_staff"}, {"staff", -1}},
+             {{"op", "insert_measures"}, {"before", segment}, {"count", 1}},
+             {{"op", "set_key_sig"}, {"measure", 1}, {"staff", segment}, {"key", 0}},
+             enter_at(Json{{"measure", 0}}, 60),
+             enter_at(Json{{"measure", 1}, {"staff", 0}}, 60),
+             enter_at(Json{{"measure", 1}, {"voice", 5}}, 60),
+             {{"op", "add"}, {"anchor", Json{{"measure", 0}}}, {"type", "Fermata"}},
+             {{"op", "add"}, {"anchor", 1}, {"type", "Fermata"}},
+             {{"op", "add_part"}, {"instrument_id", "violin"}, {"before", 1}},
+             {{"op", "set_pitch"}, {"note", Json{{"measure", 1}}}, {"pitch", 60}},
+             {{"op", "add_tie"}, {"note", 1}},
+             {{"op", "add_tuplet"}, {"first", Json{{"measure", 1}}}, {"last", "A_A"}},
+             {{"op", "remove"}, {"target", Json{{"measure", 1}}}},
+         }) {
+        EXPECT_FALSE(music::api::decode_batch(music::json_array<Json>({invalid}), catalogue)) << music::dump_json(invalid);
+    }
+}
+
+TEST(HostApi, ScoreEditOrdinalsFollowStructuralStepsInTheBatch) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto doc = short_score(api, 3);
+    const auto original = ok(api, "score_outline", {{"document", doc}}).at("outline").at("measures");
+    ok(api, "score_edit",
+       edit_ops(doc, {Json{{"op", "insert_measures"}, {"before", 2}, {"count", 1}}, enter_at(pos(2), 62), enter_at(pos(3), 64),
+                      Json{{"op", "add_spanner"}, {"type", "HairPin"}, {"start", pos(2)}, {"end", pos(3)}}}));
+    const auto window = api.read_music({{"document", doc}, {"count", 4}, {"include_ids", true}});
+    ASSERT_EQ(window.at("ok"), true) << music::dump_json(window);
+    const auto &bars = window.at("measures");
+    EXPECT_EQ(bars[0].at("id"), original[0].at("id"));
+    for (const auto &old : original.get_array()) EXPECT_NE(bars[1].at("id"), old.at("id"));
+    EXPECT_EQ(bars[2].at("id"), original[1].at("id"));
+    EXPECT_EQ(bars[3].at("id"), original[2].at("id"));
+    EXPECT_EQ(chord_pitch(bars[1], 1, 1, "0"), 62);
+    EXPECT_EQ(chord_pitch(bars[2], 1, 1, "0"), 64);
+    ASSERT_EQ(window.at("spanners").size(), 1u);
+    const auto &hairpin = window.at("spanners")[0];
+    EXPECT_EQ(hairpin.at("type"), "HairPin");
+    EXPECT_EQ(hairpin.at("start").at("measure_id"), bars[1].at("id"));
+    EXPECT_EQ(hairpin.at("end").at("measure_id"), original[1].at("id"));
+    EXPECT_EQ(hairpin.at("end").at("offset"), "0");
+
+    // Bars 2 and 3 are now the inserted bar and original bar 2, so bar 2 afterwards is original bar 3.
+    ok(api, "score_edit", edit_ops(doc, {Json{{"op", "remove_measures"}, {"first", 2}, {"last", 3}}, enter_at(pos(2, "1/4"), 67)}));
+    const auto shortened = api.read_music({{"document", doc}, {"include_ids", true}});
+    ASSERT_EQ(shortened.at("ok"), true) << music::dump_json(shortened);
+    ASSERT_EQ(shortened.at("measures").size(), 2u);
+    EXPECT_EQ(shortened.at("measures")[1].at("id"), original[2].at("id"));
+    EXPECT_EQ(chord_pitch(shortened.at("measures")[1], 1, 1, "1/4"), 67);
+    EXPECT_TRUE(shortened.at("spanners").empty());
+}
+
+TEST(HostApi, ScoreEditOffsetsAndOrdinalsResolveAgainstTheLiveScore) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto first_bar = [&](const Json &doc) { return ok(api, "score_outline", {{"document", doc}}).at("outline").at("measures"); };
+
+    const auto widened = short_score(api, 1);
+    ok(api, "score_edit", edit_ops(widened, {Json{{"op", "set_time_sig"}, {"measure", 1}, {"sig", "5/4"}}, enter_at(pos(1, "1/1"), 70)}));
+    EXPECT_EQ(first_bar(widened)[0].at("duration"), "5/4");
+    const auto wide = api.read_music({{"document", widened}});
+    ASSERT_EQ(wide.at("ok"), true) << music::dump_json(wide);
+    EXPECT_EQ(chord_pitch(wide.at("measures")[0], 1, 1, "1/1"), 70);
+
+    // Each second step names an onset or bar that exists only before the first step runs.
+    const auto shrink = Json{{"op", "set_time_sig"}, {"measure", 1}, {"sig", "3/4"}};
+    const auto drop = Json{{"op", "remove_measures"}, {"first", 2}, {"last", 2}};
+    for (const bool atomic : {true, false}) {
+        for (const auto &[first, second, field, bars, before, after] :
+             {std::tuple{shrink, enter_at(pos(1, "3/4"), 62), "at:", 1, "1/1", "3/4"},
+              std::tuple{drop, enter_at(pos(2), 62), "at:", 2, "2", "1"}}) {
+            const auto doc = short_score(api, bars);
+            const auto revision = std::stoull(ok(api, "score_outline", {{"document", doc}}).at("revision").get<std::string>());
+            auto request = edit_ops(doc, {first, second});
+            request["atomic"] = atomic;
+            const auto rejected = error(api, "score_edit", request, "EditRejected").at("error");
+            EXPECT_EQ(rejected.at("op_index"), 1);
+            EXPECT_TRUE(rejected.at("message").get<std::string>().starts_with(field)) << rejected.at("message").get<std::string>();
+            EXPECT_FALSE(rejected.contains("poisoned"));
+            EXPECT_EQ(rejected.at("applied"), atomic ? 0 : 1);
+            EXPECT_EQ(rejected.at("revision"), std::to_string(revision + (atomic ? 0 : 1)));
+            const auto measures = first_bar(doc);
+            const auto shape = bars == 1 ? measures[0].at("duration").get<std::string>() : std::to_string(measures.size());
+            EXPECT_EQ(shape, atomic ? before : after);
+            ok(api, "score_edit", edit_ops(doc, {enter_at(pos(1, "1/4"), 65)}));
+            const auto window = api.read_music({{"document", doc}, {"count", 1}});
+            EXPECT_EQ(chord_pitch(window.at("measures")[0], 1, 1, "1/4"), 65);
+        }
+    }
+}
+
+TEST(HostApi, ScoreEditStaffOrdinalsFollowAddedPartsAndStaves) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto created = ok(api, "score_create", music::make_object<Json>());
+    const auto doc = created.at("document");
+    const auto part = created.at("outline").at("parts")[0].at("id");
+    const auto staff = created.at("outline").at("parts")[0].at("staves")[0].at("id");
+    ok(api, "score_edit",
+       edit_ops(doc,
+                {Json{{"op", "add_part"}, {"instrument_id", "violin"}, {"before", part}}, Json{{"op", "add_staff"}, {"part", opref(0, 0)}},
+                 Json{{"op", "set_key_sig"}, {"measure", 1}, {"staff", 3}, {"key", 2}}, enter_at(pos(1, "0", 3), 68),
+                 enter_at(pos(1, "0", 2), 72)}));
+    const auto staff_number = [&](const Json &outline, const Json &id) {
+        for (const auto &p : outline.at("parts").get_array()) {
+            for (const auto &s : p.at("staves").get_array()) {
+                if (s.at("id") == id) return s.at("staff").as<int>();
+            }
+        }
+        return 0;
+    };
+    const auto outline = ok(api, "score_outline", {{"document", doc}}).at("outline");
+    EXPECT_EQ(staff_number(outline, staff), 3);
+    const auto &signatures = outline.at("signatures").get_array();
+    EXPECT_EQ(std::ranges::count_if(signatures, [](const Json &s) { return s.at("type") == "KeySig" && s.at("key") == 2; }), 1);
+    EXPECT_EQ(
+        std::ranges::count_if(signatures, [](const Json &s) { return s.at("type") == "KeySig" && s.at("key") == 2 && s.at("staff") == 3; }),
+        1);
+    const auto window = api.read_music({{"document", doc}, {"count", 1}});
+    ASSERT_EQ(window.at("ok"), true) << music::dump_json(window);
+    EXPECT_EQ(chord_pitch(window.at("measures")[0], 3, 1, "0"), 68);
+    EXPECT_EQ(chord_pitch(window.at("measures")[0], 2, 1, "0"), 72);
+    EXPECT_EQ(chord_pitch(window.at("measures")[0], 1, 1, "0"), -1);
+
+    ok(api, "score_edit", edit_ops(doc, {Json{{"op", "remove_staff"}, {"staff", 2}}}));
+    EXPECT_EQ(staff_number(ok(api, "score_outline", {{"document", doc}}).at("outline"), staff), 2);
+}
+
+TEST(HostApi, ScoreEditExcerptScopesOrdinalsStylesAndOperands) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto created = ok(api, "score_create", music::make_object<Json>());
+    const auto doc = created.at("document");
+    const auto part = created.at("outline").at("parts")[0].at("id");
+    const auto master_bar = created.at("outline").at("measures")[0].at("id");
+    auto setup = edit_ops(doc, {Json{{"op", "add_part"}, {"instrument_id", "violin"}},
+                                Json{{"op", "generate_excerpts"}, {"parts", music::json_array<Json>({opref(0, 0)})}},
+                                Json{{"op", "generate_excerpts"}, {"parts", music::json_array<Json>({part})}}});
+    setup["detail"] = true;
+    const auto generated = ok(api, "score_edit", setup);
+    const auto violin = generated.at("ops")[1].at("created")[0];
+    const auto treble = generated.at("ops")[2].at("created")[0];
+    const auto outline = ok(api, "score_outline", {{"document", doc}}).at("outline");
+    const auto &excerpts = outline.at("excerpts").get_array();
+    for (const auto &id : {violin, treble}) {
+        EXPECT_EQ(std::ranges::count_if(excerpts, [&](const Json &e) { return e.at("id") == id; }), 1) << music::dump_json(id);
+    }
+
+    // Excerpt staff 1 is the violin, which is master staff 2.
+    const auto scoped = [&](std::initializer_list<Json> ops, std::optional<bool> atomic = {}) {
+        auto request = edit_ops(doc, ops);
+        request["excerpt"] = violin;
+        if (atomic) request["atomic"] = *atomic;
+        return request;
+    };
+    const auto style = [](std::optional<Json> excerpt, double width) {
+        Json op{{"op", "set_style"}, {"style", "pageWidth"}, {"value", width}};
+        if (excerpt) op["excerpt"] = *excerpt;
+        return op;
+    };
+    ok(api, "score_edit", scoped({enter_at(pos(1), 69), style({}, 9.0), style(violin, 9.5)}));
+    const auto part_window = api.read_music({{"document", doc}, {"excerpt", violin}, {"count", 1}});
+    ASSERT_EQ(part_window.at("ok"), true) << music::dump_json(part_window);
+    EXPECT_EQ(chord_pitch(part_window.at("measures")[0], 1, 1, "0"), 69);
+    const auto master_window = api.read_music({{"document", doc}, {"count", 1}});
+    EXPECT_EQ(chord_pitch(master_window.at("measures")[0], 1, 1, "0"), -1);
+    EXPECT_EQ(chord_pitch(master_window.at("measures")[0], 2, 1, "0"), 69);
+
+    const auto revision = ok(api, "score_outline", {{"document", doc}}).at("revision");
+    for (const auto &refused : {
+             style(treble, 10.0),
+             Json{{"op", "set_layout_break"}, {"measure", master_bar}, {"kind", "line"}, {"on", true}},
+             Json{{"op", "insert_measures"}, {"count", 1}},
+             Json{{"op", "remove_measures"}, {"first", 1}, {"last", 1}},
+             Json{{"op", "add_part"}, {"instrument_id", "violin"}},
+             Json{{"op", "remove_part"}, {"part", part}},
+             Json{{"op", "generate_excerpts"}, {"parts", music::json_array<Json>({part})}},
+         }) {
+        const auto failed = error(api, "score_edit", scoped({style({}, 11.0), refused}, false), "InvalidArgument").at("error");
+        EXPECT_EQ(failed.at("op_index"), 1) << music::dump_json(refused);
+        EXPECT_EQ(failed.at("applied"), 0) << music::dump_json(refused);
+        EXPECT_EQ(ok(api, "score_outline", {{"document", doc}}).at("revision"), revision);
+    }
+    auto not_an_excerpt = edit_ops(doc, {style({}, 9.0)});
+    for (const Json &selector : {master_bar, Json("not-an-eid"), Json(nullptr), Json("")}) {
+        not_an_excerpt["excerpt"] = selector;
+        error(api, "score_edit", not_an_excerpt, "InvalidArgument");
+        error(api, "score_edit", edit_ops(doc, {style(selector, 9.0)}), "InvalidArgument");
+    }
+    EXPECT_EQ(ok(api, "score_outline", {{"document", doc}}).at("revision"), revision);
+    ok(api, "score_edit", edit_ops(doc, {style(treble, 9.0)}));
+
+    // The scoped batch's last set_style wins on the violin part; the treble part
+    // got its own width, and the master was never styled.
+    EXPECT_EQ(exported_page_width(api, doc, violin), 9.5);
+    EXPECT_EQ(exported_page_width(api, doc, treble), 9.0);
+    const auto master_width = exported_page_width(api, doc);
+    EXPECT_NE(master_width, 9.5);
+    EXPECT_NE(master_width, 9.0);
+}
+
+TEST(HostApi, ScoreEditBoundaryOperandsAndOneBasedDiagnostics) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto doc = short_score(api, 2);
+    const auto revision = ok(api, "score_outline", {{"document", doc}}).at("revision");
+    const std::int64_t int32_max = 2147483647;
+    const auto layout_break = [](const Json &measure) {
+        return Json{{"op", "set_layout_break"}, {"measure", measure}, {"kind", "line"}, {"on", true}};
+    };
+    const auto key_sig = [](const Json &staff) { return Json{{"op", "set_key_sig"}, {"measure", 1}, {"staff", staff}, {"key", 1}}; };
+    const auto bar_end = [](const Json &end) {
+        return Json{{"op", "add_spanner_to_bar_end"}, {"type", "HairPin"}, {"start", pos(1)}, {"end", end}};
+    };
+    const auto at = [](Json position) { return enter_at(position, 60); };
+
+    // The two-bar, one-staff score has neither the named bar nor the named staff.
+    for (const auto &[op, message] : std::vector<std::pair<Json, std::string>>{
+             {layout_break(3), "measure: the score has no measure 3 (2 available)"},
+             {layout_break(int32_max), "measure: the score has no measure 2147483647 (2 available)"},
+             {key_sig(2), "staff: the score has no staff 2 (1 available)"},
+             {key_sig(int32_max), "staff: the score has no staff 2147483647 (1 available)"},
+             {at(Json{{"measure", 3}}), "at: the score has no measure 3 (2 available)"},
+             {at(Json{{"measure", 1}, {"staff", 2}}), "at: the score has no staff 2 (1 available)"},
+             {bar_end(5), "end: the score has no measure 5 (2 available)"},
+         }) {
+        const auto failed = error(api, "score_edit", edit_ops(doc, {op}), "EditRejected").at("error");
+        EXPECT_EQ(failed.at("message"), message) << music::dump_json(op);
+        EXPECT_EQ(failed.at("op_index"), 0) << music::dump_json(op);
+        EXPECT_EQ(failed.at("applied"), 0) << music::dump_json(op);
+    }
+
+    // Out-of-domain wire values never reach the engine.
+    for (const auto &[op, field] : std::vector<std::pair<Json, std::string>>{
+             {layout_break(int32_max + 1), "ops[0].measure:"},
+             {layout_break(1.5), "ops[0].measure:"},
+             {layout_break(0), "ops[0].measure:"},
+             {key_sig(int32_max + 1), "ops[0].staff:"},
+             {key_sig(1.5), "ops[0].staff:"},
+             {bar_end(int32_max + 1), "ops[0].end:"},
+             {at(Json{{"measure", int32_max + 1}}), "ops[0].at.measure:"},
+             {at(Json{{"measure", 1.5}}), "ops[0].at.measure:"},
+             {at(Json{{"measure", 1}, {"offset", "1/0"}}), "ops[0].at.offset:"},
+             {at(Json{{"measure", 1}, {"extra", true}}), "ops[0].at.extra:"},
+         }) {
+        const auto failed = error(api, "score_edit", edit_ops(doc, {op}), "InvalidArgument").at("error");
+        EXPECT_TRUE(failed.at("message").get<std::string>().starts_with(field)) << failed.at("message").get<std::string>();
+    }
+    // A negative offset is well-formed on the wire, so the engine refuses it before the batch runs.
+    const auto negative = error(api, "score_edit", edit_ops(doc, {at(Json{{"measure", 1}, {"offset", "-1/4"}})}), "InvalidArgument");
+    EXPECT_TRUE(negative.at("error").at("message").get<std::string>().starts_with("at:")) << music::dump_json(negative);
+    EXPECT_EQ(ok(api, "score_outline", {{"document", doc}}).at("revision"), revision);
+}
+
+TEST(HostApi, ScoreEditPositionalAnchorsReachTheirOnsets) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto doc = short_score(api, 2);
+    const auto prop = [](const char *name, const char *value) { return music::json_array<Json>({Json{{"name", name}, {"value", value}}}); };
+    auto request =
+        edit_ops(doc, {enter_at(pos(1), 60), enter_at(pos(1, "1/4"), 62),
+                       Json{{"op", "add"}, {"anchor", pos(1)}, {"type", "Articulation"}, {"props", prop("symbol", "articStaccatoAbove")}},
+                       Json{{"op", "add"}, {"anchor", pos(1)}, {"type", "Dynamic"}, {"props", prop("DYNAMIC_TYPE", "ff")}},
+                       Json{{"op", "add"}, {"anchor", pos(1, "1/4")}, {"type", "Fermata"}, {"props", prop("symbol", "fermataAbove")}},
+                       Json{{"op", "add"}, {"anchor", pos(1)}, {"type", "Harmony"}, {"props", prop("text", "Dm")}},
+                       Json{{"op", "add_spanner"}, {"type", "Slur"}, {"start", pos(1)}, {"end", pos(1, "1/4")}},
+                       Json{{"op", "add_spanner"}, {"type", "HairPin"}, {"start", pos(1)}, {"end", pos(1, "1/4")}},
+                       Json{{"op", "insert_measures"}, {"count", 1}},
+                       Json{{"op", "add_spanner_to_bar_end"}, {"type", "TextLine"}, {"start", pos(1)}, {"end", 3}},
+                       Json{{"op", "add_spanner_to_bar_end"}, {"type", "Pedal"}, {"start", pos(1, "1/4")}, {"end", opref(8, 0)}}});
+    request["detail"] = true;
+    const auto edited = ok(api, "score_edit", request);
+    const auto first_chord = edited.at("ops")[0].at("created")[0];
+    const auto appended = edited.at("ops")[8].at("created")[0];
+
+    const auto marks = ok(api, "score_query",
+                          {{"document", doc},
+                           {"mode", "elements"},
+                           {"query", {{"types", music::json_array<Json>({"Articulation", "Dynamic", "Fermata", "Harmony"})}}}})
+                           .at("elements")
+                           .get_array();
+    ASSERT_EQ(marks.size(), 4u);
+    for (const auto &[type, tick] : {std::pair{"Articulation", "0"}, {"Dynamic", "0"}, {"Fermata", "1/4"}, {"Harmony", "0"}}) {
+        const auto found = std::ranges::find_if(marks, [&](const Json &e) { return e.at("type") == type; });
+        ASSERT_NE(found, marks.end()) << type;
+        EXPECT_EQ(found->at("measure_number"), 1) << type;
+        EXPECT_EQ(found->at("tick"), tick) << type;
+        EXPECT_EQ(found->at("staff"), 1) << type;
+        if (std::string_view(type) == "Articulation") EXPECT_EQ(found->at("parent"), first_chord);
+    }
+
+    const auto window = api.read_music({{"document", doc}, {"count", 3}, {"include_ids", true}});
+    ASSERT_EQ(window.at("ok"), true) << music::dump_json(window);
+    EXPECT_EQ(window.at("measures")[2].at("id"), appended);
+    const auto &lines = window.at("spanners").get_array();
+    ASSERT_EQ(lines.size(), 4u) << music::dump_json(window.at("spanners"));
+    for (const auto &[type, start, end_measure, end] :
+         {std::tuple{"Slur", "0", 1, "1/4"}, {"HairPin", "0", 1, "1/4"}, {"TextLine", "0", 3, "1/1"}, {"Pedal", "1/4", 3, "1/1"}}) {
+        const auto found = std::ranges::find_if(lines, [&](const Json &s) { return s.at("type") == type; });
+        ASSERT_NE(found, lines.end()) << type;
+        EXPECT_EQ(found->at("start").at("measure"), 1) << type;
+        EXPECT_EQ(found->at("start").at("offset"), start) << type;
+        EXPECT_EQ(found->at("end").at("measure"), end_measure) << type;
+        EXPECT_EQ(found->at("end").at("offset"), end) << type;
+    }
 }
 
 TEST(HostApi, SoundFontSelectorBounds) {

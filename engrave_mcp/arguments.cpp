@@ -159,12 +159,16 @@ Result<void> check_ref(const Json &j, const std::string &p) {
     }
 }
 
-Result<void> score_position(const Json &j, const std::string &p) {
-    if (j.is_number()) {
-        return integer<1, INT32_MAX>(j, p);
-    } else {
-        return check_ref(j, p);
-    }
+// Measure and staff operands: a positive 1-based ordinal, an EID or an earlier operation's element.
+Result<void> check_ordinal(const Json &j, const std::string &p) {
+    if (j.is_number()) return integer<1, INT32_MAX>(j, p);
+    if (j.is_object() && j.contains("kind")) return fail(p, "address not accepted", "a 1-based number, EID or {from_op,item}");
+    return check_ref(j, p);
+}
+
+Result<void> check_anchor(const Json &j, const std::string &p) {
+    if (is_relative_position(j)) return check_pos(j, p);
+    return check_ref(j, p);
 }
 
 Result<void> check_sf(const Json &j, const std::string &p) {
@@ -347,6 +351,7 @@ Result<void> validate_arguments(View name, const Json &j) {
         return object(j, "",
                       {{"document", text<128>, true},
                        {"expected_revision", check_revision},
+                       {"excerpt", check_eid},
                        {"atomic", boolean},
                        {"detail", boolean},
                        {"ops", list<any>, true}});
@@ -430,25 +435,25 @@ Result<void> validate_op(const Json &j, usize index) {
         return object(j, path, {{"op", text<4096>, true}, {"target", check_ref, true}});
     }
     if (name == "insert_measures") {
-        return object(j, path, {{"op", text<4096>, true}, {"before", check_ref}, {"count", integer<1, 1024>, true}, {"kind", text<4096>}});
+        return object(j, path,
+                      {{"op", text<4096>, true}, {"before", check_ordinal}, {"count", integer<1, 1024>, true}, {"kind", text<4096>}});
     }
     if (name == "remove_measures") {
-        return object(j, path, {{"op", text<4096>, true}, {"first", check_ref, true}, {"last", check_ref, true}});
+        return object(j, path, {{"op", text<4096>, true}, {"first", check_ordinal, true}, {"last", check_ordinal, true}});
     }
     if (name == "set_time_sig") {
-        return object(j, path, {{"op", text<4096>, true}, {"measure", score_position, true}, {"sig", check_fraction, true}});
+        return object(j, path, {{"op", text<4096>, true}, {"measure", check_ordinal, true}, {"sig", check_fraction, true}});
     }
     if (name == "set_key_sig") {
         return object(
-            j, path,
-            {{"op", text<4096>, true}, {"measure", score_position, true}, {"key", integer<-7, 7>, true}, {"staff", score_position}});
+            j, path, {{"op", text<4096>, true}, {"measure", check_ordinal, true}, {"key", integer<-7, 7>, true}, {"staff", check_ordinal}});
     }
     if (name == "insert_clef") {
         return object(j, path, {{"op", text<4096>, true}, {"at", check_pos, true}, {"clef", text<4096>, true}});
     }
     if (name == "set_layout_break") {
         return object(j, path,
-                      {{"op", text<4096>, true}, {"measure", score_position, true}, {"kind", text<4096>, true}, {"on", boolean, true}});
+                      {{"op", text<4096>, true}, {"measure", check_ordinal, true}, {"kind", text<4096>, true}, {"on", boolean, true}});
     }
     if (name == "add_part") {
         return object(j, path, {{"op", text<4096>, true}, {"instrument_id", text<4096>, true}, {"before", check_ref}});
@@ -460,7 +465,7 @@ Result<void> validate_op(const Json &j, usize index) {
         return object(j, path, {{"op", text<4096>, true}, {"part", check_ref, true}});
     }
     if (name == "remove_staff") {
-        return object(j, path, {{"op", text<4096>, true}, {"staff", score_position, true}});
+        return object(j, path, {{"op", text<4096>, true}, {"staff", check_ordinal, true}});
     }
     if (name == "generate_excerpts") {
         return object(j, path, {{"op", text<4096>, true}, {"parts", list<check_ref>, true}});
@@ -469,8 +474,8 @@ Result<void> validate_op(const Json &j, usize index) {
         return object(j, path,
                       {{"op", text<4096>, true},
                        {"type", text<4096>, true},
-                       {"start", check_ref, true},
-                       {"end", check_ref, true},
+                       {"start", check_anchor, true},
+                       {"end", check_anchor, true},
                        {"props", list<check_prop>}});
     }
     if (name == "add_tie") {
@@ -490,20 +495,20 @@ Result<void> validate_op(const Json &j, usize index) {
     }
     if (name == "add") {
         return object(j, path,
-                      {{"op", text<4096>, true}, {"anchor", check_ref, true}, {"type", text<4096>, true}, {"props", list<check_prop>}});
+                      {{"op", text<4096>, true}, {"anchor", check_anchor, true}, {"type", text<4096>, true}, {"props", list<check_prop>}});
     }
     if (name == "add_spanner_to_bar_end") {
         return object(j, path,
                       {{"op", text<4096>, true},
                        {"type", text<4096>, true},
-                       {"start", check_ref, true},
-                       {"end", score_position, true},
+                       {"start", check_anchor, true},
+                       {"end", check_ordinal, true},
                        {"props", list<check_prop>}});
     }
     if (name == "set_repeat_barlines") {
         return object(j, path,
                       {{"op", text<4096>, true},
-                       {"measure", score_position, true},
+                       {"measure", check_ordinal, true},
                        {"start", boolean},
                        {"end", boolean},
                        {"count", integer<1, 1024>}});
@@ -511,8 +516,8 @@ Result<void> validate_op(const Json &j, usize index) {
     if (name == "add_volta") {
         return object(j, path,
                       {{"op", text<4096>, true},
-                       {"first_measure", score_position, true},
-                       {"last_measure", score_position, true},
+                       {"first_measure", check_ordinal, true},
+                       {"last_measure", check_ordinal, true},
                        {"endings", list<integer<1, 1024>>, true},
                        {"closed", boolean}});
     }

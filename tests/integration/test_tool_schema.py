@@ -113,20 +113,50 @@ def check_typed_fields(by_name):
     spanner = {"op": "add_spanner", "type": "HairPin", "start": eid, "end": eid}
     key_sig = {"op": "set_key_sig", "measure": 1, "staff": 1, "key": 0}
     volta = {"op": "add_volta", "first_measure": 1, "last_measure": 2, "endings": [1]}
-    position_values = [1, int32_max, eid, layout, op_ref]
-    invalid_positions = [0, -1, int32_max + 1, 1.5, False, [], long_eid]
+    segment = {"kind": "segment", "measure": eid, "staff": 1, "voice": 1, "tick": "0", "segment_kind": "ChordRest"}
+    system = {"kind": "system", "page": 0, "index": 0}
+    spanner_segment = {"kind": "spanner_segment", "spanner": eid, "index": 0}
+    layouts = [layout, system, spanner_segment]
+    position_values = [1, int32_max, eid, op_ref]
+    invalid_positions = [0, -1, int32_max + 1, 1.5, False, [], long_eid, segment, *layouts, {"from_op": 0}]
+    compact = {"measure": 2, "offset": "1/4", "staff": 1, "voice": 2}
+    bad_compacts = [
+        {"measure": 1, "extra": True},
+        {"offset": "0"},
+        {"measure": 0},
+        {"measure": 1, "voice": 5},
+        {"measure": 1, "offset": 0},
+        {**segment, "extra": True},
+        {**op_ref, "extra": True},
+    ]
+    check_values(edit, lambda v: {"document": document, "excerpt": v, "ops": []}, [eid], [1, None, long_eid])
     for op, field, accepted, rejected in [
+        (
+            {"op": "insert_measures", "count": 1},
+            "before",
+            [1, eid, op_ref],
+            [0, -1, 1.5, None, long_eid, segment, layout],
+        ),
+        ({"op": "remove_measures", "last": 1}, "first", [1, eid, op_ref], [0, 1.5, None, layout]),
+        (
+            {"op": "add", "type": "Fermata"},
+            "anchor",
+            [compact, eid, segment, op_ref],
+            [1, None, [], long_eid, *layouts, *bad_compacts],
+        ),
+        (spanner, "start", [compact, segment], [*layouts, *bad_compacts]),
+        (spanner, "end", [compact, segment], [*layouts, *bad_compacts]),
         (
             {"op": "enter_notes", "duration": "1/4", "pitches": [{"pitch": 60}]},
             "at",
-            [{"measure": 1}, layout],
-            [1, eid, [], None],
+            [{"measure": 1}, compact, segment],
+            [1, eid, [], None, op_ref, *layouts, *bad_compacts],
         ),
         ({"op": "insert_measures", "count": 1}, "kind", ["VBox"], [1, {}, None, long_text]),
         ({"op": "remove"}, "target", [eid, layout, op_ref], [1, False, [], long_eid]),
         ({"op": "generate_excerpts"}, "parts", [[eid, op_ref]], [[1], [None]]),
-        (spanner, "start", [eid, layout, op_ref], [1, [], None, long_eid]),
-        (spanner, "end", [eid, layout, op_ref], [0, int32_max + 1, 1.5, [], None, long_eid]),
+        (spanner, "start", [eid, op_ref], [1, [], None, long_eid]),
+        (spanner, "end", [eid, op_ref], [0, int32_max + 1, 1.5, [], None, long_eid]),
         ({**spanner, "op": "add_spanner_to_bar_end"}, "end", [1, int32_max], [-1, 0, int32_max + 1]),
         ({"op": "set_repeat_barlines", "measure": 1}, "start", [True, False], [[], None]),
         ({"op": "set_repeat_barlines", "measure": 1}, "end", [True, False], [[], None]),
