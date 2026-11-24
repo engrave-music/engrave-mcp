@@ -78,6 +78,10 @@ core (`github.com/engrave-music/engrave`, consumed as the submodule
   an independent expectation (fixture, golden, hand-computed value), never the
   implementation against itself. No section banners or doc lines that only
   repeat identifiers.
+- **Documentation freshness**: Treat stale or misleading docs as high-priority
+  defects — outdated architecture claims, obsolete quotas, or wrong commands
+  poison future agents' assumptions. Update affected docs in the same milestone
+  as behavior changes, and fix stale docs whenever spotted.
 - **Commits**: Commit each verified milestone as it is reached. Keep review
   fixes in small follow-up commits; do not defer all commits to the end.
 
