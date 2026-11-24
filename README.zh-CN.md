@@ -116,6 +116,9 @@ pixi run build/release/engrave-mcp.exe --resources .runtime/assets `
 }
 ```
 
+在 Windows 上，打包后的二进制文件需要系统安装
+[Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)（大多数 Windows 10/11 系统已预装）。
+
 ## 架构概览
 
 - **单引擎、单 owner 线程。** 所有乐谱引擎操作在一个专用 owner 线程上串行执行。

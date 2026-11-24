@@ -13,10 +13,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from _package_common import (  # noqa: E402
     collect_package_notices,
     collect_pixi_runtime_notices,
-    collect_vc_redist_notices,
     validate_soundfont,
 )
-from package_windows import build_windows_dll_map  # noqa: E402
+from package_windows import build_windows_dll_map, is_msvc_runtime_dll  # noqa: E402
 
 
 def write_fixture(path: Path, contents: str = "") -> Path:
@@ -105,27 +104,18 @@ class StaticNoticeTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "SoundFont license is not a regular file"):
                 validate_soundfont(custom, root / "missing.txt")
 
-    def test_windows_release_redist_overlays_pixi(self):
+    def test_windows_dll_map_excludes_msvc_runtime(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             library_bin = root / "pixi/Library/bin"
-            pixi_crt = write_fixture(library_bin / "vcruntime140.dll")
+            for name in ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll"):
+                write_fixture(library_bin / name)
             cairo = write_fixture(library_bin / "cairo.dll")
-            redist = root / "redist"
-            crt = write_fixture(redist / "x64/Microsoft.VC145.CRT/VCRUNTIME140.dll")
-            crt_extra = write_fixture(redist / "x64/Microsoft.VC145.CRT/vcruntime140_1.dll")
-            write_fixture(redist / "x64/Microsoft.VC145.MFC/vcruntime140.dll")
-            write_fixture(redist / "x64/Debug_NonRedist/cairo.dll")
-            write_fixture(redist / "x64/Debug_NonRedist/vcruntime140d.dll")
-            write_fixture(redist / "arm64/Microsoft.VC145.CRT/cairo.dll")
 
-            self.assertEqual(
-                build_windows_dll_map(library_bin, None), {"vcruntime140.dll": pixi_crt, "cairo.dll": cairo}
-            )
-            self.assertEqual(
-                build_windows_dll_map(library_bin, str(redist)),
-                {"vcruntime140.dll": crt, "vcruntime140_1.dll": crt_extra, "cairo.dll": cairo},
-            )
+            self.assertEqual(build_windows_dll_map(library_bin), {"cairo.dll": cairo})
+            self.assertTrue(is_msvc_runtime_dll("VCRUNTIME140.dll"))
+            self.assertTrue(is_msvc_runtime_dll("msvcp140_1.dll"))
+            self.assertFalse(is_msvc_runtime_dll("cairo.dll"))
 
 
 class RuntimeNoticeTests(unittest.TestCase):
@@ -153,15 +143,14 @@ class RuntimeNoticeTests(unittest.TestCase):
 
     def test_copies_only_the_owners_and_checked_in_licenses(self):
         self.add_package("cairo", "Library/bin/CAIRO.DLL" if os.name == "nt" else "Library/bin/cairo.dll", ("COPYING",))
-        self.add_package("vc14_runtime", "Library/bin/vcruntime140.dll", ("LICENSE.TXT",))
+        self.add_package("libpng", "Library/bin/libpng16.dll", ("LICENSE",))
         for name in ("freetype", "libfreetype", "libfreetype6"):
             self.add_package(name, f"Library/bin/{name}.dll")
         self.add_package("unused", "Library/bin/unused.dll", ("COPYING",))
         bundled = [
             write_fixture(self.environment / f"Library/bin/{name}.dll")
-            for name in ("cairo", "vcruntime140", "freetype", "libfreetype", "libfreetype6")
+            for name in ("cairo", "libpng16", "freetype", "libfreetype", "libfreetype6")
         ]
-        bundled.append(write_fixture(self.root / "redist/vcruntime140_1.dll"))
 
         notices = collect_pixi_runtime_notices(self.repo, self.environment, bundled)
 
@@ -172,9 +161,9 @@ class RuntimeNoticeTests(unittest.TestCase):
                 "conda-meta/freetype-1.0-0.json",
                 "conda-meta/libfreetype-1.0-0.json",
                 "conda-meta/libfreetype6-1.0-0.json",
-                "conda-meta/vc14_runtime-1.0-0.json",
+                "conda-meta/libpng-1.0-0.json",
                 "runtime/cairo/COPYING",
-                "runtime/vc14_runtime/LICENSE.TXT",
+                "runtime/libpng/LICENSE",
             },
         )
         for _, source, destination in notices:
@@ -205,19 +194,11 @@ class RuntimeNoticeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Missing checked-in runtime license files for sample"):
             collect_pixi_runtime_notices(self.repo, self.environment, [bundled])
 
-    def test_vc_redist_license_resolution(self):
-        redist = self.root / "redist"
-        redist.mkdir()
-        with self.assertRaisesRegex(RuntimeError, "Missing checked-in runtime license files for vc14_runtime"):
-            collect_vc_redist_notices(self.repo, str(redist))
-
-        write_fixture(self.repo / "licenses/runtime/vc14_runtime/LICENSE.TXT", "vc14 fallback")
-        fallback = collect_vc_redist_notices(self.repo, str(redist))
-        self.assertEqual([dst for _, _, dst in fallback], ["runtime/vcredist/LICENSE.TXT"])
-
-        direct_license = write_fixture(redist / "License.txt", "direct vc redist license")
-        direct = collect_vc_redist_notices(self.repo, str(redist))
-        self.assertEqual(direct, [("vcredist", direct_license.resolve(), "runtime/vcredist/License.txt")])
+    def test_rejects_vc14_runtime_notice(self):
+        self.add_package("vc14_runtime", "Library/bin/vcruntime140.dll", ("LICENSE.TXT",))
+        bundled = write_fixture(self.environment / "Library/bin/vcruntime140.dll")
+        with self.assertRaisesRegex(RuntimeError, "Forbidden package notice: .*vc14_runtime"):
+            collect_pixi_runtime_notices(self.repo, self.environment, [bundled])
 
 
 if __name__ == "__main__":

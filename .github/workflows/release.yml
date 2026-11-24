@@ -188,9 +188,13 @@ jobs:
               throw "Missing packaged license notice: $notice"
             }
           }
-          $forbidden = Get-ChildItem -LiteralPath "$bundle/licenses" -Recurse | Where-Object { $_.Name -match 'GPLv2\.TXT|fdk-aac' }
+          $forbidden = Get-ChildItem -LiteralPath "$bundle/licenses" -Recurse | Where-Object { $_.Name -match 'GPLv2\.TXT|fdk-aac|vc14_runtime|vcredist' }
           if ($forbidden) { throw "Unexpected packaged license notices: $($forbidden.FullName -join ', ')" }
-          if ($IsWindows) { & $py tests/integration/test_windows_manifest.py $binary }
+          if ($IsWindows) {
+            $vcDlls = Get-ChildItem -LiteralPath $bundle -Filter '*.dll' | Where-Object { $_.Name -match '^(vcruntime|msvcp|concrt|vcamp|vccorlib|vcomp)' }
+            if ($vcDlls) { throw "Unexpected bundled MSVC runtime DLLs: $($vcDlls.Name -join ', ')" }
+            & $py tests/integration/test_windows_manifest.py $binary
+          }
 
           $archive = Join-Path $env:STAGING_DIR "$env:BUNDLE_NAME.$env:ARCHIVE_FORMAT"
           & $py scripts/release_archive.py pack --source $bundle --output $archive --format $env:ARCHIVE_FORMAT
@@ -273,6 +277,7 @@ jobs:
             engrave-mcp is licensed under GPL-3.0-only and bundles FluidR3Mono_GM.sf3 (MIT).
 
             Builds are available for Windows x86_64 and Linux x86_64 (Ubuntu 24.04 glibc baseline).
+            Windows users without the system runtime installed need the [Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
         run: |
           set -euo pipefail
           args=(--verify-tag --title "engrave-mcp $RELEASE_TAG" --notes "$RELEASE_NOTES" --generate-notes)

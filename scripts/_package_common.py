@@ -51,7 +51,6 @@ REQUIRED_RUNTIME_LICENSE_PACKAGES = (
     "libxcb",
     "libzlib",
     "pixman",
-    "vc14_runtime",
     "xorg-libx11",
     "xorg-libxau",
     "xorg-libxdmcp",
@@ -91,7 +90,7 @@ def _validate_destinations(notices: list[Notice]) -> None:
     seen = set()
     for _, _, destination in notices:
         key = destination.casefold()
-        if "gplv2.txt" in key.split("/") or "fdk-aac" in key:
+        if "gplv2.txt" in key.split("/") or "fdk-aac" in key or "vc14_runtime" in key or "vcredist" in key:
             raise RuntimeError(f"Forbidden package notice: {destination}")
         if key in seen:
             raise RuntimeError(f"Duplicate package notice destination: {destination}")
@@ -205,28 +204,6 @@ def collect_pixi_runtime_notices(root: Path, environment: Path, bundled_paths: l
         for path in _checked_in_runtime_licenses(root, package):
             notices.append(("pixi", path, f"runtime/{package}/{path.relative_to(directory).as_posix()}"))
 
-    _validate_destinations(notices)
-    return notices
-
-
-def collect_vc_redist_notices(root: Path, vc_redist_dir: str) -> list[Notice]:
-    """Locate the Visual C++ Runtime license for DLLs bundled from VCToolsRedistDir."""
-    redist = Path(vc_redist_dir).resolve()
-    direct = [
-        path
-        for path in sorted(redist.glob("*"))
-        if path.is_file() and path.suffix.lower() == ".txt" and "license" in path.name.lower()
-    ]
-    if direct:
-        notices = [("vcredist", path, f"runtime/vcredist/{path.name}") for path in direct]
-        _validate_destinations(notices)
-        return notices
-
-    directory = root / "licenses/runtime/vc14_runtime"
-    notices = [
-        ("vcredist", path, f"runtime/vcredist/{path.relative_to(directory).as_posix()}")
-        for path in _checked_in_runtime_licenses(root, "vc14_runtime")
-    ]
     _validate_destinations(notices)
     return notices
 

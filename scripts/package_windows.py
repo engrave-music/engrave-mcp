@@ -13,7 +13,6 @@ from pathlib import Path
 from _package_common import (
     collect_package_notices,
     collect_pixi_runtime_notices,
-    collect_vc_redist_notices,
     resolve_engine_root,
     stage_engine_assets,
     stage_package_notices,
@@ -85,19 +84,26 @@ def _pe_imported_dlls(binary: Path) -> list[str]:
     return names
 
 
-def build_windows_dll_map(library_bin: Path, vc_redist_dir: str | None) -> dict[str, Path]:
-    available = {path.name.lower(): path for path in library_bin.glob("*.dll") if path.is_file()}
-    if vc_redist_dir:
-        redist = Path(vc_redist_dir).resolve() / "x64"
-        if redist.is_dir():
-            # Prefer Microsoft.VC*.CRT release subdirectories over auxiliary redist folders.
-            crt_dirs = [path for path in sorted(redist.glob("Microsoft.VC*.CRT")) if path.is_dir()]
-            search_roots = crt_dirs or [redist]
-            for root in search_roots:
-                for path in sorted(root.rglob("*.dll")):
-                    if path.is_file() and not any("debug" in part.lower() for part in path.relative_to(redist).parts):
-                        available[path.name.lower()] = path
-    return available
+WINDOWS_MSVC_RUNTIME_PREFIXES = (
+    "vcruntime",
+    "msvcp",
+    "concrt",
+    "vcamp",
+    "vccorlib",
+    "vcomp",
+)
+
+
+def is_msvc_runtime_dll(name: str) -> bool:
+    return name.lower().startswith(WINDOWS_MSVC_RUNTIME_PREFIXES)
+
+
+def build_windows_dll_map(library_bin: Path) -> dict[str, Path]:
+    return {
+        path.name.lower(): path
+        for path in library_bin.glob("*.dll")
+        if path.is_file() and not is_msvc_runtime_dll(path.name)
+    }
 
 
 def main():
@@ -141,8 +147,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     environment = pixi_env(ROOT)
     strip = None if args.no_strip else find_llvm_strip(environment)
-    vc_redist_dir = os.environ.get("VCToolsRedistDir")
-    available = build_windows_dll_map(environment / "Library/bin", vc_redist_dir)
+    available = build_windows_dll_map(environment / "Library/bin")
     queue = []
     bundled = {}
 
@@ -161,7 +166,7 @@ def main():
         binary = queue.pop()
         for name in _pe_imported_dlls(binary):
             key = name.lower()
-            if key.startswith(("api-ms-", "ext-ms-")):
+            if key.startswith(("api-ms-", "ext-ms-")) or is_msvc_runtime_dll(key):
                 continue
             if key in available:
                 destination = output / available[key].name
@@ -171,30 +176,17 @@ def main():
             elif not (system / name).exists():
                 raise RuntimeError(f"Unresolved dependency: {name} from {binary.name}")
     env_resolved = environment.resolve()
-    pixi_dlls = {
-        name: path
-        for name, path in bundled.items()
-        if path.is_relative_to(environment) or path.resolve().is_relative_to(env_resolved)
-    }
-    notices.extend(collect_pixi_runtime_notices(ROOT, environment, list(pixi_dlls.values())))
-    redist_dlls = {name: path for name, path in bundled.items() if name not in pixi_dlls}
-    redist_root = Path(vc_redist_dir).resolve() if vc_redist_dir else None
-    if redist_dlls:
-        if not vc_redist_dir:
-            raise RuntimeError(f"Bundled DLLs outside Pixi without VCToolsRedistDir: {sorted(redist_dlls)}")
-        notices.extend(collect_vc_redist_notices(ROOT, vc_redist_dir))
+    notices.extend(collect_pixi_runtime_notices(ROOT, environment, list(bundled.values())))
     stage_engine_assets(engine_root, output / "assets")
     stage_soundfont(args.soundfont, output / "soundfonts")
     stage_package_notices(output / "licenses", notices)
 
-    def relative_origin(name: str, path: Path) -> str:
+    def relative_origin(path: Path) -> str:
+        if path.is_relative_to(environment):
+            return path.relative_to(environment).as_posix()
         resolved = path.resolve()
-        if name in pixi_dlls:
-            if path.is_relative_to(environment):
-                return path.relative_to(environment).as_posix()
+        if resolved.is_relative_to(env_resolved):
             return resolved.relative_to(env_resolved).as_posix()
-        if redist_root is not None and resolved.is_relative_to(redist_root):
-            return f"{redist_root.name}/{resolved.relative_to(redist_root).as_posix()}"
         return path.name
 
     manifest = {
@@ -213,12 +205,12 @@ def main():
                 "unstripped_executable_sha256": unstripped_executable_sha256,
                 "dll_origins": {
                     name: {
-                        "path": relative_origin(name, path),
-                        "provider": "Pixi" if name in pixi_dlls else "VCToolsRedistDir",
+                        "path": relative_origin(path),
+                        "provider": "Pixi",
                     }
                     for name, path in sorted(bundled.items())
                 },
-                "note": "Relocatable Windows package with third-party licenses and filtered runtime provenance.",
+                "note": "Relocatable Windows package with third-party licenses and filtered runtime provenance. Requires the system Microsoft Visual C++ Redistributable (x64).",
             },
             indent=2,
         ),

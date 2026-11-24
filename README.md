@@ -130,6 +130,10 @@ select another SoundFont):
 }
 ```
 
+On Windows, packaged binaries require the
+[Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)
+(already installed on most Windows 10/11 systems).
+
 ## Architecture overview
 
 - **One engine, one owner thread.** All score engine operations are serialized on a

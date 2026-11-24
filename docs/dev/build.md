@@ -218,7 +218,10 @@ The packagers strip the copied packaged executable by default (pass `--no-strip`
 to keep symbols), leave the staged `build/<profile>` binary untouched, and
 record `unstripped_executable_sha256` in `manifest.json`. Both packagers bundle
 runtime DLL/ELF dependencies and notices and stage assets directly from
-`vendor/engrave`. Pass the optional `--soundfont` argument to copy a SoundFont
+`vendor/engrave`. The Windows packager intentionally omits Microsoft Visual C++
+runtime DLLs (`vcruntime*.dll`, `msvcp*.dll`, etc.); Windows users rely on the
+system [Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
+Pass the optional `--soundfont` argument to copy a SoundFont
 into the bundle (custom SoundFonts other than `FluidR3Mono_GM.sf3` also require
 `--soundfont-license`). A packaged binary automatically resolves its adjacent
 `assets/` directory without needing `--resources`.
