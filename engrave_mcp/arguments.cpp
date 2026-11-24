@@ -114,15 +114,8 @@ Result<void> check_fraction(const Json &j, const std::string &p) {
     return {};
 }
 
-Result<void> check_pos(const Json &j, const std::string &p) {
-    if (j.is_object() && !j.contains("kind")) {
-        return object(j, p,
-                      {{"measure", integer<1, INT32_MAX>, true},
-                       {"offset", check_fraction},
-                       {"staff", integer<1, INT32_MAX>},
-                       {"voice", integer<1, 4>}});
-    }
-    if (!j.is_object()) return fail(child(p, "kind"), "missing address kind", "segment, page, system or spanner_segment");
+// Any address kind; only a query may name the page, system and spanner segment elements layout builds.
+Result<void> check_address(const Json &j, const std::string &p) {
     const auto &kind = j.at("kind");
     if (kind == "segment") {
         return object(j, p,
@@ -132,16 +125,14 @@ Result<void> check_pos(const Json &j, const std::string &p) {
                        {"voice", integer<1, 4>, true},
                        {"tick", check_fraction, true},
                        {"segment_kind", text<128>, true}});
-    } else if (kind == "page" || kind == "system") {
-        if (kind == "system") {
-            return object(j, p,
-                          {{"kind", text<32>, true},
-                           {"excerpt", check_eid},
-                           {"page", integer<0, INT32_MAX>, true},
-                           {"index", integer<0, INT32_MAX>, true}});
-        } else {
-            return object(j, p, {{"kind", text<32>, true}, {"excerpt", check_eid}, {"index", integer<0, INT32_MAX>, true}});
-        }
+    } else if (kind == "system") {
+        return object(j, p,
+                      {{"kind", text<32>, true},
+                       {"excerpt", check_eid},
+                       {"page", integer<0, INT32_MAX>, true},
+                       {"index", integer<0, INT32_MAX>, true}});
+    } else if (kind == "page") {
+        return object(j, p, {{"kind", text<32>, true}, {"excerpt", check_eid}, {"index", integer<0, INT32_MAX>, true}});
     } else if (kind == "spanner_segment") {
         return object(j, p, {{"kind", text<32>, true}, {"spanner", check_eid, true}, {"index", integer<0, INT32_MAX>, true}});
     } else {
@@ -149,26 +140,51 @@ Result<void> check_pos(const Json &j, const std::string &p) {
     }
 }
 
-Result<void> check_ref(const Json &j, const std::string &p) {
-    if (j.is_string()) {
-        return check_eid(j, p);
-    } else if (j.is_object() && j.contains("kind")) {
-        return check_pos(j, p);
-    } else {
-        return object(j, p, {{"from_op", integer<0, 1023>, true}, {"item", integer<0, 65535>, true}});
+// The engine refuses to edit what layout builds, so an edit operand's address must be a segment.
+Result<void> check_edit_address(const Json &j, const std::string &p) {
+    if (j.at("kind") != "segment") return fail(child(p, "kind"), "address not editable", "segment");
+    return check_address(j, p);
+}
+
+// A compact position or a segment address.
+Result<void> check_pos(const Json &j, const std::string &p) {
+    if (j.is_object() && !j.contains("kind")) {
+        return object(j, p,
+                      {{"measure", integer<1, INT32_MAX>, true},
+                       {"offset", check_fraction},
+                       {"staff", integer<1, INT32_MAX>},
+                       {"voice", integer<1, 4>}});
     }
+    if (!j.is_object()) return fail(p, "wrong type", "a compact position or segment address");
+    return check_edit_address(j, p);
+}
+
+Result<void> check_op_ref(const Json &j, const std::string &p) {
+    return object(j, p, {{"from_op", integer<0, 1023>, true}, {"item", integer<0, 65535>, true}});
+}
+
+Result<void> check_edit_ref(const Json &j, const std::string &p) {
+    if (j.is_string()) return check_eid(j, p);
+    if (j.is_object() && j.contains("kind")) return check_edit_address(j, p);
+    return check_op_ref(j, p);
+}
+
+Result<void> check_query_target(const Json &j, const std::string &p) {
+    if (j.is_string()) return check_eid(j, p);
+    if (j.is_object() && j.contains("kind")) return check_address(j, p);
+    return fail(p, "wrong type", "an EID or address");
 }
 
 // Measure and staff operands: a positive 1-based ordinal, an EID or an earlier operation's element.
 Result<void> check_ordinal(const Json &j, const std::string &p) {
     if (j.is_number()) return integer<1, INT32_MAX>(j, p);
     if (j.is_object() && j.contains("kind")) return fail(p, "address not accepted", "a 1-based number, EID or {from_op,item}");
-    return check_ref(j, p);
+    return check_edit_ref(j, p);
 }
 
 Result<void> check_anchor(const Json &j, const std::string &p) {
     if (is_relative_position(j)) return check_pos(j, p);
-    return check_ref(j, p);
+    return check_edit_ref(j, p);
 }
 
 Result<void> check_sf(const Json &j, const std::string &p) {
@@ -317,7 +333,7 @@ Result<void> validate_arguments(View name, const Json &j) {
                                {"expected_revision", check_revision},
                                {"mode", check_mode, true},
                                {"query", check_query},
-                               {"target", check_ref},
+                               {"target", check_query_target},
                                {"props", list<text<4096>>},
                                {"excerpt", check_eid}});
         if (!checked) return checked;
@@ -409,10 +425,10 @@ Result<void> validate_op(const Json &j, usize index) {
     const auto &name = j.at("op");
     if (name == "set_property") {
         return object(j, path,
-                      {{"op", text<4096>, true}, {"target", check_ref, true}, {"property", text<4096>, true}, {"value", any, true}});
+                      {{"op", text<4096>, true}, {"target", check_edit_ref, true}, {"property", text<4096>, true}, {"value", any, true}});
     }
     if (name == "reset_property") {
-        return object(j, path, {{"op", text<4096>, true}, {"target", check_ref, true}, {"property", text<4096>, true}});
+        return object(j, path, {{"op", text<4096>, true}, {"target", check_edit_ref, true}, {"property", text<4096>, true}});
     }
     if (name == "set_style") {
         return object(j, path, {{"op", text<4096>, true}, {"excerpt", check_eid}, {"style", text<4096>, true}, {"value", any, true}});
@@ -425,14 +441,15 @@ Result<void> validate_op(const Json &j, usize index) {
                        {"pitches", list<check_midinote>, true}});
     }
     if (name == "set_pitch") {
-        return object(j, path,
-                      {{"op", text<4096>, true}, {"note", check_ref, true}, {"pitch", integer<0, 127>, true}, {"tpc", integer<-8, 40>}});
+        return object(
+            j, path,
+            {{"op", text<4096>, true}, {"note", check_edit_ref, true}, {"pitch", integer<0, 127>, true}, {"tpc", integer<-8, 40>}});
     }
     if (name == "set_duration") {
-        return object(j, path, {{"op", text<4096>, true}, {"chord_rest", check_ref, true}, {"duration", check_fraction, true}});
+        return object(j, path, {{"op", text<4096>, true}, {"chord_rest", check_edit_ref, true}, {"duration", check_fraction, true}});
     }
     if (name == "remove") {
-        return object(j, path, {{"op", text<4096>, true}, {"target", check_ref, true}});
+        return object(j, path, {{"op", text<4096>, true}, {"target", check_edit_ref, true}});
     }
     if (name == "insert_measures") {
         return object(j, path,
@@ -456,19 +473,19 @@ Result<void> validate_op(const Json &j, usize index) {
                       {{"op", text<4096>, true}, {"measure", check_ordinal, true}, {"kind", text<4096>, true}, {"on", boolean, true}});
     }
     if (name == "add_part") {
-        return object(j, path, {{"op", text<4096>, true}, {"instrument_id", text<4096>, true}, {"before", check_ref}});
+        return object(j, path, {{"op", text<4096>, true}, {"instrument_id", text<4096>, true}, {"before", check_edit_ref}});
     }
     if (name == "remove_part") {
-        return object(j, path, {{"op", text<4096>, true}, {"part", check_ref, true}});
+        return object(j, path, {{"op", text<4096>, true}, {"part", check_edit_ref, true}});
     }
     if (name == "add_staff") {
-        return object(j, path, {{"op", text<4096>, true}, {"part", check_ref, true}});
+        return object(j, path, {{"op", text<4096>, true}, {"part", check_edit_ref, true}});
     }
     if (name == "remove_staff") {
         return object(j, path, {{"op", text<4096>, true}, {"staff", check_ordinal, true}});
     }
     if (name == "generate_excerpts") {
-        return object(j, path, {{"op", text<4096>, true}, {"parts", list<check_ref>, true}});
+        return object(j, path, {{"op", text<4096>, true}, {"parts", list<check_edit_ref>, true}});
     }
     if (name == "add_spanner") {
         return object(j, path,
@@ -479,13 +496,13 @@ Result<void> validate_op(const Json &j, usize index) {
                        {"props", list<check_prop>}});
     }
     if (name == "add_tie") {
-        return object(j, path, {{"op", text<4096>, true}, {"note", check_ref, true}, {"end_note", check_ref}});
+        return object(j, path, {{"op", text<4096>, true}, {"note", check_edit_ref, true}, {"end_note", check_edit_ref}});
     }
     if (name == "add_tuplet") {
         return object(j, path,
                       {{"op", text<4096>, true},
-                       {"first", check_ref, true},
-                       {"last", check_ref, true},
+                       {"first", check_edit_ref, true},
+                       {"last", check_edit_ref, true},
                        {"actual", integer<1, 1024>},
                        {"normal", integer<1, 1024>}});
     }
@@ -511,7 +528,7 @@ Result<void> validate_op(const Json &j, usize index) {
                        {"measure", check_ordinal, true},
                        {"start", boolean},
                        {"end", boolean},
-                       {"count", integer<1, 1024>}});
+                       {"count", integer<2, 1024>}});
     }
     if (name == "add_volta") {
         return object(j, path,
@@ -524,7 +541,7 @@ Result<void> validate_op(const Json &j, usize index) {
     if (name == "add_grace_chord") {
         return object(j, path,
                       {{"op", text<4096>, true},
-                       {"principal", check_ref, true},
+                       {"principal", check_edit_ref, true},
                        {"kind", check_grace, true},
                        {"duration", check_fraction, true},
                        {"pitches", list<check_midinote>, true},

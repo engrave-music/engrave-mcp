@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -17,6 +18,7 @@
 
 #include <gtest/gtest.h>
 
+#include "api_json_internal.h"
 #include "export_timing.h"
 #include "phrase.h"
 
@@ -663,11 +665,16 @@ TEST(HostApi, ScoreEditExcerptScopesOrdinalsStylesAndOperands) {
              Json{{"op", "add_part"}, {"instrument_id", "violin"}},
              Json{{"op", "remove_part"}, {"part", part}},
              Json{{"op", "generate_excerpts"}, {"parts", music::json_array<Json>({part})}},
+             Json{{"op", "set_time_sig"}, {"measure", 1}, {"sig", "3/4"}},
+             Json{{"op", "set_repeat_barlines"}, {"measure", 1}, {"end", true}},
          }) {
-        const auto failed = error(api, "score_edit", scoped({style({}, 11.0), refused}, false), "InvalidArgument").at("error");
-        EXPECT_EQ(failed.at("op_index"), 1) << music::dump_json(refused);
-        EXPECT_EQ(failed.at("applied"), 0) << music::dump_json(refused);
-        EXPECT_EQ(ok(api, "score_outline", {{"document", doc}}).at("revision"), revision);
+        // Preflight refuses the batch before the valid first operation runs, in either mode.
+        for (const bool atomic : {true, false}) {
+            const auto failed = error(api, "score_edit", scoped({style({}, 11.0), refused}, atomic), "InvalidArgument").at("error");
+            EXPECT_EQ(failed.at("op_index"), 1) << music::dump_json(refused);
+            EXPECT_EQ(failed.at("applied"), 0) << music::dump_json(refused);
+            EXPECT_EQ(ok(api, "score_outline", {{"document", doc}}).at("revision"), revision);
+        }
     }
     auto not_an_excerpt = edit_ops(doc, {style({}, 9.0)});
     for (const Json &selector : {master_bar, Json("not-an-eid"), Json(nullptr), Json("")}) {
@@ -795,6 +802,183 @@ TEST(HostApi, ScoreEditPositionalAnchorsReachTheirOnsets) {
         EXPECT_EQ(found->at("end").at("measure"), end_measure) << type;
         EXPECT_EQ(found->at("end").at("offset"), end) << type;
     }
+}
+
+TEST(HostApi, ScoreEditSegmentAddressesMixWithCompactEndpoints) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto doc = short_score(api, 2);
+    const auto bar = ok(api, "score_outline", {{"document", doc}}).at("outline").at("measures")[0].at("id").get<std::string>();
+    const auto prop = [](const char *name, const char *value) { return music::json_array<Json>({Json{{"name", name}, {"value", value}}}); };
+    // Segment address ticks are score positions; bar 1 starts at 0, so they equal the bar offsets here.
+    auto request = edit_ops(
+        doc,
+        {enter_at(pos(1), 60), enter_at(pos(1, "1/4"), 62), enter_at(pos(1, "1/2"), 64),
+         Json{{"op", "add"}, {"anchor", address(bar, "0", "1")}, {"type", "Articulation"}, {"props", prop("symbol", "articAccentAbove")}},
+         Json{{"op", "add"}, {"anchor", address(bar, "1", "4")}, {"type", "Dynamic"}, {"props", prop("DYNAMIC_TYPE", "mf")}},
+         Json{{"op", "add_spanner"}, {"type", "Slur"}, {"start", address(bar, "0", "1")}, {"end", pos(1, "1/4")}},
+         Json{{"op", "add_spanner"}, {"type", "HairPin"}, {"start", pos(1, "1/4")}, {"end", address(bar, "1", "2")}},
+         Json{{"op", "add_spanner_to_bar_end"}, {"type", "Pedal"}, {"start", address(bar, "1", "2")}, {"end", 2}}});
+    request["detail"] = true;
+    const auto edited = ok(api, "score_edit", request);
+    const auto first_chord = edited.at("ops")[0].at("created")[0];
+
+    const auto marks =
+        ok(api, "score_query",
+           {{"document", doc}, {"mode", "elements"}, {"query", {{"types", music::json_array<Json>({"Articulation", "Dynamic"})}}}})
+            .at("elements")
+            .get_array();
+    ASSERT_EQ(marks.size(), 2u);
+    for (const auto &[type, tick] : {std::pair{"Articulation", "0"}, {"Dynamic", "1/4"}}) {
+        const auto found = std::ranges::find_if(marks, [&](const Json &e) { return e.at("type") == type; });
+        ASSERT_NE(found, marks.end()) << type;
+        EXPECT_EQ(found->at("measure_number"), 1) << type;
+        EXPECT_EQ(found->at("tick"), tick) << type;
+        EXPECT_EQ(found->at("staff"), 1) << type;
+        if (std::string_view(type) == "Articulation") EXPECT_EQ(found->at("parent"), first_chord);
+    }
+
+    const auto window = api.read_music({{"document", doc}, {"count", 2}});
+    ASSERT_EQ(window.at("ok"), true) << music::dump_json(window);
+    const auto &lines = window.at("spanners").get_array();
+    ASSERT_EQ(lines.size(), 3u) << music::dump_json(window.at("spanners"));
+    for (const auto &[type, start, end_measure, end] :
+         {std::tuple{"Slur", "0", 1, "1/4"}, {"HairPin", "1/4", 1, "1/2"}, {"Pedal", "1/2", 2, "1/1"}}) {
+        const auto found = std::ranges::find_if(lines, [&](const Json &s) { return s.at("type") == type; });
+        ASSERT_NE(found, lines.end()) << type;
+        EXPECT_EQ(found->at("start"), (Json{{"measure", 1}, {"offset", start}, {"staff", 1}, {"voice", 1}})) << type;
+        EXPECT_EQ(found->at("end").at("measure"), end_measure) << type;
+        EXPECT_EQ(found->at("end").at("offset"), end) << type;
+    }
+}
+
+TEST(HostApi, ScoreEditRefusesAReversedPositionalSlur) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto reversed = Json{{"op", "add_spanner"}, {"type", "Slur"}, {"start", pos(1, "1/4")}, {"end", pos(1)}};
+    for (const bool atomic : {true, false}) {
+        SCOPED_TRACE(atomic ? "atomic" : "prefix");
+        const auto doc = short_score(api, 2);
+        ok(api, "score_edit", edit_ops(doc, {enter_at(pos(1), 60), enter_at(pos(1, "1/4"), 62)}));
+        const auto revision = std::stoull(ok(api, "score_outline", {{"document", doc}}).at("revision").get<std::string>());
+        auto request = edit_ops(doc, {enter_at(pos(2), 64), reversed});
+        request["atomic"] = atomic;
+        const auto rejected = error(api, "score_edit", request, "EditRejected").at("error");
+        EXPECT_EQ(rejected.at("op_index"), 1);
+        EXPECT_TRUE(rejected.at("message").get<std::string>().starts_with("end:")) << rejected.at("message").get<std::string>();
+        EXPECT_EQ(rejected.at("applied"), atomic ? 0 : 1);
+        EXPECT_EQ(rejected.at("revision"), std::to_string(revision + (atomic ? 0 : 1)));
+        const auto window = api.read_music({{"document", doc}, {"count", 2}});
+        EXPECT_TRUE(window.at("spanners").empty()) << music::dump_json(window.at("spanners"));
+        EXPECT_EQ(chord_pitch(window.at("measures")[1], 1, 1, "0"), atomic ? -1 : 64);
+    }
+}
+
+TEST(HostApi, EditOperandsRefuseLayoutAddressesThatQueriesAccept) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto doc = short_score(api, 1);
+    const auto bar = ok(api, "score_outline", {{"document", doc}}).at("outline").at("measures")[0].at("id");
+    const auto revision = ok(api, "score_outline", {{"document", doc}}).at("revision");
+    for (const auto &layout : {Json{{"kind", "page"}, {"index", 0}}, Json{{"kind", "system"}, {"page", 0}, {"index", 0}},
+                               Json{{"kind", "spanner_segment"}, {"spanner", bar}, {"index", 0}}}) {
+        SCOPED_TRACE(music::dump_json(layout));
+        for (const auto &[op, field] : std::vector<std::pair<Json, std::string>>{
+                 {Json{{"op", "set_property"}, {"target", layout}, {"property", "visible"}, {"value", false}}, "ops[0].target.kind:"},
+                 {Json{{"op", "remove"}, {"target", layout}}, "ops[0].target.kind:"},
+                 {Json{{"op", "add"}, {"anchor", layout}, {"type", "Fermata"}}, "ops[0].anchor.kind:"},
+                 {Json{{"op", "add_spanner"}, {"type", "Slur"}, {"start", layout}, {"end", pos(1)}}, "ops[0].start.kind:"},
+                 {Json{{"op", "add_spanner"}, {"type", "Slur"}, {"start", pos(1)}, {"end", layout}}, "ops[0].end.kind:"},
+                 {enter_at(layout, 60), "ops[0].at.kind:"},
+                 {Json{{"op", "add_tuplet"}, {"first", layout}, {"last", layout}}, "ops[0].first.kind:"},
+                 {Json{{"op", "generate_excerpts"}, {"parts", music::json_array<Json>({layout})}}, "ops[0].parts[0].kind:"},
+             }) {
+            const auto failed = error(api, "score_edit", edit_ops(doc, {op}), "InvalidArgument").at("error");
+            EXPECT_TRUE(failed.at("message").get<std::string>().starts_with(field)) << failed.at("message").get<std::string>();
+        }
+        const auto query =
+            music::api::detail::validate_tool("score_query", {{"document", doc}, {"mode", "properties"}, {"target", layout}});
+        EXPECT_TRUE(query.has_value()) << query.error().message;
+    }
+    EXPECT_EQ(ok(api, "score_outline", {{"document", doc}}).at("revision"), revision);
+}
+
+TEST(HostApi, QueryReportsNullCoordinatesForElementsOffTheStaves) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto doc = short_score(api, 1);
+    const auto elements =
+        ok(api, "score_query", {{"document", doc}, {"mode", "elements"}, {"query", {{"types", music::json_array<Json>({"Part", "Rest"})}}}})
+            .at("elements")
+            .get_array();
+    const auto of_type = [&](const char *type) {
+        const auto found = std::ranges::find_if(elements, [&](const Json &e) { return e.at("type") == type; });
+        return found == elements.end() ? Json(nullptr) : *found;
+    };
+    // A part sits in no measure and on no track.
+    const auto part = of_type("Part");
+    ASSERT_FALSE(part.is_null()) << music::dump_json(elements);
+    EXPECT_TRUE(part.at("measure_number").is_null());
+    EXPECT_TRUE(part.at("staff").is_null());
+    EXPECT_TRUE(part.at("voice").is_null());
+    const auto rest = of_type("Rest");
+    ASSERT_FALSE(rest.is_null()) << music::dump_json(elements);
+    EXPECT_EQ(rest.at("measure_number"), 1);
+    EXPECT_EQ(rest.at("staff"), 1);
+    EXPECT_EQ(rest.at("voice"), 1);
+}
+
+TEST(HostApi, NarrowReadSkipsLaterBarsAndClampsOnlyTheDefaultCount) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto doc = short_score(api, 1);
+    // Engine text handling grows quadratically with one text's length, so the texts stay short.
+    std::string words;
+    for (int i = 0; i < 1024; ++i) words += "\xe4\xb8\x80";
+    Json ops = music::json_array<Json>({Json{{"op", "insert_measures"}, {"count", 48}}});
+    for (int bar = 2; bar <= 49; ++bar)
+        music::json_push(ops, Json{{"op", "add_text"}, {"at", pos(bar)}, {"style", "tempo"}, {"text", words}});
+    // Not through ok(): it would echo the 147 KiB request into the test log.
+    const auto edited = api.edit({{"document", doc}, {"ops", ops}});
+    ASSERT_EQ(edited.at("ok"), true) << music::dump_json(edited.at("error"));
+
+    const auto first = api.read_music({{"document", doc}, {"count", 1}});
+    ASSERT_EQ(first.at("ok"), true) << music::dump_json(first.at("error"));
+    ASSERT_EQ(first.at("measures").size(), 1u);
+    EXPECT_EQ(first.at("summary").get<std::string>().find("\xe4\xb8\x80"), std::string::npos);
+    const auto second = api.read_music({{"document", doc}, {"measure", 2}, {"count", 1}});
+    ASSERT_EQ(second.at("ok"), true) << music::dump_json(second.at("error"));
+    EXPECT_NE(second.at("summary").get<std::string>().find(words), std::string::npos);
+
+    // Only an omitted count stops at the last bar.
+    const auto last = api.read_music({{"document", doc}, {"measure", 48}});
+    ASSERT_EQ(last.at("ok"), true) << music::dump_json(last.at("error"));
+    ASSERT_EQ(last.at("measures").size(), 2u);
+    EXPECT_EQ(last.at("measures")[1].at("measure"), 49);
+    const auto past = api.read_music({{"document", doc}, {"measure", 48}, {"count", 3}});
+    EXPECT_EQ(past.at("error").at("code"), "InvalidArgument");
+    EXPECT_TRUE(past.at("error").at("message").get<std::string>().starts_with("count:")) << music::dump_json(past.at("error"));
+    const auto beyond = api.read_music({{"document", doc}, {"measure", 50}});
+    EXPECT_EQ(beyond.at("error").at("code"), "InvalidArgument");
+    EXPECT_TRUE(beyond.at("error").at("message").get<std::string>().starts_with("measure:")) << music::dump_json(beyond.at("error"));
+}
+
+TEST(EditCodec, PositionErrorsCountVoicesFromOne) {
+    engrave::Error engine{engrave::ErrorCode::EDIT_REJECTED, "the score has no voice at index 4"};
+    engine.position = engrave::PositionError{engrave::PositionError::Kind::VOICE, "at", 4, 4};
+    const auto wire = music::api::api_error(engine);
+    EXPECT_EQ(wire.code, "EditRejected");
+    EXPECT_EQ(wire.message, "at: the score has no voice 5 (4 available)");
 }
 
 TEST(HostApi, SoundFontSelectorBounds) {
@@ -956,7 +1140,7 @@ TEST(Phrase, AtomicWritesPreserveNotation) {
         ASSERT_FALSE(edit->rejection) << edit->rejection->error.message;
         auto read = (*doc)->read_music({.measure_count = outline->measure_count});
         ASSERT_TRUE(read) << read.error().message;
-        auto window = music::api::music_result(*read, *outline, false);
+        auto window = music::api::music_result(*read, false);
         const auto &note = window.at("measures")[0].at("voices")[0].at("events")[0].at("notes")[0];
         if (drums) {
             EXPECT_EQ(note.at("drum"), 36);
@@ -978,7 +1162,7 @@ TEST(Phrase, AtomicWritesPreserveNotation) {
 TEST(MusicWindow, NestedGroupsGapsAndNotation) {
     using namespace engrave;
     const ElementId bar_id{0, 1}, first_group{0, 2}, inner_group{0, 3}, excerpt{0, 4};
-    const ElementId event_id{0, 5}, note_id{0, 6}, spanner_id{0, 7}, volta_id{0, 8}, tie_id{0, 9};
+    const ElementId event_id{0, 5}, note_id{0, 6}, spanner_id{0, 7}, volta_id{0, 8}, tie_id{0, 9}, hairpin_id{0, 10}, coda_id{0, 11};
     const MeasureInfo bar{bar_id, 0, {0, 1}, {1, 1}};
     auto note = [](StepName step, int octave, ElementId id = {}) {
         const SpelledPitch pitch{step, 0, octave};
@@ -990,7 +1174,7 @@ TEST(MusicWindow, NestedGroupsGapsAndNotation) {
                           {{ElementId{}, GraceKind::Acciaccatura, {1, 8}, {note(StepName::D, 5)}}},
                           {{ElementId{}, GraceKind::Grace16After, {1, 16}, {note(StepName::D, 5)}}}};
     const ChordMusic drums{{NoteMusic{{}, DrumNote{36}}, NoteMusic{{}, DrumNote{42}}}};
-    const Position start{bar_id, {1, 8}}, end{bar_id, {1, 1}};
+    const Position start{bar_id, {1, 8}, 0, 0, 0}, end{bar_id, {1, 1}, 0, 0, 0};
     MusicWindow window{
         .score = {excerpt},
         .revision = 7,
@@ -1005,10 +1189,10 @@ TEST(MusicWindow, NestedGroupsGapsAndNotation) {
                          {{}, {5, 24}, {1, 8}, {1, 20}, {first_group, inner_group}, drums},
                          {{}, {1, 2}, {1, 4}, {1, 4}, {}, RestMusic{true, 2}}}}}}},
         .tuplets = {{first_group, 3, 2, {1, 8}}, {inner_group, 5, 3, {1, 8}}},
-        .spanners = {{spanner_id, "Slur", {}, start, end}},
-        .voltas = {{{volta_id, "Volta", {}, start, end}, {1, 2}, true}}};
-    const Outline outline{.measures = {bar}};
-    const auto result = music::api::music_result(window, outline, false);
+        .spanners = {{spanner_id, "Slur", {}, start, end},
+                     {hairpin_id, "HairPin", "crescendo", start, end, {}, {}, SpanDetail{.text = "poco a poco"}}},
+        .voltas = {{{volta_id, "Volta", {}, start, end}, {1, 2}, true}, {{coda_id, "Volta", {}, end, end}, {3}, false}}};
+    const auto result = music::api::music_result(window, false);
     EXPECT_EQ(result.at("score"), "excerpt");
     EXPECT_EQ(result.at("excerpt"), to_string(excerpt));
     const auto &summary = result.at("summary").get<std::string>();
@@ -1017,20 +1201,22 @@ TEST(MusicWindow, NestedGroupsGapsAndNotation) {
     EXPECT_NE(summary.find("s1v1 @1/8 3:2(acciac(D5:1/8) E4~:1/8 after16(D5:1/16) 5:3([d36 d42]:1/8)) "
                            "@1/2 repeat(2):1/4 :|x3"),
               std::string::npos);
-    EXPECT_NE(summary.find("\nSpanners: Slur 1@1/8(s1v1)-1@1/1(s1v1)\nVoltas: Volta 1@1/8(s1v1)-1@1/1(s1v1) endings=[1,2] closed"),
-              std::string::npos);
-    const auto tagged = music::api::music_result(window, outline, true).at("summary").get<std::string>();
-    for (auto id : {bar_id, first_group, inner_group, event_id, note_id, tie_id, spanner_id, volta_id}) {
+    EXPECT_NE(
+        summary.find("\nSpanners: Slur 1@1/8(s1v1)-1@1/1(s1v1) \xc2\xb7 HairPin(crescendo) 1@1/8(s1v1)-1@1/1(s1v1) text=\"poco a poco\"\n"
+                     "Voltas: Volta 1@1/8(s1v1)-1@1/1(s1v1) endings=[1,2] closed \xc2\xb7 Volta 1@1/1(s1v1)-1@1/1(s1v1) endings=[3] open"),
+        std::string::npos);
+    const auto tagged = music::api::music_result(window, true).at("summary").get<std::string>();
+    for (auto id : {bar_id, first_group, inner_group, event_id, note_id, tie_id, spanner_id, volta_id, hairpin_id, coda_id}) {
         EXPECT_NE(tagged.find("#" + to_string(id)), std::string::npos);
     }
 
     window.measures[0].voices[0].events[0].elapsed_duration = {1, 24};
-    const auto stretched = music::api::music_result(window, outline, false).at("summary").get<std::string>();
+    const auto stretched = music::api::music_result(window, false).at("summary").get<std::string>();
     EXPECT_NE(stretched.find("after16(D5:1/16)(elapsed=1/24)"), std::string::npos);
 
     auto &events = window.measures[0].voices[0].events;
     events.resize(4000, MusicEvent{{}, {}, {1, 4}, {1, 4}, {}, main});
-    const auto truncated = music::api::music_result(window, outline, true);
+    const auto truncated = music::api::music_result(window, true);
     const auto &text = truncated.at("summary").get<std::string>();
     EXPECT_LE(text.size(), 32768u);
     EXPECT_TRUE(text.ends_with("\n... [truncated]"));
@@ -1433,15 +1619,14 @@ TEST(MusicWindow, SummaryEscapesAuthoredTextAndKeepsItsCap) {
         .spanners = {{span_id,
                       "TextLine",
                       {},
-                      {bar_id, {0, 1}},
+                      {bar_id, {0, 1}, 0, 0, 0},
                       {missing, {0, 1}},
                       {},
                       {},
                       SpanDetail{.begin_text = "a\xe2\x80\xa8"
                                                "Bar 98"}}}};
-    const Outline outline{.measures = {bar, later}};
 
-    const auto plain = music::api::music_result(window, outline, false);
+    const auto plain = music::api::music_result(window, false);
     const auto &text = plain.at("summary").get<std::string>();
     for (std::size_t start = 0; start < text.size();) {
         const auto end = std::min(text.find('\n', start), text.size());
@@ -1469,7 +1654,7 @@ TEST(MusicWindow, SummaryEscapesAuthoredTextAndKeepsItsCap) {
     EXPECT_EQ(plain.at("spanners")[0].at("begin_text"), "a\xe2\x80\xa8"
                                                         "Bar 98");
 
-    const auto tagged = music::api::music_result(window, outline, true);
+    const auto tagged = music::api::music_result(window, true);
     const auto &tagged_marks = tagged.at("measures")[0].at("markings");
     EXPECT_EQ(tagged_marks[1].at("attachment"),
               (Json{{"event", to_string(event_id)}, {"grace", {{"side", "after"}, {"ordinal", 2}, {"id", to_string(grace_id)}}}}));
@@ -1481,7 +1666,7 @@ TEST(MusicWindow, SummaryEscapesAuthoredTextAndKeepsItsCap) {
     auto &dense = window.measures[0].markings;
     dense.resize(4000,
                  {{}, {0, 1}, MarkScope::STAFF, 0, -1, std::nullopt, TextMark{TextMark::Kind::EXPRESSION, "\xc3\xa9\xc3\xa9\xc3\xa9"}});
-    const auto truncated = music::api::music_result(window, outline, false);
+    const auto truncated = music::api::music_result(window, false);
     const auto &capped = truncated.at("summary").get<std::string>();
     EXPECT_LE(capped.size(), 32768u);
     EXPECT_TRUE(capped.ends_with("\n... [truncated]"));
@@ -1529,9 +1714,8 @@ TEST(MusicWindow, TracklessRowsInstrumentScopeAndVoicelessRepeatEnd) {
                       {},
                       {{{}, {0, 1}, MarkScope::INSTRUMENT, 0, -1, std::nullopt, DynamicMark{"p"}},
                        {{}, {1, 2}, MarkScope::SYSTEM, -1, -1, std::nullopt, TextMark{TextMark::Kind::REHEARSAL, "B"}}}}},
-        .spanners = {{span_id, "TextLine", {}, {bar_id, {0, 1}, -1, -1}, {bar_id, {1, 2}, 1, -1}}}};
-    const Outline outline{.measures = {bar}};
-    const auto result = music::api::music_result(window, outline, false);
+        .spanners = {{span_id, "TextLine", {}, {bar_id, {0, 1}, -1, -1, 0}, {bar_id, {1, 2}, 1, -1, 0}}}};
+    const auto result = music::api::music_result(window, false);
 
     const auto &row = result.at("measures")[0];
     EXPECT_TRUE(row.at("signature_changes")[0].at("staff").is_null()) << music::dump_json(row);
@@ -1546,18 +1730,34 @@ TEST(MusicWindow, TracklessRowsInstrumentScopeAndVoicelessRepeatEnd) {
                     "Spanners: TextLine 1@0-1@1/2(s2)");
 }
 
+TEST(MusicWindow, LastLyricVerseNumbersPastInt32) {
+    using namespace engrave;
+    const MeasureInfo bar{ElementId{0, 1}, 0, {0, 1}, {1, 1}};
+    const MusicWindow window{
+        .measures = {{bar,
+                      false,
+                      false,
+                      2,
+                      {},
+                      {},
+                      {{{}, {0, 1}, MarkScope::VOICE, 0, 0, std::nullopt, LyricMark{std::numeric_limits<int>::max(), "la", "single"}}}}}};
+    const auto result = music::api::music_result(window, false);
+    EXPECT_EQ(result.at("measures")[0].at("markings")[0].at("verse"), Json(std::int64_t{2147483648}));
+    const auto &summary = result.at("summary").get<std::string>();
+    EXPECT_NE(summary.find("s1v1 @0 lyric[2147483648] \"la\""), std::string::npos) << summary;
+}
+
 TEST(MusicWindow, SummaryRepairsInvalidUtf8BeforeItsCap) {
     using namespace engrave;
     const ElementId bar_id{0, 1};
     const MeasureInfo bar{bar_id, 0, {0, 1}, {1, 1}};
-    const Outline outline{.measures = {bar}};
     const auto text_mark = [](std::string text) {
         return MarkMusic{{}, {0, 1}, MarkScope::SYSTEM, -1, -1, std::nullopt, TextMark{TextMark::Kind::SYSTEM, std::move(text)}};
     };
     // Each invalid byte serializes as a 3-byte U+FFFD; the long run straddles the 32,768-byte cut.
     for (const auto &bad : {std::string("x\xff\xc3y"), std::string(40000, '\xff'), std::string(32700, 'a') + std::string(200, '\xfe')}) {
         MusicWindow window{.measures = {{bar, false, false, 2, {}, {}, {text_mark(bad)}}}};
-        const auto result = music::api::music_result(window, outline, false);
+        const auto result = music::api::music_result(window, false);
         const auto wire = music::parse_json(music::dump_json(result));
         ASSERT_TRUE(wire);
         const auto &summary = wire->at("summary").get<std::string>();

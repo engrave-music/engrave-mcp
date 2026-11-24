@@ -472,9 +472,9 @@ Json encode(const engrave::QueryResult &q) {
                     {"type", e.type},
                     {"score", score_json(e.score)},
                     {"measure", eid_json(e.measure)},
-                    {"measure_number", e.measure_index + 1},
-                    {"staff", e.staff + 1},
-                    {"voice", e.voice + 1},
+                    {"measure_number", detail::one_based(e.measure_index)},
+                    {"staff", detail::one_based(e.staff)},
+                    {"voice", detail::one_based(e.voice)},
                     {"tick", fraction_json(e.tick)},
                     {"duration", fraction_json(e.duration)},
                     {"parent", eid_json(e.parent)},
@@ -587,8 +587,13 @@ Json encode(const std::vector<engrave::ExportWarning> &warnings) {
 HostError api_error(const engrave::Error &e) {
     std::string message = e.message;
     if (const auto &p = e.position) {
-        // The engine counts measures and staves from 0; the wire counts from 1.
-        const auto noun = p->kind == engrave::PositionError::Kind::MEASURE ? "measure" : "staff";
+        // The engine counts measures, staves and voices from 0; the wire counts from 1.
+        std::string_view noun;
+        switch (p->kind) {
+            case engrave::PositionError::Kind::MEASURE: noun = "measure"; break;
+            case engrave::PositionError::Kind::STAFF: noun = "staff"; break;
+            case engrave::PositionError::Kind::VOICE: noun = "voice"; break;
+        }
         message = std::format("{}: the score has no {} {} ({} available)", p->field, noun, static_cast<i64>(p->index) + 1, p->count);
     }
     if (e.poisoned && e.code != engrave::ErrorCode::POISONED) {

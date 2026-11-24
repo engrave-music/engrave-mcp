@@ -6,7 +6,7 @@
 
 namespace music::api {
 
-Json music_result(const engrave::MusicWindow &, const engrave::Outline &, bool ids);
+Json music_result(const engrave::MusicWindow &, bool ids);
 
 Result<engrave::Phrase> decode_phrase(const Json &lanes, const engrave::Outline &outline, engrave::ScoreSel score);
 

@@ -153,7 +153,7 @@ def check_typed_fields(by_name):
             [1, eid, [], None, op_ref, *layouts, *bad_compacts],
         ),
         ({"op": "insert_measures", "count": 1}, "kind", ["VBox"], [1, {}, None, long_text]),
-        ({"op": "remove"}, "target", [eid, layout, op_ref], [1, False, [], long_eid]),
+        ({"op": "remove"}, "target", [eid, segment, op_ref], [1, False, [], long_eid]),
         ({"op": "generate_excerpts"}, "parts", [[eid, op_ref]], [[1], [None]]),
         (spanner, "start", [eid, op_ref], [1, [], None, long_eid]),
         (spanner, "end", [eid, op_ref], [0, int32_max + 1, 1.5, [], None, long_eid]),

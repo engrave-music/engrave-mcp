@@ -24,10 +24,15 @@ Json declared_tools() {
     const Json revision = Json{{"type", "string"}, {"pattern", "^(0|[1-9][0-9]*)$"}, {"maxLength", 20}};
     const Json eid = Json{{"type", "string"}, {"maxLength", 32}};
     const Json document = Json{{"type", "string"}, {"maxLength", 128}};
-    const Json fraction =
-        Json{{"type", "string"},
-             {"maxLength", 42},
-             {"description", "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator."}};
+    // The published schemas carry no $defs, so every position repeats its shapes inline; they stay undescribed
+    // and score_edit's description explains them once.
+    const Json fraction = Json{{"type", "string"}, {"maxLength", 42}};
+    auto described = [](Json schema, const char *description) {
+        schema["description"] = description;
+        return schema;
+    };
+    const Json offset_fraction = described(fraction, "Exact whole-note fraction, e.g. 3/8.");
+    const Json time_sig = described(fraction, "Written time signature, e.g. 6/8; keeps its numerator and denominator.");
     const Json boolean = Json{{"type", "boolean"}};
     const Json idx = integer(0, 2147483647);
     const Json bar = integer(1, 2147483647);
@@ -48,10 +53,10 @@ Json declared_tools() {
     const Json null_type = Json{{"type", "null"}};
     const Json value =
         alternatives({boolean, num, Json{{"type", "string"}}, schema_array(Json{{"type", "integer"}}), object_type, null_type},
-                     "Native JSON value matching the engine property or style descriptor.");
+                     "Native JSON value for the property or style.");
     const Json query_target = alternatives({eid, object_type}, "Persistent EID or layout address.");
-    const Json ref = alternatives({eid, object_type}, "Persistent EID, layout address, or batch-local reference {from_op,item}.");
     // Edit operands never accept page, system or spanner_segment addresses: the engine refuses to edit layout.
+    const Json ref = alternatives({eid, object_type}, "EID, segment address or {from_op,item}.");
     const Json op_ref = object({{"from_op", integer(0, 1023)}, {"item", integer(0, 65535)}}, json_array<Json>({"from_op", "item"}));
     const Json compact_pos =
         object({{"measure", bar}, {"staff", bar}, {"voice", voice}, {"offset", fraction}}, json_array<Json>({"measure"}));
@@ -62,16 +67,10 @@ Json declared_tools() {
                                       {"tick", fraction},
                                       {"segment_kind", Json{{"type", "string"}, {"maxLength", 128}}}},
                                      json_array<Json>({"kind", "measure", "staff", "voice", "tick", "segment_kind"}));
-    const Json measure_ref =
-        alternatives({bar, eid, op_ref}, "1-based bar number resolved when the op runs, measure EID, or {from_op,item}.");
-    const Json staff_ref =
-        alternatives({bar, eid, op_ref}, "1-based staff number resolved when the op runs, staff EID, or {from_op,item}.");
-    const Json anchor = alternatives({eid, compact_pos, segment_addr, op_ref},
-                                     "Compact position {measure,offset?,staff?,voice?} (1-based, exact measure-local offset), EID, "
-                                     "segment address, or {from_op,item}.");
-    const Json pos = alternatives({compact_pos, segment_addr},
-                                  "Compact {measure,offset?,staff?,voice?} (1-based, exact measure-local offset), resolved when the op "
-                                  "runs, or a segment address.");
+    const Json measure_ref = alternatives({bar, eid, op_ref}, "Bar number, measure EID or {from_op,item}.");
+    const Json staff_ref = alternatives({bar, eid, op_ref}, "Staff number, staff EID or {from_op,item}.");
+    const Json anchor = alternatives({eid, compact_pos, segment_addr, op_ref}, "Position, EID or {from_op,item}.");
+    const Json pos = alternatives({compact_pos, segment_addr}, "Compact position or segment address.");
     const Json volume = Json{{"type", "number"}, {"minimum", -120}, {"maximum", 24}};
     const Json balance = Json{{"type", "number"}, {"minimum", -1}, {"maximum", 1}};
     const Json dpi = integer(36, 1200);
@@ -116,8 +115,8 @@ Json declared_tools() {
                                {"to_measure", eid},
                                {"staves", schema_array(bar)},
                                {"voices", schema_array(voice)},
-                               {"from_tick", fraction},
-                               {"to_tick", fraction},
+                               {"from_tick", offset_fraction},
+                               {"to_tick", offset_fraction},
                                {"props", schema_array(text)},
                                {"layout_boxes", boolean},
                                {"limit", limit},
@@ -125,9 +124,9 @@ Json declared_tools() {
                               json_array<Json>({}));
     auto content = long_text;
     content["description"] = std::string(phrase_grammar) + " " + phrase_grace_defaults;
-    const Json lane =
-        object({{"measure", bar}, {"offset", fraction}, {"staff", bar}, {"voice", voice}, {"pitch_mode", pitch_mode}, {"content", content}},
-               json_array<Json>({"measure", "content"}));
+    const Json lane = object(
+        {{"measure", bar}, {"offset", offset_fraction}, {"staff", bar}, {"voice", voice}, {"pitch_mode", pitch_mode}, {"content", content}},
+        json_array<Json>({"measure", "content"}));
     auto lanes = schema_array(lane);
     lanes["minItems"] = 1;
     Json op_fields = make_object<Json>();
@@ -165,14 +164,14 @@ Json declared_tools() {
     op_fields["excerpt"] = eid;
     op_fields["style"] = text;
     op_fields["at"] = pos;
-    op_fields["duration"] = fraction;
+    op_fields["duration"] = offset_fraction;
     op_fields["pitches"] = schema_array(object({{"pitch", pitch}, {"tpc", tpc}}, json_array<Json>({"pitch"})));
     op_fields["note"] = ref;
     op_fields["pitch"] = pitch;
     op_fields["tpc"] = tpc;
     op_fields["chord_rest"] = ref;
     op_fields["before"] = alternatives({bar, eid, op_ref}, "insert_measures: as measure. add_part: part EID or {from_op,item}.");
-    op_fields["count"] = n1024;
+    op_fields["count"] = described(n1024, "set_repeat_barlines: passes, at least 2.");
     op_fields["kind"] =
         Json{{"type", "string"},
              {"maxLength", 4096},
@@ -182,7 +181,7 @@ Json declared_tools() {
     op_fields["first"] = first_last;
     op_fields["last"] = first_last;
     op_fields["measure"] = measure_ref;
-    op_fields["sig"] = fraction;
+    op_fields["sig"] = time_sig;
     op_fields["key"] = key;
     op_fields["staff"] = staff_ref;
     op_fields["clef"] = text;
@@ -191,10 +190,9 @@ Json declared_tools() {
     op_fields["part"] = ref;
     op_fields["parts"] = schema_array(ref);
     op_fields["type"] = text;
-    op_fields["start"] =
-        alternatives({boolean, eid, compact_pos, segment_addr, op_ref}, "set_repeat_barlines: repeat-start flag. Spanners: as anchor.");
+    op_fields["start"] = alternatives({boolean, eid, compact_pos, segment_addr, op_ref}, "set_repeat_barlines: flag. Spanners: as anchor.");
     op_fields["end"] = alternatives({boolean, bar, eid, compact_pos, segment_addr, op_ref},
-                                    "set_repeat_barlines: repeat-end flag. add_spanner: as anchor. add_spanner_to_bar_end: as measure.");
+                                    "set_repeat_barlines: flag. add_spanner: as anchor. add_spanner_to_bar_end: as measure.");
     op_fields["props"] = schema_array(object({{"name", text}, {"value", value}}, json_array<Json>({"name", "value"})));
     op_fields["end_note"] = ref;
     op_fields["actual"] = n1024;
@@ -206,7 +204,7 @@ Json declared_tools() {
     op_fields["endings"] = schema_array(n1024);
     op_fields["closed"] = boolean;
     op_fields["principal"] = ref;
-    op_fields["event_end"] = fraction;
+    op_fields["event_end"] = offset_fraction;
     op_fields["keys"] = schema_array(pitch);
     const Json op = object(std::move(op_fields), json_array<Json>({"op"}));
     auto ops = schema_array(op);
@@ -256,7 +254,9 @@ Json declared_tools() {
          true, false);
     tool("score_edit",
          "Apply a batch atomically by default. Use runtime_info scope ops for operation shapes. excerpt scopes the batch to one "
-         "excerpt.",
+         "excerpt. Bar, staff and voice numbers are 1-based and resolve when their op runs. A position is a compact "
+         "{measure,staff?,voice?,offset?} with a bar-local offset, or a segment address; {from_op,item} names an item an earlier "
+         "op created.",
          object({{"document", document},
                  {"expected_revision", revision},
                  {"excerpt", eid},

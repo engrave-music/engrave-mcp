@@ -171,8 +171,12 @@ std::string server_instructions() {
     instructions += " Echo the last revision as expected_revision to guard writes and reads. Phrase writes and default score_edit "
                     "batches are atomic. Save a named checkpoint before experimenting and use restore_checkpoint to return to it. "
                     "Use runtime_info with scope ops for detailed edit operations or instruments to find instrument IDs. "
-                    "Request include_ids on a music window when an edit needs an element ID. Export the finished document with "
-                    "score_export by supplying format and path. Use mscz for an editable score. Close the document when finished.";
+                    "score_edit numbers resolve against the live score as each op runs, so a later op sees bars and staves an "
+                    "earlier one inserted. Address a position as {measure, staff?, voice?, offset?}; set top-level excerpt to "
+                    "scope a whole batch to one excerpt. score_read_music lists dynamics, articulations, lyrics, text and other "
+                    "markings on each bar's marks: line. Request include_ids on a music window when an edit needs an element ID. "
+                    "Export the finished document with score_export by supplying format and path. Use mscz for an editable score. "
+                    "Close the document when finished.";
     return instructions;
 }
 

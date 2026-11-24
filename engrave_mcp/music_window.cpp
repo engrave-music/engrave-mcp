@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <format>
 #include <numeric>
 #include <optional>
@@ -83,18 +84,10 @@ struct Summary {
     bool truncated = false;
 };
 
-// Bar numbers come from the selected score's outline, which lists every bar, so an endpoint outside the window still
-// resolves. An id the outline lacks reports no number instead of failing the whole read.
+// The engine numbers an endpoint's bar in the selected score even outside the window; -1 means that score lacks the bar.
 struct Bars {
-    std::optional<int> number(ElementId id) const {
-        const auto found = index.find(to_string(id));
-        if (found == index.end()) return std::nullopt;
-        return found->second;
-    }
-
     Json position(const Position &p) const {
-        const auto bar = number(p.measure);
-        Json j = {{"measure", bar ? Json(*bar) : Json(nullptr)},
+        Json j = {{"measure", detail::one_based(p.measure_index)},
                   {"offset", fraction(p.offset)},
                   {"staff", detail::one_based(p.staff)},
                   {"voice", detail::one_based(p.voice)}};
@@ -103,12 +96,11 @@ struct Bars {
     }
 
     std::string label(const Position &p) const {
-        const auto bar = number(p.measure);
         const auto where = track(p.staff, p.voice);
-        return std::format("{}@{}{}", bar ? std::to_string(*bar) : "?", fraction(p.offset), where.empty() ? "" : "(" + where + ")");
+        const auto bar = p.measure_index >= 0 ? std::to_string(static_cast<std::int64_t>(p.measure_index) + 1) : "?";
+        return std::format("{}@{}{}", bar, fraction(p.offset), where.empty() ? "" : "(" + where + ")");
     }
 
-    HashMap<std::string, int> index;
     bool ids = false;
 };
 
@@ -205,10 +197,11 @@ void payload(const ArticulationMark &mark, Json &j, std::string &label, const Ba
 }
 
 void payload(const LyricMark &mark, Json &j, std::string &label, const Bars &) {
+    const auto verse = static_cast<std::int64_t>(mark.verse) + 1;
     j["type"] = "lyric";
-    j["verse"] = mark.verse + 1;
+    j["verse"] = verse;
     j["text"] = mark.text;
-    label = std::format("lyric[{}] {}", mark.verse + 1, quote_text(mark.text));
+    label = std::format("lyric[{}] {}", verse, quote_text(mark.text));
     if (mark.syllabic != "single") {
         j["syllabic"] = mark.syllabic;
         label += " " + mark.syllabic;
@@ -319,7 +312,7 @@ void span_detail(const SpanDetail &d, Json &j, std::string &label) {
 }
 } // namespace
 
-Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline, bool ids) {
+Json music_result(const engrave::MusicWindow &w, bool ids) {
     Json out = {{"ok", true},
                 {"revision", std::to_string(w.revision)},
                 {"score", w.score.excerpt ? "excerpt" : "master"},
@@ -329,7 +322,6 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
     for (const auto *key : {"staves", "measures", "tuplets", "spanners", "voltas"}) out[key] = make_array<Json>();
     Bars bars{.ids = ids};
     HashMap<std::string, int> tuplets;
-    for (const auto &m : outline.measures) bars.index[to_string(m.id)] = m.index + 1;
     for (const auto &s : w.staves) {
         const auto clef = s.clef.empty() ? std::string() : " clef=" + s.clef;
         summary.append(
@@ -452,7 +444,7 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
         summary.append("\n");
         json_push(out["measures"], std::move(bar));
     }
-    const auto first_bar = w.measures.empty() ? 0 : w.measures.front().measure.index + 1;
+    const auto first_bar = w.measures.empty() ? 0 : w.measures.front().measure.index;
     auto span = [&](const SpanMusic &s, std::string &label) {
         Json j = {{"type", s.type}, {"start", bars.position(s.start)}, {"end", bars.position(s.end)}};
         if (s.subtype) j["subtype"] = *s.subtype;
@@ -461,21 +453,24 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
             if (s.start_element) j["start_element"] = to_string(*s.start_element);
             if (s.end_element) j["end_element"] = to_string(*s.end_element);
         }
-        const auto start_bar = bars.number(s.start.measure);
-        const bool continued = start_bar && *start_bar < first_bar;
+        const bool continued = s.start.measure_index >= 0 && s.start.measure_index < first_bar;
         const auto type = s.subtype ? s.type + "(" + *s.subtype + ")" : s.type;
         label =
-            std::format(" {}{}{} {}-{}", continued ? "\xe2\x86\x90" : "", type, id_tag(s.id, ids), bars.label(s.start), bars.label(s.end));
+            std::format("{}{}{} {}-{}", continued ? "\xe2\x86\x90" : "", type, id_tag(s.id, ids), bars.label(s.start), bars.label(s.end));
         if (s.detail) span_detail(*s.detail, j, label);
         return j;
     };
+    // Items are joined like marks: so the space-separated details of one spanner cannot read as the next one.
+    const char *separator = " ";
     if (!w.spanners.empty()) summary.append("Spanners:");
     for (const auto &s : w.spanners) {
         std::string label;
         json_push(out["spanners"], span(s, label));
-        summary.append(label);
+        summary.append(separator + label);
+        separator = " \xc2\xb7 ";
     }
     if (!w.spanners.empty()) summary.append("\n");
+    separator = " ";
     if (!w.voltas.empty()) summary.append("Voltas:");
     for (const auto &v : w.voltas) {
         std::string label;
@@ -483,7 +478,8 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
         j["closed"] = v.closed;
         j["endings"] = make_array<Json>();
         for (int ending : v.endings) json_push(j["endings"], ending);
-        summary.append(label + " endings=" + dump_json(j["endings"]) + (v.closed ? " closed" : " open"));
+        summary.append(separator + label + " endings=" + dump_json(j["endings"]) + (v.closed ? " closed" : " open"));
+        separator = " \xc2\xb7 ";
         json_push(out["voltas"], std::move(j));
     }
     if (summary.text.ends_with('\n')) summary.text.pop_back();

@@ -443,15 +443,10 @@ Json HostApi::read_music(const Json &j) {
         engrave::MusicRange range;
         range.score = *score;
         range.first_measure = json_value<int>(j, "measure", 1) - 1;
-        auto outline = (*doc)->outline(range.score);
-        if (!outline) return document_error(outline.error(), token);
-        if (range.first_measure >= outline->measure_count) {
-            return std::unexpected(invalid_error("measure: outside score; expected an existing bar"));
-        }
-        range.measure_count = json_value<int>(j, "count", std::min(4, outline->measure_count - range.first_measure));
-        if (range.measure_count > outline->measure_count - range.first_measure) {
-            return std::unexpected(invalid_error("count: window extends past score; expected a count within the remaining bars"));
-        }
+        // The engine checks the window against the score, so a narrow read never builds a whole-score outline.
+        // Only the default count may stop short at the last bar; an explicit count past it is refused.
+        range.measure_count = json_value<int>(j, "count", 4);
+        range.clamp_to_score_end = !j.contains("count");
         for (auto key : {"staves", "voices"}) {
             if (!j.contains(key)) continue;
             auto &indices = std::string_view(key) == "staves" ? range.staves : range.voices;
@@ -459,7 +454,7 @@ Json HostApi::read_music(const Json &j) {
         }
         auto window = (*doc)->read_music(range);
         if (!window) return document_error(window.error(), token);
-        return music_result(*window, *outline, json_value<bool>(j, "include_ids", false));
+        return music_result(*window, json_value<bool>(j, "include_ids", false));
     });
 }
 
@@ -606,6 +601,7 @@ Json operation_catalogue(std::string_view requested) {
                   Json{{"op", op}, {"fields", std::move(fields)}, {"required", std::move(required)}, {"example", std::move(example)}});
     };
     constexpr auto target_ref = "EID, segment address or {from_op,item}";
+    constexpr auto part_ref = "part EID or {from_op,item}";
     constexpr auto measure_ref = "1-based bar number, measure EID or {from_op,item}; a number names the bar when the operation runs";
     constexpr auto staff_ref = "1-based staff number, staff EID or {from_op,item}; a number names the staff when the operation runs";
     constexpr auto position_ref = "{measure, offset?, staff?, voice?} (1-based, resolved when the operation runs), EID, segment address or "
@@ -645,10 +641,9 @@ Json operation_catalogue(std::string_view requested) {
     add("insert_clef", {{"at", at_ref}, {"clef", "string"}}, json_array<Json>({"at", "clef"}), {{"at", first_beat()}, {"clef", "G"}});
     add("set_layout_break", {{"measure", measure_ref}, {"kind", "line | page | section | nobreak"}, {"on", "boolean"}},
         json_array<Json>({"measure", "kind", "on"}), {{"measure", 4}, {"kind", "line"}, {"on", true}});
-    add("add_part", {{"instrument_id", "string"}, {"before", "part EID or {from_op,item}"}}, json_array<Json>({"instrument_id"}),
-        {{"instrument_id", "piano"}});
-    add("remove_part", {{"part", target_ref}}, json_array<Json>({"part"}), {{"part", "A_A"}});
-    add("add_staff", {{"part", target_ref}}, json_array<Json>({"part"}), {{"part", "A_A"}});
+    add("add_part", {{"instrument_id", "string"}, {"before", part_ref}}, json_array<Json>({"instrument_id"}), {{"instrument_id", "piano"}});
+    add("remove_part", {{"part", part_ref}}, json_array<Json>({"part"}), {{"part", "A_A"}});
+    add("add_staff", {{"part", part_ref}}, json_array<Json>({"part"}), {{"part", "A_A"}});
     add("remove_staff", {{"staff", staff_ref}}, json_array<Json>({"staff"}), {{"staff", 2}});
     add("generate_excerpts", {{"parts", "array of part EID or {from_op,item}"}}, json_array<Json>({"parts"}),
         {{"parts", json_array<Json>({"A_A"})}});
@@ -667,7 +662,7 @@ Json operation_catalogue(std::string_view requested) {
          {"props", json_array<Json>({Json{{"name", "symbol"}, {"value", "articStaccatoAbove"}}})}});
     add("add_spanner_to_bar_end", {{"type", "string"}, {"start", position_ref}, {"end", measure_ref}, {"props", "array of {name, value}"}},
         json_array<Json>({"type", "start", "end"}), {{"type", "Pedal"}, {"start", Json{{"measure", 1}}}, {"end", 2}});
-    add("set_repeat_barlines", {{"measure", measure_ref}, {"start", "boolean"}, {"end", "boolean"}, {"count", "integer, 1 through 1024"}},
+    add("set_repeat_barlines", {{"measure", measure_ref}, {"start", "boolean"}, {"end", "boolean"}, {"count", "integer, 2 through 1024"}},
         json_array<Json>({"measure"}), {{"measure", 1}, {"start", true}});
     add("add_volta",
         {{"first_measure", measure_ref},

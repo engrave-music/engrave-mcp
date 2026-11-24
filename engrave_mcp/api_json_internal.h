@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -11,8 +12,8 @@ namespace music::api::detail {
 
 inline HostError invalid_error(std::string message) { return HostError{"InvalidArgument", std::move(message)}; }
 
-// Engine staff and voice indices are 0-based with -1 for "none"; the wire is 1-based with null for "none".
-inline Json one_based(int index) { return index >= 0 ? Json(index + 1) : Json(nullptr); }
+// Engine indices are 0-based with -1 for "none"; the wire is 1-based with null for "none". Widened so INT32_MAX + 1 cannot overflow.
+inline Json one_based(std::int64_t index) { return index >= 0 ? Json(index + 1) : Json(nullptr); }
 
 Result<void> validate_tool(std::string_view name, const Json &value);
 Result<void> validate_op(const Json &value, usize index);

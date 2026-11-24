@@ -201,7 +201,7 @@
               "type": "string"
             },
             "from_tick": {
-              "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
+              "description": "Exact whole-note fraction, e.g. 3/8.",
               "maxLength": 42,
               "type": "string"
             },
@@ -238,7 +238,7 @@
               "type": "string"
             },
             "to_tick": {
-              "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
+              "description": "Exact whole-note fraction, e.g. 3/8.",
               "maxLength": 42,
               "type": "string"
             },
@@ -350,7 +350,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Apply a batch atomically by default. Use runtime_info scope ops for operation shapes. excerpt scopes the batch to one excerpt.",
+    "description": "Apply a batch atomically by default. Use runtime_info scope ops for operation shapes. excerpt scopes the batch to one excerpt. Bar, staff and voice numbers are 1-based and resolve when their op runs. A position is a compact {measure,staff?,voice?,offset?} with a bar-local offset, or a segment address; {from_op,item} names an item an earlier op created.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -397,7 +397,6 @@
                         "type": "integer"
                       },
                       "offset": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -440,7 +439,6 @@
                         "type": "integer"
                       },
                       "tick": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -481,7 +479,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "Compact position {measure,offset?,staff?,voice?} (1-based, exact measure-local offset), EID, segment address, or {from_op,item}."
+                "description": "Position, EID or {from_op,item}."
               },
               "at": {
                 "anyOf": [
@@ -494,7 +492,6 @@
                         "type": "integer"
                       },
                       "offset": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -537,7 +534,6 @@
                         "type": "integer"
                       },
                       "tick": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -558,7 +554,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "Compact {measure,offset?,staff?,voice?} (1-based, exact measure-local offset), resolved when the op runs, or a segment address."
+                "description": "Compact position or segment address."
               },
               "before": {
                 "anyOf": [
@@ -604,7 +600,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "Persistent EID, layout address, or batch-local reference {from_op,item}."
+                "description": "EID, segment address or {from_op,item}."
               },
               "clef": {
                 "maxLength": 4096,
@@ -614,12 +610,13 @@
                 "type": "boolean"
               },
               "count": {
+                "description": "set_repeat_barlines: passes, at least 2.",
                 "maximum": 1024,
                 "minimum": 1,
                 "type": "integer"
               },
               "duration": {
-                "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
+                "description": "Exact whole-note fraction, e.g. 3/8.",
                 "maxLength": 42,
                 "type": "string"
               },
@@ -646,7 +643,6 @@
                         "type": "integer"
                       },
                       "offset": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -689,7 +685,6 @@
                         "type": "integer"
                       },
                       "tick": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -730,7 +725,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "set_repeat_barlines: repeat-end flag. add_spanner: as anchor. add_spanner_to_bar_end: as measure."
+                "description": "set_repeat_barlines: flag. add_spanner: as anchor. add_spanner_to_bar_end: as measure."
               },
               "end_note": {
                 "anyOf": [
@@ -742,7 +737,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "Persistent EID, layout address, or batch-local reference {from_op,item}."
+                "description": "EID, segment address or {from_op,item}."
               },
               "endings": {
                 "items": {
@@ -753,7 +748,7 @@
                 "type": "array"
               },
               "event_end": {
-                "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
+                "description": "Exact whole-note fraction, e.g. 3/8.",
                 "maxLength": 42,
                 "type": "string"
               },
@@ -795,7 +790,6 @@
                         "type": "integer"
                       },
                       "tick": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -870,7 +864,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "1-based bar number resolved when the op runs, measure EID, or {from_op,item}."
+                "description": "Bar number, measure EID or {from_op,item}."
               },
               "instrument_id": {
                 "maxLength": 4096,
@@ -928,7 +922,6 @@
                         "type": "integer"
                       },
                       "tick": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -1003,7 +996,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "1-based bar number resolved when the op runs, measure EID, or {from_op,item}."
+                "description": "Bar number, measure EID or {from_op,item}."
               },
               "measure": {
                 "anyOf": [
@@ -1037,7 +1030,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "1-based bar number resolved when the op runs, measure EID, or {from_op,item}."
+                "description": "Bar number, measure EID or {from_op,item}."
               },
               "normal": {
                 "maximum": 1024,
@@ -1054,7 +1047,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "Persistent EID, layout address, or batch-local reference {from_op,item}."
+                "description": "EID, segment address or {from_op,item}."
               },
               "on": {
                 "type": "boolean"
@@ -1102,7 +1095,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "Persistent EID, layout address, or batch-local reference {from_op,item}."
+                "description": "EID, segment address or {from_op,item}."
               },
               "parts": {
                 "items": {
@@ -1115,7 +1108,7 @@
                       "type": "object"
                     }
                   ],
-                  "description": "Persistent EID, layout address, or batch-local reference {from_op,item}."
+                  "description": "EID, segment address or {from_op,item}."
                 },
                 "type": "array"
               },
@@ -1156,7 +1149,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "Persistent EID, layout address, or batch-local reference {from_op,item}."
+                "description": "EID, segment address or {from_op,item}."
               },
               "property": {
                 "maxLength": 4096,
@@ -1194,7 +1187,7 @@
                           "type": "null"
                         }
                       ],
-                      "description": "Native JSON value matching the engine property or style descriptor."
+                      "description": "Native JSON value for the property or style."
                     }
                   },
                   "required": [
@@ -1206,7 +1199,7 @@
                 "type": "array"
               },
               "sig": {
-                "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
+                "description": "Written time signature, e.g. 6/8; keeps its numerator and denominator.",
                 "maxLength": 42,
                 "type": "string"
               },
@@ -1242,7 +1235,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "1-based staff number resolved when the op runs, staff EID, or {from_op,item}."
+                "description": "Staff number, staff EID or {from_op,item}."
               },
               "start": {
                 "anyOf": [
@@ -1262,7 +1255,6 @@
                         "type": "integer"
                       },
                       "offset": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -1305,7 +1297,6 @@
                         "type": "integer"
                       },
                       "tick": {
-                        "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
                         "maxLength": 42,
                         "type": "string"
                       },
@@ -1346,7 +1337,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "set_repeat_barlines: repeat-start flag. Spanners: as anchor."
+                "description": "set_repeat_barlines: flag. Spanners: as anchor."
               },
               "style": {
                 "maxLength": 4096,
@@ -1362,7 +1353,7 @@
                     "type": "object"
                   }
                 ],
-                "description": "Persistent EID, layout address, or batch-local reference {from_op,item}."
+                "description": "EID, segment address or {from_op,item}."
               },
               "text": {
                 "maxLength": 65536,
@@ -1401,7 +1392,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "Native JSON value matching the engine property or style descriptor."
+                "description": "Native JSON value for the property or style."
               }
             },
             "required": [
@@ -1787,7 +1778,7 @@
                 "type": "integer"
               },
               "offset": {
-                "description": "Exact whole-note fraction, e.g. 0 or 3/8. Written time signatures retain their numerator and denominator.",
+                "description": "Exact whole-note fraction, e.g. 3/8.",
                 "maxLength": 42,
                 "type": "string"
               },
