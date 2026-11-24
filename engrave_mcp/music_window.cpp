@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <numeric>
+#include <optional>
 
 #include "api_json_internal.h"
 #include "containers.h"
@@ -41,9 +43,29 @@ Fraction multiply(Fraction a, Fraction b) {
 
 std::string id_tag(ElementId id, bool ids) { return ids ? "#" + to_string(id) : ""; }
 
+std::string id_tag(const std::optional<ElementId> &id, bool ids) { return id ? id_tag(*id, ids) : ""; }
+
+// User-authored text is always quoted and escaped in the summary, so it can never start a line such as a fake "Bar".
+std::string quote_text(std::string_view text) { return '"' + escape_text(text, '"') + '"'; }
+
+bool is_token(std::string_view text) {
+    return !text.empty() && std::ranges::all_of(text, [](unsigned char c) { return std::isalnum(c) || c == '_'; });
+}
+
+// "s1v2", "s1" or "" for whichever of the staff and voice indices is set.
+std::string track(int staff, int voice) {
+    std::string out;
+    if (staff >= 0) out = std::format("s{}", staff + 1);
+    if (voice >= 0) out += std::format("v{}", voice + 1);
+    return out;
+}
+
 struct Summary {
     void append(std::string_view part) {
         if (truncated) return;
+        // Serialization replaces each invalid byte with a 3-byte U+FFFD, so repair before measuring against the cap.
+        std::string repaired;
+        if (!valid_utf8(part)) part = repaired = replace_invalid_utf8(part);
         constexpr std::string_view marker = "\n... [truncated]";
         constexpr usize limit = 32768;
         if (part.size() <= limit - text.size()) {
@@ -59,6 +81,35 @@ struct Summary {
 
     std::string text;
     bool truncated = false;
+};
+
+// Bar numbers come from the selected score's outline, which lists every bar, so an endpoint outside the window still
+// resolves. An id the outline lacks reports no number instead of failing the whole read.
+struct Bars {
+    std::optional<int> number(ElementId id) const {
+        const auto found = index.find(to_string(id));
+        if (found == index.end()) return std::nullopt;
+        return found->second;
+    }
+
+    Json position(const Position &p) const {
+        const auto bar = number(p.measure);
+        Json j = {{"measure", bar ? Json(*bar) : Json(nullptr)},
+                  {"offset", fraction(p.offset)},
+                  {"staff", detail::one_based(p.staff)},
+                  {"voice", detail::one_based(p.voice)}};
+        if (ids) j["measure_id"] = to_string(p.measure);
+        return j;
+    }
+
+    std::string label(const Position &p) const {
+        const auto bar = number(p.measure);
+        const auto where = track(p.staff, p.voice);
+        return std::format("{}@{}{}", bar ? std::to_string(*bar) : "?", fraction(p.offset), where.empty() ? "" : "(" + where + ")");
+    }
+
+    HashMap<std::string, int> index;
+    bool ids = false;
 };
 
 Json notes(const std::vector<NoteMusic> &notes, bool ids, std::string &label) {
@@ -112,6 +163,160 @@ Json graces(const std::vector<GraceMusic> &group, bool ids, std::string &label) 
     }
     return result;
 }
+
+void payload(const DynamicMark &mark, Json &j, std::string &label, const Bars &) {
+    j["type"] = "dynamic";
+    j["value"] = mark.value;
+    label = is_token(mark.value) ? mark.value : "dynamic " + quote_text(mark.value);
+    if (mark.custom_text) {
+        j["custom_text"] = *mark.custom_text;
+        label += " " + quote_text(*mark.custom_text);
+    }
+}
+
+void payload(const FermataMark &mark, Json &j, std::string &label, const Bars &) {
+    j["type"] = "fermata";
+    j["symbol"] = mark.symbol;
+    label = "fermata(" + mark.symbol + ")";
+}
+
+void payload(const HarmonyMark &mark, Json &j, std::string &label, const Bars &) {
+    j["type"] = "harmony";
+    j["text"] = mark.text;
+    label = "harmony " + quote_text(mark.text);
+}
+
+void payload(const TextMark &mark, Json &j, std::string &label, const Bars &) {
+    std::string_view kind = "expression";
+    if (mark.kind == TextMark::Kind::STAFF) kind = "staff_text";
+    if (mark.kind == TextMark::Kind::SYSTEM) kind = "system_text";
+    if (mark.kind == TextMark::Kind::REHEARSAL) kind = "rehearsal_mark";
+    j["type"] = "text";
+    j["kind"] = kind;
+    j["text"] = mark.text;
+    label = std::string(kind) + " " + quote_text(mark.text);
+}
+
+void payload(const ArticulationMark &mark, Json &j, std::string &label, const Bars &) {
+    j["type"] = "articulation";
+    j["symbol"] = mark.symbol;
+    if (mark.ornament) j["ornament"] = true;
+    label = (mark.ornament ? "ornament(" : "artic(") + mark.symbol + ")";
+}
+
+void payload(const LyricMark &mark, Json &j, std::string &label, const Bars &) {
+    j["type"] = "lyric";
+    j["verse"] = mark.verse + 1;
+    j["text"] = mark.text;
+    label = std::format("lyric[{}] {}", mark.verse + 1, quote_text(mark.text));
+    if (mark.syllabic != "single") {
+        j["syllabic"] = mark.syllabic;
+        label += " " + mark.syllabic;
+    }
+    if (mark.melisma_ticks) {
+        j["melisma"] = fraction(*mark.melisma_ticks);
+        label += " melisma=" + fraction(*mark.melisma_ticks);
+    }
+}
+
+void payload(const ArpeggioMark &mark, Json &j, std::string &label, const Bars &) {
+    j["type"] = "arpeggio";
+    j["subtype"] = mark.subtype;
+    label = "arpeggio(" + mark.subtype + ")";
+}
+
+void payload(const TremoloMark &mark, Json &j, std::string &label, const Bars &bars) {
+    j["type"] = "tremolo";
+    j["subtype"] = mark.subtype;
+    label = "tremolo(" + mark.subtype + ")";
+    if (!mark.two_chord) return;
+    j["two_chord"] = true;
+    if (mark.end) {
+        j["end"] = bars.position(*mark.end);
+        label += "-" + bars.label(*mark.end);
+    }
+    if (bars.ids && mark.end_event) j["end_event"] = to_string(*mark.end_event);
+}
+
+void payload(const ClefMark &mark, Json &j, std::string &label, const Bars &) {
+    j["type"] = "clef";
+    j["clef"] = mark.clef;
+    label = "clef(" + mark.clef + ")";
+}
+
+void payload(const BarlineMark &mark, Json &j, std::string &label, const Bars &) {
+    j["type"] = "barline";
+    j["subtype"] = mark.subtype;
+    label = "barline(" + mark.subtype + ")";
+}
+
+// Staff and voice appear only where the scope has them. An instrument-wide marking keeps the staff it is anchored on,
+// which may lie outside the selected staves.
+Json marking(const MarkMusic &mark, const Bars &bars, std::string &label) {
+    const bool ids = bars.ids;
+    Json j = {{"offset", fraction(mark.offset)}};
+    std::string prefix;
+    switch (mark.scope) {
+        case MarkScope::SYSTEM: j["scope"] = "system"; break;
+        case MarkScope::INSTRUMENT: {
+            j["scope"] = "instrument";
+            if (mark.staff >= 0) j["staff"] = mark.staff + 1;
+            const auto anchor = track(mark.staff, -1);
+            prefix = anchor.empty() ? "inst " : "inst(" + anchor + ") ";
+            break;
+        }
+        case MarkScope::STAFF:
+            j["scope"] = "staff";
+            j["staff"] = mark.staff + 1;
+            prefix = track(mark.staff, -1) + " ";
+            break;
+        case MarkScope::VOICE:
+            j["scope"] = "voice";
+            j["staff"] = mark.staff + 1;
+            j["voice"] = mark.voice + 1;
+            prefix = track(mark.staff, mark.voice) + " ";
+            break;
+    }
+    if (ids && mark.id) j["id"] = to_string(*mark.id);
+    std::string grace;
+    if (mark.attachment) {
+        Json attachment = make_object<Json>();
+        if (ids && mark.attachment->event) attachment["event"] = to_string(*mark.attachment->event);
+        if (const auto &g = mark.attachment->grace) {
+            const auto side = g->after ? "after" : "before";
+            attachment["grace"] = Json{{"side", side}, {"ordinal", g->ordinal + 1}};
+            if (ids && g->chord) attachment["grace"]["id"] = to_string(*g->chord);
+            grace = std::format("grace({}:{}) ", side, g->ordinal + 1);
+        }
+        if (!attachment.get_object().empty()) j["attachment"] = std::move(attachment);
+    }
+    std::string body;
+    std::visit([&](const auto &value) { payload(value, j, body, bars); }, mark.payload);
+    label = prefix + "@" + fraction(mark.offset) + " " + grace + body + id_tag(mark.id, ids);
+    return j;
+}
+
+void span_detail(const SpanDetail &d, Json &j, std::string &label) {
+    if (d.direction) {
+        j["direction"] = *d.direction;
+        label += " " + *d.direction;
+    }
+    if (d.niente) {
+        j["niente"] = true;
+        label += " niente";
+    }
+    for (const auto &[key, text] :
+         {std::pair{"text", &d.text}, {"begin_text", &d.begin_text}, {"continue_text", &d.continue_text}, {"end_text", &d.end_text}}) {
+        if (!*text || (*text)->empty()) continue;
+        j[key] = **text;
+        label += std::format(" {}={}", key, quote_text(**text));
+    }
+    for (const auto &[key, hook] : {std::pair{"begin_hook", &d.begin_hook}, {"end_hook", &d.end_hook}}) {
+        if (!*hook || (*hook)->empty()) continue;
+        j[key] = **hook;
+        label += std::format(" {}={}", key, **hook);
+    }
+}
 } // namespace
 
 Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline, bool ids) {
@@ -122,17 +327,22 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
     Summary summary;
     if (w.score.excerpt) summary.append("Excerpt " + to_string(*w.score.excerpt) + "\n");
     for (const auto *key : {"staves", "measures", "tuplets", "spanners", "voltas"}) out[key] = make_array<Json>();
-    HashMap<std::string, int> bars, tuplets;
-    for (const auto &m : outline.measures) bars[to_string(m.id)] = m.index + 1;
+    Bars bars{.ids = ids};
+    HashMap<std::string, int> tuplets;
+    for (const auto &m : outline.measures) bars.index[to_string(m.id)] = m.index + 1;
     for (const auto &s : w.staves) {
-        summary.append(std::format("Staff {} {} time={} key={}\n", s.staff + 1, s.part_name, fraction(s.time_sig, true), s.key));
-        json_push(out["staves"], Json{{"staff", s.staff + 1},
-                                      {"part_name", s.part_name},
-                                      {"instrument_id", s.instrument_id},
-                                      {"time_sig", fraction(s.time_sig, true)},
-                                      {"key", s.key},
-                                      {"uses_drumset", s.uses_drumset},
-                                      {"transpose", {{"diatonic", s.transpose.diatonic}, {"chromatic", s.transpose.chromatic}}}});
+        const auto clef = s.clef.empty() ? std::string() : " clef=" + s.clef;
+        summary.append(
+            std::format("Staff {} {}{} time={} key={}\n", s.staff + 1, escape_text(s.part_name), clef, fraction(s.time_sig, true), s.key));
+        Json staff = {{"staff", s.staff + 1},
+                      {"part_name", s.part_name},
+                      {"instrument_id", s.instrument_id},
+                      {"time_sig", fraction(s.time_sig, true)},
+                      {"key", s.key},
+                      {"uses_drumset", s.uses_drumset},
+                      {"transpose", {{"diatonic", s.transpose.diatonic}, {"chromatic", s.transpose.chromatic}}}};
+        if (!s.clef.empty()) staff["clef"] = s.clef;
+        json_push(out["staves"], std::move(staff));
     }
     for (const auto &t : w.tuplets) {
         int number = static_cast<int>(tuplets.size() + 1);
@@ -154,18 +364,35 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
         summary.append(std::format("Bar {}{} len={}", m.measure.index + 1, id_tag(m.measure.id, ids), fraction(m.measure.duration)));
         if (m.repeat_start) summary.append(" |:");
         for (const auto &s : m.signature_changes) {
-            Json j = {{"type", s.type}, {"tick", fraction(s.tick)}, {"staff", s.staff + 1}, {"key", s.key}, {"bpm", s.bpm},
+            Json j = {{"type", s.type}, {"tick", fraction(s.tick)}, {"staff", detail::one_based(s.staff)}, {"key", s.key}, {"bpm", s.bpm},
                       {"text", s.text}};
+            if (ids && s.id) j["id"] = to_string(*s.id);
             const auto offset = fraction(add(s.tick, {-m.measure.tick.num, m.measure.tick.den}));
+            const auto tag = id_tag(s.id, ids);
             if (s.timesig) {
                 j["timesig"] = fraction(*s.timesig, true);
-                summary.append(std::format(" time(s{})={}@{}", s.staff + 1, fraction(*s.timesig, true), offset));
+                summary.append(std::format(" time(s{})={}@{}{}", s.staff + 1, fraction(*s.timesig, true), offset, tag));
             } else if (s.type == "KeySig") {
-                summary.append(std::format(" key(s{})={}@{}", s.staff + 1, s.key, offset));
+                summary.append(std::format(" key(s{})={}@{}{}", s.staff + 1, s.key, offset, tag));
             } else if (s.type == "Tempo") {
-                summary.append(std::format(" tempo={}bpm@{}", s.bpm, offset));
+                const auto words = s.text.empty() ? std::string() : quote_text(s.text) + " ";
+                summary.append(std::format(" tempo={}{}bpm@{}{}", words, s.bpm, offset, tag));
             }
             json_push(bar["signature_changes"], std::move(j));
+        }
+        // The repeat end closes the last voice line, or the Bar line when no voice is selected, never the marks line.
+        const auto repeat_end = !m.repeat_end ? std::string() : m.repeat_count > 2 ? " :|x" + std::to_string(m.repeat_count) : " :|";
+        if (m.voices.empty()) summary.append(repeat_end);
+        if (!m.markings.empty()) {
+            bar["markings"] = make_array<Json>();
+            summary.append("\n  marks:");
+            const char *separator = " ";
+            for (const auto &mark : m.markings) {
+                std::string label;
+                json_push(bar["markings"], marking(mark, bars, label));
+                summary.append(separator + label);
+                separator = " \xc2\xb7 ";
+            }
         }
         for (const auto &v : m.voices) {
             Json voice = {{"staff", v.staff + 1}, {"voice", v.voice + 1}, {"events", make_array<Json>()}};
@@ -221,46 +448,42 @@ Json music_result(const engrave::MusicWindow &w, const engrave::Outline &outline
             summary.append(std::string(open_tuplets.size(), ')'));
             json_push(bar["voices"], std::move(voice));
         }
-        if (m.repeat_end) summary.append(m.repeat_count > 2 ? " :|x" + std::to_string(m.repeat_count) : " :|");
+        if (!m.voices.empty()) summary.append(repeat_end);
         summary.append("\n");
         json_push(out["measures"], std::move(bar));
     }
-    auto position = [&](const Position &p) {
-        Json j = {
-            {"measure", bars.at(to_string(p.measure))}, {"offset", fraction(p.offset)}, {"staff", p.staff + 1}, {"voice", p.voice + 1}};
-        if (ids) j["measure_id"] = to_string(p.measure);
-        return j;
-    };
-    auto position_label = [&](const Position &p) {
-        return std::format("{}@{}(s{}v{})", bars.at(to_string(p.measure)), fraction(p.offset), p.staff + 1, p.voice + 1);
-    };
-    auto span_label = [&](const SpanMusic &s) {
-        const auto type = s.subtype ? s.type + "(" + *s.subtype + ")" : s.type;
-        return std::format(" {}{} {}-{}", type, id_tag(s.id, ids), position_label(s.start), position_label(s.end));
-    };
-    auto span = [&](const SpanMusic &s) {
-        Json j = {{"type", s.type}, {"start", position(s.start)}, {"end", position(s.end)}};
+    const auto first_bar = w.measures.empty() ? 0 : w.measures.front().measure.index + 1;
+    auto span = [&](const SpanMusic &s, std::string &label) {
+        Json j = {{"type", s.type}, {"start", bars.position(s.start)}, {"end", bars.position(s.end)}};
         if (s.subtype) j["subtype"] = *s.subtype;
         if (ids) {
             j["id"] = to_string(s.id);
             if (s.start_element) j["start_element"] = to_string(*s.start_element);
             if (s.end_element) j["end_element"] = to_string(*s.end_element);
         }
+        const auto start_bar = bars.number(s.start.measure);
+        const bool continued = start_bar && *start_bar < first_bar;
+        const auto type = s.subtype ? s.type + "(" + *s.subtype + ")" : s.type;
+        label =
+            std::format(" {}{}{} {}-{}", continued ? "\xe2\x86\x90" : "", type, id_tag(s.id, ids), bars.label(s.start), bars.label(s.end));
+        if (s.detail) span_detail(*s.detail, j, label);
         return j;
     };
     if (!w.spanners.empty()) summary.append("Spanners:");
     for (const auto &s : w.spanners) {
-        json_push(out["spanners"], span(s));
-        summary.append(span_label(s));
+        std::string label;
+        json_push(out["spanners"], span(s, label));
+        summary.append(label);
     }
     if (!w.spanners.empty()) summary.append("\n");
     if (!w.voltas.empty()) summary.append("Voltas:");
     for (const auto &v : w.voltas) {
-        Json j = span(v.span);
+        std::string label;
+        Json j = span(v.span, label);
         j["closed"] = v.closed;
         j["endings"] = make_array<Json>();
         for (int ending : v.endings) json_push(j["endings"], ending);
-        summary.append(span_label(v.span) + " endings=" + dump_json(j["endings"]) + (v.closed ? " closed" : " open"));
+        summary.append(label + " endings=" + dump_json(j["endings"]) + (v.closed ? " closed" : " open"));
         json_push(out["voltas"], std::move(j));
     }
     if (summary.text.ends_with('\n')) summary.text.pop_back();

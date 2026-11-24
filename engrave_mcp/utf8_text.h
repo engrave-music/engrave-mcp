@@ -2,10 +2,43 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
 #include <string>
 #include <string_view>
 
 namespace music {
+
+// Escapes backslash, [quote] (0 escapes none), ASCII controls and the Unicode line breaks NEL, LS and PS, so the
+// result never breaks a line or closes its quotes in a one-line text rendering.
+inline std::string escape_text(std::string_view text, char quote = 0) {
+    std::string out;
+    out.reserve(text.size());
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const auto c = static_cast<unsigned char>(text[i]);
+        const auto rest = text.substr(i);
+        if (c == '\n') {
+            out += "\\n";
+        } else if (c == '\r') {
+            out += "\\r";
+        } else if (c == '\t') {
+            out += "\\t";
+        } else if (c < 0x20 || c == 0x7f) {
+            out += std::format("\\u{:04x}", static_cast<unsigned>(c));
+        } else if (c == '\\' || (quote && c == static_cast<unsigned char>(quote))) {
+            out += '\\';
+            out += static_cast<char>(c);
+        } else if (rest.starts_with("\xc2\x85")) {
+            out += "\\u0085";
+            i += 1;
+        } else if (rest.starts_with("\xe2\x80\xa8") || rest.starts_with("\xe2\x80\xa9")) {
+            out += rest[2] == '\xa8' ? "\\u2028" : "\\u2029";
+            i += 2;
+        } else {
+            out += static_cast<char>(c);
+        }
+    }
+    return out;
+}
 
 inline bool utf8_exceeds_length(std::string_view text, std::size_t limit) {
     return text.size() > limit &&

@@ -133,6 +133,76 @@ int chord_pitch(const Json &bar, int staff, int voice, std::string_view offset) 
     return -1;
 }
 
+// The marking of a read_music bar whose `key` field equals `value`, or null.
+const Json *find_marking(const Json &bar, std::string_view key, std::string_view value) {
+    if (!bar.contains("markings")) return nullptr;
+    for (const auto &mark : bar.at("markings").get_array()) {
+        if (mark.contains(key) && mark.at(key) == value) return &mark;
+    }
+    return nullptr;
+}
+
+// Two piano staves whose first bar carries one marking of every family; eids name the elements the tests check.
+constexpr std::string_view expressive_score = R"(<museScore version="5.00"><Score><Division>480</Division>
+<Part id="1"><Staff/><trackName>Upper</trackName><Instrument id="piano"><longName>Upper</longName></Instrument></Part>
+<Part id="2"><Staff/><trackName>Lower</trackName><Instrument id="piano"><longName>Lower</longName></Instrument></Part>
+<Staff id="1">
+<Measure><startRepeat/><voice>
+<BarLine><subtype>start-repeat</subtype></BarLine>
+<Clef><eid>B_A</eid><concertClefType>G</concertClefType><transposingClefType>G</transposingClefType><isHeader>1</isHeader></Clef>
+<TimeSig><eid>B_B</eid><sigN>4</sigN><sigD>4</sigD></TimeSig>
+<KeySig><eid>B_C</eid><concertKey>-2</concertKey></KeySig>
+<Tempo><eid>B_D</eid><tempo>2</tempo><text>Andante</text></Tempo>
+<SystemText><eid>B_E</eid><text>With motion</text></SystemText>
+<RehearsalMark><eid>B_F</eid><text>A</text></RehearsalMark>
+<StaffText><eid>B_G</eid><text><b>leggiero</b> &amp; clear</text></StaffText>
+<Expression><eid>B_H</eid><text>dolce</text></Expression>
+<Harmony><eid>B_I</eid><harmonyInfo><root>14</root><name>m7</name></harmonyInfo></Harmony>
+<Dynamic><eid>B_J</eid><subtype>p</subtype></Dynamic>
+<Fermata><eid>B_K</eid><subtype>fermataAbove</subtype></Fermata>
+<Chord><eid>B_L</eid><durationType>16th</durationType><acciaccatura/>
+<Note><pitch>62</pitch><tpc>16</tpc></Note><Articulation><eid>B_M</eid><subtype>articStaccatoAbove</subtype></Articulation></Chord>
+<Chord><eid>B_N</eid><durationType>16th</durationType><acciaccatura/>
+<Note><pitch>64</pitch><tpc>18</tpc></Note><Ornament><eid>B_O</eid><subtype>ornamentTurn</subtype></Ornament></Chord>
+<Chord><eid>B_i</eid><durationType>eighth</durationType><grace8after/>
+<Note><pitch>67</pitch><tpc>15</tpc></Note><Articulation><eid>B_j</eid><subtype>articTenutoAbove</subtype></Articulation></Chord>
+<Chord><eid>B_P</eid><durationType>quarter</durationType>
+<Note><pitch>65</pitch><tpc>13</tpc></Note><Note><pitch>69</pitch><tpc>17</tpc></Note>
+<Articulation><eid>B_Q</eid><subtype>articAccentAbove</subtype></Articulation>
+<Ornament><eid>B_R</eid><subtype>ornamentMordent</subtype></Ornament>
+<Lyrics><eid>B_S</eid><syllabic>begin</syllabic><ticks_f>1/4</ticks_f><text>glo</text></Lyrics>
+<Lyrics><eid>B_T</eid><no>1</no><text>light</text></Lyrics>
+<Arpeggio><eid>B_U</eid><subtype>1</subtype></Arpeggio>
+<TremoloSingleChord><eid>B_V</eid><subtype>r16</subtype></TremoloSingleChord>
+</Chord>
+<BarLine><subtype>normal</subtype></BarLine>
+<Clef><eid>B_W</eid><concertClefType>F</concertClefType><transposingClefType>F</transposingClefType></Clef>
+<Dynamic><eid>B_X</eid><subtype>mf</subtype><text>mezzoforte</text></Dynamic>
+<Chord><durationType>quarter</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note>
+<Lyrics><eid>B_Y</eid><syllabic>middle</syllabic><text>ri</text></Lyrics></Chord>
+<Chord><durationType>half</durationType><Note><pitch>62</pitch><tpc>16</tpc></Note>
+<Lyrics><eid>B_Z</eid><syllabic>end</syllabic><text>a</text></Lyrics></Chord>
+<BarLine><eid>B_a</eid><subtype>double</subtype></BarLine>
+</voice><voice>
+<Dynamic><eid>B_b</eid><subtype>sfz</subtype><voiceAssignment>currentVoiceOnly</voiceAssignment></Dynamic>
+<Chord><durationType>whole</durationType><Note><pitch>55</pitch><tpc>15</tpc></Note></Chord>
+</voice></Measure>
+<Measure><endRepeat>2</endRepeat><voice>
+<Dynamic><eid>B_c</eid><subtype>other</subtype><text>quasi niente</text></Dynamic>
+<Chord><eid>B_d</eid><durationType>whole</durationType><duration>1/2</duration><Note><pitch>64</pitch><tpc>18</tpc></Note>
+<TremoloTwoChord><eid>B_e</eid><subtype>c16</subtype></TremoloTwoChord></Chord>
+<Chord><eid>B_f</eid><durationType>whole</durationType><duration>1/2</duration><Note><eid>B_k</eid><pitch>67</pitch><tpc>15</tpc></Note></Chord>
+<BarLine><subtype>end-repeat</subtype></BarLine>
+</voice></Measure>
+<Measure><voice><Chord><durationType>whole</durationType><Note><eid>B_l</eid><pitch>67</pitch><tpc>15</tpc>
+<Glissando><eid>B_m</eid><startElement>B_k</startElement><endElement>B_l</endElement><track>0</track><diagonal>1</diagonal></Glissando>
+</Note></Chord></voice></Measure></Staff>
+<Staff id="2"><Measure><voice><StaffText><eid>B_h</eid><text>bass only</text></StaffText>
+<Rest><durationType>measure</durationType><duration>1/1</duration></Rest></voice></Measure>
+<Measure><voice><Rest><durationType>measure</durationType><duration>1/1</duration></Rest></voice></Measure>
+<Measure><voice><Rest><durationType>measure</durationType><duration>1/1</duration></Rest></voice></Measure></Staff>
+</Score></museScore>)";
+
 // The numeric pageWidth style a native MSCX export of the master or an excerpt writes, or nullopt when it omits it.
 std::optional<double> exported_page_width(HostApi &api, const Json &doc, std::optional<Json> excerpt = {}) {
     std::string xml;
@@ -1053,6 +1123,540 @@ TEST(MusicWindow, HairpinSubtypesInToolReadback) {
     const auto &summary = window.at("summary").get<std::string>();
     EXPECT_NE(summary.find("HairPin(crescendo)#" + spanners[0].at("id").get<std::string>()), std::string::npos);
     EXPECT_NE(summary.find("HairPin(diminuendo)#" + spanners[1].at("id").get<std::string>()), std::string::npos);
+}
+
+TEST(MusicWindow, ExpressiveReadbackAcrossMarkingFamilies) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto doc = ok(api, "score_open", {{"data", b64(std::string(expressive_score))}, {"format", "mscx"}}).at("document");
+    const auto plain = api.read_music({{"document", doc}, {"count", 3}});
+    const auto tagged = api.read_music({{"document", doc}, {"count", 3}, {"include_ids", true}});
+    ASSERT_EQ(plain.at("ok"), true) << music::dump_json(plain);
+    ASSERT_EQ(tagged.at("ok"), true) << music::dump_json(tagged);
+    EXPECT_EQ(tagged.at("staves")[0].at("clef"), "G");
+
+    const auto &bar = tagged.at("measures")[0];
+    const auto &second = tagged.at("measures")[1];
+    const auto by = [](const Json &in, const char *key, const char *value) {
+        const auto *found = find_marking(in, key, value);
+        return found ? *found : Json(nullptr);
+    };
+    const auto mark = [&](const Json &in, const char *id) { return by(in, "id", id); };
+    const auto voice_one = [](Json fields) {
+        music::json_merge(fields, Json{{"scope", "voice"}, {"staff", 1}, {"voice", 1}});
+        return fields;
+    };
+    // Dynamics and expressions default to the whole instrument; their staff is the anchor.
+    EXPECT_EQ(mark(bar, "B_J"),
+              (Json{{"offset", "0"}, {"scope", "instrument"}, {"staff", 1}, {"id", "B_J"}, {"type", "dynamic"}, {"value", "p"}}));
+    EXPECT_EQ(mark(bar, "B_X"), (Json{{"offset", "1/4"},
+                                      {"scope", "instrument"},
+                                      {"staff", 1},
+                                      {"id", "B_X"},
+                                      {"type", "dynamic"},
+                                      {"value", "mf"},
+                                      {"custom_text", "mezzoforte"}}));
+    EXPECT_EQ(
+        mark(bar, "B_b"),
+        (Json{{"offset", "0"}, {"scope", "voice"}, {"staff", 1}, {"voice", 2}, {"id", "B_b"}, {"type", "dynamic"}, {"value", "sfz"}}));
+    EXPECT_EQ(mark(bar, "B_K"),
+              (Json{{"offset", "0"}, {"scope", "staff"}, {"staff", 1}, {"id", "B_K"}, {"type", "fermata"}, {"symbol", "fermataAbove"}}));
+    EXPECT_EQ(mark(bar, "B_I"),
+              (Json{{"offset", "0"}, {"scope", "staff"}, {"staff", 1}, {"id", "B_I"}, {"type", "harmony"}, {"text", "Cm7"}}));
+    EXPECT_EQ(
+        mark(bar, "B_E"),
+        (Json{{"offset", "0"}, {"scope", "system"}, {"id", "B_E"}, {"type", "text"}, {"kind", "system_text"}, {"text", "With motion"}}));
+    EXPECT_EQ(mark(bar, "B_F"),
+              (Json{{"offset", "0"}, {"scope", "system"}, {"id", "B_F"}, {"type", "text"}, {"kind", "rehearsal_mark"}, {"text", "A"}}));
+    EXPECT_EQ(mark(bar, "B_G"), (Json{{"offset", "0"},
+                                      {"scope", "staff"},
+                                      {"staff", 1},
+                                      {"id", "B_G"},
+                                      {"type", "text"},
+                                      {"kind", "staff_text"},
+                                      {"text", "leggiero & clear"}}));
+    EXPECT_EQ(mark(bar, "B_H"), (Json{{"offset", "0"},
+                                      {"scope", "instrument"},
+                                      {"staff", 1},
+                                      {"id", "B_H"},
+                                      {"type", "text"},
+                                      {"kind", "expression"},
+                                      {"text", "dolce"}}));
+    EXPECT_EQ(mark(bar, "B_h"), (Json{{"offset", "0"},
+                                      {"scope", "staff"},
+                                      {"staff", 2},
+                                      {"id", "B_h"},
+                                      {"type", "text"},
+                                      {"kind", "staff_text"},
+                                      {"text", "bass only"}}));
+    EXPECT_EQ(mark(bar, "B_M"),
+              voice_one({{"offset", "0"},
+                         {"id", "B_M"},
+                         {"attachment", {{"event", "B_P"}, {"grace", {{"side", "before"}, {"ordinal", 1}, {"id", "B_L"}}}}},
+                         {"type", "articulation"},
+                         {"symbol", "articStaccatoAbove"}}));
+    EXPECT_EQ(mark(bar, "B_O"),
+              voice_one({{"offset", "0"},
+                         {"id", "B_O"},
+                         {"attachment", {{"event", "B_P"}, {"grace", {{"side", "before"}, {"ordinal", 2}, {"id", "B_N"}}}}},
+                         {"type", "articulation"},
+                         {"symbol", "ornamentTurn"},
+                         {"ornament", true}}));
+    EXPECT_EQ(mark(bar, "B_j"),
+              voice_one({{"offset", "0"},
+                         {"id", "B_j"},
+                         {"attachment", {{"event", "B_P"}, {"grace", {{"side", "after"}, {"ordinal", 1}, {"id", "B_i"}}}}},
+                         {"type", "articulation"},
+                         {"symbol", "articTenutoAbove"}}));
+    EXPECT_EQ(mark(bar, "B_R"), voice_one({{"offset", "0"},
+                                           {"id", "B_R"},
+                                           {"attachment", {{"event", "B_P"}}},
+                                           {"type", "articulation"},
+                                           {"symbol", "ornamentMordent"},
+                                           {"ornament", true}}));
+    EXPECT_EQ(mark(bar, "B_S"), voice_one({{"offset", "0"},
+                                           {"id", "B_S"},
+                                           {"attachment", {{"event", "B_P"}}},
+                                           {"type", "lyric"},
+                                           {"verse", 1},
+                                           {"text", "glo"},
+                                           {"syllabic", "begin"},
+                                           {"melisma", "1/4"}}));
+    EXPECT_EQ(
+        mark(bar, "B_T"),
+        voice_one(
+            {{"offset", "0"}, {"id", "B_T"}, {"attachment", {{"event", "B_P"}}}, {"type", "lyric"}, {"verse", 2}, {"text", "light"}}));
+    EXPECT_EQ(mark(bar, "B_Z").at("syllabic"), "end");
+    EXPECT_EQ(mark(bar, "B_Z").at("offset"), "1/2");
+    EXPECT_EQ(mark(bar, "B_U"),
+              voice_one({{"offset", "0"}, {"id", "B_U"}, {"attachment", {{"event", "B_P"}}}, {"type", "arpeggio"}, {"subtype", "up"}}));
+    EXPECT_EQ(mark(bar, "B_V"),
+              voice_one({{"offset", "0"}, {"id", "B_V"}, {"attachment", {{"event", "B_P"}}}, {"type", "tremolo"}, {"subtype", "r16"}}));
+    // The opening header clef is reported in staves[].clef only; a later clef change remains a marking.
+    EXPECT_EQ(mark(bar, "B_A"), Json(nullptr));
+    EXPECT_EQ(by(bar, "clef", "G"), Json(nullptr));
+    EXPECT_EQ(mark(bar, "B_W"),
+              (Json{{"offset", "1/4"}, {"scope", "staff"}, {"staff", 1}, {"id", "B_W"}, {"type", "clef"}, {"clef", "F"}}));
+    EXPECT_EQ(mark(bar, "B_a"),
+              (Json{{"offset", "1/1"}, {"scope", "staff"}, {"staff", 1}, {"id", "B_a"}, {"type", "barline"}, {"subtype", "double"}}));
+    EXPECT_EQ(std::ranges::count_if(bar.at("markings").get_array(), [](const Json &m) { return m.at("type") == "barline"; }), 1);
+    EXPECT_EQ(
+        mark(second, "B_c"),
+        (Json{{"offset", "0"}, {"scope", "instrument"}, {"staff", 1}, {"id", "B_c"}, {"type", "dynamic"}, {"value", "quasi niente"}}));
+    EXPECT_EQ(mark(second, "B_e"),
+              voice_one({{"offset", "0"},
+                         {"id", "B_e"},
+                         {"attachment", {{"event", "B_d"}}},
+                         {"type", "tremolo"},
+                         {"subtype", "c16"},
+                         {"two_chord", true},
+                         {"end", {{"measure", 2}, {"offset", "1/2"}, {"staff", 1}, {"voice", 1}, {"measure_id", second.at("id")}}},
+                         {"end_event", "B_f"}}));
+    const auto &signatures = bar.at("signature_changes").get_array();
+    // A tempo belongs to the whole system, so it has no staff.
+    const std::tuple<const char *, const char *, Json> expected_signatures[] = {
+        {"TimeSig", "B_B", Json(1)}, {"KeySig", "B_C", Json(1)}, {"Tempo", "B_D", Json(nullptr)}};
+    const auto outline = ok(api, "score_outline", {{"document", doc}}).at("outline").at("signatures").get_array();
+    for (const auto &[type, id, staff] : expected_signatures) {
+        const auto found = std::ranges::find_if(signatures, [&](const Json &s) { return s.at("type") == type; });
+        ASSERT_NE(found, signatures.end()) << type;
+        EXPECT_EQ(found->at("id"), id) << type;
+        EXPECT_EQ(found->at("staff"), staff) << type;
+        const auto listed = std::ranges::find_if(outline, [&](const Json &s) { return s.contains("id") && s.at("id") == id; });
+        ASSERT_NE(listed, outline.end()) << id;
+        EXPECT_EQ(listed->at("staff"), staff) << id;
+    }
+
+    const auto &plain_bar = plain.at("measures")[0];
+    EXPECT_EQ(by(plain_bar, "symbol", "articAccentAbove"),
+              voice_one({{"offset", "0"}, {"type", "articulation"}, {"symbol", "articAccentAbove"}}));
+    EXPECT_EQ(by(plain_bar, "symbol", "articStaccatoAbove"), voice_one({{"offset", "0"},
+                                                                        {"attachment", {{"grace", {{"side", "before"}, {"ordinal", 1}}}}},
+                                                                        {"type", "articulation"},
+                                                                        {"symbol", "articStaccatoAbove"}}));
+    for (const auto &m : plain.at("measures").get_array()) {
+        if (!m.contains("markings")) continue;
+        for (const auto &row : m.at("markings").get_array()) EXPECT_FALSE(row.contains("id")) << music::dump_json(row);
+        for (const auto &s : m.at("signature_changes").get_array()) EXPECT_FALSE(s.contains("id")) << music::dump_json(s);
+    }
+    EXPECT_FALSE(plain.at("measures")[2].contains("markings"));
+
+    const auto &text = plain.at("summary").get<std::string>();
+    EXPECT_TRUE(text.starts_with("Staff 1 Upper clef=G time=4/4 key=-2\n")) << text;
+    for (const auto *part : {"time(s1)=4/4@0",
+                             "key(s1)=-2@0",
+                             "tempo=\"Andante\" 120bpm@0\n  marks: ",
+                             "@0 system_text \"With motion\"",
+                             "@0 rehearsal_mark \"A\"",
+                             "inst(s1) @0 p \xc2\xb7 ",
+                             "inst(s1) @0 expression \"dolce\"",
+                             "s1 @0 harmony \"Cm7\"",
+                             "s1 @0 fermata(fermataAbove)",
+                             "s1 @0 staff_text \"leggiero & clear\"",
+                             "s1v1 @0 grace(before:1) artic(articStaccatoAbove)",
+                             "s1v1 @0 grace(before:2) ornament(ornamentTurn)",
+                             "s1v1 @0 grace(after:1) artic(articTenutoAbove)",
+                             "s1v1 @0 ornament(ornamentMordent)",
+                             "s1v1 @0 lyric[1] \"glo\" begin melisma=1/4",
+                             "s1v1 @0 lyric[2] \"light\"",
+                             "s1v1 @0 arpeggio(up)",
+                             "s1v1 @0 tremolo(r16)",
+                             "s1v2 @0 sfz",
+                             "inst(s1) @1/4 mf \"mezzoforte\"",
+                             "s1 @1/4 clef(F)",
+                             "s1v1 @1/4 lyric[1] \"ri\" middle",
+                             "s1 @1/1 barline(double)",
+                             "s2 @0 staff_text \"bass only\"",
+                             "Bar 2 len=1/1\n  marks: ",
+                             "inst(s1) @0 dynamic \"quasi niente\"",
+                             "s1v1 @0 tremolo(c16)-2@1/2(s1v1)"}) {
+        EXPECT_NE(text.find(part), std::string::npos) << part << "\n" << text;
+    }
+    EXPECT_EQ(text.find("clef(G)"), std::string::npos) << text;
+    EXPECT_EQ(text.find("#B_"), std::string::npos) << text;
+    ASSERT_NE(text.find("Bar 3"), std::string::npos) << text;
+    EXPECT_EQ(text.find("marks:", text.find("Bar 3")), std::string::npos) << text;
+
+    const auto &ids = tagged.at("summary").get<std::string>();
+    for (const auto *part : {"time(s1)=4/4@0#B_B", "key(s1)=-2@0#B_C", "tempo=\"Andante\" 120bpm@0#B_D", "inst(s1) @0 p#B_J",
+                             "s1v1 @0 grace(before:1) artic(articStaccatoAbove)#B_M", "lyric[1] \"glo\" begin melisma=1/4#B_S",
+                             "s1v1 @0 tremolo(c16)-2@1/2(s1v1)#B_e", "s1 @1/1 barline(double)#B_a"}) {
+        EXPECT_NE(ids.find(part), std::string::npos) << part << "\n" << ids;
+    }
+
+    const auto props = [](std::initializer_list<std::pair<const char *, Json>> values) {
+        Json list = music::make_array<Json>();
+        for (const auto &[name, value] : values) music::json_push(list, Json{{"name", name}, {"value", value}});
+        return list;
+    };
+    const auto line = [](const char *type, Json values) {
+        return Json{{"op", "add_spanner"}, {"type", type}, {"start", pos(1, "1/4")}, {"end", pos(3)}, {"props", std::move(values)}};
+    };
+    ok(api, "score_edit",
+       edit_ops(doc, {line("Slur", props({{"up", "down"}})), line("HairPin", props({{"HAIRPIN_TYPE", 0}, {"hairpinCircledTip", true}})),
+                      line("Ottava", props({{"OTTAVA_TYPE", 2}})), line("Trill", props({{"TRILL_TYPE", 3}})),
+                      line("Pedal", props({{"beginText", "Ped."},
+                                           {"continueText", "hold"},
+                                           {"endText", "release"},
+                                           {"beginHookType", "1"},
+                                           {"endHookType", "2"}})),
+                      line("TextLine", props({{"beginText", "sul pont."},
+                                              {"continueText", "(sul pont.)"},
+                                              {"endText", "ord."},
+                                              {"beginHookType", "2"},
+                                              {"endHookType", "1"}})),
+                      Json{{"op", "set_property"}, {"target", "B_m"}, {"property", "GLISS_TYPE"}, {"value", "1"}},
+                      Json{{"op", "set_property"}, {"target", "B_m"}, {"property", "GLISS_TEXT"}, {"value", "glide"}}}));
+    const auto crossing = api.read_music({{"document", doc}, {"measure", 2}, {"count", 2}});
+    ASSERT_EQ(crossing.at("ok"), true) << music::dump_json(crossing);
+    const auto &lines = crossing.at("spanners").get_array();
+    ASSERT_EQ(lines.size(), 7u) << music::dump_json(crossing.at("spanners"));
+    const auto span = [&](const char *type) {
+        const auto found = std::ranges::find_if(lines, [&](const Json &s) { return s.at("type") == type; });
+        return found == lines.end() ? Json(nullptr) : *found;
+    };
+    const Json from = {{"measure", 1}, {"offset", "1/4"}, {"staff", 1}, {"voice", 1}};
+    const Json to = {{"measure", 3}, {"offset", "0"}, {"staff", 1}, {"voice", 1}};
+    EXPECT_EQ(span("Slur"), (Json{{"type", "Slur"}, {"start", from}, {"end", to}, {"direction", "down"}}));
+    EXPECT_EQ(span("HairPin"), (Json{{"type", "HairPin"}, {"subtype", "crescendo"}, {"start", from}, {"end", to}, {"niente", true}}));
+    EXPECT_EQ(span("Ottava"), (Json{{"type", "Ottava"}, {"subtype", "15ma"}, {"start", from}, {"end", to}}));
+    EXPECT_EQ(span("Trill"), (Json{{"type", "Trill"}, {"subtype", "prallprall"}, {"start", from}, {"end", to}}));
+    EXPECT_EQ(span("Pedal"), (Json{{"type", "Pedal"},
+                                   {"start", from},
+                                   {"end", to},
+                                   {"begin_text", "Ped."},
+                                   {"continue_text", "hold"},
+                                   {"end_text", "release"},
+                                   {"begin_hook", "hook_90"},
+                                   {"end_hook", "hook_45"}}));
+    EXPECT_EQ(span("TextLine"), (Json{{"type", "TextLine"},
+                                      {"start", from},
+                                      {"end", to},
+                                      {"begin_text", "sul pont."},
+                                      {"continue_text", "(sul pont.)"},
+                                      {"end_text", "ord."},
+                                      {"begin_hook", "hook_45"},
+                                      {"end_hook", "hook_90"}}));
+    EXPECT_EQ(span("Glissando"), (Json{{"type", "Glissando"},
+                                       {"subtype", "wavy"},
+                                       {"start", {{"measure", 2}, {"offset", "1/2"}, {"staff", 1}, {"voice", 1}}},
+                                       {"end", to},
+                                       {"text", "glide"}}));
+    const auto &spans = crossing.at("summary").get<std::string>();
+    for (const auto *part : {" \xe2\x86\x90Slur 1@1/4(s1v1)-3@0(s1v1) down", " \xe2\x86\x90HairPin(crescendo) 1@1/4(s1v1)-3@0(s1v1) niente",
+                             " \xe2\x86\x90Ottava(15ma) 1@1/4(s1v1)-3@0(s1v1)",
+                             " \xe2\x86\x90Pedal 1@1/4(s1v1)-3@0(s1v1) begin_text=\"Ped.\" continue_text=\"hold\" end_text=\"release\" "
+                             "begin_hook=hook_90 end_hook=hook_45",
+                             " Glissando(wavy) 2@1/2(s1v1)-3@0(s1v1) text=\"glide\""}) {
+        EXPECT_NE(spans.find(part), std::string::npos) << part << "\n" << spans;
+    }
+    const auto tagged_spans = api.read_music({{"document", doc}, {"measure", 2}, {"count", 2}, {"include_ids", true}});
+    const auto slur_id =
+        std::ranges::find_if(tagged_spans.at("spanners").get_array(), [](const Json &s) { return s.at("type") == "Slur"; });
+    ASSERT_NE(slur_id, tagged_spans.at("spanners").get_array().end());
+    EXPECT_NE(tagged_spans.at("summary").get<std::string>().find("\xe2\x86\x90Slur#" + slur_id->at("id").get<std::string>() + " 1@1/4"),
+              std::string::npos);
+}
+
+TEST(MusicWindow, SummaryEscapesAuthoredTextAndKeepsItsCap) {
+    using namespace engrave;
+    const ElementId bar_id{0, 1}, later_id{0, 2}, missing{0, 99}, event_id{0, 3}, grace_id{0, 4}, mark_id{0, 5}, tempo_id{0, 6},
+        span_id{0, 7};
+    const MeasureInfo bar{bar_id, 0, {0, 1}, {1, 1}}, later{later_id, 1, {1, 1}, {1, 1}};
+    MusicWindow window{
+        .staves = {{0, "Pi\nano", "piano", {4, 4}, 0, {}, false, "G"}},
+        .measures = {{bar,
+                      false,
+                      false,
+                      2,
+                      {{"Tempo", {0, 1}, -1, {}, 0, 90, "Allegro\r\t\"vivo\"", tempo_id}},
+                      {},
+                      {{mark_id, {0, 1}, MarkScope::STAFF, 0, -1, std::nullopt, TextMark{TextMark::Kind::STAFF, "x\nBar 99 len=4/4"}},
+                       {{},
+                        {1, 4},
+                        MarkScope::VOICE,
+                        0,
+                        0,
+                        MarkAttachment{event_id, GraceAttachment{true, 1, grace_id}},
+                        LyricMark{0, "say \"hi\" \\ bye", "single"}},
+                       {{},
+                        {1, 2},
+                        MarkScope::VOICE,
+                        0,
+                        1,
+                        MarkAttachment{event_id},
+                        TremoloMark{"c8", true, std::nullopt, Position{missing, {1, 2}, 0, 0}}},
+                       {{}, {1, 2}, MarkScope::SYSTEM, -1, -1, std::nullopt, HarmonyMark{"C\x01"}}}},
+                     {later}},
+        .spanners = {{span_id,
+                      "TextLine",
+                      {},
+                      {bar_id, {0, 1}},
+                      {missing, {0, 1}},
+                      {},
+                      {},
+                      SpanDetail{.begin_text = "a\xe2\x80\xa8"
+                                               "Bar 98"}}}};
+    const Outline outline{.measures = {bar, later}};
+
+    const auto plain = music::api::music_result(window, outline, false);
+    const auto &text = plain.at("summary").get<std::string>();
+    for (std::size_t start = 0; start < text.size();) {
+        const auto end = std::min(text.find('\n', start), text.size());
+        const auto line = std::string_view(text).substr(start, end - start);
+        EXPECT_TRUE(line.starts_with("Staff ") || line.starts_with("Bar ") || line.starts_with("  ") || line.starts_with("Spanners:"))
+            << line;
+        start = end + 1;
+    }
+    for (const auto *part :
+         {R"(Staff 1 Pi\nano clef=G time=4/4 key=0)", R"(tempo="Allegro\r\t\"vivo\"" 90bpm@0)", R"(s1 @0 staff_text "x\nBar 99 len=4/4")",
+          R"(s1v1 @1/4 grace(after:2) lyric[1] "say \"hi\" \\ bye")", R"(s1v2 @1/2 tremolo(c8)-?@1/2(s1v1))", R"(@1/2 harmony "C\u0001")",
+          R"(TextLine 1@0(s1v1)-?@0(s1v1) begin_text="a\u2028Bar 98")"}) {
+        EXPECT_NE(text.find(part), std::string::npos) << part << "\n" << text;
+    }
+    const auto &marks = plain.at("measures")[0].at("markings");
+    EXPECT_EQ(marks[0].at("text"), "x\nBar 99 len=4/4");
+    EXPECT_FALSE(marks[0].contains("id"));
+    EXPECT_EQ(marks[1].at("attachment"), (Json{{"grace", {{"side", "after"}, {"ordinal", 2}}}}));
+    EXPECT_FALSE(marks[1].contains("syllabic"));
+    EXPECT_FALSE(marks[2].contains("attachment"));
+    EXPECT_TRUE(marks[2].at("end").at("measure").is_null());
+    EXPECT_EQ(marks[3], (Json{{"offset", "1/2"}, {"scope", "system"}, {"type", "harmony"}, {"text", "C\x01"}}));
+    EXPECT_FALSE(plain.at("measures")[1].contains("markings"));
+    EXPECT_TRUE(plain.at("spanners")[0].at("end").at("measure").is_null());
+    EXPECT_EQ(plain.at("spanners")[0].at("begin_text"), "a\xe2\x80\xa8"
+                                                        "Bar 98");
+
+    const auto tagged = music::api::music_result(window, outline, true);
+    const auto &tagged_marks = tagged.at("measures")[0].at("markings");
+    EXPECT_EQ(tagged_marks[1].at("attachment"),
+              (Json{{"event", to_string(event_id)}, {"grace", {{"side", "after"}, {"ordinal", 2}, {"id", to_string(grace_id)}}}}));
+    EXPECT_EQ(tagged_marks[2].at("attachment"), (Json{{"event", to_string(event_id)}}));
+    const auto &ids = tagged.at("summary").get<std::string>();
+    EXPECT_NE(ids.find(R"(staff_text "x\nBar 99 len=4/4"#)" + to_string(mark_id)), std::string::npos) << ids;
+    EXPECT_NE(ids.find("90bpm@0#" + to_string(tempo_id)), std::string::npos) << ids;
+
+    auto &dense = window.measures[0].markings;
+    dense.resize(4000,
+                 {{}, {0, 1}, MarkScope::STAFF, 0, -1, std::nullopt, TextMark{TextMark::Kind::EXPRESSION, "\xc3\xa9\xc3\xa9\xc3\xa9"}});
+    const auto truncated = music::api::music_result(window, outline, false);
+    const auto &capped = truncated.at("summary").get<std::string>();
+    EXPECT_LE(capped.size(), 32768u);
+    EXPECT_TRUE(capped.ends_with("\n... [truncated]"));
+    EXPECT_TRUE(music::valid_utf8(capped));
+    EXPECT_EQ(truncated.at("measures")[0].at("markings").size(), 4000u);
+}
+
+TEST(MusicWindow, InstrumentDynamicReachesTheOtherPianoStaff) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    constexpr std::string_view grand = R"(<museScore version="5.00"><Score><Division>480</Division>
+<Part id="1"><Staff/><Staff/><trackName>Piano</trackName><Instrument id="piano"><longName>Piano</longName></Instrument></Part>
+<Staff id="1"><Measure><voice><Dynamic><eid>P_A</eid><subtype>mp</subtype></Dynamic>
+<Chord><durationType>whole</durationType><Note><pitch>72</pitch><tpc>14</tpc></Note></Chord></voice></Measure></Staff>
+<Staff id="2"><Measure><voice><Rest><durationType>measure</durationType><duration>1/1</duration></Rest></voice></Measure></Staff>
+</Score></museScore>)";
+    const auto doc = ok(api, "score_open", {{"data", b64(std::string(grand))}, {"format", "mscx"}}).at("document");
+    const Json expected = {{"offset", "0"}, {"scope", "instrument"}, {"staff", 1}, {"id", "P_A"}, {"type", "dynamic"}, {"value", "mp"}};
+    for (const auto &staves : {music::json_array<Json>({2}), music::json_array<Json>({1, 2})}) {
+        SCOPED_TRACE(music::dump_json(staves));
+        const auto window = api.read_music({{"document", doc}, {"staves", staves}, {"include_ids", true}});
+        ASSERT_EQ(window.at("ok"), true) << music::dump_json(window);
+        const auto &bar = window.at("measures")[0];
+        ASSERT_TRUE(bar.contains("markings")) << music::dump_json(window);
+        EXPECT_EQ(bar.at("markings").get_array().size(), 1u) << music::dump_json(bar.at("markings"));
+        EXPECT_EQ(bar.at("markings")[0], expected);
+        EXPECT_NE(window.at("summary").get<std::string>().find("  marks: inst(s1) @0 mp#P_A"), std::string::npos)
+            << window.at("summary").get<std::string>();
+    }
+}
+
+TEST(MusicWindow, TracklessRowsInstrumentScopeAndVoicelessRepeatEnd) {
+    using namespace engrave;
+    const ElementId bar_id{0, 1}, span_id{0, 2};
+    const MeasureInfo bar{bar_id, 0, {0, 1}, {1, 1}};
+    const MusicWindow window{
+        .staves = {{1, "Piano", "piano", {4, 4}, 0, {}, false, "F"}},
+        .measures = {{bar,
+                      false,
+                      true,
+                      2,
+                      {{"Tempo", {0, 1}, -1, {}, 0, 72}},
+                      {},
+                      {{{}, {0, 1}, MarkScope::INSTRUMENT, 0, -1, std::nullopt, DynamicMark{"p"}},
+                       {{}, {1, 2}, MarkScope::SYSTEM, -1, -1, std::nullopt, TextMark{TextMark::Kind::REHEARSAL, "B"}}}}},
+        .spanners = {{span_id, "TextLine", {}, {bar_id, {0, 1}, -1, -1}, {bar_id, {1, 2}, 1, -1}}}};
+    const Outline outline{.measures = {bar}};
+    const auto result = music::api::music_result(window, outline, false);
+
+    const auto &row = result.at("measures")[0];
+    EXPECT_TRUE(row.at("signature_changes")[0].at("staff").is_null()) << music::dump_json(row);
+    EXPECT_EQ(row.at("markings")[0], (Json{{"offset", "0"}, {"scope", "instrument"}, {"staff", 1}, {"type", "dynamic"}, {"value", "p"}}));
+    EXPECT_EQ(result.at("spanners")[0].at("start"), (Json{{"measure", 1}, {"offset", "0"}, {"staff", nullptr}, {"voice", nullptr}}));
+    EXPECT_EQ(result.at("spanners")[0].at("end"), (Json{{"measure", 1}, {"offset", "1/2"}, {"staff", 2}, {"voice", nullptr}}));
+
+    const auto &text = result.at("summary").get<std::string>();
+    EXPECT_EQ(text, "Staff 2 Piano clef=F time=4/4 key=0\n"
+                    "Bar 1 len=1/1 tempo=72bpm@0 :|\n"
+                    "  marks: inst(s1) @0 p \xc2\xb7 @1/2 rehearsal_mark \"B\"\n"
+                    "Spanners: TextLine 1@0-1@1/2(s2)");
+}
+
+TEST(MusicWindow, SummaryRepairsInvalidUtf8BeforeItsCap) {
+    using namespace engrave;
+    const ElementId bar_id{0, 1};
+    const MeasureInfo bar{bar_id, 0, {0, 1}, {1, 1}};
+    const Outline outline{.measures = {bar}};
+    const auto text_mark = [](std::string text) {
+        return MarkMusic{{}, {0, 1}, MarkScope::SYSTEM, -1, -1, std::nullopt, TextMark{TextMark::Kind::SYSTEM, std::move(text)}};
+    };
+    // Each invalid byte serializes as a 3-byte U+FFFD; the long run straddles the 32,768-byte cut.
+    for (const auto &bad : {std::string("x\xff\xc3y"), std::string(40000, '\xff'), std::string(32700, 'a') + std::string(200, '\xfe')}) {
+        MusicWindow window{.measures = {{bar, false, false, 2, {}, {}, {text_mark(bad)}}}};
+        const auto result = music::api::music_result(window, outline, false);
+        const auto wire = music::parse_json(music::dump_json(result));
+        ASSERT_TRUE(wire);
+        const auto &summary = wire->at("summary").get<std::string>();
+        EXPECT_TRUE(music::valid_utf8(summary));
+        EXPECT_LE(summary.size(), 32768u);
+        EXPECT_EQ(summary, result.at("summary").get<std::string>());
+        if (bad.size() < 10) {
+            EXPECT_NE(summary.find("system_text \"x\xef\xbf\xbd\xef\xbf\xbdy\""), std::string::npos) << summary;
+        } else {
+            EXPECT_TRUE(summary.ends_with("\n... [truncated]"));
+        }
+    }
+}
+
+TEST(HostApi, PositionalMarkingsEditAndReopenThroughReturnedIds) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto doc = short_score(api, 2);
+    const auto phrase = api.write_phrase(
+        {{"document", doc}, {"lanes", music::json_array<Json>({Json{{"measure", 1}, {"content", "C4 D4 E4 F4 | G4:w"}}})}});
+    ASSERT_EQ(phrase.at("ok"), true) << music::dump_json(phrase);
+    const auto add = [](const Json &anchor, const char *type, const char *name, const char *value) {
+        return Json{{"op", "add"},
+                    {"anchor", anchor},
+                    {"type", type},
+                    {"props", music::json_array<Json>({Json{{"name", name}, {"value", value}}})}};
+    };
+    ok(api, "score_edit",
+       edit_ops(doc, {add(pos(1), "Dynamic", "DYNAMIC_TYPE", "p"), add(pos(1, "1/4"), "Articulation", "symbol", "articStaccatoAbove"),
+                      add(pos(1, "1/2"), "Harmony", "text", "Am"), add(pos(2), "Dynamic", "DYNAMIC_TYPE", "f"),
+                      add(pos(2), "Fermata", "symbol", "fermataAbove"),
+                      Json{{"op", "add_text"}, {"at", pos(1, "3/4")}, {"style", "lyrics_odd"}, {"text", "la"}},
+                      Json{{"op", "add_spanner"}, {"type", "Slur"}, {"start", pos(1)}, {"end", pos(1, "3/4")}},
+                      Json{{"op", "add_spanner"}, {"type", "HairPin"}, {"start", pos(1, "1/4")}, {"end", pos(2)}}}));
+
+    const auto window = api.read_music({{"document", doc}, {"count", 2}, {"include_ids", true}});
+    ASSERT_EQ(window.at("ok"), true) << music::dump_json(window);
+    const auto &bars = window.at("measures");
+    const auto *piano = find_marking(bars[0], "value", "p");
+    const auto *staccato = find_marking(bars[0], "symbol", "articStaccatoAbove");
+    const auto *harmony = find_marking(bars[0], "text", "Am");
+    const auto *lyric = find_marking(bars[0], "text", "la");
+    const auto *forte = find_marking(bars[1], "value", "f");
+    const auto *fermata = find_marking(bars[1], "symbol", "fermataAbove");
+    for (const auto *found : {piano, staccato, harmony, lyric, forte, fermata}) {
+        ASSERT_NE(found, nullptr) << music::dump_json(window);
+        ASSERT_TRUE(found->contains("id")) << music::dump_json(*found);
+    }
+    EXPECT_EQ(piano->at("offset"), "0");
+    EXPECT_EQ(staccato->at("offset"), "1/4");
+    EXPECT_EQ(staccato->at("attachment").at("event"), bars[0].at("voices")[0].at("events")[1].at("id"));
+    EXPECT_EQ(harmony->at("offset"), "1/2");
+    EXPECT_EQ(lyric->at("type"), "lyric");
+    EXPECT_EQ(lyric->at("verse"), 1);
+    EXPECT_EQ(lyric->at("offset"), "3/4");
+    EXPECT_EQ(fermata->at("offset"), "0");
+    const auto id_of = [](const Json *found) { return found->at("id").get<std::string>(); };
+    const auto piano_id = id_of(piano), fermata_id = id_of(fermata);
+    const std::vector<std::pair<std::string, const char *>> survivors{
+        {id_of(staccato), "articStaccatoAbove"}, {id_of(harmony), "Am"}, {id_of(lyric), "la"}, {id_of(forte), "f"}};
+
+    ok(api, "score_edit",
+       edit_ops(doc, {Json{{"op", "set_property"}, {"target", piano_id}, {"property", "DYNAMIC_TYPE"}, {"value", "mp"}},
+                      Json{{"op", "remove"}, {"target", fermata_id}}}));
+    for (const auto &[format, name] : {std::pair{engrave::Format::MSCX, "mscx"}, {engrave::Format::MSCZ, "mscz"}}) {
+        SCOPED_TRACE(name);
+        std::string bytes;
+        const auto saved = api.with_document(doc.get<std::string>(), {}, [&](engrave::Document &d) -> music::api::Result<void> {
+            auto out = d.export_score({.format = format});
+            if (!out) return std::unexpected(music::api::api_error(out.error()));
+            bytes.assign(reinterpret_cast<const char *>(out->data()), out->size());
+            return {};
+        });
+        ASSERT_TRUE(saved) << saved.error().message;
+        const auto reopened = ok(api, "score_open", {{"data", b64(bytes)}, {"format", name}}).at("document");
+        const auto after = api.read_music({{"document", reopened}, {"count", 2}, {"include_ids", true}});
+        ASSERT_EQ(after.at("ok"), true) << music::dump_json(after);
+        const auto &restored = after.at("measures");
+        const auto *edited = find_marking(restored[0], "id", piano_id);
+        ASSERT_NE(edited, nullptr) << music::dump_json(after);
+        EXPECT_EQ(edited->at("value"), "mp");
+        for (const auto &b : restored.get_array()) {
+            EXPECT_EQ(find_marking(b, "id", fermata_id), nullptr);
+            EXPECT_EQ(find_marking(b, "symbol", "fermataAbove"), nullptr);
+        }
+        for (const auto &[id, value] : survivors) {
+            const auto *kept = find_marking(restored[0], "id", id);
+            if (!kept) kept = find_marking(restored[1], "id", id);
+            ASSERT_NE(kept, nullptr) << id;
+            const auto field = kept->contains("symbol") ? "symbol" : kept->contains("value") ? "value" : "text";
+            EXPECT_EQ(kept->at(field), value) << id;
+        }
+        const auto &lines = after.at("spanners").get_array();
+        EXPECT_EQ(std::ranges::count_if(lines, [](const Json &s) { return s.at("type") == "Slur"; }), 1);
+        EXPECT_EQ(std::ranges::count_if(lines, [](const Json &s) { return s.at("type") == "HairPin"; }), 1);
+        ok(api, "score_close", {{"document", reopened}});
+    }
 }
 
 TEST(HostApi, EndToEndToolContract) {

@@ -118,29 +118,7 @@ private:
     usize item_index = 0;
     std::optional<usize> member_index;
 
-    static std::string escape_token(string_view token) {
-        const auto clipped = utf8_abbrev(token, 32);
-        std::string out;
-        out.reserve(clipped.size());
-        for (unsigned char c : clipped) {
-            if (c == '\\') {
-                out += "\\\\";
-            } else if (c == '\'') {
-                out += "\\'";
-            } else if (c == '\n') {
-                out += "\\n";
-            } else if (c == '\r') {
-                out += "\\r";
-            } else if (c == '\t') {
-                out += "\\t";
-            } else if (c < 0x20 || c == 0x7f) {
-                out += std::format("\\u{:04x}", static_cast<unsigned>(c));
-            } else {
-                out.push_back(static_cast<char>(c));
-            }
-        }
-        return out;
-    }
+    static std::string escape_token(string_view token) { return escape_text(utf8_abbrev(token, 32), '\''); }
 
     std::unexpected<HostError> fail(string_view token, string_view reason, string_view expected) const {
         const auto where = "item " + std::to_string(item_index) + (member_index ? ", member " + std::to_string(*member_index) : "") + ", " +

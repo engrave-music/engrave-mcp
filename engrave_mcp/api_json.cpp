@@ -434,10 +434,15 @@ Json encode(const engrave::Outline &o) {
                     {"duration", fraction_json(m.duration)}};
     });
     auto sigs = mapped(o.signatures, [](const auto &s) {
-        return Json{{"type", s.type},       {"tick", fraction_json(s.tick)},
-                    {"staff", s.staff + 1}, {"timesig", s.timesig ? fraction_json(*s.timesig, true) : Json(nullptr)},
-                    {"key", s.key},         {"bpm", s.bpm},
-                    {"text", s.text}};
+        Json j{{"type", s.type},
+               {"tick", fraction_json(s.tick)},
+               {"staff", detail::one_based(s.staff)},
+               {"timesig", s.timesig ? fraction_json(*s.timesig, true) : Json(nullptr)},
+               {"key", s.key},
+               {"bpm", s.bpm},
+               {"text", s.text}};
+        if (s.id) j["id"] = engrave::to_string(*s.id);
+        return j;
     });
     auto excerpts = mapped(o.excerpts, [](const auto &e) {
         return Json{{"id", engrave::to_string(e.id)}, {"name", e.name}, {"pages", e.pages ? Json(*e.pages) : Json(nullptr)}};
