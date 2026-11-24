@@ -83,8 +83,9 @@ already reads and writes the 5.0 `<o1>`–`<o4>` offsets.
   regression suites.
 - `engrave/include/engrave/`: Public C++ header interface (`engrave.h`,
   `engine.h`, `document.h`, `output.h`, `audio.h`, `edit.h`, `query.h`,
-  `export_warning.h`, `error.h`, `version.h`). Host code includes only headers
-  from this directory.
+  `music.h`, `handle.h`, `value.h`, `describe.h`, `export_warning.h`,
+  `error.h`, `version.h`, plus `ops/*.h` and `testing/write470.h`). Host code
+  includes only headers under this directory tree.
 - `engrave/assets.json` and `tools/install_assets.py`: Runtime asset manifest
   and standalone installer reading committed Git blobs via
   `git cat-file --batch`.

@@ -9,7 +9,7 @@ If not specified here, follow the style of modern refactored code nearby. Build,
 Enforced by [.clang-tidy](../../.clang-tidy):
 
 - Types (`struct`, `enum`, `union`): `CamelCase`.
-- Functions, methods, parameters, variables, and struct fields: `lower_case` (no `m_` prefix; avoid trailing `_` in new types).
+- Functions, methods, parameters, variables, and struct fields: `lower_case` (no `m_` prefix; avoid trailing `_` on public/plain data fields, while trailing `_` is permitted for private implementation fields per `.clang-tidy`).
 - Enum constants: `UPPER_CASE`.
 - Short uppercase template parameters or domain acronyms (`T`, `ID`) are fine.
 
@@ -40,7 +40,7 @@ Always use `struct`, do not use `class` for custom types. This avoids `public:` 
 
 - **Separate data from behavior**: Keep data as plain `struct` definitions with free functions or focused systems rather than monolithic stateful OOP hierarchies.
 - **Owned value semantics**: Value types own their data. Do not add copy-on-write wrappers, reference-counted buffers, or `std::shared_ptr` ownership graphs where single ownership or flat storage works. Avoid copies on hot paths by passing views (`std::string_view`, `std::span`) or references.
-- **Data-oriented layout**: Prefer contiguous flat arrays (`amc::vector`, `std::vector`) and integer indices/offsets over pointer-chasing node graphs.
+- **Data-oriented layout**: Prefer contiguous flat arrays (`std::vector`, plus `amc::vector` in `vendor/engrave`) and integer indices/offsets over pointer-chasing node graphs.
 
 ## Polymorphism and Callables
 

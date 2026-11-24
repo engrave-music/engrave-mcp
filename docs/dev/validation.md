@@ -77,8 +77,8 @@ Key options and scheduling behavior:
 - **Target & lane selection**: `--profile` selects `build/<profile>` (default:
   `release`), `--build-dir` overrides it, `--no-build` skips building, `--only
 lane1,lane2` runs a subset (including opt-in lanes), and `--list-lanes` prints
-  the catalogue, scheduling mode, and dependencies without requiring runtime
-  paths. The runner verifies line endings, native include boundaries, and
+  the default lane schedule (or the `--only` subset) with scheduling mode and
+  dependencies without requiring runtime paths. The runner verifies line endings, native include boundaries, and
   required binaries before starting.
 - **Parallel vs. exclusive lanes**: Parallel lanes run in a thread pool
   (`-j` / `--jobs`, default half CPU count clamped to 2–8; `-j 1` runs
