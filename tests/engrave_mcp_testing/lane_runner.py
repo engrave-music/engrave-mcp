@@ -18,7 +18,7 @@ from engrave_testing.paths import pixi_env
 
 from engrave_mcp_testing.paths import REPO_ROOT
 
-BUILD_PROFILES = ("release", "debug", "releasedbg", "sanitize")
+BUILD_PROFILES = ("release", "debug", "releasedbg", "sanitize", "tsan")
 
 
 def execute_schedule(lanes, jobs, execute):

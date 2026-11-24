@@ -50,7 +50,7 @@ pixi run python scripts/prepare.py
 ## Development Builds
 
 Use `scripts/bbuild.py` (or `pixi run build`) across `release`, `debug`,
-`releasedbg`, and `sanitize` profiles. Outputs are staged to `build/<profile>`,
+`releasedbg`, `sanitize`, and `tsan` profiles. Outputs are staged to `build/<profile>`,
 external archives are cached in `build/.bazel_repo_cache`, and Bazel action
 outputs (including relocatable Clang binary precompiled headers) are shared
 across builds in `build/.bazel_disk_cache` (bounded to 20 GiB via Bazel idle
@@ -76,6 +76,11 @@ UndefinedBehaviorSanitizer (UBSan) on Linux and Windows x86-64 via xclang's
 `--features=asan --features=ubsan`. ASan enables LeakSanitizer (LSan) on
 Linux x86-64. Windows x86-64 has no LSan support. Only the third-party LAME
 and libFLAC C codec targets disable UBSan. They retain ASan instrumentation.
+
+The `tsan` profile compiles with `-c fastbuild --strip=never -O1 -gline-tables-only`
+and enables ThreadSanitizer (`--features=tsan`) to verify parallel audio synthesis.
+It is mutually exclusive with `sanitize` and supported on glibc Linux (and macOS)
+xclang targets only; Windows targets reject `--features=tsan`.
 
 With no target arguments, `bbuild.py build` builds `all_binaries` (all host
 binaries plus `@engrave//:engine_tests`). `registry_check` builds
