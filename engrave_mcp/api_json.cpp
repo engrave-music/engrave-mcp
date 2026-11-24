@@ -172,8 +172,9 @@ Result<engrave::ScoreSel> score(const Json &j) {
 bool is_relative_position(const Json &j) { return j.is_object() && !j.contains("kind") && !j.contains("from_op"); }
 
 Result<engrave::RelativePosition> relative_position(const Json &j) {
-    if (!is_relative_position(j) || !j.contains("measure"))
+    if (!is_relative_position(j) || !j.contains("measure")) {
         return std::unexpected(invalid_error("expected {measure, staff?, voice?, offset?}"));
+    }
     engrave::Fraction offset{0, 1};
     if (j.contains("offset")) {
         auto parsed = fraction(j.at("offset"));

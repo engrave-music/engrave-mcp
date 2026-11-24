@@ -946,8 +946,9 @@ TEST(HostApi, NarrowReadSkipsLaterBarsAndClampsOnlyTheDefaultCount) {
     std::string words;
     for (int i = 0; i < 1024; ++i) words += "\xe4\xb8\x80";
     Json ops = music::json_array<Json>({Json{{"op", "insert_measures"}, {"count", 48}}});
-    for (int bar = 2; bar <= 49; ++bar)
+    for (int bar = 2; bar <= 49; ++bar) {
         music::json_push(ops, Json{{"op", "add_text"}, {"at", pos(bar)}, {"style", "tempo"}, {"text", words}});
+    }
     // Not through ok(): it would echo the 147 KiB request into the test log.
     const auto edited = api.edit({{"document", doc}, {"ops", ops}});
     ASSERT_EQ(edited.at("ok"), true) << music::dump_json(edited.at("error"));

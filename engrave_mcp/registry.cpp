@@ -85,8 +85,9 @@ void validate_registry() {
         definition("score_edit").at("inputSchema").at("properties").at("ops").at("items").at("properties").at("op").at("enum");
     if (published.size() != operation_names.size()) throw std::logic_error("edit operation count mismatch");
     for (auto name : operation_names) {
-        if (std::ranges::none_of(published.get_array(), [&](const Json &entry) { return entry == name; }))
+        if (std::ranges::none_of(published.get_array(), [&](const Json &entry) { return entry == name; })) {
             throw std::logic_error("missing edit operation");
+        }
     }
     names.clear();
     for (std::size_t i = 0; i < specs.size(); ++i) {

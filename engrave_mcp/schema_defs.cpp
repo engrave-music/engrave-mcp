@@ -69,6 +69,7 @@ Json declared_tools() {
                                      json_array<Json>({"kind", "measure", "staff", "voice", "tick", "segment_kind"}));
     const Json measure_ref = alternatives({bar, eid, op_ref}, "Bar number, measure EID or {from_op,item}.");
     const Json staff_ref = alternatives({bar, eid, op_ref}, "Staff number, staff EID or {from_op,item}.");
+    const Json part_ref = alternatives({eid, op_ref}, "Part EID or {from_op,item}.");
     const Json anchor = alternatives({eid, compact_pos, segment_addr, op_ref}, "Position, EID or {from_op,item}.");
     const Json pos = alternatives({compact_pos, segment_addr}, "Compact position or segment address.");
     const Json volume = Json{{"type", "number"}, {"minimum", -120}, {"maximum", 24}};
@@ -187,8 +188,8 @@ Json declared_tools() {
     op_fields["clef"] = text;
     op_fields["on"] = boolean;
     op_fields["instrument_id"] = text;
-    op_fields["part"] = ref;
-    op_fields["parts"] = schema_array(ref);
+    op_fields["part"] = part_ref;
+    op_fields["parts"] = schema_array(part_ref);
     op_fields["type"] = text;
     op_fields["start"] = alternatives({boolean, eid, compact_pos, segment_addr, op_ref}, "set_repeat_barlines: flag. Spanners: as anchor.");
     op_fields["end"] = alternatives({boolean, bar, eid, compact_pos, segment_addr, op_ref},
@@ -255,8 +256,8 @@ Json declared_tools() {
     tool("score_edit",
          "Apply a batch atomically by default. Use runtime_info scope ops for operation shapes. excerpt scopes the batch to one "
          "excerpt. Bar, staff and voice numbers are 1-based and resolve when their op runs. A position is a compact "
-         "{measure,staff?,voice?,offset?} with a bar-local offset, or a segment address; {from_op,item} names an item an earlier "
-         "op created.",
+         "{measure,staff?,voice?,offset?} with a bar-local offset, or a segment address with a score-wide tick; {from_op,item} "
+         "names an item an earlier op created.",
          object({{"document", document},
                  {"expected_revision", revision},
                  {"excerpt", eid},

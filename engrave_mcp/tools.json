@@ -350,7 +350,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Apply a batch atomically by default. Use runtime_info scope ops for operation shapes. excerpt scopes the batch to one excerpt. Bar, staff and voice numbers are 1-based and resolve when their op runs. A position is a compact {measure,staff?,voice?,offset?} with a bar-local offset, or a segment address; {from_op,item} names an item an earlier op created.",
+    "description": "Apply a batch atomically by default. Use runtime_info scope ops for operation shapes. excerpt scopes the batch to one excerpt. Bar, staff and voice numbers are 1-based and resolve when their op runs. A position is a compact {measure,staff?,voice?,offset?} with a bar-local offset, or a segment address with a score-wide tick; {from_op,item} names an item an earlier op created.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1092,10 +1092,27 @@
                     "type": "string"
                   },
                   {
+                    "additionalProperties": false,
+                    "properties": {
+                      "from_op": {
+                        "maximum": 1023,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "item": {
+                        "maximum": 65535,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "from_op",
+                      "item"
+                    ],
                     "type": "object"
                   }
                 ],
-                "description": "EID, segment address or {from_op,item}."
+                "description": "Part EID or {from_op,item}."
               },
               "parts": {
                 "items": {
@@ -1105,10 +1122,27 @@
                       "type": "string"
                     },
                     {
+                      "additionalProperties": false,
+                      "properties": {
+                        "from_op": {
+                          "maximum": 1023,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "item": {
+                          "maximum": 65535,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "from_op",
+                        "item"
+                      ],
                       "type": "object"
                     }
                   ],
-                  "description": "EID, segment address or {from_op,item}."
+                  "description": "Part EID or {from_op,item}."
                 },
                 "type": "array"
               },

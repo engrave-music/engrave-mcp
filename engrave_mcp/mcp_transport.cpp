@@ -162,8 +162,9 @@ std::string server_instructions() {
     std::string instructions =
         "Start with score_create or score_open. Keep the document handle and revision, then inspect the returned outline for "
         "measure lengths, staves, signatures and excerpts. Bars, staves and voices start at 1. Use score_write_phrase for "
-        "note entry, then score_read_music to check the result in short windows. Positions use exact whole-note fractions "
-        "relative to the start of the measure: 0, 1/4 and 3/8 are valid offsets. A pickup uses its actual duration. "
+        "note entry, then score_read_music to check the result in short windows. Compact positions use exact whole-note offsets "
+        "relative to the start of the measure: 0, 1/4 and 3/8 are valid offsets (explicit segment addresses use score-wide tick). "
+        "A pickup uses its actual duration. "
         "Pitch defaults to concert. Choose written pitch_mode on a lane when copying a transposed part. ";
     instructions += api::phrase_grammar;
     instructions += " ";
