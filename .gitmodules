@@ -1,5 +1,5 @@
 [submodule "vendor/engrave"]
 	path = vendor/engrave
-	url = https://github.com/Locietta/engrave.git
+	url = https://github.com/engrave-music/engrave.git
 	shallow = true
 	branch = main

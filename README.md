@@ -5,7 +5,7 @@ engraving engine: create, inspect, edit, render and export scores over stdio
 JSON-RPC.
 
 The engine is **engrave**, a pinned hard fork of the MuseScore 5.0 core
-([github.com/Locietta/engrave](https://github.com/Locietta/engrave), consumed as
+([github.com/engrave-music/engrave](https://github.com/engrave-music/engrave), consumed as
 `vendor/engrave`). It is compiled directly into the server as a standalone native
 C++ binary with no Node.js, WebAssembly, or desktop MuseScore dependency at runtime.
 

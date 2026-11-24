@@ -4,7 +4,7 @@
 stdio JSON-RPC 创建、查询、编辑、排版并导出乐谱。
 
 引擎是 **engrave**，即 MuseScore 5.0 核心的固定硬分叉
-（[github.com/Locietta/engrave](https://github.com/Locietta/engrave)，以子模块
+（[github.com/engrave-music/engrave](https://github.com/engrave-music/engrave)，以子模块
 `vendor/engrave` 引入），直接编译为独立原生 C++ 二进制。运行时不需要 Node.js、WASM，
 也不需要安装桌面版 MuseScore。
 

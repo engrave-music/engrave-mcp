@@ -2,13 +2,13 @@
 
 Development spans two repositories: the host (`engrave-mcp`) and the engine
 submodule (`vendor/engrave`, maintained as a hard fork of MuseScore core at
-`https://github.com/Locietta/engrave`). Both use `main` as the single long-lived
+`https://github.com/engrave-music/engrave`). Both use `main` as the single long-lived
 integration branch and reserve tags for formal releases.
 
 ## Host Repository (`engrave-mcp`)
 
 - `main` is the only long-lived branch and tracks `origin/main`
-  (`https://github.com/Locietta/engrave-mcp`).
+  (`https://github.com/engrave-music/engrave-mcp`).
 - Develop on short-lived topic branches (`feat/...`, `fix/...`, `cleanup/...`).
   Merge to `main` once verified, then delete the topic branch.
 - Reserve tags for formal version releases (`v<version>`).
@@ -94,7 +94,7 @@ already reads and writes the 5.0 `<o1>`–`<o4>` offsets.
 ### Hard-Fork Rules
 
 - **Forward-only history**: `main` tracks `origin/main`
-  (`https://github.com/Locietta/engrave.git`) and moves forward strictly through
+  (`https://github.com/engrave-music/engrave.git`) and moves forward strictly through
   reviewed commits and merges. Force-pushes and rebases of published history are
   prohibited.
 - **Cherry-picks only**: Upstream changes are never merged in bulk. Reference

@@ -1,7 +1,7 @@
 # engrave-mcp
 
 Native C++ MCP host for the `engrave` engine, a pinned hard fork of MuseScore
-core (`github.com/Locietta/engrave`, consumed as the submodule
+core (`github.com/engrave-music/engrave`, consumed as the submodule
 `vendor/engrave`).
 
 ## Goal & Scope
