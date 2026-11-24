@@ -207,6 +207,100 @@ class BBuildTests(unittest.TestCase):
             self.assertIn("--target=x86_64-unknown-linux-gnu", args)
             self.assertIn(f"--sysroot={str(sysroot_dir.resolve()).replace(chr(92), '/')}", args)
 
+    def test_prune_disk_cache_evicts_oldest_and_cleans_tmp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache / "ac/00").mkdir(parents=True)
+            (cache / "cas/aa").mkdir(parents=True)
+            (cache / "tmp/partial").mkdir(parents=True)
+
+            (cache / "tmp/orphan").write_bytes(b"x" * 100)
+            (cache / "tmp/partial/blob").write_bytes(b"y" * 100)
+
+            old_ac = cache / "ac/00/old"
+            old_cas = cache / "cas/aa/old"
+            new_ac = cache / "ac/00/new"
+            new_cas = cache / "cas/aa/new"
+
+            old_ac.write_bytes(b"a" * 300)
+            old_cas.write_bytes(b"b" * 400)
+            new_ac.write_bytes(b"c" * 200)
+            new_cas.write_bytes(b"d" * 300)
+
+            os.utime(old_ac, ns=(1_000_000_000, 1_000_000_000))
+            os.utime(old_cas, ns=(2_000_000_000, 2_000_000_000))
+            os.utime(new_ac, ns=(3_000_000_000, 3_000_000_000))
+            os.utime(new_cas, ns=(4_000_000_000, 4_000_000_000))
+
+            before, after, removed = bbuild.prune_disk_cache(cache, max_bytes=500)
+
+            self.assertEqual((before, after, removed), (1200, 500, 4))
+            self.assertFalse(old_ac.exists())
+            self.assertFalse(old_cas.exists())
+            self.assertTrue(new_ac.is_file())
+            self.assertTrue(new_cas.is_file())
+            self.assertEqual(list((cache / "tmp").iterdir()), [])
+
+    def test_prune_disk_cache_noop_when_within_budget_still_cleans_tmp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            (cache / "cas/01").mkdir(parents=True)
+            (cache / "tmp").mkdir(parents=True)
+            blob = cache / "cas/01/blob"
+            blob.write_bytes(b"z" * 256)
+            (cache / "tmp/stale").write_bytes(b"t" * 64)
+
+            before, after, removed = bbuild.prune_disk_cache(cache, max_bytes=512)
+
+            self.assertEqual((before, after, removed), (256, 256, 1))
+            self.assertTrue(blob.is_file())
+            self.assertEqual(list((cache / "tmp").iterdir()), [])
+
+    def test_prune_cache_cli_runs_shutdown_before_prune_and_rejects_bad_limit(self):
+        order: list[str] = []
+
+        def fake_call(cmd, **kwargs):
+            self.assertEqual(cmd, ["fake-bazel", "shutdown"])
+            order.append("shutdown")
+            return 0
+
+        def fake_prune(path, max_bytes):
+            self.assertEqual(path, REPO_ROOT / "build/.bazel_disk_cache")
+            self.assertEqual(max_bytes, 3 * bbuild.MIB)
+            order.append("prune")
+            return (0, 0, 0)
+
+        with (
+            patch.object(bbuild, "find_bazel", return_value="fake-bazel"),
+            patch.object(bbuild.subprocess, "call", side_effect=fake_call),
+            patch.object(bbuild, "prune_disk_cache", side_effect=fake_prune),
+        ):
+            rc = bbuild.main(["--max-disk-cache-mb", "3", "--shutdown", "prune-cache"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(order, ["shutdown", "prune"])
+
+        for bad_args in (["prune-cache"], ["--max-disk-cache-mb", "0", "prune-cache"]):
+            with self.assertRaises(SystemExit) as ctx:
+                bbuild.main(bad_args)
+            self.assertNotEqual(ctx.exception.code, 0)
+
+    def test_prune_disk_cache_rejects_symlink_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "real_cache"
+            (target / "cas/00").mkdir(parents=True)
+            victim = target / "cas/00/blob"
+            victim.write_bytes(b"a" * 200)
+            link = root / "link_cache"
+            try:
+                link.symlink_to(target, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"symlink creation unavailable: {error}")
+
+            with self.assertRaises(ValueError):
+                bbuild.prune_disk_cache(link, max_bytes=1)
+            self.assertTrue(victim.is_file())
+
 
 if __name__ == "__main__":
     sys.exit(unittest.main())

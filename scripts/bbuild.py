@@ -15,6 +15,7 @@ import urllib.request
 from pathlib import Path
 
 PROFILES = ("release", "debug", "releasedbg", "sanitize")
+MIB = 1024 * 1024
 
 HOST_TARGETS: dict[str, list[str]] = {
     "engrave_mcp": ["//:engrave-mcp"],
@@ -342,6 +343,78 @@ def generate_compdb(
     return 0
 
 
+def _clean_tmp_dir(tmp_dir: Path) -> int:
+    if not tmp_dir.is_dir() or tmp_dir.is_symlink():
+        return 0
+    removed = 0
+    for entry in os.scandir(tmp_dir):
+        path = Path(entry.path)
+        try:
+            if entry.is_dir(follow_symlinks=False):
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            removed += 1
+        except FileNotFoundError:
+            pass
+    return removed
+
+
+def _collect_cache_files(subdir: Path) -> list[tuple[int, int, Path]]:
+    entries: list[tuple[int, int, Path]] = []
+    if not subdir.is_dir() or subdir.is_symlink():
+        return entries
+    stack = [subdir]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as it:
+                for entry in it:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(Path(entry.path))
+                    elif entry.is_file(follow_symlinks=False):
+                        try:
+                            st = entry.stat(follow_symlinks=False)
+                        except FileNotFoundError:
+                            continue
+                        entries.append((st.st_mtime_ns, st.st_size, Path(entry.path)))
+        except FileNotFoundError:
+            continue
+    return entries
+
+
+def prune_disk_cache(disk_cache: Path, max_bytes: int) -> tuple[int, int, int]:
+    """Remove stale tmp/ files and evict oldest ac/ and cas/ entries until <= max_bytes."""
+    if max_bytes <= 0:
+        raise ValueError("max_bytes must be positive")
+    if disk_cache.is_symlink():
+        raise ValueError(f"refusing to prune symlinked disk cache: {disk_cache}")
+    if not disk_cache.is_dir():
+        return (0, 0, 0)
+
+    removed = _clean_tmp_dir(disk_cache / "tmp")
+    files = _collect_cache_files(disk_cache / "ac") + _collect_cache_files(disk_cache / "cas")
+    before_bytes = sum(size for _, size, _ in files)
+    after_bytes = before_bytes
+
+    if after_bytes > max_bytes:
+        # Bazel updates entry mtime on disk-cache hits and writes, so oldest-first
+        # evicts stale artifacts from earlier commits while retaining the active build.
+        files.sort(key=lambda item: (item[0], str(item[2])))
+        for _, size, path in files:
+            if after_bytes <= max_bytes:
+                break
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                after_bytes -= size
+                continue
+            after_bytes -= size
+            removed += 1
+
+    return (before_bytes, after_bytes, removed)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=PROFILES, default="release")
@@ -349,9 +422,37 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-j", "--jobs", type=int)
     parser.add_argument("--no-pch", action="store_true", help="Disable precompiled headers")
     parser.add_argument("--playback-harness", action="store_true", help="Enable ENGRAVE_PLAYBACK_HARNESS")
-    parser.add_argument("action", choices=("build", "compdb", "fetch", "clean"))
+    parser.add_argument("--max-disk-cache-mb", type=int, help="Target upper bound in MiB for prune-cache")
+    parser.add_argument(
+        "--shutdown",
+        action="store_true",
+        help="Run `bazel shutdown` before pruning so no background server writes to the cache",
+    )
+    parser.add_argument("action", choices=("build", "compdb", "fetch", "clean", "prune-cache"))
     parser.add_argument("targets", nargs="*")
     args = parser.parse_intermixed_args(argv)
+
+    if args.action == "prune-cache":
+        if args.max_disk_cache_mb is None or args.max_disk_cache_mb <= 0:
+            parser.error("prune-cache requires a positive --max-disk-cache-mb")
+        root = Path(__file__).resolve().parents[1]
+        pixi_prefix = root / ".pixi/envs/default"
+        env = dict(os.environ)
+        extra_paths = [pixi_prefix / "Library/bin", pixi_prefix / "bin"]
+        env["PATH"] = os.pathsep.join(str(p) for p in extra_paths if p.is_dir()) + os.pathsep + env.get("PATH", "")
+        if args.shutdown:
+            bazel = find_bazel(pixi_prefix)
+            rc = subprocess.call([bazel, "shutdown"], cwd=root, env=env)
+            if rc != 0:
+                return rc
+        disk_cache = root / "build/.bazel_disk_cache"
+        before_bytes, after_bytes, removed = prune_disk_cache(disk_cache, args.max_disk_cache_mb * MIB)
+        print(
+            f"Disk cache prune ({disk_cache}): "
+            f"{before_bytes / MIB:.1f} MiB -> {after_bytes / MIB:.1f} MiB "
+            f"(removed {removed} entries, limit {args.max_disk_cache_mb} MiB)"
+        )
+        return 0
 
     root = Path(__file__).resolve().parents[1]
     pixi_prefix = root / ".pixi/envs/default"

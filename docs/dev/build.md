@@ -53,8 +53,10 @@ Use `scripts/bbuild.py` (or `pixi run build`) across `release`, `debug`,
 `releasedbg`, and `sanitize` profiles. Outputs are staged to `build/<profile>`,
 external archives are cached in `build/.bazel_repo_cache`, and Bazel action
 outputs (including relocatable Clang binary precompiled headers) are shared
-across builds in `build/.bazel_disk_cache`. `--build-directory` overrides the
-staged output path, and `--no-pch` disables precompiled headers.
+across builds in `build/.bazel_disk_cache` (bounded to 20 GiB via Bazel idle
+GC, or pruned on demand with `scripts/bbuild.py --max-disk-cache-mb <MiB> --shutdown prune-cache`).
+`--build-directory` overrides the staged output path, and `--no-pch` disables
+precompiled headers.
 
 ```powershell
 pixi run --locked python scripts/bbuild.py --profile release -j 12 build engrave_mcp engrave_mcp_test host_api_test registry_dump registry_check
@@ -67,7 +69,9 @@ The `release` profile uses xclang's `-O2`, LLD section garbage collection, and
 safe identical code folding on Windows and Linux. It keeps ordinary
 development builds free of link-time optimization.
 
-The `sanitize` profile enables AddressSanitizer (ASan) and fatal
+The `sanitize` profile compiles with `-c fastbuild --strip=never -O1 -gline-tables-only`
+(keeping assertions enabled and `file:line` sanitizer stack traces without full
+DWARF type bloat) and enables AddressSanitizer (ASan) and fatal
 UndefinedBehaviorSanitizer (UBSan) on Linux and Windows x86-64 via xclang's
 `--features=asan --features=ubsan`. ASan enables LeakSanitizer (LSan) on
 Linux x86-64. Windows x86-64 has no LSan support. Only the third-party LAME
