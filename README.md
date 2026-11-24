@@ -1,4 +1,37 @@
-# engrave-mcp
+<div align="center">
+  <picture>
+    <source
+      media="(prefers-color-scheme: dark)"
+      srcset="https://raw.githubusercontent.com/engrave-music/.github/main/assets/logo/engrave-music-dark-framed.svg"
+    />
+    <source
+      media="(prefers-color-scheme: light)"
+      srcset="https://raw.githubusercontent.com/engrave-music/.github/main/assets/logo/engrave-music-light-framed.svg"
+    />
+    <img
+      alt="engrave-mcp"
+      src="https://raw.githubusercontent.com/engrave-music/.github/main/assets/logo/engrave-music-light-framed.svg"
+      width="128"
+    />
+  </picture>
+
+  <h1>engrave-mcp</h1>
+
+  <p>Native C++23 MCP server giving LLM agents a real music engraving and audio synthesis engine.</p>
+
+  <p>
+    <a href="https://github.com/engrave-music/engrave-mcp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/engrave-music/engrave-mcp/actions/workflows/ci.yml/badge.svg" /></a>
+    <a href="LICENSE"><img alt="License: GPL-3.0-only" src="https://img.shields.io/badge/License-GPL--3.0--only-blue.svg" /></a>
+    <img alt="C++23" src="https://img.shields.io/badge/C%2B%2B-23-00599C.svg" />
+    <img alt="Bazel" src="https://img.shields.io/badge/Build-Bazel-43A047.svg" />
+    <img alt="MCP: 2026-07-28 & 2025-11-25" src="https://img.shields.io/badge/MCP-2026--07--28%20%26%202025--11--25-7C3AED.svg" />
+    <img alt="Platform: Windows | Linux" src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-555555.svg" />
+  </p>
+
+  <p>
+    <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+  </p>
+</div>
 
 `engrave-mcp` is a native C++ MCP server that gives LLM agents a real music
 engraving engine: create, inspect, edit, render and export scores over stdio
