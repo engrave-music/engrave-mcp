@@ -4,6 +4,7 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <random>
 #include <thread>
 
@@ -28,6 +29,12 @@ std::unexpected<HostError> document_error(const engrave::Error &error, const std
     auto e = api_error(error);
     e.document = token;
     return std::unexpected(std::move(e));
+}
+
+// The engine calls this on the owner thread while it captures a snapshot, so it may only read the flag.
+std::function<bool()> cancel_poll(const std::atomic<bool> *cancelled) {
+    if (!cancelled) return {};
+    return [cancelled] { return cancelled->load(std::memory_order_acquire); };
 }
 
 std::string nonce() {
@@ -467,14 +474,16 @@ Json HostApi::write_phrase(const Json &j, const std::atomic<bool> *cancelled) {
         const auto token = j.at("document").get<std::string>();
         auto doc = impl_->get(token, *expected);
         if (!doc) return std::unexpected(std::move(doc.error()));
+        if (cancelled && cancelled->load(std::memory_order_acquire)) {
+            return std::unexpected(HostError{"Cancelled", "phrase write cancelled before execution", {}, token});
+        }
         auto score = detail::score(j);
         if (!score) return std::unexpected(std::move(score.error()));
         auto outline = (*doc)->outline(*score);
         if (!outline) return document_error(outline.error(), token);
         auto phrase = decode_phrase(j.at("lanes"), *outline, *score);
         if (!phrase) return std::unexpected(std::move(phrase.error()));
-        if (cancelled && cancelled->load()) return std::unexpected(HostError{"Cancelled", "phrase cancelled before edit"});
-        auto edited = (*doc)->write_phrase(*phrase, {*expected, engrave::EditMode::Atomic});
+        auto edited = (*doc)->write_phrase(*phrase, {*expected, engrave::EditMode::Atomic, cancel_poll(cancelled)});
         if (!edited || edited->rejection) {
             auto error = api_error(edited ? edited->rejection->error : edited.error());
             error.document = token;
@@ -502,6 +511,9 @@ Json HostApi::edit(const Json &j, const std::atomic<bool> *cancelled) {
         const auto token = j.at("document").get<std::string>();
         auto doc = impl_->get(token, *expected);
         if (!doc) return std::unexpected(std::move(doc.error()));
+        if (cancelled && cancelled->load(std::memory_order_acquire)) {
+            return std::unexpected(HostError{"Cancelled", "batch cancelled before edit", {}, token});
+        }
         auto batch_res = decode_batch(j.at("ops"), *impl_->catalogue);
         if (!batch_res) {
             auto err = std::move(batch_res.error());
@@ -513,12 +525,10 @@ Json HostApi::edit(const Json &j, const std::atomic<bool> *cancelled) {
             if (!scope) return std::unexpected(std::move(scope.error()));
             batch_res->scope = *scope;
         }
+        const auto mode = json_value<bool>(j, "atomic", true) ? engrave::EditMode::Atomic : engrave::EditMode::Prefix;
         engrave::Result<engrave::EditResult> out = engrave::EditResult{};
         try {
-            if (cancelled && cancelled->load()) return std::unexpected(HostError{"Cancelled", "batch cancelled before edit"});
-            out =
-                (*doc)->edit(*batch_res, engrave::EditOptions{*expected, json_value<bool>(j, "atomic", true) ? engrave::EditMode::Atomic :
-                                                                                                               engrave::EditMode::Prefix});
+            out = (*doc)->edit(*batch_res, engrave::EditOptions{*expected, mode, cancel_poll(cancelled)});
         } catch (const std::exception &e) {
             return std::unexpected(HostError{"EngineFailure", e.what(), {}, token});
         } catch (...) {
@@ -553,7 +563,7 @@ Json HostApi::edit(const Json &j, const std::atomic<bool> *cancelled) {
     });
 }
 
-Json HostApi::checkpoint(const Json &j) {
+Json HostApi::checkpoint(const Json &j, const std::atomic<bool> *cancelled) {
     return boundary([&]() -> Result<Json> {
         if (auto ok = impl_->check_thread(); !ok) return std::unexpected(std::move(ok.error()));
         if (auto ok = detail::validate_tool("checkpoint", j); !ok) return std::unexpected(std::move(ok.error()));
@@ -562,7 +572,8 @@ Json HostApi::checkpoint(const Json &j) {
         const auto token = j.at("document").get<std::string>();
         auto doc = impl_->get(token, *expected);
         if (!doc) return std::unexpected(std::move(doc.error()));
-        return run_checkpoint_op(j, **doc, token, [](engrave::Document &d, std::string_view name) { return d.checkpoint(name); });
+        return run_checkpoint_op(j, **doc, token,
+                                 [&](engrave::Document &d, std::string_view name) { return d.checkpoint(name, cancel_poll(cancelled)); });
     });
 }
 
@@ -734,6 +745,7 @@ Json HostApi::runtime_info(const Json &j) {
                     {"fonts", fonts},
                     {"limits",
                      {{"input_bytes", engrave::max_input_bytes},
+                      {"uncompressed_file_bytes", engrave::max_uncompressed_file_bytes},
                       {"base64_chars", ((engrave::max_input_bytes + 2) / 3) * 4},
                       {"batch_ops", 1024},
                       {"query_results", engrave::max_query_results},

@@ -57,7 +57,9 @@ The engine currently polls cooperative cancellation hooks at defined boundaries:
 
 - Page boundaries and draw preparation in visual rendering
 - Synthesis blocks and audio encoder chunk writes in audio rendering
-- Periodic byte intervals (every ≤4 KiB) during score conversion and export (internal snapshot capture in `Document::capture_snapshot()` does not yet install a cancellation hook; see [§9](#9-planned-architecture-transitions))
+- Periodic byte intervals (every ≤4 KiB) during score conversion and export, including the internal snapshot that `Document::capture_snapshot()` writes for an atomic `score_edit` or `score_write_phrase` rollback and for a named `checkpoint`
+
+A cancelled snapshot capture returns `Cancelled` before the batch runs or the checkpoint is stored: the revision is unchanged and the document is not poisoned. A prefix-mode `score_edit` (`atomic: false`) takes no snapshot, so the host checks the flag once before the batch starts.
 
 If cancellation arrives before publication begins, the operation stops execution and publishes no partial output at the destination. Once publication has started, however, a late cancellation does not abort already-staged writes: publication proceeds, and the export can finish successfully or return an I/O error if a subsequent file write fails, reporting exactly the files that were already published (`published_artifacts`).
 
@@ -65,24 +67,28 @@ If a cancelled live export remains blocked, a watchdog timer expires after 5 sec
 
 ## 6. Runtime quotas and bounds
 
-| Bound                        | Current value            | Enforcement point                                  |
-| ---------------------------- | ------------------------ | -------------------------------------------------- |
-| Transport request line       | 4 MiB                    | `runtime_limits.h`                                 |
-| Pending input queue          | 64 lines / 32 MiB        | Transport reader                                   |
-| In-flight tool calls         | 64                       | Transport admission                                |
-| Response payload             | 16 MiB                   | Transport writer                                   |
-| Output message queue         | 48 MiB / 256 messages    | Transport writer                                   |
-| Open documents               | 16 concurrent            | `host_api.cpp`                                     |
-| Decoded score input          | 8 MiB                    | Engine input check (`engrave::max_input_bytes`)    |
-| Named checkpoints            | 64 MiB per document      | `Document::checkpoint()` (`state.h`)               |
-| Edit batch size              | 1,024 operations         | Tool registry                                      |
-| Export output budget         | 1 GiB (`output_bytes`)   | `ExportLimits` (`runtime_limits.h`)                |
-| Advisory export deadline     | 120 seconds (`deadline`) | `ExportLimits` (`runtime_limits.h`)                |
-| Export/report preflight text | 16 KiB (UTF-8 safe)      | Export reports and transport-generated diagnostics |
-| Engine/tool message text     | Up to 16 MiB             | Not separately bounded (16 MiB response cap)       |
-| Query result items           | 4,096 elements           | Engine query handler (`max_query_results`)         |
+| Bound                              | Current value                                                                   | Enforcement point                                             |
+| ---------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Transport request line             | 4 MiB                                                                           | `runtime_limits.h`                                            |
+| Pending input queue                | 64 lines / 32 MiB                                                               | Transport reader                                              |
+| In-flight tool calls               | 64                                                                              | Transport admission                                           |
+| Response payload                   | 16 MiB                                                                          | Transport writer                                              |
+| Output message queue               | 48 MiB / 256 messages                                                           | Transport writer                                              |
+| Open documents                     | 16 concurrent                                                                   | `host_api.cpp`                                                |
+| Decoded score input                | 8 MiB                                                                           | Engine input check (`engrave::max_input_bytes`)               |
+| Uncompressed file-path score input | 64 MiB                                                                          | `Engine::open(path)` (`engrave::max_uncompressed_file_bytes`) |
+| In-flight snapshot write           | 128 MiB (atomic batch); unused part of the 64 MiB checkpoint store (checkpoint) | `WriteBudget` in `Document::capture_snapshot()`               |
+| Named checkpoints                  | 64 MiB per document                                                             | `Document::checkpoint()` (`state.h`)                          |
+| Edit batch size                    | 1,024 operations                                                                | Tool registry                                                 |
+| Export output budget               | 1 GiB (`output_bytes`)                                                          | `ExportLimits` (`runtime_limits.h`)                           |
+| Advisory export deadline           | 120 seconds (`deadline`)                                                        | `ExportLimits` (`runtime_limits.h`)                           |
+| Export/report preflight text       | 16 KiB (UTF-8 safe)                                                             | Export reports and transport-generated diagnostics            |
+| Engine/tool message text           | Up to 16 MiB                                                                    | Not separately bounded (16 MiB response cap)                  |
+| Query result items                 | 4,096 elements                                                                  | Engine query handler (`max_query_results`)                    |
 
-`engrave::max_input_bytes` (8 MiB) currently caps every `score_open` payload (both compressed `.mscz` files and uncompressed `.mscx`/`.musicxml` files) before archive inspection; inside an `.mscz` that fits under 8 MiB, `score_io.cpp` bounds individual decompressed entries at 64 MiB (128 MiB aggregate). Inline base64 `score_open` payloads are already bounded below 4 MiB by the transport line limit.
+`engrave::max_input_bytes` (8 MiB) caps decoded base64 `data` and every `score_open` path that is not uncompressed score XML (`.mscz`, `.mxl`, MIDI, Guitar Pro, MNX) before archive inspection. A path whose extension is `.mscx`, `.musicxml` or `.xml` (case-insensitive), with no conflicting `format`, may be up to `engrave::max_uncompressed_file_bytes` (64 MiB), the same bound `score_io.cpp` applies to each decompressed `.mscz` entry (128 MiB aggregate). A file above 8 MiB must start with `<` (after an optional BOM and whitespace), so a renamed archive is refused before format sniffing can inflate it. Inline base64 `score_open` payloads are already bounded below 4 MiB by the transport line limit. `runtime_info` reports both bounds as `limits.input_bytes` and `limits.uncompressed_file_bytes`.
+
+The snapshot `WriteBudget` charges the uncompressed native archive, its 64 MiB per-entry bound, and the XML escaping and temporary entry buffers (16× the output bound). An atomic batch may write a 128 MiB rollback snapshot; a checkpoint may write only what remains of its document's 64 MiB checkpoint store after the other named checkpoints. Exceeding either returns `ResourceLimit` without mutating the document.
 
 The export budget (1 GiB, `ExportLimits::output_bytes`) is enforced during rendering and staging before publication. It represents the cumulative total output size across all files in a multi-file export (`api_output.cpp`), not a per-file quota or a hard limit on process virtual memory. Currently, audio exports write first to a cache-directory temp file (`audio.cpp`) and then copy chunks into host staging, so `audio_budget.h` splits the budget into 512 MiB for the intermediate file and 512 MiB for the staged artifact, plus up to 1 MiB for header-rewrite traffic. (This intermediate copy and 50/50 split are retired in Phase B4.4; see [§9](#9-planned-architecture-transitions).)
 
@@ -111,7 +117,6 @@ On Windows, the host executables (`engrave-mcp.exe` and test/probe binaries) and
 
 ## 9. Planned architecture transitions
 
-The following approved changes are **not yet implemented at HEAD**; update §§1–6 in the same milestone as each lands:
+The following approved change is **not yet implemented at HEAD**; update §§1–6 in the same milestone as it lands:
 
-- **Phase B3 (snapshot bounds, cancellation & uncompressed file-path input ceiling):** Install a cooperative cancellation hook and in-flight `WriteBudget` inside `Document::capture_snapshot()`, reduce snapshot XML overhead, and align the on-disk uncompressed `.mscx`/`.musicxml` input limit with the 64 MiB single-entry archive bound while preserving the 4 MiB transport request cap and `.mscz` decompression limits.
 - **Phase B4 (parallel audio synthesis, async encode, direct staging & off-owner-thread audio lane):** Keep DOM mutations, layout, and visual rendering serialized on the single owner thread, but run the DOM-free audio stages on **one serialized background audio lane** using an internal per-track synthesis worker pool (per-task FTZ/DAZ, deterministic fixed-order mix) and an async encoder writing directly to host staging. This retires the cache-dir intermediate file and 512/512 MiB split (restoring the full 1 GiB audio budget), adds worker/ring wait cancellation polls, extends exit-74 cleanup to wait on background audio tasks, and keeps MCP `score_export` request-scoped while keeping exit `70` for hung exports.

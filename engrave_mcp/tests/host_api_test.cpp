@@ -1,6 +1,7 @@
 #include "host_api.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -335,6 +336,113 @@ TEST(HostApi, ScoreEditRollsBackMidBatchByDefaultAndWhenExplicit) {
         EXPECT_EQ(failed.at("revision"), revision);
         EXPECT_EQ(api.read_music(range), before);
     }
+}
+
+TEST(HostApi, PresetCancellationStopsSnapshotCaptureAndLeavesTheScoreEditable) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto created = ok(api, "score_create", music::make_object<Json>());
+    const auto doc = created.at("document");
+    const auto revision = created.at("revision");
+    const Json range{{"document", doc}, {"count", 1}};
+    const auto before = api.read_music(range);
+    ASSERT_EQ(before.at("ok"), true) << music::dump_json(before);
+
+    std::atomic<bool> cancelled{true};
+    const auto expect_cancelled = [&](const Json &out, std::string_view message) {
+        ASSERT_EQ(out.at("ok"), false) << music::dump_json(out);
+        const auto &e = out.at("error");
+        EXPECT_EQ(e.at("code"), "Cancelled") << music::dump_json(out);
+        EXPECT_TRUE(e.at("message").get<std::string>().contains(message)) << music::dump_json(out);
+        EXPECT_FALSE(e.contains("poisoned")) << music::dump_json(out);
+        EXPECT_EQ(api.read_music(range), before);
+    };
+    auto batch = edit_ops(doc, {enter_at(pos(1), 60)});
+    expect_cancelled(api.edit(batch, &cancelled), "cancelled");
+    batch["atomic"] = false;
+    expect_cancelled(api.edit(batch, &cancelled), "batch cancelled before edit");
+    const Json phrase{{"document", doc}, {"lanes", music::json_array<Json>({Json{{"measure", 1}, {"content", "Eb4"}}})}};
+    expect_cancelled(api.write_phrase(phrase, &cancelled), "cancelled");
+    const Json saved{{"document", doc}, {"name", "draft"}};
+    expect_cancelled(api.checkpoint(saved, &cancelled), "snapshot capture cancelled");
+    error(api, "restore_checkpoint", saved, "NotFound");
+
+    cancelled = false;
+    batch["atomic"] = true;
+    const auto edited = api.edit(batch, &cancelled);
+    ASSERT_EQ(edited.at("ok"), true) << music::dump_json(edited);
+    EXPECT_NE(edited.at("revision"), revision);
+    const auto checkpointed = api.checkpoint(saved, &cancelled);
+    ASSERT_EQ(checkpointed.at("ok"), true) << music::dump_json(checkpointed);
+    const auto written = api.write_phrase(phrase, &cancelled);
+    ASSERT_EQ(written.at("ok"), true) << music::dump_json(written);
+    EXPECT_EQ(chord_pitch(api.read_music(range).at("measures")[0], 1, 1, "0"), 63);
+    ok(api, "restore_checkpoint", saved);
+    EXPECT_EQ(chord_pitch(api.read_music(range).at("measures")[0], 1, 1, "0"), 60);
+}
+
+TEST(HostApi, OnlyUncompressedScoreFilesMayExceedTheByteInputLimit) {
+    ASSERT_FALSE(g_args.empty());
+    const auto host = HostApi::create({.resources = fs::u8path(g_args.front())});
+    ASSERT_TRUE(host) << host.error().message;
+    auto &api = **host;
+    const auto limits = ok(api, "runtime_info", music::make_object<Json>()).at("limits");
+    EXPECT_EQ(limits.at("input_bytes").get<std::size_t>(), 8u * 1024 * 1024);
+    EXPECT_EQ(limits.at("uncompressed_file_bytes").get<std::size_t>(), 64u * 1024 * 1024);
+
+    const auto created = ok(api, "score_create", {{"title", "Large native score"}});
+    const auto doc = created.at("document").get<std::string>();
+    const auto exported = [&](engrave::Format format) {
+        std::string bytes;
+        const auto done = api.with_document(doc, {}, [&](engrave::Document &d) -> music::api::Result<void> {
+            auto out = d.export_score({.format = format});
+            if (!out) return std::unexpected(music::api::api_error(out.error()));
+            bytes.assign(reinterpret_cast<const char *>(out->data()), out->size());
+            return {};
+        });
+        require(bool(done), done ? "" : done.error().message);
+        return bytes;
+    };
+    auto xml = exported(engrave::Format::MSCX);
+    const auto archive = exported(engrave::Format::MSCZ);
+
+    struct Scratch {
+        fs::path root;
+
+        ~Scratch() {
+            std::error_code ec;
+            fs::remove_all(root, ec);
+        }
+    } scratch{fs::temp_directory_path() /
+              ("host-api-input-limit-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()))};
+
+    fs::create_directories(scratch.root);
+    const auto write = [](const fs::path &p, const std::string &bytes) {
+        std::ofstream f(p, std::ios::binary);
+        require(bool(f.write(bytes.data(), static_cast<std::streamsize>(bytes.size()))), "cannot write " + p.string());
+    };
+
+    // Trailing whitespace after the root element keeps the score readable while passing the byte limit.
+    xml.resize((8u * 1024 * 1024) + 1, ' ');
+    const auto large = scratch.root / "large.MSCX";
+    write(large, xml);
+    const auto opened = ok(api, "score_open", {{"path", path_text(large)}});
+    EXPECT_EQ(opened.at("outline").at("measure_count"), created.at("outline").at("measure_count"));
+    error(api, "score_open", {{"path", path_text(large)}, {"format", "mscz"}}, "ResourceLimit");
+    // Called directly: the shared helper would log the 11 MiB base64 argument.
+    const auto inline_data = api.open({{"data", b64(xml)}, {"format", "mscx"}});
+    ASSERT_EQ(inline_data.at("ok"), false);
+    EXPECT_EQ(inline_data.at("error").at("code"), "ResourceLimit");
+
+    const auto compressed = scratch.root / "large.mscz";
+    write(compressed, archive);
+    fs::resize_file(compressed, (8u * 1024 * 1024) + 1);
+    error(api, "score_open", {{"path", path_text(compressed)}}, "ResourceLimit");
+
+    fs::resize_file(large, (64u * 1024 * 1024) + 1);
+    error(api, "score_open", {{"path", path_text(large)}}, "ResourceLimit");
 }
 
 TEST(HostApi, ScoreEditResolvesOneBasedPositions) {

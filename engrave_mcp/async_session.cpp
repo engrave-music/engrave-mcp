@@ -65,7 +65,10 @@ Json edit(void *p, const Json &a) {
 
 Json runtime_info(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->runtime_info(a); }
 
-Json checkpoint(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->checkpoint(a); }
+Json checkpoint(void *p, const Json &a) {
+    auto &ctx = *static_cast<HandlerContext *>(p);
+    return ctx.host->checkpoint(a, ctx.cancelled);
+}
 
 Json restore_checkpoint(void *p, const Json &a) { return static_cast<HandlerContext *>(p)->host->restore_checkpoint(a); }
 
@@ -293,10 +296,10 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
     if (!spec) co_return error_envelope(HostError{"InvalidArgument", "Unknown tool"});
     const auto handler = handlers[static_cast<std::size_t>(spec->handler)];
     const auto submitted = std::chrono::steady_clock::now();
-    auto request_cancel =
-        (spec->handler == HandlerId::EXPORT || spec->handler == HandlerId::EDIT || spec->handler == HandlerId::WRITE_PHRASE) ?
-            std::make_shared<std::atomic<bool>>(false) :
-            nullptr;
+    auto request_cancel = (spec->handler == HandlerId::EXPORT || spec->handler == HandlerId::EDIT ||
+                           spec->handler == HandlerId::WRITE_PHRASE || spec->handler == HandlerId::CHECKPOINT) ?
+                              std::make_shared<std::atomic<bool>>(false) :
+                              nullptr;
     if (spec->handler == HandlerId::EXPORT) {
         auto request = decode_export(arguments);
         if (!request) co_return error_envelope(request.error());

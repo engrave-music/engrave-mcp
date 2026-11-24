@@ -29,7 +29,7 @@ struct HostApi {
     Json write_phrase(const Json &, const std::atomic<bool> *cancelled = nullptr);
     Json configure(const Json &);
     Json edit(const Json &, const std::atomic<bool> *cancelled = nullptr);
-    Json checkpoint(const Json &);
+    Json checkpoint(const Json &, const std::atomic<bool> *cancelled = nullptr);
     Json restore_checkpoint(const Json &);
     Json drop_checkpoint(const Json &);
     Json runtime_info(const Json &);
