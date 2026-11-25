@@ -5,10 +5,9 @@
 
 namespace music::api {
 
-// The engine retains its completed cache file throughout the sink callback.
-// Reserve equal halves for that file and the staged copy, so their combined
-// logical file sizes cannot exceed the export's output budget.
-inline constexpr std::uint64_t audio_file_budget(std::uint64_t output_budget) noexcept { return output_budget / 2; }
+// PreparedAudio::run encodes straight into host staging, so the staged file
+// is the only copy and may use the whole export budget.
+inline constexpr std::uint64_t audio_file_budget(std::uint64_t output_budget) noexcept { return output_budget; }
 
 // Cumulative writes include header rewrites, unlike the file extent. This is a
 // write-traffic limit, not additional disk space; the file cap remains strict.

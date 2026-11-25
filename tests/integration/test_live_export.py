@@ -249,6 +249,35 @@ def main():
         assert "result" in sleeper_msg, sleeper_msg
         assert sleeper_msg["result"]["structuredContent"] == {"ok": True, "barrier": str(owner_barrier)}, sleeper_msg
         assert not dest.exists()
+        # PNG renders up to 16 pages per engine call; crossing a batch boundary
+        # must give the same bytes as one call per page.
+        c.tool("score_edit", {"document": doc, "ops": [{"op": "insert_measures", "count": 20}]})
+        measures = c.tool("score_outline", {"document": doc})["outline"]["measures"]
+        breaks = [{"op": "set_layout_break", "measure": m["id"], "kind": "page", "on": True} for m in measures[:20]]
+        c.tool("score_edit", {"document": doc, "ops": breaks})
+        page_count = c.tool("score_query", {"document": doc, "mode": "page_count"})["pages"]
+        assert page_count > 16, page_count
+        batched = out / "png-batched"
+        batched.mkdir(exist_ok=True)
+        r = c.tool(
+            "score_export",
+            {"document": doc, "format": "png", "path": str(batched), "options": {"dpi": 36, "last_page": -1}},
+        )
+        assert [Path(a["path"]).name for a in r["artifacts"]] == [f"page-{i:04d}.png" for i in range(1, page_count + 1)]
+        for page in range(page_count):
+            single = out / f"png-single-{page}"
+            single.mkdir(exist_ok=True)
+            c.tool(
+                "score_export",
+                {
+                    "document": doc,
+                    "format": "png",
+                    "path": str(single),
+                    "options": {"dpi": 36, "first_page": page, "last_page": page},
+                },
+            )
+            name = f"page-{page + 1:04d}.png"
+            assert (single / name).read_bytes() == (batched / name).read_bytes(), name
         phases = c.close()
         modes = {x["mode"] for x in phases}
         assert modes == {"live"}, modes

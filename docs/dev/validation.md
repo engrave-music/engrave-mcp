@@ -94,8 +94,11 @@ lane1,lane2` runs a subset (including opt-in lanes), and `--list-lanes` prints
 - **Focused default lanes**: `native_includes` checks public header boundaries,
   `native_inputs` checks malformed input handling, `windows_manifest` checks
   Segment Heap / UTF-8 / `asInvoker` manifests, `live_export` runs
-  publication/cancellation/UTF-8 path checks alongside `live_export_test`, and
-  `archives` tests archive export against `archive_test` and `engrave-mcp`.
+  publication/cancellation/UTF-8 path checks alongside `live_export_test`,
+  `archives` tests archive export against `archive_test` and `engrave-mcp`, and
+  `async_session` also runs `test_audio_lane.py`, which holds audio renders on
+  the background lane (`.test-audio-hold` destinations, test binary only) to
+  check owner concurrency, serialization, cancellation, shutdown and exit 74.
 - **Opt-in lanes** (`--only`): Excluded from default runs because they require
   extra inputs (`native_470_oracle`), test stress/cancellation limits
   (`output_schema_boundaries`, `document_stress`, `live_dense_cancel`,

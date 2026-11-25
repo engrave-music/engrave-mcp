@@ -100,8 +100,8 @@ def main():
     for repeats, seconds in ((False, 4), (True, expanded_duration)):
         options = {"format": "wav", "use_repeats": repeats}
         expected = projection(seconds)
-        produced = live_budget(args, short, options, 2 * expected, "success")
-        rejected = live_budget(args, short, options, 2 * produced["output_bytes"] - 1, "ResourceLimit")
+        produced = live_budget(args, short, options, expected, "success")
+        rejected = live_budget(args, short, options, produced["output_bytes"] - 1, "ResourceLimit")
         assert "audio intermediate byte limit exceeded" in rejected["message"], rejected
         # WAV is uncompressed: at most half a second of rounding, 4096 header
         # bytes, and one millisecond for the engine's time truncation.
@@ -123,14 +123,14 @@ def main():
         args,
         large,
         {"format": "wav", "use_repeats": False},
-        2 * projection(4),
+        projection(4),
         "success",
     )
     results["mid_measure_no_repeat_at_encoded_size"] = live_budget(
         args,
         mid_measure,
         {"format": "wav", "use_repeats": False},
-        2 * mid_measure_size,
+        mid_measure_size,
         "success",
     )
     # The engine must stop one byte below the actual extent and deliver no
@@ -139,7 +139,7 @@ def main():
         args,
         mid_measure,
         {"format": "wav", "use_repeats": False},
-        2 * mid_measure_size - 1,
+        mid_measure_size - 1,
         "ResourceLimit",
     )
     assert "audio intermediate byte limit exceeded" in results["mid_measure_engine_overrun"]["message"]

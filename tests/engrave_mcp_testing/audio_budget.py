@@ -36,7 +36,7 @@ def live_budget(args, source, audio_options, limit, expected):
                     )
                     if expected == "success":
                         produced = path.stat().st_size
-                        assert 0 < produced <= limit // 2
+                        assert 0 < produced <= limit
                         digest = hashlib.sha256(path.read_bytes()).hexdigest()
                     else:
                         assert result["error"]["code"] == expected, result

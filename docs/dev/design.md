@@ -1,6 +1,6 @@
 # Design and rationale
 
-This document explains how `engrave-mcp` is put together today and records the active architectural transitions approved for upcoming phases. The exact wire contract is defined in [tools.md](tools.md).
+This document explains how `engrave-mcp` is put together. The exact wire contract is defined in [tools.md](tools.md).
 
 ## 1. System architecture
 
@@ -11,26 +11,42 @@ MCP client
 Host layer (engrave_mcp/)
    ├─ transport: reader thread, bounded admission, writer thread, cancellation
    ├─ registry + JSON codecs: the fourteen-tool contract
+   ├─ session: owner dispatch, audio export queue (session I/O thread)
    ├─ live export: render/encode on in-memory document, staging, publication
    └─ watchdog + process-wide publication gate
-   │  serialized calls
-   ▼
-Owner thread (one per process)
-   ├─ up to 16 open documents
-   ├─ engrave core: DOM, layout, import/export, snapshots, positions
+   │  serialized calls                        │  prepared audio exports, one at a time
+   ▼                                          ▼
+Owner thread (one per process)             Audio lane thread (one per process)
+   ├─ up to 16 open documents                 ├─ PreparedAudio::run: synthesis, mix and
+   ├─ engrave core: DOM, layout,              │  encode straight into host staging
+   │  import/export, snapshots, positions     └─ audio export publication and report
    ├─ Cairo renderer
-   └─ FluidSynth offline audio + encoders
+   └─ audio setup: score walk, track and SoundFont loads (prepare_audio)
+
+Engine-internal pools: per-track synthesis workers and an encoder thread per
+audio render; PNG deflate workers for multi-page PNG renders.
 ```
 
 Host sources in `engrave_mcp/` include only the engine's public headers under `engrave/...`, enforced by `scripts/check_native_includes.py` during builds. The engine is a separate library in `vendor/engrave` compiled into the host binary. For the data-oriented architecture of the engine's offline audio render pipeline, event stores, and synthesis, see [vendor/engrave/docs/playback.md](../../vendor/engrave/docs/playback.md).
 
 ## 2. Single-writer DOM owner thread, multiple documents
 
-Currently, all score engine operations execute on a single dedicated owner thread per process: open, create, query, edit, layout, visual rendering, snapshots, offline audio synthesis/encoding, and close. Transport threads handle JSON-RPC parsing and scheduling but never invoke engine functions directly.
+Every operation that reads or writes a score runs on a single dedicated owner thread per process: open, create, query, edit, layout, visual rendering, snapshots, the setup half of an audio export, and close. Transport threads handle JSON-RPC parsing and scheduling but never invoke engine functions directly.
 
 `score_edit` applies batches atomically by default (using an internal pre-batch snapshot). Set `atomic: false` to retain the successfully applied prefix after a zero-mutation execution rejection.
 
-Up to 16 documents can remain open concurrently in one session; they share the engine and serialize DOM access on the owner thread. Score engraving involves deep pointer structures and shared state (font tables, style metrics, rendering contexts), so single-threaded DOM ownership avoids complex multi-threaded synchronization in the engraving core. Today, a long-running audio export still blocks operations on other open documents in the same server process; cooperative cancellation allows clients to abort stuck or superseded requests. See [§9 Planned architecture transitions](#9-planned-architecture-transitions) for moving DOM-free audio execution off the owner thread in Phase B4.
+Up to 16 documents can remain open concurrently in one session; they share the engine and serialize DOM access on the owner thread. Score engraving involves deep pointer structures and shared state (font tables, style metrics, rendering contexts), so single-threaded DOM ownership avoids complex multi-threaded synchronization in the engraving core. The engine parallelizes inside a call where the work is DOM-free: per-track audio synthesis, audio encoding and PNG deflate (multi-page PNG exports render up to 16 pages per engine call for that reason, with bytes identical to one call per page).
+
+### Audio lane
+
+An audio export (`async_session.cpp`, `api_output.cpp`) has two halves:
+
+1. **Setup on the owner thread** (`prepare_audio_export`): validates the destination and mix, creates the staging directory and calls `Document::prepare_audio`, which walks the score and loads every track. The resulting `PreparedAudioExport` refers to no `Document`; its `source_revision` is the revision setup read.
+2. **Render on the audio lane** (`finish_audio_export`): `PreparedAudio::run` synthesizes and encodes straight into staging, the `PreparedAudio` is destroyed (freeing the Engine's single audio render), then the lane publishes and writes the report itself.
+
+While the lane renders, the owner keeps serving every other request, including edits, `score_close` of the exporting document and `runtime_configure` (the running render keeps the SoundFonts it loaded; the next export uses the new selection). Audio exports serialize on the lane: the session I/O thread queues a later one (within the 64 in-flight calls) and dispatches its setup only after the lane reports free, which happens after the previous `PreparedAudio` is destroyed. Queued exports never occupy `owner_io`, so cancelling one, or shutting down, drops it at once.
+
+Session teardown sets the shared stop flag, aborts queued audio exports and releases the owner's work guard. After `owner_io` drains, the owner thread releases the lane's work guard and joins the lane thread before destroying `HostApi`, so every `PreparedAudio` is gone before the Engine. The lane never waits on the owner thread.
 
 ## 3. Direct in-memory export
 
@@ -56,14 +72,16 @@ Clients cancel running operations using the standard MCP `notifications/cancelle
 The engine currently polls cooperative cancellation hooks at defined boundaries:
 
 - Page boundaries and draw preparation in visual rendering
-- Synthesis blocks and audio encoder chunk writes in audio rendering
+- Audio setup, synthesis blocks (about every millisecond while tracks synthesize in parallel) and encoder writes in audio rendering
 - Periodic byte intervals (every ≤4 KiB) during score conversion and export, including the internal snapshot that `Document::capture_snapshot()` writes for an atomic `score_edit` or `score_write_phrase` rollback and for a named `checkpoint`
 
 A cancelled snapshot capture returns `Cancelled` before the batch runs or the checkpoint is stored: the revision is unchanged and the document is not poisoned. A prefix-mode `score_edit` (`atomic: false`) takes no snapshot, so the host checks the flag once before the batch starts.
 
 If cancellation arrives before publication begins, the operation stops execution and publishes no partial output at the destination. Once publication has started, however, a late cancellation does not abort already-staged writes: publication proceeds, and the export can finish successfully or return an I/O error if a subsequent file write fails, reporting exactly the files that were already published (`published_artifacts`).
 
-If a cancelled live export remains blocked, a watchdog timer expires after 5 seconds. The watchdog claims the request, waits 250 ms for committed reports, and attempts to acquire the process-wide publication gate before terminating the process with exit code `70`. Keeping exit `70` is a deliberate policy tradeoff: terminating the process loses unsaved edits in other open documents, but guarantees bounded CPU/memory cleanup rather than leaking a wedged worker. Because the publication gate stays held through report serialization and synchronous stdout delivery, unread or blocked stdout can defer the watchdog exit indefinitely, ensuring a file that has become visible is reported before termination. If a stdout write error is detected, the server ceases new publications and exits with code `74` after best-effort cleanup of active tasks (up to 500 ms); staging files may remain, pending reports cannot be delivered, and already-visible files stay on disk. Worker threads are never terminated asynchronously.
+A running audio render on the lane polls the request's cancellation, session shutdown (EOF) and the stdout-failure flag, so each of them interrupts it; the lane then removes the partial file and its staging directory.
+
+If a cancelled live export remains blocked, a watchdog timer expires after 5 seconds. The watchdog claims the request, waits 250 ms for committed reports, and attempts to acquire the process-wide publication gate before terminating the process with exit code `70`. An audio export stays `EXECUTING` from its owner-thread setup through its render on the lane, so the watchdog covers both halves. Keeping exit `70` is a deliberate policy tradeoff: terminating the process loses unsaved edits in other open documents, but guarantees bounded CPU/memory cleanup rather than leaking a wedged worker. Because the publication gate stays held through report serialization and synchronous stdout delivery (by the owner, or by the lane for audio), unread or blocked stdout can defer the watchdog exit indefinitely, ensuring a file that has become visible is reported before termination. If a stdout write error is detected, the server ceases new publications and exits with code `74` after best-effort cleanup of active tasks (up to 500 ms); `PublicationGate::owner_tasks` counts the running owner task and the running audio-lane task. Staging files may remain, pending reports cannot be delivered, and already-visible files stay on disk. Worker threads are never terminated asynchronously.
 
 ## 6. Runtime quotas and bounds
 
@@ -90,7 +108,7 @@ If a cancelled live export remains blocked, a watchdog timer expires after 5 sec
 
 The snapshot `WriteBudget` charges the uncompressed native archive, its 64 MiB per-entry bound, and the XML escaping and temporary entry buffers (16× the output bound). An atomic batch may write a 128 MiB rollback snapshot; a checkpoint may write only what remains of its document's 64 MiB checkpoint store after the other named checkpoints. Exceeding either returns `ResourceLimit` without mutating the document.
 
-The export budget (1 GiB, `ExportLimits::output_bytes`) is enforced during rendering and staging before publication. It represents the cumulative total output size across all files in a multi-file export (`api_output.cpp`), not a per-file quota or a hard limit on process virtual memory. Currently, audio exports write first to a cache-directory temp file (`audio.cpp`) and then copy chunks into host staging, so `audio_budget.h` splits the budget into 512 MiB for the intermediate file and 512 MiB for the staged artifact, plus up to 1 MiB for header-rewrite traffic. (This intermediate copy and 50/50 split are retired in Phase B4.4; see [§9](#9-planned-architecture-transitions).)
+The export budget (1 GiB, `ExportLimits::output_bytes`) is enforced during rendering and staging before publication. It represents the cumulative total output size across all files in a multi-file export (`api_output.cpp`), not a per-file quota or a hard limit on process virtual memory. Audio exports encode straight into host staging with no intermediate copy, so `audio_budget.h` gives the staged file the whole budget as its extent limit (`AudioOptions::max_bytes`) and the budget plus 1 MiB as a write-traffic limit (`max_write_bytes`) for WAV and FLAC header rewrites.
 
 The 16 KiB diagnostic limit (`k_diagnostic_limit` in `api_output.cpp`, and UTF-8 safe truncation in `mcp_transport.cpp`) applies only to export reports and transport-generated diagnostics, not to arbitrary engine or tool messages. Other messages (such as `runtime_info` error details) are not separately bounded and are subject only to the 16 MiB response cap.
 
@@ -101,7 +119,7 @@ On Windows, the host executables (`engrave-mcp.exe` and test/probe binaries) and
 ## 7. Performance characteristics and limitations
 
 - Under measured test conditions, vector rendering (PDF, SVG) for standard scores once fonts are loaded has been observed in single-digit milliseconds (an observation under measured conditions, not an architectural guarantee).
-- Audio synthesis latency scales with score duration, voice count, and SoundFont complexity.
+- Audio synthesis latency scales with score duration, voice count, and SoundFont complexity. Only an audio export's setup occupies the owner thread; other requests run while it renders, and audio exports wait for each other.
 - Audio cancellation is observed within a fraction of a millisecond; the time until the export call returns is dominated by tearing down playback events and the audio graph (tens of milliseconds for dense scores, slower on Windows).
 - Memory usage: logical file quotas are enforced, but process virtual memory is not capped by an OS sandbox.
 
@@ -114,9 +132,3 @@ On Windows, the host executables (`engrave-mcp.exe` and test/probe binaries) and
 - No in-process memory isolation or crash recovery for corrupted score structures.
 - No support for MuseScore file formats older than version 4.60.
 - No GUI, desktop display, screen capture, or windowing dependencies.
-
-## 9. Planned architecture transitions
-
-The following approved change is **not yet implemented at HEAD**; update §§1–6 in the same milestone as it lands:
-
-- **Phase B4 (parallel audio synthesis, async encode, direct staging & off-owner-thread audio lane):** Keep DOM mutations, layout, and visual rendering serialized on the single owner thread, but run the DOM-free audio stages on **one serialized background audio lane** using an internal per-track synthesis worker pool (per-task FTZ/DAZ, deterministic fixed-order mix) and an async encoder writing directly to host staging. This retires the cache-dir intermediate file and 512/512 MiB split (restoring the full 1 GiB audio budget), adds worker/ring wait cancellation polls, extends exit-74 cleanup to wait on background audio tasks, and keeps MCP `score_export` request-scoped while keeping exit `70` for hung exports.

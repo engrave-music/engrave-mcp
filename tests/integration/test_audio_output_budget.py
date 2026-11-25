@@ -42,10 +42,12 @@ def main():
     seconds = duration + 3.5  # nearest-second outline plus half-second and 3-second tail
     frames = math.ceil(seconds * 44100)
     wav16, wav24 = frames * 4 + 4096, frames * 6 + 4096
-    wav_budget = 2 * ((wav16 + wav24) // 2)
+    # Audio renders straight into staging, so the whole output budget bounds
+    # the one file: 16-bit fits between the two estimates and 24-bit does not.
+    wav_budget = (wav16 + wav24) // 2
     mp3_128 = math.ceil(seconds * 128000 / 8 + 1024 * 1024)
     mp3_512 = math.ceil(seconds * 512000 / 8 + 1024 * 1024)
-    mp3_budget = 2 * ((mp3_128 + mp3_512) // 2)
+    mp3_budget = (mp3_128 + mp3_512) // 2
     evidence = {
         "duration_seconds_rounded": duration,
         "tiny_wav": live_budget(args, source, {"format": "wav"}, 64, "ResourceLimit"),
@@ -67,10 +69,21 @@ def main():
         args,
         source,
         {"format": "mp3", "bitrate_kbps": 512},
-        2 * evidence["mp3_512"]["output_bytes"] - 1,
+        evidence["mp3_512"]["output_bytes"] - 1,
         "ResourceLimit",
     )
+    # A budget equal to the encoded size is 100% of it, twice the retired
+    # half-budget cap; one byte less must fail without leaving staging behind.
+    wav16_size = evidence["wav16"]["output_bytes"]
+    evidence["wav16_exact_budget"] = live_budget(
+        args, source, {"format": "wav", "bit_depth": 16}, wav16_size, "success"
+    )
+    evidence["wav16_one_byte_short"] = live_budget(
+        args, source, {"format": "wav", "bit_depth": 16}, wav16_size - 1, "ResourceLimit"
+    )
+    assert wav16_size > wav_budget // 2, (wav16_size, wav_budget)
     assert evidence["wav16"]["sha256"] == evidence["wav16_large_budget"]["sha256"]
+    assert evidence["wav16"]["sha256"] == evidence["wav16_exact_budget"]["sha256"]
     (args.output / "audio-budget-evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     print(json.dumps(evidence, indent=2))
 

@@ -6,8 +6,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <filesystem>
+#include <functional>
 #include <future>
+#include <mutex>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <thread>
@@ -90,17 +94,100 @@ const HandlerTable handlers{open,
                             drop_checkpoint,
                             write_phrase,
                             configure};
+
+std::exception_ptr aborted() { return std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)); }
+
+struct FatalReportFailure {
+    const char *reason = nullptr;
+};
+
+// One-shot test hook: if the env var names an existing file, remove it and return true.
+bool consume_test_trigger(const char *env_name) {
+    if (!test_hooks_enabled()) return false;
+    const auto *value = std::getenv(env_name);
+    if (!value || !*value) return false;
+    std::error_code ec;
+    const auto path = std::filesystem::u8path(value);
+    if (!std::filesystem::exists(path, ec)) return false;
+    std::filesystem::remove(path, ec);
+    return true;
+}
+
+[[noreturn]] void fatal_audio_post_failure(RequestExecution *execution, const char *reason) noexcept {
+    if (execution && execution->abort_transport) execution->abort_transport(reason);
+    std::fprintf(stderr, "mcp transport terminal: %s; exit 74\n", reason);
+    std::fflush(stderr);
+    std::_Exit(74);
+}
+
+// Commits an export to publication: excludes the watchdog's exit 70 and any
+// later cancellation. On success `publication` stays locked until the report
+// has been written.
+bool begin_publication(RequestExecution *execution, std::unique_lock<std::recursive_mutex> &publication) {
+    if (!execution) return true;
+    if (test_hooks_enabled()) {
+        if (!publication.try_lock()) {
+            std::fprintf(stderr, "PUBLICATION_LOCK_WAITING\n");
+            std::fflush(stderr);
+            publication.lock();
+        }
+    } else {
+        publication.lock();
+    }
+    if (publication_gate.closing) {
+        publication.unlock();
+        return false;
+    }
+    {
+        std::lock_guard lock(execution->response_mutex);
+        if (execution->cancel_before_publication) {
+            publication.unlock();
+            return false;
+        }
+        auto running = ExecutionState::EXECUTING;
+        if (!execution->state.compare_exchange_strong(running, ExecutionState::PUBLISHING, std::memory_order_acq_rel)) {
+            publication.unlock();
+            return false;
+        }
+    }
+    return true;
+}
 } // namespace
 
 struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
+    // One audio export from admission to completion. The session thread owns
+    // its queue position; the owner thread, then the audio lane, run it.
+    struct AudioRun {
+        ExportRequest request;
+        std::shared_ptr<std::atomic<bool>> cancel;
+        std::chrono::steady_clock::time_point submitted;
+        std::shared_ptr<ExportTiming> timing;
+        std::shared_ptr<RequestExecution> execution;
+        std::shared_ptr<RequestExecution> state; // execution, or a private state without one
+        std::function<void(std::exception_ptr, Json, bool)> complete;
+        std::function<void()> release_lane;
+        // Session thread only: prevents double release when complete() falls back after a release_lane() post failure.
+        bool lane_released = false;
+        std::optional<PreparedAudioExport> prepared;
+    };
+
     ExportLimits limits;
     asio::io_context owner_io{1};
     asio::executor_work_guard<asio::io_context::executor_type> owner_work{asio::make_work_guard(owner_io)};
+    // The audio lane runs prepared audio renders one at a time. Only the owner
+    // thread posts to it, starts it and joins it, before destroying the Engine.
+    asio::io_context audio_io{1};
+    asio::executor_work_guard<asio::io_context::executor_type> audio_work{asio::make_work_guard(audio_io)};
     std::unique_ptr<HostApi> host;
+    std::jthread audio_thread;
     std::jthread owner_thread;
     std::thread::id session_thread = std::this_thread::get_id();
     usize owner_pending = 0;
     bool closing = false;
+    // Session thread: set from an audio export's dispatch to the owner until
+    // its PreparedAudio is destroyed. Queued audio exports never wait on owner_io.
+    bool audio_busy = false;
+    std::deque<std::shared_ptr<AudioRun>> audio_queue;
     std::atomic<bool> stopping{false};
     std::atomic<bool> test_owner_busy{false};
 
@@ -117,12 +204,20 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 auto created = HostApi::create(options, limits);
                 if (!created) throw std::runtime_error(created.error().code + ": " + created.error().message);
                 host = std::move(*created);
+                audio_thread = std::jthread([this] { audio_io.run(); });
                 ready.set_value();
             } catch (...) {
+                audio_work.reset();
+                if (audio_thread.joinable()) audio_thread.join();
+                host.reset();
                 ready.set_exception(std::current_exception());
                 return;
             }
             owner_io.run();
+            // Only owner handlers post to the lane, so it now drains and stops:
+            // every PreparedAudio is destroyed before the Engine.
+            audio_work.reset();
+            audio_thread.join();
             host.reset(); // Engine and documents always die on their owner thread.
         });
         initialized.get();
@@ -137,7 +232,315 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         if (closing) return;
         closing = true;
         stopping.store(true, std::memory_order_release);
+        auto queued = std::move(audio_queue);
+        audio_queue.clear();
+        for (const auto &run : queued) abort_queued(*run);
         owner_work.reset();
+    }
+
+    bool audio_cancelled(const AudioRun &run) const noexcept {
+        return run.cancel->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire) ||
+               publication_gate.closing.load(std::memory_order_acquire);
+    }
+
+    // Session thread.
+    static void abort_queued(AudioRun &run) noexcept {
+        auto queued = ExecutionState::QUEUED;
+        if (!run.state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED)) return;
+        try {
+            run.complete(aborted(), Json{}, false);
+        } catch (...) {
+            fatal_audio_post_failure(run.execution.get(), "audio queued abort completion post failed");
+        }
+    }
+
+    // Session thread: hands the next queued audio export to the owner.
+    void start_audio() noexcept {
+        while (!audio_busy && !audio_queue.empty()) {
+            auto run = std::move(audio_queue.front());
+            audio_queue.pop_front();
+            if (closing || publication_gate.closing.load(std::memory_order_acquire)) {
+                abort_queued(*run);
+                continue;
+            }
+            try {
+                asio::post(owner_io, [this, run] { prepare_audio(run); });
+            } catch (...) {
+                auto queued = ExecutionState::QUEUED;
+                if (run->state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED)) {
+                    try {
+                        run->complete(std::current_exception(), Json{}, false);
+                    } catch (...) {
+                        fatal_audio_post_failure(run->execution.get(), "audio dispatch failure completion post failed");
+                    }
+                }
+                continue;
+            }
+            audio_busy = true;
+            if (test_hooks_enabled()) {
+                std::fprintf(stderr, "OWNER_ENQUEUED\n");
+                std::fflush(stderr);
+            }
+        }
+    }
+
+    // Session thread.
+    void release_audio_lane() noexcept {
+        audio_busy = false;
+        start_audio();
+    }
+
+    // Ends an audio export's active task on the thread that ran it last. Any
+    // PreparedAudio is already destroyed, so the lane may be reused.
+    static void finish_audio_task(AudioRun &run, std::exception_ptr error, Json payload) noexcept {
+        {
+            std::lock_guard lock(publication_gate.mutex);
+            --publication_gate.owner_tasks;
+            run.state->state.store(ExecutionState::FINISHED, std::memory_order_release);
+        }
+        publication_gate.changed.notify_all();
+        bool release_posted = false;
+        try {
+            run.release_lane();
+            release_posted = true;
+        } catch (...) {
+            // Fall back to releasing the lane inside complete() on the session thread.
+        }
+        try {
+            run.complete(error, std::move(payload), !release_posted);
+        } catch (...) {
+            fatal_audio_post_failure(run.execution.get(), "audio lane completion post failed");
+        }
+    }
+
+    // Owner thread: setup, the only part of an audio export that reads the Document.
+    void prepare_audio(const std::shared_ptr<AudioRun> &run) noexcept {
+        auto queued = ExecutionState::QUEUED;
+        {
+            std::lock_guard lock(publication_gate.mutex);
+            if (publication_gate.closing) {
+                if (test_hooks_enabled()) {
+                    std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n");
+                    std::fflush(stderr);
+                }
+                const bool need_complete = run->state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED);
+                bool release_posted = false;
+                try {
+                    run->release_lane();
+                    release_posted = true;
+                } catch (...) {}
+                if (need_complete) {
+                    try {
+                        run->complete(aborted(), Json{}, !release_posted);
+                    } catch (...) {}
+                }
+                return;
+            }
+            if (!run->state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) {
+                // Cancelled while queued on owner_io; the session already completed it.
+                try {
+                    run->release_lane();
+                } catch (...) {
+                    fatal_audio_post_failure(run->execution.get(), "audio lane release post failed");
+                }
+                return;
+            }
+            ++publication_gate.owner_tasks;
+        }
+        std::exception_ptr error;
+        Json payload{};
+        try {
+            run->timing->add("owner_dispatch", run->submitted);
+            if (stopping.load(std::memory_order_acquire)) throw asio::system_error(asio::error::operation_aborted);
+            auto runtime = host->runtime_options();
+            if (!runtime) {
+                payload = error_envelope(runtime.error());
+            } else {
+                auto cancelled = [&] { return audio_cancelled(*run); };
+                auto result = host->with_document(
+                    run->request.document, run->request.expected_revision, [&](engrave::Document &document) -> Result<void> {
+                        auto prepared =
+                            prepare_audio_export(document, run->request, limits, cancelled, run->submitted, *run->timing, *runtime);
+                        if (!prepared) return std::unexpected(std::move(prepared.error()));
+                        run->prepared.emplace(std::move(*prepared));
+                        return {};
+                    });
+                if (!result) {
+                    if (result.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
+                    payload = error_envelope(result.error());
+                }
+            }
+        } catch (...) {
+            error = std::current_exception();
+        }
+        if (run->prepared) {
+            try {
+                // The active task carries over: owner_tasks and EXECUTING stay
+                // set until the lane finishes, for exit 74 and the watchdog.
+                asio::post(audio_io, [this, run] { finish_audio(run); });
+                return;
+            } catch (...) {
+                run->prepared.reset();
+                error = std::current_exception();
+            }
+        }
+        finish_audio_task(*run, error, std::move(payload));
+    }
+
+    // Audio lane: renders into staging, then publishes and reports.
+    void finish_audio(const std::shared_ptr<AudioRun> &run) noexcept {
+        std::exception_ptr error;
+        Json payload{};
+        const char *fatal_report_failure = nullptr;
+        std::vector<std::string> visible_paths;
+        std::unique_lock publication(publication_gate.mutex, std::defer_lock);
+        auto *execution = run->execution.get();
+        try {
+            auto prepared = std::move(*run->prepared);
+            run->prepared.reset();
+            auto output = finish_audio_export(
+                std::move(prepared), [&] { return audio_cancelled(*run); }, *run->timing,
+                [&] { return begin_publication(execution, publication); }, &visible_paths);
+            if (!output) {
+                if (output.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
+                if (output.error().published_artifacts.empty()) output.error().published_artifacts = std::move(visible_paths);
+                payload = error_envelope(output.error());
+            } else {
+                payload = std::move(*output);
+            }
+            if (publication.owns_lock() && execution && execution->report) {
+                fatal_report_failure = execution->report(std::move(payload));
+                if (!fatal_report_failure) {
+                    execution->mark_report_sent();
+                    payload = Json{};
+                }
+            }
+        } catch (...) {
+            error = std::current_exception();
+            if (publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING && execution->report) {
+                fatal_report_failure = execution->report(Json{}); // terminal: trustworthy report unavailable
+            }
+        }
+        run->prepared.reset();
+        if (fatal_report_failure) {
+            if (publication.owns_lock()) {
+                --publication_gate.owner_tasks;
+                run->state->state.store(ExecutionState::FINISHED, std::memory_order_release);
+                publication.unlock();
+            } else {
+                std::lock_guard lock(publication_gate.mutex);
+                --publication_gate.owner_tasks;
+                run->state->state.store(ExecutionState::FINISHED, std::memory_order_release);
+            }
+            publication_gate.changed.notify_all();
+            if (execution && execution->abort_transport) execution->abort_transport(fatal_report_failure);
+            std::_Exit(74);
+        }
+        if (publication.owns_lock()) publication.unlock();
+        finish_audio_task(*run, error, std::move(payload));
+    }
+
+    // Admission matches dispatch(). While the lane is busy the export waits in
+    // audio_queue, so cancelling it never touches the owner or the lane.
+    asio::awaitable<Json> audio_export(ExportRequest request, std::shared_ptr<std::atomic<bool>> request_cancel,
+                                       std::chrono::steady_clock::time_point submitted, std::shared_ptr<ExportTiming> timing,
+                                       std::shared_ptr<RequestExecution> execution) {
+        if (closing) throw asio::system_error(asio::error::operation_aborted);
+        if (publication_gate.closing.load(std::memory_order_acquire)) {
+            if (test_hooks_enabled()) {
+                std::fprintf(stderr, "ADMISSION_REFUSED_CLOSING\n");
+                std::fflush(stderr);
+            }
+            throw asio::system_error(asio::error::operation_aborted);
+        }
+        if (owner_pending >= 64) co_return error_envelope(HostError{"ResourceLimit", "Engine queue full (limit 64)"});
+        auto run = std::make_shared<AudioRun>();
+        run->request = std::move(request);
+        run->cancel = std::move(request_cancel);
+        run->submitted = submitted;
+        run->timing = std::move(timing);
+        run->execution = execution;
+        run->state = execution ? std::move(execution) : std::make_shared<RequestExecution>();
+        auto self = shared_from_this();
+        auto token = asio::use_awaitable;
+        co_return co_await asio::async_initiate<decltype(token), void(std::exception_ptr, Json)>(
+            [self, run](auto handler) mutable {
+                auto executor = asio::get_associated_executor(handler);
+                auto guard = std::make_shared<decltype(asio::make_work_guard(executor))>(asio::make_work_guard(executor));
+                auto slot = asio::get_associated_cancellation_slot(handler);
+                auto completion_handler = std::make_shared<decltype(handler)>(std::move(handler));
+                // Weak: the owner or lane thread may drop the last AudioRun, and
+                // ~Impl must never run there (it joins those threads).
+                const std::weak_ptr<Impl> weak = self;
+                const std::weak_ptr<AudioRun> weak_run = run;
+                run->complete = [weak, weak_run, executor, guard, slot, completion_handler](std::exception_ptr error, Json result,
+                                                                                            bool release_fallback) mutable {
+                    if (consume_test_trigger("ENGRAVE_MCP_TEST_FAIL_AUDIO_COMPLETE_POST")) throw std::bad_alloc();
+                    asio::post(executor, [weak, weak_run, guard, slot, completion_handler, error, release_fallback,
+                                          result = std::move(result)]() mutable {
+                        if (const auto session = weak.lock()) {
+                            if (release_fallback) {
+                                if (const auto locked_run = weak_run.lock(); !locked_run || !locked_run->lane_released) {
+                                    if (locked_run) locked_run->lane_released = true;
+                                    session->release_audio_lane();
+                                }
+                            }
+                            if (slot.is_connected()) slot.clear();
+                            --session->owner_pending;
+                        } else if (slot.is_connected()) {
+                            slot.clear();
+                        }
+                        (*completion_handler)(error, std::move(result));
+                    });
+                };
+                // Posted before the completion, so the lane is free when it resumes.
+                run->release_lane = [weak, weak_run, executor] {
+                    if (consume_test_trigger("ENGRAVE_MCP_TEST_FAIL_AUDIO_RELEASE_POST")) throw std::bad_alloc();
+                    asio::post(executor, [weak, weak_run] {
+                        if (const auto session = weak.lock()) {
+                            if (const auto locked_run = weak_run.lock()) {
+                                if (locked_run->lane_released) return;
+                                locked_run->lane_released = true;
+                            }
+                            session->release_audio_lane();
+                        }
+                    });
+                };
+                bool queued = false;
+                bool slot_assigned = false;
+                try {
+                    self->audio_queue.push_back(run);
+                    queued = true;
+                    if (slot.is_connected()) {
+                        slot.assign([self, run](asio::cancellation_type type) {
+                            if (type == asio::cancellation_type::none) return;
+                            run->cancel->store(true, std::memory_order_release);
+                            auto state = ExecutionState::QUEUED;
+                            if (!run->state->state.compare_exchange_strong(state, ExecutionState::CANCELLED_QUEUED)) return;
+                            // Still in audio_queue, or queued on owner_io where
+                            // prepare_audio observes the cancellation and frees the lane.
+                            std::erase(self->audio_queue, run);
+                            try {
+                                run->complete(aborted(), Json{}, false);
+                            } catch (...) {
+                                fatal_audio_post_failure(run->execution.get(), "audio queued cancel completion post failed");
+                            }
+                        });
+                        slot_assigned = true;
+                    }
+                    ++self->owner_pending;
+                } catch (...) {
+                    if (slot_assigned && slot.is_connected()) slot.clear();
+                    if (queued) std::erase(self->audio_queue, run);
+                    throw;
+                }
+                if (test_hooks_enabled() && self->audio_busy) {
+                    std::fprintf(stderr, "AUDIO_LANE_QUEUED\n");
+                    std::fflush(stderr);
+                }
+                self->start_audio();
+            },
+            token);
     }
 
     template <class Function>
@@ -171,7 +574,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     asio::post(executor, [self, guard, slot, completion_handler, error, running_cancel, preserve_completed,
                                           result = std::move(result)]() mutable {
                         if (!preserve_completed && !error && running_cancel && running_cancel->load(std::memory_order_acquire)) {
-                            error = std::make_exception_ptr(asio::system_error(asio::error::operation_aborted));
+                            error = aborted();
                         }
                         if (slot.is_connected()) slot.clear();
                         --self->owner_pending;
@@ -185,7 +588,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         auto queued = ExecutionState::QUEUED;
                         if (state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED)) {
                             task->reset();
-                            complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), Json{});
+                            complete(aborted(), Json{});
                         }
                     });
                 }
@@ -202,7 +605,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                                 }
                                 if (!state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED)) return;
                                 task->reset();
-                                complete(std::make_exception_ptr(asio::system_error(asio::error::operation_aborted)), Json{});
+                                complete(aborted(), Json{});
                                 return;
                             }
                             if (!state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) return;
@@ -210,12 +613,15 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         }
                         std::exception_ptr error;
                         Json result{};
+                        const char *fatal_report_failure = nullptr;
                         try {
                             if (self->stopping.load(std::memory_order_acquire)) throw asio::system_error(asio::error::operation_aborted);
                             result = (**task)();
                             if (!preserve_completed && running_cancel && running_cancel->load(std::memory_order_acquire)) {
                                 throw asio::system_error(asio::error::operation_aborted);
                             }
+                        } catch (const FatalReportFailure &fatal) {
+                            fatal_report_failure = fatal.reason;
                         } catch (...) {
                             error = std::current_exception();
                         }
@@ -227,6 +633,10 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                             state->state.store(ExecutionState::FINISHED, std::memory_order_release);
                         }
                         publication_gate.changed.notify_all();
+                        if (fatal_report_failure) {
+                            if (state->abort_transport) state->abort_transport(fatal_report_failure);
+                            std::_Exit(74);
+                        }
                         complete(error, std::move(result));
                     });
                     if (test_hooks_enabled()) {
@@ -304,82 +714,65 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
         auto request = decode_export(arguments);
         if (!request) co_return error_envelope(request.error());
         auto timing = std::make_shared<ExportTiming>("live", request->destination.path);
-        auto payload = co_await self->dispatch(
-            [self, request = *request, request_cancel, timing, submitted, execution] {
-                timing->add("owner_dispatch", submitted);
-                Json payload;
-                std::vector<std::string> visible_paths;
-                std::unique_lock publication(publication_gate.mutex, std::defer_lock);
-                auto runtime = self->host->runtime_options();
-                if (!runtime) return error_envelope(runtime.error());
-                try {
-                    auto result = self->host->with_document(
-                        request.document, request.expected_revision, [&](engrave::Document &document) -> Result<void> {
-                            auto output = live_export(
-                                document, request, self->limits,
-                                [&] {
-                                    return request_cancel->load(std::memory_order_acquire) ||
-                                           self->stopping.load(std::memory_order_acquire);
-                                },
-                                submitted, *timing, *runtime,
-                                [execution, &publication] {
-                                    if (!execution) return true;
-                                    if (test_hooks_enabled()) {
-                                        if (!publication.try_lock()) {
-                                            std::fprintf(stderr, "PUBLICATION_LOCK_WAITING\n");
-                                            std::fflush(stderr);
-                                            publication.lock();
-                                        }
-                                    } else {
-                                        publication.lock();
-                                    }
-                                    if (publication_gate.closing) {
-                                        publication.unlock();
-                                        return false;
-                                    }
-                                    {
-                                        std::lock_guard lock(execution->response_mutex);
-                                        if (execution->cancel_before_publication) {
-                                            publication.unlock();
-                                            return false;
-                                        }
-                                        auto running = ExecutionState::EXECUTING;
-                                        if (!execution->state.compare_exchange_strong(running, ExecutionState::PUBLISHING,
-                                                                                      std::memory_order_acq_rel)) {
-                                            publication.unlock();
-                                            return false;
-                                        }
-                                    }
-                                    return true;
-                                },
-                                &visible_paths);
-                            if (test_hooks_enabled() && !visible_paths.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
-                                throw 42; // exercise the non-standard exception boundary too
+        Json payload;
+        if (request->kind == ExportKind::AUDIO) {
+            payload = co_await self->audio_export(std::move(*request), request_cancel, submitted, timing, execution);
+        } else {
+            payload = co_await self->dispatch(
+                [self, request = *request, request_cancel, timing, submitted, execution] {
+                    timing->add("owner_dispatch", submitted);
+                    Json payload;
+                    std::vector<std::string> visible_paths;
+                    std::unique_lock publication(publication_gate.mutex, std::defer_lock);
+                    auto runtime = self->host->runtime_options();
+                    if (!runtime) return error_envelope(runtime.error());
+                    try {
+                        auto result = self->host->with_document(
+                            request.document, request.expected_revision, [&](engrave::Document &document) -> Result<void> {
+                                auto output = live_export(
+                                    document, request, self->limits,
+                                    [&] {
+                                        return request_cancel->load(std::memory_order_acquire) ||
+                                               self->stopping.load(std::memory_order_acquire) ||
+                                               publication_gate.closing.load(std::memory_order_acquire);
+                                    },
+                                    submitted, *timing, *runtime, [&] { return begin_publication(execution.get(), publication); },
+                                    &visible_paths);
+                                if (test_hooks_enabled() && !visible_paths.empty() &&
+                                    std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
+                                    throw 42; // exercise the non-standard exception boundary too
+                                }
+                                if (!output) return std::unexpected(std::move(output.error()));
+                                payload = std::move(*output);
+                                return {};
+                            });
+                        if (!result) {
+                            if (result.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
+                            if (result.error().published_artifacts.empty()) result.error().published_artifacts = std::move(visible_paths);
+                            payload = error_envelope(result.error());
+                        }
+                        if (publication.owns_lock() && execution && execution->report) {
+                            if (const char *failure = execution->report(std::move(payload))) {
+                                throw FatalReportFailure{failure};
                             }
-                            if (!output) return std::unexpected(std::move(output.error()));
-                            payload = std::move(*output);
-                            return {};
-                        });
-                    if (!result) {
-                        if (result.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
-                        if (result.error().published_artifacts.empty()) result.error().published_artifacts = std::move(visible_paths);
-                        payload = error_envelope(result.error());
+                            execution->mark_report_sent();
+                            return Json{};
+                        }
+                        return payload;
+                    } catch (const FatalReportFailure &) {
+                        throw;
+                    } catch (...) {
+                        if (publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING &&
+                            execution->report) {
+                            if (const char *failure = execution->report(Json{})) {
+                                throw FatalReportFailure{failure};
+                            }
+                        }
+                        throw;
                     }
-                    if (publication.owns_lock() && execution && execution->report) {
-                        execution->report(std::move(payload));
-                        execution->mark_report_sent();
-                        return Json{};
-                    }
-                    return payload;
-                } catch (...) {
-                    if (publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING &&
-                        execution->report) {
-                        execution->report(Json{}); // terminal: trustworthy report unavailable
-                    }
-                    throw;
-                }
-            },
-            request_cancel, true, execution);
+                },
+                request_cancel, true, execution);
+        }
         if (test_hooks_enabled() && execution && execution->was_reported() && std::getenv("ENGRAVE_MCP_TEST_THROW_AFTER_REPORT")) {
             throw std::runtime_error("Injected post-report completion failure");
         }

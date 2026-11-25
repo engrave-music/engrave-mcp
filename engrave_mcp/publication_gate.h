@@ -10,10 +10,13 @@
 
 namespace music {
 
-// The owner holds this lock from first publication through the report write.
-// Recursive only so staging cleanup can record failures in that same scope.
+// The thread publishing an export (the owner, or the audio lane for audio)
+// holds this lock from first publication through the report write. Recursive
+// only so staging cleanup can record failures in that same scope.
 struct PublicationGate {
     std::recursive_mutex mutex;
+    // Requests running on the owner thread or the audio lane. An audio export
+    // counts once, from its owner-thread setup until its lane task ends.
     usize owner_tasks = 0;
     std::atomic<bool> closing{false};
     usize cleanup_failures = 0;
@@ -33,7 +36,8 @@ enum class ExecutionState : i32 {
 
 struct RequestExecution {
     std::atomic<ExecutionState> state{ExecutionState::QUEUED};
-    UniqueFn<void(Json)> report;
+    UniqueFn<const char *(Json)> report;
+    UniqueFn<void(const char *)> abort_transport;
     mutable std::mutex response_mutex;
     bool report_sent = false;
     bool cancel_before_publication = false;

@@ -19,9 +19,9 @@ def main():
     p.add_argument(
         "--tempo",
         type=int,
-        choices=(150, 300),
-        default=300,
-        help="Use 150 on faster hosts to keep real rendering past the watchdog window",
+        choices=(75, 150, 300),
+        default=75,
+        help="Lower tempo lengthens the score; parallel synthesis needs 75 to keep real rendering past the watchdog window",
     )
     a = p.parse_args()
     out = a.output.resolve()
@@ -77,7 +77,7 @@ def main():
         result["matches_uncancelled_reference"] = True
         # Reusing exactly the cancelled destination proves no reservation remains.
         retry = args(queued_path)["arguments"]
-        retry.update(kind="score", options={"format": "mscx"})
+        retry.update(format="mscx")
         c.tool("score_export", retry)
         assert queued_path.stat().st_size > 0
         # Exercise success/cancel races on quick operations and require exactly

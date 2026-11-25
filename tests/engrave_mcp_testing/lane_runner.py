@@ -572,7 +572,12 @@ LANES = (
     ),
     Lane(
         "async_session",
-        _host("async_session", "async", binary="engrave-mcp-test", soundfont=True, before_soundfont=("--test-hooks",)),
+        _sequence(
+            _host(
+                "async_session", "async", binary="engrave-mcp-test", soundfont=True, before_soundfont=("--test-hooks",)
+            ),
+            _host("audio_lane", "audio-lane", binary="engrave-mcp-test", soundfont=True),
+        ),
         binaries=("engrave-mcp-test",),
         exclusive=True,
     ),

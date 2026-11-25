@@ -8,7 +8,11 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <memory>
+#include <optional>
+#include <span>
 #include <sstream>
+#include <system_error>
 #include <thread>
 #include <utility>
 
@@ -370,47 +374,76 @@ Json encode(const Artifact &artifact) {
     return {{"mime", artifact.mime}, {"path", detail::path_text(artifact.path)}, {"size", artifact.size}};
 }
 
-Result<Json> live_export(engrave::Document &document, const ExportRequest &request, const ExportLimits &limits, FnRef<bool()> cancelled,
-                         std::chrono::steady_clock::time_point submitted, ExportTiming &timing, const RuntimeOptions &runtime,
-                         FnRef<bool()> begin_publication, std::vector<std::string> *visible_paths) {
-    namespace fs = std::filesystem;
-    const bool hooks = test_hooks_enabled();
+namespace {
+namespace fs = std::filesystem;
 
-    struct Cleanup {
-        fs::path destination, stage;
-        bool hooks = false;
+// The PNG renderer deflates a multi-page call's pages in parallel; the batch
+// bounds how many encoded pages are held before write() checks the budget.
+constexpr i32 k_png_batch_pages = 16;
 
-        ~Cleanup() {
-            std::error_code ec;
-            if (hooks && !stage.empty()) {
-                if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_CLEANUP_BARRIER")) {
-                    std::fprintf(stderr, "CLEANUP_BLOCKED\n");
-                    std::fflush(stderr);
-                    while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                }
-            }
-            if (hooks && !stage.empty() && std::getenv("ENGRAVE_MCP_TEST_FAIL_CLEANUP")) {
-                ec = std::make_error_code(std::errc::permission_denied);
-            } else if (!stage.empty()) {
-                fs::remove_all(stage, ec);
-            }
-            if (ec) {
-                {
-                    std::lock_guard lock(publication_gate.mutex);
-                    ++publication_gate.cleanup_failures;
-                }
-                try {
-                    terminal_diagnostic("staging cleanup failed: " + stage.string() + ": " + ec.message() + "\n");
-                } catch (...) {}
+struct Staged {
+    fs::path source;
+    Artifact artifact;
+};
+
+struct StagingCleanup {
+    fs::path stage;
+    bool hooks = false;
+
+    explicit StagingCleanup(bool hooks) : hooks(hooks) {}
+
+    StagingCleanup(const StagingCleanup &) = delete;
+    StagingCleanup &operator=(const StagingCleanup &) = delete;
+
+    ~StagingCleanup() {
+        std::error_code ec;
+        if (hooks && !stage.empty()) {
+            if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_CLEANUP_BARRIER")) {
+                std::fprintf(stderr, "CLEANUP_BLOCKED\n");
+                std::fflush(stderr);
+                while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
-    } cleanup{.destination = {}, .stage = {}, .hooks = hooks};
+        if (hooks && !stage.empty() && std::getenv("ENGRAVE_MCP_TEST_FAIL_CLEANUP")) {
+            ec = std::make_error_code(std::errc::permission_denied);
+        } else if (!stage.empty()) {
+            fs::remove_all(stage, ec);
+        }
+        if (ec) {
+            {
+                std::lock_guard lock(publication_gate.mutex);
+                ++publication_gate.cleanup_failures;
+            }
+            try {
+                terminal_diagnostic("staging cleanup failed: " + stage.string() + ": " + ec.message() + "\n");
+            } catch (...) {}
+        }
+    }
+};
 
+// One export's destination, staging, cancellation polls and publication. Only
+// one thread uses it at a time: the owner, then (for audio) the audio lane.
+struct ExportContext {
+    ExportContext(const ExportRequest &request, const ExportLimits &limits, ExportTiming::Clock::time_point submitted)
+        : request(request), limits(limits), submitted(submitted), hooks(test_hooks_enabled()), cleanup(hooks) {}
+
+    ExportRequest request;
+    ExportLimits limits;
+    ExportTiming::Clock::time_point submitted;
+    bool hooks;
+    fs::path destination;
+    StagingCleanup cleanup;
+    std::vector<Staged> staged;
     std::vector<Artifact> artifacts;
     std::vector<engrave::ExportWarning> warnings;
+    u64 total = 0;
     bool test_deadline = false;
+    bool conversion_entered = false;
+    bool audio_running = false;
+    bool audio_held = false;
+    i32 cancellation_polls = 0;
 
-    auto fail_export = [&](HostError error) -> Result<Json> {
+    std::unexpected<HostError> fail(HostError error, FnRef<bool()> cancelled) {
         if (hooks && !artifacts.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_ERROR_REPORT")) {
             throw std::runtime_error("Injected error report construction failure");
         }
@@ -420,301 +453,178 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             error.message.resize(utf8_prefix(error.message, k_diagnostic_limit));
         }
         if (error.code == "Cancelled" && !cancelled()) error = HostError{"DeadlineExceeded", "export deadline exceeded"};
+        return with_artifacts(std::move(error));
+    }
+
+    std::unexpected<HostError> with_artifacts(HostError error) const {
         for (const auto &a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
         return std::unexpected(std::move(error));
-    };
+    }
 
-    auto check = [&]() -> Result<void> {
+    std::unexpected<HostError> invalid_destination(std::string_view reason, FnRef<bool()> cancelled) {
+        return fail(invalid_error(destination_message(request.destination.requested_path, reason)), cancelled);
+    }
+
+    Result<void> check(FnRef<bool()> cancelled) const {
         if (cancelled()) return std::unexpected(HostError{"Cancelled", "live export cancelled"});
         if (test_deadline || ExportTiming::Clock::now() - submitted >= limits.deadline) {
             return std::unexpected(HostError{"DeadlineExceeded", "export deadline exceeded"});
         }
         return {};
-    };
+    }
 
-    try {
-        if (auto ok = check(); !ok) return fail_export(std::move(ok.error()));
-        auto invalid_destination = [&](std::string_view reason) {
-            return fail_export(invalid_error(destination_message(request.destination.requested_path, reason)));
-        };
-        if (auto ok = validate_output_path_syntax(request.destination.path); !ok) return invalid_destination(ok.error());
+    HostError invalid_resolved_error() const {
+        // Preserve the well-formed JSON request, including its separators;
+        // never convert the unrepresentable resolved path for diagnostics.
+        return invalid_error(
+            destination_message(request.destination.requested_path,
+                                "resolves to a path that is not valid UTF-8; use a destination with a UTF-8 resolved path"));
+    }
+
+    Result<std::string> report_path_text(const fs::path &path) const {
+        try {
+            return detail::path_text(path);
+        } catch (const std::exception &) {
+            // Windows generic_u8string() throws for unpaired UTF-16
+            // surrogates before the JSON UTF-8 validator can run.
+            return std::unexpected(invalid_resolved_error());
+        }
+    }
+
+    Result<void> validate_report_path(const fs::path &path) const {
+        auto text = report_path_text(path);
+        if (!text) return std::unexpected(std::move(text.error()));
+        if (!valid_utf8(*text)) return std::unexpected(invalid_resolved_error());
+        return {};
+    }
+
+    // Validates the destination and creates the staging directory. Errors are
+    // already passed through fail().
+    Result<void> stage(FnRef<bool()> cancelled) {
+        if (auto ok = check(cancelled); !ok) return fail(std::move(ok.error()), cancelled);
+        if (auto ok = validate_output_path_syntax(request.destination.path); !ok) return invalid_destination(ok.error(), cancelled);
         // Resolve existing prefixes and check their encoding before creating directories.
         if (request.destination.directory) {
             const auto status = output_path_status(request.destination.path);
-            if (!status) return invalid_destination(status.error());
-            if (fs::exists(*status) && !fs::is_directory(*status)) return invalid_destination("destination must be a directory");
-            cleanup.destination = fs::weakly_canonical(fs::absolute(request.destination.path));
+            if (!status) return invalid_destination(status.error(), cancelled);
+            if (fs::exists(*status) && !fs::is_directory(*status)) return invalid_destination("destination must be a directory", cancelled);
+            destination = fs::weakly_canonical(fs::absolute(request.destination.path));
         } else {
             auto path = normalize_output_path(request.destination.path);
-            if (!path) return invalid_destination(path.error());
-            cleanup.destination = std::move(*path);
+            if (!path) return invalid_destination(path.error(), cancelled);
+            destination = std::move(*path);
         }
-        auto invalid_resolved_error = [&]() -> HostError {
-            // Preserve the well-formed JSON request, including its separators;
-            // never convert the unrepresentable resolved path for diagnostics.
-            return invalid_error(
-                destination_message(request.destination.requested_path,
-                                    "resolves to a path that is not valid UTF-8; use a destination with a UTF-8 resolved path"));
-        };
-        auto report_path_text = [&](const fs::path &path) -> Result<std::string> {
-            try {
-                return detail::path_text(path);
-            } catch (const std::exception &) {
-                // Windows generic_u8string() throws for unpaired UTF-16
-                // surrogates before the JSON UTF-8 validator can run.
-                return std::unexpected(invalid_resolved_error());
-            }
-        };
-        auto validate_report_path = [&](const fs::path &path) -> Result<void> {
-            auto text = report_path_text(path);
-            if (!text) return std::unexpected(std::move(text.error()));
-            if (!valid_utf8(*text)) return std::unexpected(invalid_resolved_error());
-            return {};
-        };
-        if (auto ok = validate_report_path(cleanup.destination); !ok) return fail_export(std::move(ok.error()));
-        if (auto ok = validate_output_path_syntax(cleanup.destination); !ok) return invalid_destination(ok.error());
+        if (auto ok = validate_report_path(destination); !ok) return fail(std::move(ok.error()), cancelled);
+        if (auto ok = validate_output_path_syntax(destination); !ok) return invalid_destination(ok.error(), cancelled);
         if (!request.destination.directory) {
-            const auto status = output_path_status(cleanup.destination);
-            if (!status) return invalid_destination(status.error());
-            if (fs::is_directory(*status)) return invalid_destination("file destination is a directory");
+            const auto status = output_path_status(destination);
+            if (!status) return invalid_destination(status.error(), cancelled);
+            if (fs::is_directory(*status)) return invalid_destination("file destination is a directory", cancelled);
         }
-        const auto directory = request.destination.directory ? cleanup.destination : cleanup.destination.parent_path();
-        if (auto ok = require_output_directory(directory); !ok) return invalid_destination(ok.error());
+        const auto directory = request.destination.directory ? destination : destination.parent_path();
+        if (auto ok = require_output_directory(directory); !ok) return invalid_destination(ok.error(), cancelled);
         if (hooks && std::getenv("ENGRAVE_MCP_TEST_FAIL_STAGING")) {
             throw std::system_error(EIO, std::generic_category(), "Injected staging directory failure");
         }
         cleanup.stage = create_private_directory(directory);
-        u64 total = 0;
+        return {};
+    }
 
-        struct Staged {
-            fs::path source;
-            Artifact artifact;
-        };
-
-        std::vector<Staged> staged;
-        auto write = [&](const std::string &name, const std::string &mime, std::span<const std::byte> bytes) -> Result<void> {
-            if (auto ok = check(); !ok) return std::unexpected(std::move(ok.error()));
-            auto start = ExportTiming::Clock::now();
-            if (bytes.empty()) return std::unexpected(HostError{"EngineFailure", "export produced an empty artifact"});
-            if (bytes.size() > limits.output_bytes - total) {
-                return std::unexpected(HostError{"ResourceLimit", "export exceeds output byte limit"});
-            }
-            const auto destination = request.destination.directory ? cleanup.destination / name : cleanup.destination;
-            auto dest_text = report_path_text(destination);
-            if (!dest_text) return std::unexpected(std::move(dest_text.error()));
-            if (dest_text->size() > 4096) {
-                return std::unexpected(
-                    HostError{"ResourceLimit", destination_message(request.destination.requested_path, "artifact path exceeds limit")});
-            }
-            auto path = cleanup.stage / name;
-            std::ofstream out(path, std::ios::binary | std::ios::trunc);
-            out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-            out.close();
-            if (!out || fs::file_size(path) != bytes.size()) return std::unexpected(HostError{"Io", "cannot write staged output"});
-            total += bytes.size();
-            staged.push_back({path, {mime, destination, bytes.size()}});
-            timing.add("encode_write", start);
-            return {};
-        };
-        engrave::CaptureOptions capture;
-        capture.max_bytes = limits.output_bytes;
-        i32 cancellation_polls = 0;
-        bool conversion_entered = false;
-        capture.cancelled = [&] {
-            if (hooks) {
-                const auto test_path = request.destination.path.string();
-                if (test_path.find(".test-470-") != std::string::npos && !conversion_entered) {
-                    const bool converting = test_path.find("converting") != std::string::npos;
-                    const auto progress = engrave::testing::write470_progress();
-                    if (progress.stage == (converting ? engrave::testing::Write470Progress::Stage::CONVERTING :
-                                                        engrave::testing::Write470Progress::Stage::SERIALIZING) &&
-                        progress.units >= 2) {
-                        conversion_entered = true;
-                        std::fprintf(stderr, "WRITE470_%s units=%llu\n", converting ? "CONVERTING" : "SERIALIZING",
-                                     static_cast<unsigned long long>(progress.units));
-                        std::fflush(stderr);
-                        test_deadline = test_path.find("deadline") != std::string::npos;
-                        while (!test_deadline && !cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                        std::fprintf(stderr, "WRITE470_RETURN units=%llu error=Cancelled\n",
-                                     static_cast<unsigned long long>(progress.units));
-                        std::fflush(stderr);
-                    }
-                }
-                if (test_path.find(".test-live-noncooperative") != std::string::npos) {
-                    std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n");
-                    std::fflush(stderr);
-                    if (std::getenv("ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE")) {
-                        std::unique_lock lock(publication_gate.mutex);
-                        publication_gate.changed.wait(lock, [] { return publication_gate.closing.load(); });
-                        std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n");
-                        std::fflush(stderr);
-                    } else if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_BARRIER"); barrier && *barrier) {
-                        const auto barrier_path = std::filesystem::u8path(barrier);
-                        while (!std::filesystem::exists(barrier_path)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    } else if (const auto *delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS")) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(std::stoul(delay)));
-                    } else {
-                        std::this_thread::sleep_for(std::chrono::seconds(30));
-                    }
-                }
-                if (test_path.find(".test-live-cancel") != std::string::npos &&
-                    ++cancellation_polls == (request.kind == ExportKind::RENDER ? 2 : 8)) {
-                    std::fprintf(stderr, "LIVE_CANCEL_POLL\n");
-                    std::fflush(stderr);
-                    while (!cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                }
-            }
-            return test_deadline || cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline;
-        };
-        if (request.kind == ExportKind::SCORE) {
-            auto start = ExportTiming::Clock::now();
-            auto options = request.score_options;
-            options.capture = capture;
-            auto output = document.export_score_with_warnings(options);
-            if (!output && output.error().code == engrave::ErrorCode::UNSUPPORTED && options.format == engrave::Format::MIDI) {
-                if (auto ok = check(); !ok) return fail_export(std::move(ok.error()));
-                options.capture = {};
-                output = document.export_score_with_warnings(options);
-            }
-            if (!output) return fail_export(api_error(output.error()));
-            timing.add("engine_call", start);
-            warnings = std::move(output->warnings);
-            const char *mime = "audio/midi";
-            switch (options.format) {
-                case engrave::Format::MSCX: mime = "application/vnd.musescore.mscx+xml"; break;
-                case engrave::Format::MSCZ: mime = "application/vnd.musescore"; break;
-                case engrave::Format::MUSIC_XML: mime = "application/vnd.recordare.musicxml+xml"; break;
-                case engrave::Format::MXL: mime = "application/vnd.recordare.musicxml"; break;
-                default: break;
-            }
-            if (auto ok = write("output", mime, output->bytes); !ok) return fail_export(std::move(ok.error()));
-        } else if (request.kind == ExportKind::POSITIONS) {
-            auto start = ExportTiming::Clock::now();
-            auto positions = document.positions(request.position_kind, request.position_score, capture);
-            if (!positions) return fail_export(api_error(positions.error()));
-            timing.add("engine_call", start);
-            start = ExportTiming::Clock::now();
-            auto bytes = position_json(*positions, capture);
-            if (!bytes) return fail_export(std::move(bytes.error()));
-            timing.add("encode_write", start);
-            if (auto ok = write("output", "application/json", *bytes); !ok) return fail_export(std::move(ok.error()));
-        } else if (request.kind == ExportKind::RENDER) {
-            auto start = ExportTiming::Clock::now();
-            auto count_res = document.page_count(request.render_options.score);
-            if (!count_res) return fail_export(api_error(count_res.error()));
-            const auto count = *count_res;
-            auto options = request.render_options;
-            options.cancelled = capture.cancelled;
-            const auto last = options.last_page < 0 ? count - 1 : options.last_page;
-            if (options.first_page >= count || last >= count) return fail_export(invalid_error("render page range is outside the score"));
-            if (static_cast<i64>(last) - options.first_page + 1 > 4096) {
-                return fail_export(HostError{"ResourceLimit", "too many output pages"});
-            }
-            timing.add("engine_call", start);
-            if (options.format == engrave::RenderFormat::PDF) {
-                if (auto ok = check(); !ok) return fail_export(std::move(ok.error()));
-                start = ExportTiming::Clock::now();
-                auto output = document.render(options);
-                if (!output) return fail_export(api_error(output.error()));
-                timing.add("engine_call", start);
-                if (auto ok = write("output", "application/pdf", output->document); !ok) return fail_export(std::move(ok.error()));
-            } else {
-                for (auto page = options.first_page; page <= last; ++page) {
-                    if (auto ok = check(); !ok) return fail_export(std::move(ok.error()));
-                    start = ExportTiming::Clock::now();
-                    options.first_page = options.last_page = page;
-                    auto output = document.render(options);
-                    if (!output) return fail_export(api_error(output.error()));
-                    timing.add("engine_call", start);
-                    if (output->pages.size() != 1) {
-                        return fail_export(HostError{"EngineFailure", "renderer returned invalid page count"});
-                    }
-                    const bool png = options.format == engrave::RenderFormat::PNG;
-                    std::ostringstream name;
-                    name << "page-" << std::setfill('0') << std::setw(4) << page + 1 << (png ? ".png" : ".svg");
-                    if (auto ok = write(name.str(), png ? "image/png" : "image/svg+xml", output->pages[0]); !ok) {
-                        return fail_export(std::move(ok.error()));
-                    }
-                }
-            }
-        } else if (request.kind == ExportKind::AUDIO) {
-            auto start = ExportTiming::Clock::now();
-            auto options_res = effective_mix(document, request, runtime);
-            if (!options_res) return fail_export(std::move(options_res.error()));
-            auto options = std::move(*options_res);
-            std::optional<HostError> sink_error;
-            options.cancelled = [&] { return sink_error.has_value() || capture.cancelled(); };
-            const auto rate = runtime.audio_sample_rate;
-            if (options.sample_rate && options.sample_rate != rate) {
-                return fail_export(HostError{"Unsupported", "audio sample rate differs from the engine rate"});
-            }
-            // The engine derives playback duration and checks its global projection
-            // after the cancellable model build. Do not ask outline() for it:
-            // outline also scans lyrics/metadata without cancellation. Per-request
-            // byte quotas below are enforced by the encoder before any sink call.
-            if (auto ok = check(); !ok) return fail_export(std::move(ok.error()));
-            const auto limit = audio_file_budget(limits.output_bytes);
-            options.max_bytes = limit;
-            options.max_write_bytes = audio_write_budget(limit);
-            const auto path = cleanup.stage / "output";
-            std::ofstream out;
-            u64 bytes = 0;
-            auto audio = document.render_audio(options, [&](std::span<const std::byte> chunk) {
-                if (sink_error) return;
-                if (auto ok = check(); !ok) {
-                    sink_error = std::move(ok.error());
-                    return;
-                }
-                if (!out.is_open()) out.open(path, std::ios::binary | std::ios::trunc);
-                if (chunk.size() > limit - bytes) {
-                    sink_error = HostError{"ResourceLimit", "audio exceeds output byte limit"};
-                    return;
-                }
-                out.write(reinterpret_cast<const char *>(chunk.data()), static_cast<std::streamsize>(chunk.size()));
-                if (!out) {
-                    sink_error = HostError{"Io", "cannot write staged audio"};
-                    return;
-                }
-                bytes += chunk.size();
-            });
-            out.close();
-            if (sink_error) return fail_export(std::move(*sink_error));
-            if (!audio) return fail_export(api_error(audio.error()));
-            if (!out) return fail_export(HostError{"Io", "cannot close staged audio"});
-            if (!bytes || bytes != audio->bytes || fs::file_size(path) != bytes) {
-                return fail_export(HostError{"EngineFailure", "invalid audio byte count"});
-            }
-            const char *mime = [&] {
-                switch (options.format) {
-                    case engrave::AudioFormat::WAV: return "audio/wav";
-                    case engrave::AudioFormat::FLAC: return "audio/flac";
-                    case engrave::AudioFormat::OPUS: return "audio/ogg";
-                    case engrave::AudioFormat::MP3: return "audio/mpeg";
-                }
-                assert(false);
-                std::unreachable();
-            }();
-            timing.add("engine_call", start);
-            const auto &destination = cleanup.destination;
-            auto dest_text = report_path_text(destination);
-            if (!dest_text) return fail_export(std::move(dest_text.error()));
-            if (dest_text->size() > 4096) {
-                return fail_export(
-                    HostError{"ResourceLimit", destination_message(request.destination.requested_path, "artifact path exceeds limit")});
-            }
-            staged.push_back({path, {mime, destination, bytes}});
+    Result<void> write(const std::string &name, const std::string &mime, std::span<const std::byte> bytes, FnRef<bool()> cancelled,
+                       ExportTiming &timing) {
+        if (auto ok = check(cancelled); !ok) return std::unexpected(std::move(ok.error()));
+        auto start = ExportTiming::Clock::now();
+        if (bytes.empty()) return std::unexpected(HostError{"EngineFailure", "export produced an empty artifact"});
+        if (bytes.size() > limits.output_bytes - total) {
+            return std::unexpected(HostError{"ResourceLimit", "export exceeds output byte limit"});
         }
+        const auto target = request.destination.directory ? destination / name : destination;
+        auto dest_text = report_path_text(target);
+        if (!dest_text) return std::unexpected(std::move(dest_text.error()));
+        if (dest_text->size() > 4096) {
+            return std::unexpected(
+                HostError{"ResourceLimit", destination_message(request.destination.requested_path, "artifact path exceeds limit")});
+        }
+        auto path = cleanup.stage / name;
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        out.close();
+        if (!out || fs::file_size(path) != bytes.size()) return std::unexpected(HostError{"Io", "cannot write staged output"});
+        total += bytes.size();
+        staged.push_back({path, {mime, target, bytes.size()}});
+        timing.add("encode_write", start);
+        return {};
+    }
+
+    // The engine's cancellation callback, including the path-keyed test holds.
+    bool poll(FnRef<bool()> cancelled) {
+        if (hooks) {
+            const auto test_path = request.destination.path.string();
+            if (test_path.find(".test-470-") != std::string::npos && !conversion_entered) {
+                const bool converting = test_path.find("converting") != std::string::npos;
+                const auto progress = engrave::testing::write470_progress();
+                if (progress.stage == (converting ? engrave::testing::Write470Progress::Stage::CONVERTING :
+                                                    engrave::testing::Write470Progress::Stage::SERIALIZING) &&
+                    progress.units >= 2) {
+                    conversion_entered = true;
+                    std::fprintf(stderr, "WRITE470_%s units=%llu\n", converting ? "CONVERTING" : "SERIALIZING",
+                                 static_cast<unsigned long long>(progress.units));
+                    std::fflush(stderr);
+                    test_deadline = test_path.find("deadline") != std::string::npos;
+                    while (!test_deadline && !cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    std::fprintf(stderr, "WRITE470_RETURN units=%llu error=Cancelled\n", static_cast<unsigned long long>(progress.units));
+                    std::fflush(stderr);
+                }
+            }
+            if (test_path.find(".test-live-noncooperative") != std::string::npos) {
+                std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n");
+                std::fflush(stderr);
+                if (std::getenv("ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE")) {
+                    std::unique_lock lock(publication_gate.mutex);
+                    publication_gate.changed.wait(lock, [] { return publication_gate.closing.load(); });
+                    std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n");
+                    std::fflush(stderr);
+                } else if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_BARRIER"); barrier && *barrier) {
+                    const auto barrier_path = std::filesystem::u8path(barrier);
+                    while (!std::filesystem::exists(barrier_path)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                } else if (const auto *delay = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_MS")) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(std::stoul(delay)));
+                } else {
+                    std::this_thread::sleep_for(std::chrono::seconds(30));
+                }
+            }
+            if (test_path.find(".test-live-cancel") != std::string::npos &&
+                ++cancellation_polls == (request.kind == ExportKind::RENDER ? 2 : 8)) {
+                std::fprintf(stderr, "LIVE_CANCEL_POLL\n");
+                std::fflush(stderr);
+                while (!cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            // Holds a running audio render (never its owner-thread setup) until
+            // "<destination>.release" exists or the export is cancelled.
+            if (audio_running && !audio_held && test_path.find(".test-audio-hold") != std::string::npos) {
+                audio_held = true;
+                std::fprintf(stderr, "AUDIO_LANE_HOLD %s\n", detail::path_text(destination.filename()).c_str());
+                std::fflush(stderr);
+                auto release = destination;
+                release += ".release";
+                std::error_code ec;
+                while (!fs::exists(release, ec) && !cancelled()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+        return test_deadline || cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline;
+    }
+
+    Result<Json> publish(u64 source_revision, FnRef<bool()> cancelled, ExportTiming &timing, FnRef<bool()> begin_publication,
+                         std::vector<std::string> *visible_paths) {
         // Preflight both complete and worst-case partial reports before any rename.
         Json all = make_array<Json>(), paths = make_array<Json>();
         for (const auto &file : staged) {
-            if (auto ok = validate_report_path(file.artifact.path); !ok) return fail_export(std::move(ok.error()));
+            if (auto ok = validate_report_path(file.artifact.path); !ok) return fail(std::move(ok.error()), cancelled);
             json_push(all, encode(file.artifact));
             json_push(paths, detail::path_text(file.artifact.path));
         }
-        Json success{{"ok", true},
-                     {"source_revision", std::to_string(document.revision())},
-                     {"artifacts", std::move(all)},
-                     {"export_warnings", encode(warnings)}};
+        const auto revision = std::to_string(source_revision);
+        Json success{{"ok", true}, {"source_revision", revision}, {"artifacts", std::move(all)}, {"export_warnings", encode(warnings)}};
         // Export exceptions below are bounded to our 16 KiB diagnostic cap,
         // not the schema's larger message ceiling. Control bytes maximize JSON
         // escaping, including the duplicated text form.
@@ -732,10 +642,10 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             std::fflush(stderr);
         }
         if (report_bytes > report_limit) {
-            return fail_export(HostError{"ResourceLimit", "export artifact report exceeds transport budget"});
+            return fail(HostError{"ResourceLimit", "export artifact report exceeds transport budget"}, cancelled);
         }
         // All rendering and staging succeeds before any file becomes visible.
-        if (auto ok = check(); !ok) return fail_export(std::move(ok.error()));
+        if (auto ok = check(cancelled); !ok) return fail(std::move(ok.error()), cancelled);
         // Atomically exclude watchdog termination before the first visible file.
         // Once committed, even slow publication must finish and report its subset.
         if (hooks) {
@@ -746,7 +656,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             }
         }
         if (begin_publication && !begin_publication()) {
-            return fail_export(HostError{"Cancelled", "watchdog claimed export before publication"});
+            return fail(HostError{"Cancelled", "watchdog claimed export before publication"}, cancelled);
         }
         artifacts.reserve(staged.size()); // all storage allocated before visibility
         std::vector<std::string> prepared_paths;
@@ -769,27 +679,223 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     }
                 });
             } catch (const std::exception &e) {
-                return fail_export(HostError{"Io", e.what()});
+                return fail(HostError{"Io", e.what()}, cancelled);
             }
             timing.add("publish", start);
         }
         Json encoded = make_array<Json>();
         for (const auto &a : artifacts) json_push(encoded, encode(a));
-        return Json{{"ok", true},
-                    {"source_revision", std::to_string(document.revision())},
-                    {"artifacts", std::move(encoded)},
-                    {"export_warnings", encode(warnings)}};
+        return Json{{"ok", true}, {"source_revision", revision}, {"artifacts", std::move(encoded)}, {"export_warnings", encode(warnings)}};
+    }
+};
+
+// Standard exceptions become errors that still list every visible artifact.
+template <class T, class Fn>
+Result<T> guarded(ExportContext &context, Fn &&fn) {
+    try {
+        return std::forward<Fn>(fn)();
     } catch (const std::system_error &e) {
-        HostError error{"Io", destination_message(request.destination.requested_path, e.what())};
-        for (const auto &a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
-        return std::unexpected(std::move(error));
+        return context.with_artifacts(HostError{"Io", destination_message(context.request.destination.requested_path, e.what())});
     } catch (const std::exception &e) {
         std::string message = e.what();
         message.resize(utf8_prefix(message, k_diagnostic_limit));
-        HostError error{"EngineFailure", std::move(message)};
-        for (const auto &a : artifacts) error.published_artifacts.push_back(detail::path_text(a.path));
-        return std::unexpected(std::move(error));
+        return context.with_artifacts(HostError{"EngineFailure", std::move(message)});
     }
+}
+
+const char *audio_mime(engrave::AudioFormat format) {
+    switch (format) {
+        case engrave::AudioFormat::WAV: return "audio/wav";
+        case engrave::AudioFormat::FLAC: return "audio/flac";
+        case engrave::AudioFormat::OPUS: return "audio/ogg";
+        case engrave::AudioFormat::MP3: return "audio/mpeg";
+    }
+    assert(false);
+    std::unreachable();
+}
+} // namespace
+
+struct PreparedAudioExport::State {
+    State(const ExportRequest &request, const ExportLimits &limits, ExportTiming::Clock::time_point submitted)
+        : context(request, limits, submitted) {}
+
+    ExportContext context;
+    u64 limit = 0;
+    u64 source_revision = 0;
+    const char *mime = "";
+    // Last member: the engine render is gone before staging cleanup runs.
+    std::optional<engrave::PreparedAudio> audio;
+};
+
+PreparedAudioExport::PreparedAudioExport(std::unique_ptr<State> state) noexcept : state(std::move(state)) {}
+
+PreparedAudioExport::PreparedAudioExport(PreparedAudioExport &&) noexcept = default;
+PreparedAudioExport &PreparedAudioExport::operator=(PreparedAudioExport &&) noexcept = default;
+PreparedAudioExport::~PreparedAudioExport() = default;
+
+Result<PreparedAudioExport> prepare_audio_export(engrave::Document &document, const ExportRequest &request, const ExportLimits &limits,
+                                                 FnRef<bool()> cancelled, std::chrono::steady_clock::time_point submitted,
+                                                 ExportTiming &timing, const RuntimeOptions &runtime) {
+    if (request.kind != ExportKind::AUDIO) return std::unexpected(HostError{"EngineFailure", "not an audio export"});
+    auto state = std::make_unique<PreparedAudioExport::State>(request, limits, submitted);
+    auto &context = state->context;
+    return guarded<PreparedAudioExport>(context, [&]() -> Result<PreparedAudioExport> {
+        if (auto ok = context.stage(cancelled); !ok) return std::unexpected(std::move(ok.error()));
+        const auto start = ExportTiming::Clock::now();
+        auto options_res = effective_mix(document, context.request, runtime);
+        if (!options_res) return context.fail(std::move(options_res.error()), cancelled);
+        auto options = std::move(*options_res);
+        if (options.sample_rate && options.sample_rate != runtime.audio_sample_rate) {
+            return context.fail(HostError{"Unsupported", "audio sample rate differs from the engine rate"}, cancelled);
+        }
+        // The engine derives playback duration and checks its global projection
+        // after the cancellable model build. Do not ask outline() for it:
+        // outline also scans lyrics/metadata without cancellation. Per-request
+        // byte quotas below are enforced by the encoder as it writes.
+        if (auto ok = context.check(cancelled); !ok) return context.fail(std::move(ok.error()), cancelled);
+        state->limit = audio_file_budget(limits.output_bytes);
+        options.max_bytes = state->limit;
+        options.max_write_bytes = audio_write_budget(state->limit);
+        // prepare_audio polls this during setup only and keeps no copy.
+        options.cancelled = [&] { return context.poll(cancelled); };
+        auto prepared = document.prepare_audio(options);
+        if (!prepared) return context.fail(api_error(prepared.error()), cancelled);
+        state->source_revision = prepared->source_revision();
+        state->mime = audio_mime(options.format);
+        state->audio.emplace(std::move(*prepared));
+        timing.add("engine_call", start);
+        return PreparedAudioExport(std::move(state));
+    });
+}
+
+Result<Json> finish_audio_export(PreparedAudioExport prepared, FnRef<bool()> cancelled, ExportTiming &timing,
+                                 FnRef<bool()> begin_publication, std::vector<std::string> *visible_paths) {
+    auto state = std::move(prepared.state);
+    if (!state || !state->audio) return std::unexpected(HostError{"EngineFailure", "audio export is not prepared"});
+    auto &context = state->context;
+    return guarded<Json>(context, [&]() -> Result<Json> {
+        if (auto ok = context.check(cancelled); !ok) return context.fail(std::move(ok.error()), cancelled);
+        const auto start = ExportTiming::Clock::now();
+        const auto path = context.cleanup.stage / "output";
+        context.audio_running = true;
+        auto audio = state->audio->run(path, [&] { return context.poll(cancelled); });
+        context.audio_running = false;
+        // Frees the Engine's audio render before any publication or report.
+        state->audio.reset();
+        if (!audio) return context.fail(api_error(audio.error()), cancelled);
+        std::error_code ec;
+        const auto size = fs::file_size(path, ec);
+        if (ec || !audio->bytes || audio->bytes > state->limit || size != audio->bytes) {
+            return context.fail(HostError{"EngineFailure", "invalid audio byte count"}, cancelled);
+        }
+        timing.add("engine_call", start);
+        auto dest_text = context.report_path_text(context.destination);
+        if (!dest_text) return context.fail(std::move(dest_text.error()), cancelled);
+        if (dest_text->size() > 4096) {
+            return context.fail(
+                HostError{"ResourceLimit", destination_message(context.request.destination.requested_path, "artifact path exceeds limit")},
+                cancelled);
+        }
+        context.staged.push_back({path, {state->mime, context.destination, audio->bytes}});
+        return context.publish(state->source_revision, cancelled, timing, begin_publication, visible_paths);
+    });
+}
+
+Result<Json> live_export(engrave::Document &document, const ExportRequest &request, const ExportLimits &limits, FnRef<bool()> cancelled,
+                         std::chrono::steady_clock::time_point submitted, ExportTiming &timing, const RuntimeOptions &runtime,
+                         FnRef<bool()> begin_publication, std::vector<std::string> *visible_paths) {
+    if (request.kind == ExportKind::AUDIO) {
+        auto prepared = prepare_audio_export(document, request, limits, cancelled, submitted, timing, runtime);
+        if (!prepared) return std::unexpected(std::move(prepared.error()));
+        return finish_audio_export(std::move(*prepared), cancelled, timing, begin_publication, visible_paths);
+    }
+    ExportContext context(request, limits, submitted);
+    return guarded<Json>(context, [&]() -> Result<Json> {
+        if (auto ok = context.stage(cancelled); !ok) return std::unexpected(std::move(ok.error()));
+        auto fail = [&](HostError error) { return context.fail(std::move(error), cancelled); };
+        auto write = [&](const std::string &name, const std::string &mime, std::span<const std::byte> bytes) {
+            return context.write(name, mime, bytes, cancelled, timing);
+        };
+        engrave::CaptureOptions capture;
+        capture.max_bytes = limits.output_bytes;
+        capture.cancelled = [&] { return context.poll(cancelled); };
+        if (request.kind == ExportKind::SCORE) {
+            auto start = ExportTiming::Clock::now();
+            auto options = request.score_options;
+            options.capture = capture;
+            auto output = document.export_score_with_warnings(options);
+            if (!output && output.error().code == engrave::ErrorCode::UNSUPPORTED && options.format == engrave::Format::MIDI) {
+                if (auto ok = context.check(cancelled); !ok) return fail(std::move(ok.error()));
+                options.capture = {};
+                output = document.export_score_with_warnings(options);
+            }
+            if (!output) return fail(api_error(output.error()));
+            timing.add("engine_call", start);
+            context.warnings = std::move(output->warnings);
+            const char *mime = "audio/midi";
+            switch (options.format) {
+                case engrave::Format::MSCX: mime = "application/vnd.musescore.mscx+xml"; break;
+                case engrave::Format::MSCZ: mime = "application/vnd.musescore"; break;
+                case engrave::Format::MUSIC_XML: mime = "application/vnd.recordare.musicxml+xml"; break;
+                case engrave::Format::MXL: mime = "application/vnd.recordare.musicxml"; break;
+                default: break;
+            }
+            if (auto ok = write("output", mime, output->bytes); !ok) return fail(std::move(ok.error()));
+        } else if (request.kind == ExportKind::POSITIONS) {
+            auto start = ExportTiming::Clock::now();
+            auto positions = document.positions(request.position_kind, request.position_score, capture);
+            if (!positions) return fail(api_error(positions.error()));
+            timing.add("engine_call", start);
+            start = ExportTiming::Clock::now();
+            auto bytes = position_json(*positions, capture);
+            if (!bytes) return fail(std::move(bytes.error()));
+            timing.add("encode_write", start);
+            if (auto ok = write("output", "application/json", *bytes); !ok) return fail(std::move(ok.error()));
+        } else {
+            auto start = ExportTiming::Clock::now();
+            auto count_res = document.page_count(request.render_options.score);
+            if (!count_res) return fail(api_error(count_res.error()));
+            const auto count = *count_res;
+            auto options = request.render_options;
+            options.cancelled = capture.cancelled;
+            const auto last = options.last_page < 0 ? count - 1 : options.last_page;
+            if (options.first_page >= count || last >= count) return fail(invalid_error("render page range is outside the score"));
+            if (static_cast<i64>(last) - options.first_page + 1 > 4096) return fail(HostError{"ResourceLimit", "too many output pages"});
+            timing.add("engine_call", start);
+            if (options.format == engrave::RenderFormat::PDF) {
+                if (auto ok = context.check(cancelled); !ok) return fail(std::move(ok.error()));
+                start = ExportTiming::Clock::now();
+                auto output = document.render(options);
+                if (!output) return fail(api_error(output.error()));
+                timing.add("engine_call", start);
+                if (auto ok = write("output", "application/pdf", output->document); !ok) return fail(std::move(ok.error()));
+            } else {
+                const bool png = options.format == engrave::RenderFormat::PNG;
+                const i32 batch = png ? k_png_batch_pages : 1;
+                for (auto page = options.first_page; page <= last; page += batch) {
+                    if (auto ok = context.check(cancelled); !ok) return fail(std::move(ok.error()));
+                    start = ExportTiming::Clock::now();
+                    options.first_page = page;
+                    options.last_page = std::min(last, page + batch - 1);
+                    auto output = document.render(options);
+                    if (!output) return fail(api_error(output.error()));
+                    timing.add("engine_call", start);
+                    if (output->pages.size() != static_cast<usize>(options.last_page - page + 1)) {
+                        return fail(HostError{"EngineFailure", "renderer returned invalid page count"});
+                    }
+                    for (usize i = 0; i < output->pages.size(); ++i) {
+                        std::ostringstream name;
+                        name << "page-" << std::setfill('0') << std::setw(4) << page + static_cast<i32>(i) + 1 << (png ? ".png" : ".svg");
+                        if (auto ok = write(name.str(), png ? "image/png" : "image/svg+xml", output->pages[i]); !ok) {
+                            return fail(std::move(ok.error()));
+                        }
+                        std::vector<std::byte>().swap(output->pages[i]);
+                    }
+                }
+            }
+        }
+        return context.publish(document.revision(), cancelled, timing, begin_publication, visible_paths);
+    });
 }
 
 } // namespace music::api

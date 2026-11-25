@@ -711,10 +711,23 @@ private:
         return write_all(message.data(), message.size());
     }
 
-    // Called synchronously on the owner with the publication lock held.
-    void publish_report(const Json &id, Json payload, bool modern) noexcept {
+    // Called synchronously on the owner or audio lane with the publication lock held.
+    // Returns nullptr on success; on terminal failure fences closing and returns the
+    // reason so the caller can release its own lock and task count before calling
+    // post_writer_failure(reason).
+    const char *publish_report(const Json &id, Json payload, bool modern) noexcept {
+        auto fence_failure = [this](const char *reason) noexcept {
+            publication_gate.closing = true;
+            publication_gate.changed.notify_all();
+            {
+                std::lock_guard output_lock(out_mutex_);
+                out_abort_ = true;
+                out_messages_.clear();
+            }
+            return reason;
+        };
         try {
-            if (payload.is_null()) post_writer_failure("published report unavailable", true);
+            if (payload.is_null()) return fence_failure("published report unavailable");
             Json result;
             try {
                 result = make_tool_result(payload, true);
@@ -734,10 +747,11 @@ private:
             if (modern) add_modern_result_fields(result);
             auto wire = dump_json(Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}});
             wire.push_back('\n');
-            if (wire.size() > k_max_response_bytes) post_writer_failure("published report exceeds limit", true);
-            if (!write_report_bytes(wire)) post_writer_failure("stdout write failed", true);
+            if (wire.size() > k_max_response_bytes) return fence_failure("published report exceeds limit");
+            if (!write_report_bytes(wire)) return fence_failure("stdout write failed");
+            return nullptr;
         } catch (...) {
-            post_writer_failure("cannot construct published report", true);
+            return fence_failure("cannot construct published report");
         }
     }
 
@@ -820,7 +834,7 @@ private:
         }
     }
 
-    [[noreturn]] void post_writer_failure(const char *reason, bool owner_cleaned = false) noexcept {
+    [[noreturn]] void post_writer_failure(const char *reason) noexcept {
         std::unique_lock lock(publication_gate.mutex);
         publication_gate.closing = true; // fences both admission and queued owner starts
         publication_gate.changed.notify_all();
@@ -840,10 +854,11 @@ private:
             out_abort_ = true;
             out_messages_.clear();
         }
-        // Cleanup is attempted by active owners. Never wait indefinitely for
-        // engine/filesystem work; exit also reports possibly unfinished cleanup.
-        const bool cleaned = owner_cleaned || publication_gate.changed.wait_for(lock, std::chrono::milliseconds(500),
-                                                                                [] { return publication_gate.owner_tasks == 0; });
+        // Active owner and audio-lane tasks clean up their staging; active exports
+        // also cancel on `closing`. Never wait indefinitely for engine/filesystem
+        // work; exit also reports possibly unfinished cleanup.
+        const bool cleaned =
+            publication_gate.changed.wait_for(lock, std::chrono::milliseconds(500), [] { return publication_gate.owner_tasks == 0; });
         try {
             terminal_diagnostic(
                 std::string("mcp transport terminal: ") + reason +
@@ -1418,7 +1433,7 @@ private:
             if (target && target->cancel) {
                 const bool first = !target->cancel_requested;
                 target->cancel_requested = true;
-                if (target->modern) {
+                {
                     std::lock_guard lock(target->execution->response_mutex);
                     target->execution->cancel_before_publication = true;
                 }
@@ -1504,9 +1519,10 @@ private:
             call->live_export = name == "score_export";
             call->cancel = std::make_shared<asio::cancellation_signal>();
             if (call->live_export) {
-                call->execution->report = [self = shared_from_this(), id, modern](Json payload) {
-                    self->publish_report(id, std::move(payload), modern);
+                call->execution->report = [self = shared_from_this(), id, modern](Json payload) -> const char * {
+                    return self->publish_report(id, std::move(payload), modern);
                 };
+                call->execution->abort_transport = [self = shared_from_this()](const char *reason) { self->post_writer_failure(reason); };
             }
             inflight_.push_back(call);
         } catch (...) {
