@@ -35,10 +35,14 @@ core (`github.com/engrave-music/engrave`, consumed as the submodule
 - Build with `scripts/bbuild.py --profile <release|debug|releasedbg|asan|tsan>` into
   `build/<profile>`. Do not bypass `scripts/bbuild.py`'s shared Bazel caches
   (`build/.bazel_repo_cache` and `build/.bazel_disk_cache`).
-- Avoid rewriting music algorithms; preserve an executable baseline for each
-  refactor. Check engine changes against the engine gate
-  (`vendor/engrave/tests/gate.py`, wrapped by `tests/engine_gate.py`): `--quick`
-  per step, full gate at milestones and engine bumps. Goldens live in
+- Legacy engine code is fair game for structural, ownership, and data-oriented
+  refactoring as long as observable behavior does not drift. Preserve subtle
+  music-engraving and playback semantics against an executable baseline rather
+  than rewriting music heuristics blindly. Verify engine changes against the
+  engine gate (`vendor/engrave/tests/gate.py`, wrapped by
+  `tests/engine_gate.py`: `--quick` per step, full gate at milestones and
+  engine bumps) and, for playback changes, the 4-dump identity harness
+  (`vendor/engrave/tests/integration/test_playback_dod.py`). Goldens live in
   `vendor/engrave/tests/data/golden` with the hash-pinned allow-list in
   `vendor/engrave/tests/data/golden/allow.json`.
 - Directory hygiene:

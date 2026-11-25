@@ -40,18 +40,19 @@ Always use `struct`, do not use `class` for custom types. This avoids `public:` 
 
 - **Separate data from behavior**: Keep data as plain `struct` definitions with free functions or focused systems rather than monolithic stateful OOP hierarchies.
 - **Owned value semantics**: Value types own their data. Do not add copy-on-write wrappers, reference-counted buffers, or `std::shared_ptr` ownership graphs where single ownership or flat storage works. Avoid copies on hot paths by passing views (`std::string_view`, `std::span`) or references.
-- **Data-oriented layout**: Prefer contiguous flat arrays (`std::vector`, plus `amc::vector` in `vendor/engrave`) and integer indices/offsets over pointer-chasing node graphs.
+- **Data-oriented layout and typed pools**: Prefer homogeneous contiguous typed pools (`std::vector`, `amc::vector` in `vendor/engrave`, or segmented slab pools when pointer stability is required) referenced by compact integer indices, spans, or tagged handles — over both pointer-chasing node graphs and heterogeneous polymorphic arrays (`std::vector<std::variant<...>>` or `std::vector<pro::proxy<...>>`). Typed pools eliminate cross-type padding, keep per-type passes cache-dense, cut allocator fragmentation, and keep consumer headers decoupled from concrete entity definitions.
 
 ## Polymorphism and Callables
 
-Never introduce `virtual` functions, abstract base classes, or vtable hierarchies.
+Never introduce `virtual` functions, abstract base classes, or vtable hierarchies. Pick the mechanism that matches how the code varies and keep compile-time coupling bounded:
 
-- **Multi-method value-semantic interfaces via `ngcpp-proxy`**: When runtime polymorphism across multiple methods (or a specialized move-once proxy like `OutputWaiter`) is genuinely needed, use `pro::proxy` (owning) or `pro::proxy_view` (non-owning) from `<proxy/proxy.h>` instead of virtual interfaces. `proxy` keeps structs plain data without interfering with their memory layout.
+- **Typed pools + handles (default for domain entities)**: When the type set is small and known and objects live in collections, store each concrete type in its own pool and reference heterogeneous sequences via compact handles. Project a transient `pro::proxy_view` on demand only when a consumer genuinely needs behavioral dispatch.
+- **Behavioral polymorphism via `ngcpp-proxy`**: Use `pro::proxy` (owning) or `pro::proxy_view` (non-owning) from `<proxy/proxy.h>` only for open behavioral seams where the facade is stable and adding new implementations should keep consumers decoupled (such as `AudioEncoder` codecs or a move-once waiter like `OutputWaiter`). Do not store owning `pro::proxy` objects in heterogeneous data arrays, and isolate `<proxy/proxy.h>` to seam headers rather than pulling it into ubiquitous core headers.
+- **Closed sum types via `std::variant`**: Use `std::variant` only for genuine sum-type payloads where the set of alternatives is small and closed and callers mainly add new operations (such as wire DTOs, command/AST nodes, or small cold metadata unions). Avoid `std::vector<std::variant<...>>` for hot-path or large domain stores, and avoid pulling wide variants into widely included headers because every consumer inherits all alternative definitions.
 - **Single-signature callables**:
   - **Non-storing inline callbacks**: When a callback does not cross a compilation boundary and is not stored, prefer a template parameter (`template <class Fn>`).
   - **Non-owning synchronous callbacks**: Use `music::FnRef<Sig>` (`"types.h"` in the host) or `muse::FnRef<Sig>` (`"global/fn.h"` in the engine) — a 16-byte trivially copyable view with zero heap allocation and no `<proxy/proxy.h>` include.
   - **Owning stored callbacks**: Use `music::UniqueFn<Sig>` (`"unique_fn.h"` in the host) or `muse::UniqueFn<Sig>` (`"global/unique_fn.h"` in the engine) instead of `std::function`. Public `<engrave/...>` headers stay on standard C++ (`std::function`) so they carry no third-party header dependencies.
-- **Closed sets**: When the set of alternatives is closed and known statically, use `std::variant` or enum dispatch.
 
 ## Containers and JSON
 
@@ -123,4 +124,4 @@ feat(export): add svg vector rendering support
 
 ## Upstream Engine Code (`vendor/engrave`)
 
-Untouched upstream MuseScore code under `vendor/engrave/src/` and `vendor/engrave/muse/` retains its existing classes, virtual hierarchies, and conventions to keep cherry-picks clean; newly written or refactored code in [vendor/engrave/docs/code-style-guide.md](../../vendor/engrave/docs/code-style-guide.md) follows the same conventions above.
+Legacy MuseScore code under `vendor/engrave/src/` and `vendor/engrave/muse/` still contains inherited classes and virtual hierarchies until refactored, not because it is off-limits. Structural, ownership, and data-oriented cleanup of legacy engine subsystems is encouraged as long as observable behavior is preserved and verified against the engine gate (`tests/engine_gate.py`) and playback identity harness (`test_playback_dod.py`); newly written or refactored engine code follows [vendor/engrave/docs/code-style-guide.md](../../vendor/engrave/docs/code-style-guide.md).
