@@ -76,7 +76,6 @@ cc_pch(
     deps = [
         ":host_defines",
         "@glaze",
-        "@ngcpp_proxy",
         "@unordered_dense",
     ],
 )
@@ -95,7 +94,6 @@ cc_library(
         "@amc",
         "@engrave//:public_headers",
         "@glaze",
-        "@ngcpp_proxy",
         "@unordered_dense",
     ],
 )
@@ -118,7 +116,6 @@ cc_library(
         "@amc",
         "@engrave",
         "@glaze",
-        "@ngcpp_proxy",
         "@unordered_dense",
     ],
 )
@@ -155,7 +152,6 @@ cc_library(
     deps = [
         ":host_headers",
         "@amc",
-        "@ngcpp_proxy",
         "@unordered_dense",
     ],
 )

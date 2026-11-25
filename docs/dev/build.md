@@ -133,7 +133,7 @@ an MCP tool:
 
 Both the engine (`vendor/engrave/bazel/pch/engraving_pch.h`) and Ring 2 host
 (`bazel/pch/host_pch.h`) use relocatable Clang binary PCH
-containing only stable STL and third-party headers (`@glaze`, `@ngcpp_proxy`,
+containing only stable STL and third-party headers (`@glaze`,
 `@unordered_dense` for the host), so edits to project headers never invalidate
 the PCH. The engine's PCH rule passes `-Xclang -relocatable-pch` and
 `-Xclang -isysroot -Xclang .`. Consumers use the same sysroot so
