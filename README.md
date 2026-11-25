@@ -101,7 +101,7 @@ pixi run build/release/engrave-mcp.exe --resources .runtime/assets `
 A packaged build finds its sibling `assets/` directory automatically. Windows
 and Linux build, test, and packaging details are in [docs/dev/build.md](docs/dev/build.md):
 
-- **Development builds**: Use `scripts/bbuild.py --profile <release|debug|releasedbg|sanitize> -j 12 build engrave_mcp` (stages to `build/<profile>` with shared Bazel caches in `build/.bazel_repo_cache` and `build/.bazel_disk_cache`). Reserve `scripts/build-native.ps1` / `scripts/build-native.sh` for clean builds at the pinned engine (they reset `vendor/engrave` via `git submodule update --init`).
+- **Development builds**: Use `scripts/bbuild.py --profile <release|debug|releasedbg|asan|tsan> -j 12 build engrave_mcp` (stages to `build/<profile>` with shared Bazel caches in `build/.bazel_repo_cache` and `build/.bazel_disk_cache`; `tsan` is Linux/macOS only). Reserve `scripts/build-native.ps1` / `scripts/build-native.sh` for clean builds at the pinned engine (they reset `vendor/engrave` via `git submodule update --init`).
 - **Acceptance lanes**: Use `tests/run_lanes.py` (builds needed targets automatically; `--no-build` skips building, `--profile` selects `build/<profile>`, `--list-lanes` prints the schedule) with `--output` under `notes/runs/<name>`; see [docs/dev/validation.md](docs/dev/validation.md).
 
 ## Tools
@@ -169,9 +169,12 @@ On Windows, packaged binaries require the
 
 ## Architecture overview
 
-- **One engine, one owner thread.** All score engine operations are serialized on a
-  dedicated owner thread. Up to 16 documents can remain open concurrently; they share the engine.
-  Concurrent editing of one document is not supported by design.
+- **One engine, one DOM owner thread, plus a background audio lane.** Score DOM
+  operations are serialized on a dedicated owner thread (up to 16 concurrent open documents;
+  concurrent editing of one document is not supported by design). After owner-thread setup,
+  audio exports synthesize and encode on a dedicated serialized background audio lane so
+  queries, edits, and `score_close` proceed concurrently; internal DOM-free worker pools
+  parallelize per-track synthesis, audio encoding, and multi-page PNG encoding.
 - **Direct in-memory export.** Exports execute directly against the in-memory document,
   avoiding save-and-reopen layout reflow and minimizing export latency.
 - **Durable publication.** Output is written to a private staging directory,
@@ -183,7 +186,8 @@ On Windows, packaged binaries require the
   live export remains blocked, a watchdog timer (5 seconds) waits for the publication gate held through
   synchronous report delivery (deferred indefinitely if stdout is unread), then exits 70 rather than killing threads.
 - **Explicit quotas.** 4 MiB request line, 64 in-flight calls, 16 MiB response cap,
-  1 GiB export file budget, 8 MiB decoded input limit, and up to 16 open documents.
+  1 GiB export file budget, 8 MiB decoded input limit (64 MiB for uncompressed `.mscx`/`.musicxml`/`.xml` file paths),
+  and up to 16 open documents.
 
 The reasoning behind these choices is in [docs/dev/design.md](docs/dev/design.md).
 

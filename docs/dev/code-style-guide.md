@@ -6,7 +6,7 @@ If not specified here, follow the style of modern refactored code nearby. Build,
 
 ## Naming
 
-Enforced by [.clang-tidy](../../.clang-tidy):
+Enforced by [.clang-tidy](../../.clang-tidy) (root `.clang-tidy` also enforces `modernize-use-nullptr` and `readability-braces-around-statements` with `ShortStatementLines: 1`):
 
 - Types (`struct`, `enum`, `union`): `CamelCase`.
 - Functions, methods, parameters, variables, and struct fields: `lower_case` (no `m_` prefix; avoid trailing `_` on public/plain data fields, while trailing `_` is permitted for private implementation fields per `.clang-tidy`).
@@ -56,7 +56,7 @@ Never introduce `virtual` functions, abstract base classes, or vtable hierarchie
 ## Containers and JSON
 
 - **No node-based associative containers**: Do not use `std::map`, `std::unordered_map`, `std::set`, `std::unordered_set`, `std::multimap`, or `std::multiset`. Use the thin internal vocabulary headers instead of including third-party container headers directly:
-  - `music::HashMap`, `music::HashSet`, `music::SegmentedHashMap`, `music::SegmentedHashSet` (`"containers.h"` in the host) and `muse::HashMap`, `muse::HashSet`, `muse::SegmentedHashMap`, `muse::SegmentedHashSet` (`"global/hashmap.h"` in the engine, backed by `ankerl::unordered_dense`) for lookup-only data (`std::string` keys support transparent `std::string_view` lookup; use `Segmented*` when references or pointers must survive insertion).
+  - `music::HashMap`, `music::HashSet`, `music::SegmentedHashMap`, `music::SegmentedHashSet`, and `music::Hash` (`"containers.h"` in the host) and `muse::HashMap`, `muse::HashSet`, `muse::SegmentedHashMap`, `muse::SegmentedHashSet`, and `muse::Hash` (`"global/hashmap.h"` in the engine, backed by `ankerl::unordered_dense`) for lookup-only data (`std::string` keys support transparent `std::string_view` lookup; use `Segmented*` when references or pointers must survive insertion).
   - `muse::BTreeMap`, `muse::BTreeSet`, `muse::BTreeMultiMap`, `muse::BTreeMultiSet` (`"global/btree.h"` in `vendor/engrave`, backed by `gtl::btree_*`) for large or dynamically mutated ordered containers (`BTreeMap` provides aliasing-safe `insert_or_assign`).
   - `muse::FlatMap` (`"global/flatmap.h"`) and `muse::FlatSet` (`"global/flatset.h"`, backed by `amc::FlatSet`) for small or monotonically built ordered data in `vendor/engrave`.
 - **JSON via typed `glaze` structs**: Define plain C++ structs and read/write JSON directly with `glaze` compile-time reflection rather than building or walking untyped dynamic DOM maps. Public `<engrave/...>` headers must not expose any JSON library.

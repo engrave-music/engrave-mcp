@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-PROFILES = ("release", "debug", "releasedbg", "sanitize", "tsan")
+PROFILES = ("release", "debug", "releasedbg", "asan", "tsan")
 MIB = 1024 * 1024
 
 HOST_TARGETS: dict[str, list[str]] = {

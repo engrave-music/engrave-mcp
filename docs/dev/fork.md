@@ -76,7 +76,8 @@ already reads and writes the 5.0 `<o1>`–`<o4>` offsets.
 
 - `MODULE.bazel`, `BUILD.bazel`, `bazel/`: Standalone Bazel targets
   (`//:engrave` over `//:engrave_core` and `//:engrave_audio`), isolated version
-  metadata (`@engrave_config//:muse_generated`), relocatable Clang binary PCH
+  metadata (`@engrave_config//:muse_generated`), checked-in local `xclang`
+  registry overlay (`bazel/registry/`), relocatable Clang binary PCH
   (`bazel/pch/engraving_pch.h`), and hash-pinned third-party dependencies
   (`bazel/deps.bzl`, `bazel/third_party/*.BUILD.bazel`).
 - `//:engine_tests` (`BUILD.bazel`): Public API, import, playback, and adapter

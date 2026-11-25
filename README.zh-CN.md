@@ -90,7 +90,7 @@ pixi run build/release/engrave-mcp.exe --resources .runtime/assets `
 打包后的产物会自动查找同级的 `assets/` 目录。Windows 与 Linux 的构建、测试和打包
 细节见[构建指南](docs/dev/build.md)：
 
-- **日常开发构建**：使用 `scripts/bbuild.py --profile <release|debug|releasedbg|sanitize> -j 12 build engrave_mcp`（输出到 `build/<profile>`，共享缓存在 `build/.bazel_repo_cache` 与 `build/.bazel_disk_cache`）。`scripts/build-native.ps1` 与 `scripts/build-native.sh` 会重置 `vendor/engrave`，仅在固定引擎提交上做干净构建时使用。
+- **日常开发构建**：使用 `scripts/bbuild.py --profile <release|debug|releasedbg|asan|tsan> -j 12 build engrave_mcp`（输出到 `build/<profile>`，共享缓存在 `build/.bazel_repo_cache` 与 `build/.bazel_disk_cache`；`tsan` 仅支持 Linux/macOS）。`scripts/build-native.ps1` 与 `scripts/build-native.sh` 会重置 `vendor/engrave`，仅在固定引擎提交上做干净构建时使用。
 - **验收测试道**：使用 `tests/run_lanes.py`（自动构建所需目标；`--no-build` 跳过构建，`--profile` 选择 `build/<profile>`，`--list-lanes` 打印调度列表），并将 `--output` 指向 `notes/runs/<name>`；详见[验证测试道与规范](docs/dev/validation.md)。
 
 ## 工具
@@ -154,8 +154,7 @@ pixi run build/release/engrave-mcp.exe --resources .runtime/assets `
 
 ## 架构概览
 
-- **单引擎、单 owner 线程。** 所有乐谱引擎操作在一个专用 owner 线程上串行执行。
-  最多同时打开 16 个文档，它们共享同一个引擎。不支持对同一文档并发编辑。
+- **单引擎、单 DOM owner 线程 + 后台音频通道。** 乐谱 DOM 操作在单个专用 owner 线程上串行执行（最多同时打开 16 个共享同一引擎的文档，不支持并发编辑同一文档）。音频导出在 owner 线程完成准备后移交到专用的串行后台音频通道合成并编码，期间查询、编辑与 `score_close` 可并发推进；引擎内部的无 DOM 工作线程池并行处理按轨合成、异步音频编码与多页 PNG 编码。
 - **内存实时导出。** 导出直接作用于内存中的实时文档，避免保存再打开引起的排版重排，
   并尽可能降低导出延迟。
 - **持久化发布。** 输出先写入私有暂存目录并刷盘，再原子重命名到目标位置。多文件
@@ -164,7 +163,7 @@ pixi run build/release/engrave-mcp.exe --resources .runtime/assets `
   迟到的取消仍可能成功完成或报告已发布的文件。若被取消的实时导出持续阻塞，5 秒看门狗定时器到期后
   会等待同步报告交付全程持有的发布锁（未读 stdout 会无限期推迟退出），之后以退出码 70 退出进程，而不是异步强杀线程。
 - **明确的配额限制。** 请求行 4 MiB、64 个在途调用、响应 16 MiB 上限、导出预算 1 GiB、
-  解码输入上限 8 MiB、最多 16 个打开文档。
+  解码输入上限 8 MiB（未压缩 `.mscx`/`.musicxml`/`.xml` 本地文件路径上限 64 MiB）、最多 16 个打开文档。
 
 设计取舍与理由见[设计文档](docs/dev/design.md)。
 
@@ -186,6 +185,7 @@ vendor/engrave/  固定的 engrave 引擎（子模块，按提交固定）
 licenses/        打包时随产物分发的第三方与运行时许可证声明
 MODULE.bazel     Bzlmod 依赖与 xclang 工具链配置
 BUILD.bazel      宿主构建目标；从 vendor/engrave 引入 @engrave
+clice.toml       宿主与引擎共享的编辑器、格式化与静态检查配置
 scripts/         引导、Bazel 构建封装、打包等开发工具
 tests/           验收测试道、集成测试、支持库、性能基准、测试数据
 docs/dev/        架构设计、工具契约、构建指南、测试验证、分叉指南

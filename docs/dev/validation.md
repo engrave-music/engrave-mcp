@@ -219,20 +219,32 @@ Both CI workflows run on pushes to `main`, pull requests, and manual dispatch.
   `staging_test`, and (on Linux) `publication_test`, then runs `staging_test`,
   `publication_test`, `host_api_test` (using the in-repo
   `vendor/engrave/tests/data/engine_audio/sine.sf2` so CI downloads no
-  SoundFonts), and asset-only integration scripts (`cli`, `version_info`, `open_data`,
+  SoundFonts), and integration scripts (`cli`, `version_info`, `open_data`,
   `native_inputs`, `positions`, `imports_midi`, `imports_guitarpro`, `repeats`,
-  `transport`, `package_strip`, plus `windows_manifest` on Windows). The positions lane compares
+  `transport`, `audio_lane` via `engrave-mcp-test` + `sine.sf2`, `package_strip`,
+  plus `windows_manifest` on Windows). The positions lane compares
   a PNG exported through MCP to the pinned engine's platform golden.
-- The host **`sanitize`** job on Linux builds the executable, `registry_test`,
-  staging, publication, host API, and engine core tests with `--profile sanitize`.
-  It runs those binaries plus `cli`, `transport`, `open_data`, and `positions`
-  with ASan, LSan, and UBSan, using four shards for the engine core suite and
-  the checked-in sine SoundFont for the host API.
+- The host **`asan`** job on Linux builds `engrave_mcp`, `engrave_mcp_test`,
+  `registry_test`, `staging_test`, `publication_test`, `host_api_test`,
+  `engrave_core_tests`, `engrave_output_test`, and `engrave_output_probe` with
+  `--profile asan`. It runs those binaries plus `cli`, `transport`, `open_data`,
+  `positions`, and `audio_lane` with ASan, LSan, and UBSan, using four shards
+  for `engrave_core_tests`, two shards for `engrave_output_test` (with
+  `sine.sf2` and a generated second sine SoundFont), and `sine.sf2` for the host
+  audio checks.
+- The host **`tsan`** job on Linux builds `engrave_mcp`, `engrave_mcp_test`,
+  `host_api_test`, `engrave_output_test`, and `engrave_output_probe` with
+  `--profile tsan` and runs `host_api_test`, `transport`, `audio_lane`, and two
+  shards of `engrave_output_test` (with the two sine SoundFonts) under
+  ThreadSanitizer.
 - The **fork workflow** at `vendor/engrave/.github/workflows/ci.yml` runs release unit tests
-  and the SoundFont-free golden comparison on Windows and Linux. Its Linux
-  `sanitize` job runs four core shards, both upstream GTest suites, and the
-  SoundFont-free golden probes with ASan, LSan, and UBSan. Both sanitizer jobs
-  use disk cache keys distinct from their release jobs.
+  (including `engrave_output_test` with the two sine SoundFonts) and the
+  SoundFont-free golden comparison on Windows and Linux. Its Linux **`asan`**
+  job runs four core shards, two `engrave_output_test` shards, both upstream
+  GTest suites, and the SoundFont-free golden probes with ASan, LSan, and UBSan;
+  its Linux **`tsan`** job runs two `engrave_output_test` shards with
+  ThreadSanitizer. Each sanitizer job uses a disk cache key distinct from its
+  release job.
 - The [release workflow](../../.github/workflows/release.yml) validates the host
   version and runs the 20-cycle MCP and audio smoke test against each unpacked
   Windows and Linux release binary with a clean runtime environment. A manual

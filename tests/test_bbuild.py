@@ -74,7 +74,7 @@ class BBuildTests(unittest.TestCase):
     def test_stage_bep_outputs_includes_runtime_libraries_and_preserves_default_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            out_dir = root / "build/sanitize"
+            out_dir = root / "build/asan"
             default_dir = root / "default"
             runtime_dir = root / "runtime"
             default_dir.mkdir()

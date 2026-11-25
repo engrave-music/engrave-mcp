@@ -19,6 +19,7 @@ from pathlib import Path
 
 from engrave_mcp_testing.mcp_client import Client
 from engrave_mcp_testing.paths import REPO_ROOT
+from engrave_testing.make_sine_soundfont import generate_sine_soundfont
 
 SOURCE = REPO_ROOT / "vendor/engrave/tests/data/inputs/golden/repeat70.mscx"
 SINE = REPO_ROOT / "vendor/engrave/tests/data/engine_audio/sine.sf2"
@@ -147,8 +148,12 @@ async def scenarios(args, out):
 
         # 4. Replacing the SoundFonts mid-render succeeds at once; the running
         # render keeps its fonts and the next export uses the new selection.
+        replacement_sf = SINE
+        if args.soundfont.read_bytes() == SINE.read_bytes():
+            replacement_sf = out / "replacement_sine.sf2"
+            generate_sine_soundfont(replacement_sf, cycles=44)
         identity, future, path = await lane.held(fresh, "soundfont")
-        await client.tool("runtime_configure", {"soundfonts": [str(SINE)]})
+        await client.tool("runtime_configure", {"soundfonts": [str(replacement_sf)]})
         assert not future.done()
         lane.release(path)
         assert lane.result(await asyncio.wait_for(future, 60))["ok"]

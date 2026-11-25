@@ -38,8 +38,8 @@ configuration = "releasedbg"
 compile_commands = ["build/releasedbg"]
 
 [[rules]]
-configuration = "sanitize"
-compile_commands = ["build/sanitize"]
+configuration = "asan"
+compile_commands = ["build/asan"]
 
 [[rules]]
 configuration = "tsan"

@@ -61,7 +61,7 @@ Exports must never leave incomplete or corrupted files at the requested destinat
 1. The host creates a private staging directory next to the destination (`0700` on POSIX, a restricted DACL on Windows).
 2. Artifacts are generated and size-checked in staging against the configured resource budget.
 3. Completed files are flushed to disk (`FlushFileBuffers` on Windows, `fsync` on POSIX) and atomically renamed into place (`MoveFileExW` with `REPLACE_EXISTING | WRITE_THROUGH` on Windows; `rename` and directory `fsync` on POSIX).
-4. On Windows, existing DACLs at the destination are preserved on a best-effort basis.
+4. On Windows, the host captures the destination file's existing DACL (or, for new files, the DACL inherited from the destination directory) and restores it after rename so published files do not keep the staging directory's private ACL; ACL inspection or restoration failure returns an I/O error.
 
 Publication is atomic per file rather than across an entire multi-file export. If a later page of a multi-page export fails, previously published pages remain visible, and the returned error payload lists all successfully published files in `published_artifacts`. Staging directory cleanup on failure or cancellation is best effort.
 
@@ -73,9 +73,9 @@ The engine currently polls cooperative cancellation hooks at defined boundaries:
 
 - Page boundaries and draw preparation in visual rendering
 - Audio setup, synthesis blocks (about every millisecond while tracks synthesize in parallel) and encoder writes in audio rendering
-- Periodic byte intervals (every ≤4 KiB) during score conversion and export, including the internal snapshot that `Document::capture_snapshot()` writes for an atomic `score_edit` or `score_write_phrase` rollback and for a named `checkpoint`
+- Periodic byte intervals (every ≤4 KiB) during score conversion and export, including the internal snapshot that `Document::Impl::capture_snapshot()` writes for an atomic `score_edit` or `score_write_phrase` rollback and for a named `checkpoint`
 
-A cancelled snapshot capture returns `Cancelled` before the batch runs or the checkpoint is stored: the revision is unchanged and the document is not poisoned. A prefix-mode `score_edit` (`atomic: false`) takes no snapshot, so the host checks the flag once before the batch starts.
+A cancelled snapshot capture returns `Cancelled` before the batch runs or the checkpoint is stored: the revision is unchanged and the document is not poisoned. A prefix-mode `score_edit` (`atomic: false`) takes no snapshot; cancellation is checked on the host before decoding and again in the engine after batch preparation before execution begins.
 
 If cancellation arrives before publication begins, the operation stops execution and publishes no partial output at the destination. Once publication has started, however, a late cancellation does not abort already-staged writes: publication proceeds, and the export can finish successfully or return an I/O error if a subsequent file write fails, reporting exactly the files that were already published (`published_artifacts`).
 
@@ -95,7 +95,7 @@ If a cancelled live export remains blocked, a watchdog timer expires after 5 sec
 | Open documents                     | 16 concurrent                                                                   | `host_api.cpp`                                                |
 | Decoded score input                | 8 MiB                                                                           | Engine input check (`engrave::max_input_bytes`)               |
 | Uncompressed file-path score input | 64 MiB                                                                          | `Engine::open(path)` (`engrave::max_uncompressed_file_bytes`) |
-| In-flight snapshot write           | 128 MiB (atomic batch); unused part of the 64 MiB checkpoint store (checkpoint) | `WriteBudget` in `Document::capture_snapshot()`               |
+| In-flight snapshot write           | 128 MiB (atomic batch); unused part of the 64 MiB checkpoint store (checkpoint) | `WriteBudget` in `Document::Impl::capture_snapshot()`         |
 | Named checkpoints                  | 64 MiB per document                                                             | `Document::checkpoint()` (`state.h`)                          |
 | Edit batch size                    | 1,024 operations                                                                | Tool registry                                                 |
 | Export output budget               | 1 GiB (`output_bytes`)                                                          | `ExportLimits` (`runtime_limits.h`)                           |
@@ -108,7 +108,7 @@ If a cancelled live export remains blocked, a watchdog timer expires after 5 sec
 
 The snapshot `WriteBudget` charges the uncompressed native archive, its 64 MiB per-entry bound, and the XML escaping and temporary entry buffers (16× the output bound). An atomic batch may write a 128 MiB rollback snapshot; a checkpoint may write only what remains of its document's 64 MiB checkpoint store after the other named checkpoints. Exceeding either returns `ResourceLimit` without mutating the document.
 
-The export budget (1 GiB, `ExportLimits::output_bytes`) is enforced during rendering and staging before publication. It represents the cumulative total output size across all files in a multi-file export (`api_output.cpp`), not a per-file quota or a hard limit on process virtual memory. Audio exports encode straight into host staging with no intermediate copy, so `audio_budget.h` gives the staged file the whole budget as its extent limit (`AudioOptions::max_bytes`) and the budget plus 1 MiB as a write-traffic limit (`max_write_bytes`) for WAV and FLAC header rewrites.
+The export budget (1 GiB, `ExportLimits::output_bytes`) is enforced during rendering and staging before publication. It represents the cumulative total output size across all files in a multi-file export (`api_output.cpp`), not a per-file quota or a hard limit on process virtual memory. Visual exports (`PDF`, `PNG`, `SVG`) pass the remaining budget into `Document::render` via `RenderOptions::max_bytes` so oversized renders abort mid-stream inside the engine rather than buffering unbounded output. Audio exports encode straight into host staging with no intermediate copy, so `audio_budget.h` gives the staged file the whole budget as its extent limit (`AudioOptions::max_bytes`) and the budget plus 1 MiB as a write-traffic limit (`max_write_bytes`) for WAV and FLAC header rewrites.
 
 The 16 KiB diagnostic limit (`k_diagnostic_limit` in `api_output.cpp`, and UTF-8 safe truncation in `mcp_transport.cpp`) applies only to export reports and transport-generated diagnostics, not to arbitrary engine or tool messages. Other messages (such as `runtime_info` error details) are not separately bounded and are subject only to the 16 MiB response cap.
 
