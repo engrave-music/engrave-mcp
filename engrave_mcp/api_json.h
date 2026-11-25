@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <engrave/document.h>
+#include <engrave/edit.h>
 #include <engrave/engine.h>
 
 #include "containers.h"
