@@ -2,10 +2,17 @@
 
 The host and engine are built with **Bazel** (pinned in `.bazelversion`) and a
 hermetic Clang 23 / `libc++` (**xclang**) C++23 toolchain on both Windows and
-Linux. **Pixi** provides `bazelisk`, Python/lint tools, and the pinned `cairo`,
-`freetype`, and `zlib` native libraries. The engine build lives in `vendor/engrave`
-(`MODULE.bazel`, `BUILD.bazel`) and is consumed by the host's `MODULE.bazel` via
-`local_path_override`.
+Linux. `xclang` module metadata (`MODULE.bazel` and SHA-256–pinned
+`source.json`, fetching the release archive directly from
+`github.com/clice-io/bazel`) is checked into the local registry overlay at
+`vendor/engrave/bazel/registry` ahead of the Bazel Central Registry
+(`https://bcr.bazel.build/`), removing any runtime dependency on
+`https://bazel.clice.io/` (like Pixi/Bazel generally, keep the checkout path
+free of spaces so Bazel's `file:///%workspace%/...` registry URI parses
+cleanly). **Pixi** provides `bazelisk`, Python/lint tools, and
+the pinned `cairo`, `freetype`, and `zlib` native libraries. The engine build
+lives in `vendor/engrave` (`MODULE.bazel`, `BUILD.bazel`) and is consumed by
+the host's `MODULE.bazel` via `local_path_override`.
 
 ## Prerequisites
 

@@ -64,12 +64,28 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
         "engine .bazelversion": source_root / ".bazelversion",
         "engine bazel defs": source_root / "bazel" / "defs.bzl",
         "engine bazel deps": source_root / "bazel" / "deps.bzl",
+        "engine xclang registry config": source_root / "bazel" / "registry" / "bazel_registry.json",
         "native env cairo header": native_root / "include" / "cairo" / "cairo.h",
         "native env zlib header": native_root / "include" / "zlib.h",
     }
     for label, path in required_files.items():
         if not path.is_file():
             errors.append(f"missing {label}: {path}")
+    xclang_re = re.compile(r'bazel_dep\(\s*name\s*=\s*"xclang"\s*,\s*version\s*=\s*"([^"]+)"\s*\)')
+    host_mod = project_root / "MODULE.bazel"
+    eng_mod = source_root / "MODULE.bazel"
+    if host_mod.is_file() and eng_mod.is_file():
+        hm = xclang_re.search(host_mod.read_text(encoding="utf-8"))
+        em = xclang_re.search(eng_mod.read_text(encoding="utf-8"))
+        if not hm or not em:
+            errors.append("missing xclang bazel_dep pin in host or engine MODULE.bazel")
+        else:
+            if hm.group(1) != em.group(1):
+                errors.append(f"xclang version mismatch: host {hm.group(1)!r} != engine {em.group(1)!r}")
+            overlay_dir = source_root / "bazel" / "registry" / "modules" / "xclang" / em.group(1)
+            for name in ("MODULE.bazel", "source.json"):
+                if not (overlay_dir / name).is_file():
+                    errors.append(f"missing engine xclang registry {name}: {overlay_dir / name}")
     ft_headers = (
         native_root / "include" / "ft2build.h",
         native_root / "include" / "freetype2" / "ft2build.h",
