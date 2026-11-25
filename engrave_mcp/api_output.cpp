@@ -614,7 +614,7 @@ struct ExportContext {
         return test_deadline || cancelled() || ExportTiming::Clock::now() - submitted >= limits.deadline;
     }
 
-    Result<Json> publish(u64 source_revision, FnRef<bool()> cancelled, ExportTiming &timing, FnRef<bool()> begin_publication,
+    Result<Json> publish(u64 source_revision, FnRef<bool()> cancelled, ExportTiming &timing, BeginPublication begin_publication,
                          std::vector<std::string> *visible_paths) {
         // Preflight both complete and worst-case partial reports before any rename.
         Json all = make_array<Json>(), paths = make_array<Json>();
@@ -655,8 +655,18 @@ struct ExportContext {
                 while (!fs::exists(barrier)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
-        if (begin_publication && !begin_publication()) {
-            return fail(HostError{"Cancelled", "watchdog claimed export before publication"}, cancelled);
+        if (begin_publication) {
+            const auto admitted =
+                begin_publication([&] { return test_deadline || ExportTiming::Clock::now() - submitted >= limits.deadline; });
+            if (admitted == PublicationAdmission::CANCELLED) {
+                // Gate rejection is cancellation/closing/watchdog, never deadline expiry;
+                // bypass fail()'s !cancelled() -> DeadlineExceeded rewrite in case
+                // cancel_before_publication arrived ahead of cancel->emit().
+                return with_artifacts(HostError{"Cancelled", "export cancelled before publication"});
+            }
+            if (admitted == PublicationAdmission::DEADLINE_EXCEEDED) {
+                return with_artifacts(HostError{"DeadlineExceeded", "export deadline exceeded"});
+            }
         }
         artifacts.reserve(staged.size()); // all storage allocated before visibility
         std::vector<std::string> prepared_paths;
@@ -769,7 +779,7 @@ Result<PreparedAudioExport> prepare_audio_export(engrave::Document &document, co
 }
 
 Result<Json> finish_audio_export(PreparedAudioExport prepared, FnRef<bool()> cancelled, ExportTiming &timing,
-                                 FnRef<bool()> begin_publication, std::vector<std::string> *visible_paths) {
+                                 BeginPublication begin_publication, std::vector<std::string> *visible_paths) {
     auto state = std::move(prepared.state);
     if (!state || !state->audio) return std::unexpected(HostError{"EngineFailure", "audio export is not prepared"});
     auto &context = state->context;
@@ -803,7 +813,7 @@ Result<Json> finish_audio_export(PreparedAudioExport prepared, FnRef<bool()> can
 
 Result<Json> live_export(engrave::Document &document, const ExportRequest &request, const ExportLimits &limits, FnRef<bool()> cancelled,
                          std::chrono::steady_clock::time_point submitted, ExportTiming &timing, const RuntimeOptions &runtime,
-                         FnRef<bool()> begin_publication, std::vector<std::string> *visible_paths) {
+                         BeginPublication begin_publication, std::vector<std::string> *visible_paths) {
     if (request.kind == ExportKind::AUDIO) {
         auto prepared = prepare_audio_export(document, request, limits, cancelled, submitted, timing, runtime);
         if (!prepared) return std::unexpected(std::move(prepared.error()));
@@ -865,6 +875,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             if (options.format == engrave::RenderFormat::PDF) {
                 if (auto ok = context.check(cancelled); !ok) return fail(std::move(ok.error()));
                 start = ExportTiming::Clock::now();
+                options.max_bytes = limits.output_bytes - context.total;
                 auto output = document.render(options);
                 if (!output) return fail(api_error(output.error()));
                 timing.add("engine_call", start);
@@ -877,6 +888,7 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
                     start = ExportTiming::Clock::now();
                     options.first_page = page;
                     options.last_page = std::min(last, page + batch - 1);
+                    options.max_bytes = limits.output_bytes - context.total;
                     auto output = document.render(options);
                     if (!output) return fail(api_error(output.error()));
                     timing.add("engine_call", start);

@@ -40,3 +40,7 @@ compile_commands = ["build/releasedbg"]
 [[rules]]
 configuration = "sanitize"
 compile_commands = ["build/sanitize"]
+
+[[rules]]
+configuration = "tsan"
+compile_commands = ["build/tsan"]

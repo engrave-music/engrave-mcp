@@ -53,10 +53,13 @@ struct RuntimeOptions {
 Result<ExportRequest> decode_export(const Json &);
 Json encode(const Artifact &);
 
+enum class PublicationAdmission { COMMITTED, CANCELLED, DEADLINE_EXCEEDED };
+using BeginPublication = FnRef<PublicationAdmission(FnRef<bool()> deadline_expired)>;
+
 // Audio requests run prepare_audio_export and finish_audio_export back to back.
 Result<Json> live_export(engrave::Document &, const ExportRequest &, const ExportLimits &, FnRef<bool()> cancelled,
                          std::chrono::steady_clock::time_point submitted, ExportTiming &, const RuntimeOptions &runtime = {},
-                         FnRef<bool()> begin_publication = {}, std::vector<std::string> *visible_paths = nullptr);
+                         BeginPublication begin_publication = {}, std::vector<std::string> *visible_paths = nullptr);
 
 // An audio export between its owner-thread setup and its render: the staging
 // directory, the report inputs and an engrave::PreparedAudio, which holds the
@@ -83,7 +86,7 @@ Result<PreparedAudioExport> prepare_audio_export(engrave::Document &, const Expo
 // destroys the engrave::PreparedAudio (freeing the Engine's audio render)
 // before begin_publication, then publishes and reports like live_export.
 // `cancelled` is polled only on the calling thread.
-Result<Json> finish_audio_export(PreparedAudioExport, FnRef<bool()> cancelled, ExportTiming &, FnRef<bool()> begin_publication = {},
+Result<Json> finish_audio_export(PreparedAudioExport, FnRef<bool()> cancelled, ExportTiming &, BeginPublication begin_publication = {},
                                  std::vector<std::string> *visible_paths = nullptr);
 
 } // namespace music::api

@@ -348,6 +348,57 @@ async def legacy_gate_wait_cancel(args, out):
     return {"legacy_gate_wait_cancelled": True}
 
 
+async def deadline_at_gate(args, out):
+    """An audio export whose deadline expires while blocked on publication_gate returns DeadlineExceeded without publishing."""
+    out.mkdir(parents=True, exist_ok=True)
+    barrier = out / "write.barrier"
+    arm = Path(str(barrier) + ".arm")
+    pdf_path = out / "owner.pdf"
+    for p in (barrier, arm, pdf_path):
+        p.unlink(missing_ok=True)
+    os.environ["ENGRAVE_MCP_TEST_WRITE_BARRIER"] = str(barrier)
+    os.environ["ENGRAVE_MCP_TEST_DEADLINE_MS"] = "3000"
+    try:
+        client = await Client(args, out).__aenter__()
+    finally:
+        os.environ.pop("ENGRAVE_MCP_TEST_WRITE_BARRIER", None)
+        os.environ.pop("ENGRAVE_MCP_TEST_DEADLINE_MS", None)
+    try:
+        lane = Lane(client, out)
+        doc = await lane.open()
+        # 1. Start and hold audio render on the audio lane before the 3 s deadline.
+        _, audio_future, audio_path = await lane.held(doc, "deadline-at-gate")
+
+        # 2. Block owner PDF report while holding publication_gate.mutex.
+        arm.touch()
+        _, pdf_future = client.begin(
+            "tools/call",
+            {"name": "score_export", "arguments": {"document": doc, "format": "pdf", "path": str(pdf_path)}},
+        )
+        await client.proc.stdin.drain()
+        await lane.marker("WRITE_REGISTERED")
+
+        # 3. Release audio render so it passes its pre-gate check and blocks on publication_gate.mutex.
+        lane.release(audio_path)
+        await lane.marker("PUBLICATION_LOCK_WAITING")
+
+        # 4. Wait past the 3 s deadline while audio stays blocked at the gate, then release PDF.
+        await asyncio.sleep(3.2)
+        barrier.touch()
+
+        pdf_res = lane.result(await asyncio.wait_for(pdf_future, 30))
+        audio_res = lane.result(await asyncio.wait_for(audio_future, 30))
+        assert pdf_res["ok"] and pdf_path.is_file(), pdf_res
+        assert not audio_res["ok"] and audio_res["error"]["code"] == "DeadlineExceeded", audio_res
+        assert not audio_res["error"].get("published_artifacts"), audio_res
+        assert not audio_path.exists(), "expired audio export published after gate wait"
+        assert not staging_left(out), staging_left(out)
+    finally:
+        barrier.touch()
+        await client.__aexit__(None, None, None)
+    return {"deadline_at_gate": True}
+
+
 def sync_report_failure_with_audio_active(args, out):
     """Synchronous publish_report failure on the owner must still give the active audio lane its 500 ms cleanup."""
     out.mkdir(parents=True, exist_ok=True)
@@ -478,6 +529,7 @@ def main():
     evidence = asyncio.run(scenarios(args, session))
     evidence["write_failure_during_render"] = write_failure(args, out / "exit74")
     evidence["legacy_gate_wait_cancel"] = asyncio.run(legacy_gate_wait_cancel(args, out / "gate_cancel"))
+    evidence["deadline_at_gate"] = asyncio.run(deadline_at_gate(args, out / "gate_deadline"))
     evidence["sync_report_failure_with_audio_active"] = sync_report_failure_with_audio_active(args, out / "sync_exit74")
     evidence["post_failure_recovery"] = asyncio.run(post_failure_recovery(args, out / "post_fail"))
     (out / "evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")

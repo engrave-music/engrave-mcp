@@ -2600,6 +2600,40 @@ TEST(HostApi, EndToEndToolContract) {
         EXPECT_TRUE(read(target).starts_with("RIFF"));
         fs::remove(target);
     }
+
+    // Publication gate rejection must preserve exact Cancelled vs DeadlineExceeded
+    // status even when request_cancel has not yet flipped to true.
+    {
+        const auto cancel_target = scratch / "gate-cancel.pdf";
+        auto cancel_req = music::api::decode_export({{"document", export_doc}, {"format", "pdf"}, {"path", path_text(cancel_target)}});
+        ASSERT_TRUE(cancel_req) << cancel_req.error().message;
+        const auto res = host->with_document(export_doc, {}, [&](engrave::Document &document) -> music::api::Result<void> {
+            music::api::ExportTiming timing("test", cancel_target);
+            auto output = music::api::live_export(
+                document, *cancel_req, {}, [] { return false; }, music::api::ExportTiming::Clock::now(), timing, *retained,
+                [](music::FnRef<bool()>) { return music::api::PublicationAdmission::CANCELLED; });
+            if (output) return std::unexpected(music::api::HostError{"EngineFailure", "expected Cancelled"});
+            if (output.error().code != "Cancelled") return std::unexpected(output.error());
+            return {};
+        });
+        ASSERT_TRUE(res) << res.error().code << ": " << res.error().message;
+        EXPECT_FALSE(fs::exists(cancel_target));
+
+        const auto deadline_target = scratch / "gate-deadline.pdf";
+        auto deadline_req = music::api::decode_export({{"document", export_doc}, {"format", "pdf"}, {"path", path_text(deadline_target)}});
+        ASSERT_TRUE(deadline_req) << deadline_req.error().message;
+        const auto dl_res = host->with_document(export_doc, {}, [&](engrave::Document &document) -> music::api::Result<void> {
+            music::api::ExportTiming timing("test", deadline_target);
+            auto output = music::api::live_export(
+                document, *deadline_req, {}, [] { return false; }, music::api::ExportTiming::Clock::now(), timing, *retained,
+                [](music::FnRef<bool()>) { return music::api::PublicationAdmission::DEADLINE_EXCEEDED; });
+            if (output) return std::unexpected(music::api::HostError{"EngineFailure", "expected DeadlineExceeded"});
+            if (output.error().code != "DeadlineExceeded") return std::unexpected(output.error());
+            return {};
+        });
+        ASSERT_TRUE(dl_res) << dl_res.error().code << ": " << dl_res.error().message;
+        EXPECT_FALSE(fs::exists(deadline_target));
+    }
     ok(*host, "score_close", {{"document", export_doc}});
     ok(*host, "runtime_configure", {{"soundfonts", music::make_array<Json>()}});
     require(!fs::exists(initial_sf) && !fs::exists(selected_path), "replaced assets survived selection removal");

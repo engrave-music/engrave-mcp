@@ -120,11 +120,16 @@ bool consume_test_trigger(const char *env_name) {
     std::_Exit(74);
 }
 
-// Commits an export to publication: excludes the watchdog's exit 70 and any
-// later cancellation. On success `publication` stays locked until the report
-// has been written.
-bool begin_publication(RequestExecution *execution, std::unique_lock<std::recursive_mutex> &publication) {
-    if (!execution) return true;
+// Commits an export to publication: excludes the watchdog's exit 70,
+// cancellation, and a deadline expiring while waiting for the gate. On
+// COMMITTED, `publication` stays locked until the report has been written.
+PublicationAdmission begin_publication(RequestExecution *execution, std::unique_lock<std::recursive_mutex> &publication,
+                                       FnRef<bool()> cancelled, FnRef<bool()> deadline_expired) {
+    if (!execution) {
+        if (cancelled && cancelled()) return PublicationAdmission::CANCELLED;
+        if (deadline_expired && deadline_expired()) return PublicationAdmission::DEADLINE_EXCEEDED;
+        return PublicationAdmission::COMMITTED;
+    }
     if (test_hooks_enabled()) {
         if (!publication.try_lock()) {
             std::fprintf(stderr, "PUBLICATION_LOCK_WAITING\n");
@@ -136,21 +141,25 @@ bool begin_publication(RequestExecution *execution, std::unique_lock<std::recurs
     }
     if (publication_gate.closing) {
         publication.unlock();
-        return false;
+        return PublicationAdmission::CANCELLED;
     }
     {
         std::lock_guard lock(execution->response_mutex);
-        if (execution->cancel_before_publication) {
+        if (execution->cancel_before_publication || (cancelled && cancelled())) {
             publication.unlock();
-            return false;
+            return PublicationAdmission::CANCELLED;
+        }
+        if (deadline_expired && deadline_expired()) {
+            publication.unlock();
+            return PublicationAdmission::DEADLINE_EXCEEDED;
         }
         auto running = ExecutionState::EXECUTING;
         if (!execution->state.compare_exchange_strong(running, ExecutionState::PUBLISHING, std::memory_order_acq_rel)) {
             publication.unlock();
-            return false;
+            return PublicationAdmission::CANCELLED;
         }
     }
-    return true;
+    return PublicationAdmission::COMMITTED;
 }
 } // namespace
 
@@ -194,6 +203,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     explicit Impl(engrave::EngineOptions options) {
         if (test_hooks_enabled()) {
             if (const auto *bytes = std::getenv("ENGRAVE_MCP_TEST_OUTPUT_BYTES")) limits.output_bytes = std::stoull(bytes);
+            if (const auto *deadline_ms = std::getenv("ENGRAVE_MCP_TEST_DEADLINE_MS")) {
+                limits.deadline = std::chrono::milliseconds(std::stoll(deadline_ms));
+            }
         }
         validate_registry();
         validate_handlers(handlers);
@@ -316,36 +328,45 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     // Owner thread: setup, the only part of an audio export that reads the Document.
     void prepare_audio(const std::shared_ptr<AudioRun> &run) noexcept {
         auto queued = ExecutionState::QUEUED;
+        enum class PrepareGate { PROCEED, DROPPED_CLOSING, ALREADY_CANCELLED };
+        PrepareGate gate = PrepareGate::PROCEED;
+        bool need_complete = false;
         {
             std::lock_guard lock(publication_gate.mutex);
             if (publication_gate.closing) {
-                if (test_hooks_enabled()) {
-                    std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n");
-                    std::fflush(stderr);
-                }
-                const bool need_complete = run->state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED);
-                bool release_posted = false;
+                gate = PrepareGate::DROPPED_CLOSING;
+                need_complete = run->state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED);
+            } else if (!run->state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) {
+                gate = PrepareGate::ALREADY_CANCELLED;
+            } else {
+                ++publication_gate.owner_tasks;
+            }
+        }
+        if (gate == PrepareGate::DROPPED_CLOSING) {
+            if (test_hooks_enabled()) {
+                std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n");
+                std::fflush(stderr);
+            }
+            bool release_posted = false;
+            try {
+                run->release_lane();
+                release_posted = true;
+            } catch (...) {}
+            if (need_complete) {
                 try {
-                    run->release_lane();
-                    release_posted = true;
+                    run->complete(aborted(), Json{}, !release_posted);
                 } catch (...) {}
-                if (need_complete) {
-                    try {
-                        run->complete(aborted(), Json{}, !release_posted);
-                    } catch (...) {}
-                }
-                return;
             }
-            if (!run->state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) {
-                // Cancelled while queued on owner_io; the session already completed it.
-                try {
-                    run->release_lane();
-                } catch (...) {
-                    fatal_audio_post_failure(run->execution.get(), "audio lane release post failed");
-                }
-                return;
+            return;
+        }
+        if (gate == PrepareGate::ALREADY_CANCELLED) {
+            // Cancelled while queued on owner_io; the session already completed it.
+            try {
+                run->release_lane();
+            } catch (...) {
+                fatal_audio_post_failure(run->execution.get(), "audio lane release post failed");
             }
-            ++publication_gate.owner_tasks;
+            return;
         }
         std::exception_ptr error;
         Json payload{};
@@ -398,9 +419,11 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         try {
             auto prepared = std::move(*run->prepared);
             run->prepared.reset();
+            auto cancelled = [&] { return audio_cancelled(*run); };
             auto output = finish_audio_export(
-                std::move(prepared), [&] { return audio_cancelled(*run); }, *run->timing,
-                [&] { return begin_publication(execution, publication); }, &visible_paths);
+                std::move(prepared), cancelled, *run->timing,
+                [&](FnRef<bool()> deadline_expired) { return begin_publication(execution, publication, cancelled, deadline_expired); },
+                &visible_paths);
             if (!output) {
                 if (output.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
                 if (output.error().published_artifacts.empty()) output.error().published_artifacts = std::move(visible_paths);
@@ -596,21 +619,31 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 try {
                     asio::post(self->owner_io, [self, task, complete, state, running_cancel, preserve_completed]() mutable {
                         auto queued = ExecutionState::QUEUED;
+                        bool dropped_closing = false;
+                        bool need_complete = false;
+                        bool proceed = false;
                         {
                             std::lock_guard lock(publication_gate.mutex);
                             if (publication_gate.closing) {
-                                if (test_hooks_enabled()) {
-                                    std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n");
-                                    std::fflush(stderr);
-                                }
-                                if (!state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED)) return;
+                                dropped_closing = true;
+                                need_complete = state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED);
+                            } else if (state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) {
+                                ++publication_gate.owner_tasks;
+                                proceed = true;
+                            }
+                        }
+                        if (dropped_closing) {
+                            if (test_hooks_enabled()) {
+                                std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n");
+                                std::fflush(stderr);
+                            }
+                            if (need_complete) {
                                 task->reset();
                                 complete(aborted(), Json{});
-                                return;
                             }
-                            if (!state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) return;
-                            ++publication_gate.owner_tasks;
+                            return;
                         }
+                        if (!proceed) return;
                         std::exception_ptr error;
                         Json result{};
                         const char *fatal_report_failure = nullptr;
@@ -729,14 +762,16 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
                     try {
                         auto result = self->host->with_document(
                             request.document, request.expected_revision, [&](engrave::Document &document) -> Result<void> {
+                                auto cancelled = [&] {
+                                    return request_cancel->load(std::memory_order_acquire) ||
+                                           self->stopping.load(std::memory_order_acquire) ||
+                                           publication_gate.closing.load(std::memory_order_acquire);
+                                };
                                 auto output = live_export(
-                                    document, request, self->limits,
-                                    [&] {
-                                        return request_cancel->load(std::memory_order_acquire) ||
-                                               self->stopping.load(std::memory_order_acquire) ||
-                                               publication_gate.closing.load(std::memory_order_acquire);
+                                    document, request, self->limits, cancelled, submitted, *timing, *runtime,
+                                    [&](FnRef<bool()> deadline_expired) {
+                                        return begin_publication(execution.get(), publication, cancelled, deadline_expired);
                                     },
-                                    submitted, *timing, *runtime, [&] { return begin_publication(execution.get(), publication); },
                                     &visible_paths);
                                 if (test_hooks_enabled() && !visible_paths.empty() &&
                                     std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
