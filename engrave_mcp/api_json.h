@@ -13,6 +13,7 @@
 #include <engrave/engine.h>
 
 #include "containers.h"
+#include "op_defs.h"
 #include "schema_defs.h"
 
 namespace music::api {
@@ -64,47 +65,9 @@ Json error_envelope(const HostError &);
 Json encode(const std::vector<engrave::ExportWarning> &);
 HostError api_error(const engrave::Error &);
 
-// Deliberately no primary definition: any new Op alternative breaks compilation.
-template <class T>
-struct OpWire;
-#define MUSIC_OP(TYPE, NAME)                           \
-    template <>                                        \
-    struct OpWire<engrave::TYPE> {                     \
-        static constexpr std::string_view name = NAME; \
-    };
-MUSIC_OP(SetProperty, "set_property")
-MUSIC_OP(ResetProperty, "reset_property")
-MUSIC_OP(SetStyle, "set_style")
-MUSIC_OP(EnterNotes, "enter_notes")
-MUSIC_OP(SetPitch, "set_pitch")
-MUSIC_OP(SetDuration, "set_duration")
-MUSIC_OP(Remove, "remove")
-MUSIC_OP(InsertMeasures, "insert_measures")
-MUSIC_OP(RemoveMeasures, "remove_measures")
-MUSIC_OP(SetTimeSig, "set_time_sig")
-MUSIC_OP(SetKeySig, "set_key_sig")
-MUSIC_OP(InsertClef, "insert_clef")
-MUSIC_OP(SetLayoutBreak, "set_layout_break")
-MUSIC_OP(AddPart, "add_part")
-MUSIC_OP(RemovePart, "remove_part")
-MUSIC_OP(AddStaff, "add_staff")
-MUSIC_OP(RemoveStaff, "remove_staff")
-MUSIC_OP(GenerateExcerpts, "generate_excerpts")
-MUSIC_OP(AddSpanner, "add_spanner")
-MUSIC_OP(AddTie, "add_tie")
-MUSIC_OP(AddTuplet, "add_tuplet")
-MUSIC_OP(AddText, "add_text")
-MUSIC_OP(Add, "add")
-MUSIC_OP(AddGraceChord, "add_grace_chord")
-MUSIC_OP(AddVolta, "add_volta")
-MUSIC_OP(AddSpannerToBarEnd, "add_spanner_to_bar_end")
-MUSIC_OP(EnterDrums, "enter_drums")
-MUSIC_OP(SetRepeatBarlines, "set_repeat_barlines")
-#undef MUSIC_OP
-
 template <std::size_t... I>
 constexpr auto op_names(std::index_sequence<I...>) {
-    return std::array{OpWire<std::variant_alternative_t<I, engrave::Op>>::name...};
+    return std::array{OpTraits<std::variant_alternative_t<I, engrave::Op>>::name...};
 }
 
 inline constexpr auto operation_names = op_names(std::make_index_sequence<std::variant_size_v<engrave::Op>>{});

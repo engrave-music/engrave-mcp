@@ -1,3 +1,12 @@
+#include <cassert>
+#include <concepts>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
 #include "api_json_internal.h"
 
 namespace music::api {
@@ -7,274 +16,175 @@ namespace {
 // Which selector forms an operand accepts besides an EID, a segment address or an OpRef.
 enum struct Operand { STRICT, MEASURE, STAFF, POSITION };
 
+struct DecodeContext {
+    usize index;
+    const std::string &path;
+    const ValueCatalogue &catalogue;
+};
+
+Result<engrave::Ref> decode_ref_operand(const Json &input, std::string_view key, Operand kind, const DecodeContext &ctx) {
+    // validate_op admits integers only for measure and staff operands, and only positive ones.
+    if (input.is_number() && kind == Operand::MEASURE) return engrave::MeasureIndex{input.as<i32>() - 1};
+    if (input.is_number() && kind == Operand::STAFF) return engrave::StaffIndex{input.as<i32>() - 1};
+    if (kind == Operand::POSITION && detail::is_relative_position(input)) {
+        auto position = detail::relative_position(input);
+        if (!position) return std::unexpected(detail::invalid_error(ctx.path + "." + std::string(key) + ": " + position.error().message));
+        return *position;
+    }
+    auto r = detail::ref(input, true, ctx.index);
+    if (!r) {
+        return std::unexpected(
+            detail::invalid_error(ctx.path + "." + std::string(key) + ": " + r.error().message + "; expected an EID or earlier op"));
+    }
+    return r;
+}
+
+Result<engrave::Value> decode_property_value(const Json &object, std::string_view field, const std::string &at,
+                                             const ValueCatalogue &catalogue) {
+    const auto &table = field == "style" ? catalogue.styles : catalogue.properties;
+    const auto &key = object.get_object().at(field).get<std::string>();
+    auto found = table.find(key);
+    if (found == table.end()) {
+        return std::unexpected(detail::invalid_error(at + "." + std::string(field) + ": unknown descriptor; expected a catalogue entry"));
+    }
+    return detail::value(object.get_object().at("value"), found->second, at + ".value");
+}
+
+Operand operand_for(OpFieldKind kind) {
+    switch (kind) {
+        case OpFieldKind::EDIT_REF:
+        case OpFieldKind::PART_REF: return Operand::STRICT;
+        case OpFieldKind::MEASURE_REF: return Operand::MEASURE;
+        case OpFieldKind::STAFF_REF: return Operand::STAFF;
+        case OpFieldKind::ANCHOR: return Operand::POSITION;
+        default: assert(false); std::unreachable();
+    }
+}
+
+template <class FieldT>
+Result<void> decode_field(const Json &j, const OpFieldSpec &spec, FieldT &target, const DecodeContext &ctx) {
+    using T = std::remove_cvref_t<FieldT>;
+    if (!spec.required && !j.get_object().contains(spec.name)) return {};
+
+    if constexpr (std::same_as<T, engrave::Ref> || std::same_as<T, std::optional<engrave::Ref>> || std::same_as<T, engrave::MeasureEnd>) {
+        auto r = decode_ref_operand(j.get_object().at(spec.name), spec.name, operand_for(spec.kind), ctx);
+        if (!r) return std::unexpected(std::move(r.error()));
+        if constexpr (std::same_as<T, engrave::MeasureEnd>) {
+            target = engrave::MeasureEnd{std::move(*r)};
+        } else {
+            target = std::move(*r);
+        }
+    } else if constexpr (std::same_as<T, engrave::EditAddress>) {
+        auto decoded = detail::edit_address(j.get_object().at(spec.name));
+        if (!decoded) {
+            return std::unexpected(detail::invalid_error(ctx.path + "." + std::string(spec.name) + ": " + decoded.error().message));
+        }
+        target = std::move(*decoded);
+    } else if constexpr (std::same_as<T, engrave::EntryAddress>) {
+        auto decoded = detail::edit_address(j.get_object().at(spec.name));
+        if (!decoded) {
+            return std::unexpected(detail::invalid_error(ctx.path + "." + std::string(spec.name) + ": " + decoded.error().message));
+        }
+        if (auto *relative = std::get_if<engrave::RelativePosition>(&*decoded)) {
+            target = *relative;
+        } else if (auto *segment = std::get_if<engrave::SegmentAddress>(&std::get<engrave::Address>(*decoded))) {
+            target = *segment;
+        } else {
+            return std::unexpected(
+                detail::invalid_error(ctx.path + "." + std::string(spec.name) + ": unsupported address; expected a segment"));
+        }
+    } else if constexpr (std::same_as<T, std::optional<engrave::ScoreSel>>) {
+        auto decoded = detail::score(j);
+        if (!decoded) return std::unexpected(std::move(decoded.error()));
+        target = *decoded;
+    } else if constexpr (std::same_as<T, engrave::Fraction> || std::same_as<T, std::optional<engrave::Fraction>>) {
+        auto parsed = detail::fraction(j.get_object().at(spec.name));
+        if (!parsed) return std::unexpected(std::move(parsed.error()));
+        target = *parsed;
+    } else if constexpr (std::same_as<T, std::string>) {
+        const auto &text = j.get_object().at(spec.name).get<std::string>();
+        if (spec.kind == OpFieldKind::XML_LONG_TEXT) {
+            if (auto ok = detail::validate_xml_text(text); !ok) {
+                return std::unexpected(
+                    detail::invalid_error(ctx.path + "." + std::string(spec.name) + ": invalid XML character; expected XML 1.0 text"));
+            }
+        }
+        target = text;
+    } else if constexpr (std::same_as<T, engrave::GraceKind>) {
+        auto kind = detail::grace_kind(j.get_object().at(spec.name).get<std::string>());
+        if (!kind) {
+            return std::unexpected(
+                detail::invalid_error(ctx.path + "." + std::string(spec.name) + ": invalid choice; expected a listed grace kind"));
+        }
+        target = *kind;
+    } else if constexpr (std::same_as<T, bool> || std::same_as<T, std::optional<bool>>) {
+        target = j.get_object().at(spec.name).get<bool>();
+    } else if constexpr (std::same_as<T, int> || std::same_as<T, std::optional<int>>) {
+        target = j.get_object().at(spec.name).as<i32>();
+    } else if constexpr (std::same_as<T, std::vector<engrave::Pitch>>) {
+        for (const auto &p : j.get_object().at(spec.name).get_array()) {
+            target.push_back({p.at("pitch").as<i32>(), p.contains("tpc") ? std::optional(p.at("tpc").as<i32>()) : std::nullopt});
+        }
+    } else if constexpr (std::same_as<T, std::vector<engrave::DrumKey>>) {
+        for (const auto &key : j.get_object().at(spec.name).get_array()) target.push_back({key.as<int>()});
+    } else if constexpr (std::same_as<T, std::vector<engrave::Ref>>) {
+        for (const auto &p : j.get_object().at(spec.name).get_array()) {
+            auto r = detail::ref(p, true, ctx.index);
+            if (!r) return std::unexpected(std::move(r.error()));
+            target.push_back(std::move(*r));
+        }
+    } else if constexpr (std::same_as<T, std::vector<int>>) {
+        for (const auto &n : j.get_object().at(spec.name).get_array()) target.push_back(n.as<int>());
+    } else if constexpr (std::same_as<T, engrave::Value>) {
+        const std::string_view descriptor = spec.kind == OpFieldKind::STYLE_VALUE ? "style" : "property";
+        auto val = decode_property_value(j, descriptor, ctx.path, ctx.catalogue);
+        if (!val) return std::unexpected(std::move(val.error()));
+        target = std::move(*val);
+    } else if constexpr (std::same_as<T, std::vector<std::pair<std::string, engrave::Value>>>) {
+        for (const auto &item : j.get_object().at(spec.name).get_array()) {
+            auto val = decode_property_value(item, "name", ctx.path + ".props[" + std::to_string(target.size()) + "]", ctx.catalogue);
+            if (!val) return std::unexpected(std::move(val.error()));
+            target.emplace_back(item.at("name").get<std::string>(), std::move(*val));
+        }
+    } else {
+        static_assert(sizeof(T) == 0, "unsupported op field type");
+    }
+    return {};
+}
+
+template <auto Accessor, class OpT>
+Result<void> decode_bound_field(const Json &j, const OpFieldBind<Accessor> &binding, OpT &op, const DecodeContext &ctx) {
+    return decode_field(j, binding.spec, access_op_member<Accessor>(op), ctx);
+}
+
+template <class OpT>
+Result<engrave::Op> decode_typed_op(const Json &j, const DecodeContext &ctx) {
+    OpT op{};
+    Result<void> status{};
+    std::apply(
+        [&](const auto &...binding) {
+            std::ignore = (((status = decode_bound_field(j, binding, op, ctx)), static_cast<bool>(status)) && ...);
+        },
+        OpTraits<OpT>::bindings);
+    if (!status) return std::unexpected(std::move(status.error()));
+    return engrave::Op{std::move(op)};
+}
+
+template <std::size_t... I>
+Result<engrave::Op> decode_by_name(std::string_view name, const Json &j, const DecodeContext &ctx, std::index_sequence<I...>) {
+    Result<engrave::Op> out = std::unexpected(detail::invalid_error("unknown operation"));
+    std::ignore = ((name == OpTraits<std::variant_alternative_t<I, engrave::Op>>::name ?
+                        (out = decode_typed_op<std::variant_alternative_t<I, engrave::Op>>(j, ctx), true) :
+                        false) ||
+                   ...);
+    return out;
+}
+
 Result<engrave::Op> decode_op(const Json &j, usize index, const ValueCatalogue &catalogue) {
     if (auto ok = detail::validate_op(j, index); !ok) return std::unexpected(std::move(ok.error()));
     const auto &name = j.at("op").get<std::string>();
     const auto path = "ops[" + std::to_string(index) + "]";
-    auto ref = [&](const char *key, Operand kind = Operand::STRICT) -> Result<engrave::Ref> {
-        const auto &input = j.at(key);
-        // validate_op admits integers only for measure and staff operands, and only positive ones.
-        if (input.is_number() && kind == Operand::MEASURE) return engrave::MeasureIndex{input.as<i32>() - 1};
-        if (input.is_number() && kind == Operand::STAFF) return engrave::StaffIndex{input.as<i32>() - 1};
-        if (kind == Operand::POSITION && detail::is_relative_position(input)) {
-            auto position = detail::relative_position(input);
-            if (!position) return std::unexpected(detail::invalid_error(path + "." + key + ": " + position.error().message));
-            return *position;
-        }
-        auto r = detail::ref(input, true, index);
-        if (!r) {
-            return std::unexpected(detail::invalid_error(path + "." + key + ": " + r.error().message + "; expected an EID or earlier op"));
-        }
-        return r;
-    };
-    auto opt_ref = [&](const char *key, Operand kind = Operand::STRICT) -> Result<std::optional<engrave::Ref>> {
-        if (!j.contains(key)) return std::optional<engrave::Ref>{std::nullopt};
-        auto r = ref(key, kind);
-        if (!r) return std::unexpected(std::move(r.error()));
-        return std::optional<engrave::Ref>{std::move(*r)};
-    };
-    auto at = [&]() -> Result<engrave::EditAddress> {
-        auto decoded = detail::edit_address(j.at("at"));
-        if (!decoded) return std::unexpected(detail::invalid_error(path + ".at: " + decoded.error().message));
-        return decoded;
-    };
-    auto str = [&](const char *key) -> std::string { return j.at(key).get<std::string>(); };
-    auto property_value = [&](const Json &object, const char *field, const std::string &at) -> Result<engrave::Value> {
-        const auto &table = std::string_view(field) == "style" ? catalogue.styles : catalogue.properties;
-        auto found = table.find(object.at(field).get<std::string>());
-        if (found == table.end()) {
-            return std::unexpected(detail::invalid_error(at + "." + field + ": unknown descriptor; expected a catalogue entry"));
-        }
-        return detail::value(object.at("value"), found->second, at + ".value");
-    };
-    auto props = [&]() -> Result<std::vector<std::pair<std::string, engrave::Value>>> {
-        std::vector<std::pair<std::string, engrave::Value>> p;
-        if (j.contains("props")) {
-            for (const auto &item : j.at("props").get_array()) {
-                auto val = property_value(item, "name", path + ".props[" + std::to_string(p.size()) + "]");
-                if (!val) return std::unexpected(std::move(val.error()));
-                p.emplace_back(item.at("name").get<std::string>(), std::move(*val));
-            }
-        }
-        return p;
-    };
-
-    if (name == "set_property") {
-        auto target = ref("target");
-        if (!target) return std::unexpected(std::move(target.error()));
-        auto val = property_value(j, "property", path);
-        if (!val) return std::unexpected(std::move(val.error()));
-        return engrave::SetProperty{std::move(*target), str("property"), std::move(*val)};
-    }
-    if (name == "reset_property") {
-        auto target = ref("target");
-        if (!target) return std::unexpected(std::move(target.error()));
-        return engrave::ResetProperty{std::move(*target), str("property")};
-    }
-    if (name == "set_style") {
-        std::optional<engrave::ScoreSel> sel;
-        if (j.contains("excerpt")) {
-            auto decoded = detail::score(j);
-            if (!decoded) return std::unexpected(std::move(decoded.error()));
-            sel = *decoded;
-        }
-        auto val = property_value(j, "style", path);
-        if (!val) return std::unexpected(std::move(val.error()));
-        return engrave::SetStyle{sel, str("style"), std::move(*val)};
-    }
-    if (name == "enter_notes" || name == "enter_drums") {
-        auto address = at();
-        if (!address) return std::unexpected(std::move(address.error()));
-        auto duration = detail::fraction(j.at("duration"));
-        if (!duration) return std::unexpected(std::move(duration.error()));
-        if (name == "enter_drums") {
-            engrave::EntryAddress entry;
-            if (auto *relative = std::get_if<engrave::RelativePosition>(&*address)) {
-                entry = *relative;
-            } else if (auto *segment = std::get_if<engrave::SegmentAddress>(&std::get<engrave::Address>(*address))) {
-                entry = *segment;
-            } else {
-                return std::unexpected(detail::invalid_error(path + ".at: unsupported address; expected a segment"));
-            }
-            std::vector<engrave::DrumKey> keys;
-            for (const auto &key : j.at("keys").get_array()) keys.push_back({key.as<int>()});
-            return engrave::EnterDrums{std::move(entry), *duration, std::move(keys)};
-        }
-        std::vector<engrave::Pitch> pitches;
-        for (const auto &p : j.at("pitches").get_array()) {
-            pitches.push_back({p.at("pitch").as<i32>(), p.contains("tpc") ? std::optional(p.at("tpc").as<i32>()) : std::nullopt});
-        }
-        return engrave::EnterNotes{std::move(*address), *duration, std::move(pitches)};
-    }
-    if (name == "set_pitch") {
-        auto note = ref("note");
-        if (!note) return std::unexpected(std::move(note.error()));
-        return engrave::SetPitch{std::move(*note), j.at("pitch").as<i32>(),
-                                 j.contains("tpc") ? std::optional(j.at("tpc").as<i32>()) : std::nullopt};
-    }
-    if (name == "set_duration") {
-        auto cr = ref("chord_rest");
-        if (!cr) return std::unexpected(std::move(cr.error()));
-        auto duration = detail::fraction(j.at("duration"));
-        if (!duration) return std::unexpected(std::move(duration.error()));
-        return engrave::SetDuration{std::move(*cr), *duration};
-    }
-    if (name == "remove") {
-        auto target = ref("target");
-        if (!target) return std::unexpected(std::move(target.error()));
-        return engrave::Remove{std::move(*target)};
-    }
-    if (name == "insert_measures") {
-        auto before = opt_ref("before", Operand::MEASURE);
-        if (!before) return std::unexpected(std::move(before.error()));
-        return engrave::InsertMeasures{std::move(*before), j.at("count").as<i32>(), json_value<std::string>(j, "kind", "Measure")};
-    }
-    if (name == "remove_measures") {
-        auto first = ref("first", Operand::MEASURE);
-        if (!first) return std::unexpected(std::move(first.error()));
-        auto last = ref("last", Operand::MEASURE);
-        if (!last) return std::unexpected(std::move(last.error()));
-        return engrave::RemoveMeasures{std::move(*first), std::move(*last)};
-    }
-    if (name == "set_time_sig") {
-        auto measure = ref("measure", Operand::MEASURE);
-        if (!measure) return std::unexpected(std::move(measure.error()));
-        auto sig = detail::fraction(j.at("sig"));
-        if (!sig) return std::unexpected(std::move(sig.error()));
-        return engrave::SetTimeSig{std::move(*measure), *sig};
-    }
-    if (name == "set_key_sig") {
-        auto measure = ref("measure", Operand::MEASURE);
-        if (!measure) return std::unexpected(std::move(measure.error()));
-        auto staff = opt_ref("staff", Operand::STAFF);
-        if (!staff) return std::unexpected(std::move(staff.error()));
-        return engrave::SetKeySig{std::move(*measure), j.at("key").as<i32>(), std::move(*staff)};
-    }
-    if (name == "insert_clef") {
-        auto address = at();
-        if (!address) return std::unexpected(std::move(address.error()));
-        return engrave::InsertClef{std::move(*address), str("clef")};
-    }
-    if (name == "set_layout_break") {
-        auto measure = ref("measure", Operand::MEASURE);
-        if (!measure) return std::unexpected(std::move(measure.error()));
-        return engrave::SetLayoutBreak{std::move(*measure), str("kind"), j.at("on").get<bool>()};
-    }
-    if (name == "add_part") {
-        auto before = opt_ref("before");
-        if (!before) return std::unexpected(std::move(before.error()));
-        return engrave::AddPart{str("instrument_id"), std::move(*before)};
-    }
-    if (name == "remove_part") {
-        auto part = ref("part");
-        if (!part) return std::unexpected(std::move(part.error()));
-        return engrave::RemovePart{std::move(*part)};
-    }
-    if (name == "add_staff") {
-        auto part = ref("part");
-        if (!part) return std::unexpected(std::move(part.error()));
-        return engrave::AddStaff{std::move(*part)};
-    }
-    if (name == "remove_staff") {
-        auto staff = ref("staff", Operand::STAFF);
-        if (!staff) return std::unexpected(std::move(staff.error()));
-        return engrave::RemoveStaff{std::move(*staff)};
-    }
-    if (name == "generate_excerpts") {
-        std::vector<engrave::Ref> parts;
-        for (const auto &p : j.at("parts").get_array()) {
-            auto r = detail::ref(p, true, index);
-            if (!r) return std::unexpected(std::move(r.error()));
-            parts.push_back(std::move(*r));
-        }
-        return engrave::GenerateExcerpts{std::move(parts)};
-    }
-    if (name == "add_spanner") {
-        auto start = ref("start", Operand::POSITION);
-        if (!start) return std::unexpected(std::move(start.error()));
-        auto end = ref("end", Operand::POSITION);
-        if (!end) return std::unexpected(std::move(end.error()));
-        auto p = props();
-        if (!p) return std::unexpected(std::move(p.error()));
-        return engrave::AddSpanner{str("type"), std::move(*start), std::move(*end), std::move(*p)};
-    }
-    if (name == "add_spanner_to_bar_end") {
-        auto start = ref("start", Operand::POSITION);
-        if (!start) return std::unexpected(std::move(start.error()));
-        auto end = ref("end", Operand::MEASURE);
-        if (!end) return std::unexpected(std::move(end.error()));
-        auto p = props();
-        if (!p) return std::unexpected(std::move(p.error()));
-        return engrave::AddSpannerToBarEnd{str("type"), std::move(*start), {std::move(*end)}, std::move(*p)};
-    }
-    if (name == "add_volta") {
-        auto first = ref("first_measure", Operand::MEASURE);
-        if (!first) return std::unexpected(std::move(first.error()));
-        auto last = ref("last_measure", Operand::MEASURE);
-        if (!last) return std::unexpected(std::move(last.error()));
-        std::vector<int> endings;
-        for (const auto &n : j.at("endings").get_array()) endings.push_back(n.as<int>());
-        return engrave::AddVolta{*first, *last, std::move(endings), json_value<bool>(j, "closed", true)};
-    }
-    if (name == "set_repeat_barlines") {
-        auto m = ref("measure", Operand::MEASURE);
-        if (!m) return std::unexpected(std::move(m.error()));
-        engrave::SetRepeatBarlines op{*m};
-        if (j.contains("start")) op.start = j.at("start").get<bool>();
-        if (j.contains("end")) op.end = j.at("end").get<bool>();
-        if (j.contains("count")) op.count = j.at("count").as<int>();
-        return op;
-    }
-    if (name == "add_grace_chord") {
-        auto principal = ref("principal");
-        if (!principal) return std::unexpected(std::move(principal.error()));
-        auto kind = detail::grace_kind(str("kind"));
-        if (!kind) return std::unexpected(detail::invalid_error(path + ".kind: invalid choice; expected a listed grace kind"));
-        auto duration = detail::fraction(j.at("duration"));
-        if (!duration) return std::unexpected(std::move(duration.error()));
-        engrave::GraceEntry g{*kind, *duration, {}};
-        for (const auto &p : j.at("pitches").get_array()) {
-            g.pitches.push_back({p.at("pitch").as<int>(), p.contains("tpc") ? std::optional(p.at("tpc").as<int>()) : std::nullopt});
-        }
-        std::optional<engrave::Fraction> event_end;
-        if (j.contains("event_end")) {
-            auto parsed = detail::fraction(j.at("event_end"));
-            if (!parsed) return std::unexpected(std::move(parsed.error()));
-            event_end = *parsed;
-        }
-        return engrave::AddGraceChord{std::move(*principal), std::move(g), event_end};
-    }
-    if (name == "add_tie") {
-        auto note = ref("note");
-        if (!note) return std::unexpected(std::move(note.error()));
-        auto end = opt_ref("end_note");
-        if (!end) return std::unexpected(std::move(end.error()));
-        return engrave::AddTie{std::move(*note), *end};
-    }
-    if (name == "add_tuplet") {
-        auto first = ref("first");
-        if (!first) return std::unexpected(std::move(first.error()));
-        auto last = ref("last");
-        if (!last) return std::unexpected(std::move(last.error()));
-        return engrave::AddTuplet{std::move(*first), std::move(*last), json_value<i32>(j, "actual", 3), json_value<i32>(j, "normal", 2)};
-    }
-    if (name == "add_text") {
-        auto text = str("text");
-        if (auto ok = detail::validate_xml_text(text); !ok) {
-            return std::unexpected(detail::invalid_error(path + ".text: invalid XML character; expected XML 1.0 text"));
-        }
-        auto address = at();
-        if (!address) return std::unexpected(std::move(address.error()));
-        return engrave::AddText{std::move(*address), str("style"), std::move(text)};
-    }
-    if (name == "add") {
-        auto anchor = ref("anchor", Operand::POSITION);
-        if (!anchor) return std::unexpected(std::move(anchor.error()));
-        auto p = props();
-        if (!p) return std::unexpected(std::move(p.error()));
-        return engrave::Add{std::move(*anchor), str("type"), std::move(*p)};
-    }
-    return std::unexpected(detail::invalid_error("unknown operation"));
+    return decode_by_name(name, j, DecodeContext{index, path, catalogue}, std::make_index_sequence<std::variant_size_v<engrave::Op>>{});
 }
 
 } // namespace

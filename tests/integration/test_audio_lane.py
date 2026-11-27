@@ -315,7 +315,7 @@ async def legacy_gate_wait_cancel(args, out):
         # owner-thread prepare_audio has already finished.
         audio_id, audio_future, audio_path = await lane.held(doc, "cancelled-at-gate")
 
-        # 2. Arm the synchronous report barrier so the owner PDF holds publication_gate.mutex.
+        # 2. Arm the synchronous report barrier so the owner PDF holds active_publications/stdout_mutex.
         arm.touch()
         _, pdf_future = client.begin(
             "tools/call",
@@ -374,7 +374,7 @@ async def deadline_at_gate(args, out):
         # 1. Start and hold audio render on the audio lane before the 3 s deadline.
         _, audio_future, audio_path = await lane.held(doc, "deadline-at-gate")
 
-        # 2. Block owner PDF report while holding publication_gate.mutex.
+        # 2. Block owner PDF report while holding active_publications/stdout_mutex.
         arm.touch()
         _, pdf_future = client.begin(
             "tools/call",
@@ -383,7 +383,7 @@ async def deadline_at_gate(args, out):
         await client.proc.stdin.drain()
         await lane.marker("WRITE_REGISTERED")
 
-        # 3. Release audio render so it passes its pre-gate check and blocks on publication_gate.mutex.
+        # 3. Release audio render so it passes its pre-gate check and blocks in begin_publication.
         lane.release(audio_path)
         await lane.marker("PUBLICATION_LOCK_WAITING")
 
@@ -521,6 +521,56 @@ async def post_failure_recovery(args, out):
     return {"release_post_recovered": True, "complete_post_exit": 74}
 
 
+async def owner_progress_during_audio_publish(args, out):
+    """Owner calls and stdout replies complete while audio publication is held on disk."""
+    out.mkdir(parents=True, exist_ok=True)
+    barrier = out / "audio-publish.barrier"
+    arm = Path(str(barrier) + ".arm")
+    audio_path = out / "held-publish.wav"
+    ref_path = out / "publish-ref.wav"
+    for p in (barrier, arm, audio_path, ref_path):
+        p.unlink(missing_ok=True)
+    os.environ["ENGRAVE_MCP_TEST_AUDIO_PUBLISH_BARRIER"] = str(barrier)
+    try:
+        client = await Client(args, out).__aenter__()
+    finally:
+        os.environ.pop("ENGRAVE_MCP_TEST_AUDIO_PUBLISH_BARRIER", None)
+    try:
+        lane = Lane(client, out)
+        doc = await lane.open()
+        base = await lane.revision(doc)
+        ref = await client.tool("score_export", wav(doc, ref_path))
+        assert ref["ok"], ref
+        ref_bytes = ref_path.read_bytes()
+
+        arm.touch()
+        _, audio_future = client.begin("tools/call", {"name": "score_export", "arguments": wav(doc, audio_path)})
+        await client.proc.stdin.drain()
+        await lane.marker("AUDIO_PUBLISH_BLOCKED")
+
+        outline = await asyncio.wait_for(client.tool("score_outline", {"document": doc}), 10)
+        assert outline["ok"] and outline["revision"] == base, outline
+        edited = await asyncio.wait_for(
+            client.tool(
+                "score_edit",
+                {"document": doc, "expected_revision": base, "ops": [{"op": "insert_measures", "count": 1}]},
+            ),
+            10,
+        )
+        assert edited["ok"] and edited["revision"] != base, edited
+        assert not audio_future.done(), "audio export completed before publish barrier released"
+
+        barrier.touch()
+        audio_res = lane.result(await asyncio.wait_for(audio_future, 30))
+        assert audio_res["ok"] and audio_res["source_revision"] == base, audio_res
+        assert audio_path.read_bytes() == ref_bytes
+        assert not staging_left(out), staging_left(out)
+    finally:
+        barrier.touch()
+        await client.__aexit__(None, None, None)
+    return {"owner_progress_during_audio_publish": True}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
@@ -537,6 +587,9 @@ def main():
     evidence["deadline_at_gate"] = asyncio.run(deadline_at_gate(args, out / "gate_deadline"))
     evidence["sync_report_failure_with_audio_active"] = sync_report_failure_with_audio_active(args, out / "sync_exit74")
     evidence["post_failure_recovery"] = asyncio.run(post_failure_recovery(args, out / "post_fail"))
+    evidence["owner_progress_during_audio_publish"] = asyncio.run(
+        owner_progress_during_audio_publish(args, out / "publish_progress")
+    )
     (out / "evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     print(json.dumps(evidence))
 

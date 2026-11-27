@@ -256,6 +256,10 @@ TEST(HostApi, RuntimeOperationExamplesDecodeAndAddAnArticulation) {
     catalogue.styles = {{"pageWidth", engrave::ValueKind::REAL}};
     const auto ops = ok(api, "runtime_info", {{"scope", "ops"}}).at("ops").get_array();
     ASSERT_EQ(ops.size(), music::api::operation_names.size());
+    ASSERT_EQ(ops.size(), music::api::op_specs().size());
+    for (std::size_t i = 0; i < ops.size(); ++i) {
+        EXPECT_EQ(ops[i].at("op"), music::api::op_specs()[i].name);
+    }
     for (const auto name : music::api::operation_names) {
         const auto same_op = [&](const Json &entry) { return entry.at("op") == name; };
         EXPECT_EQ(std::ranges::count_if(ops, same_op), 1) << name;

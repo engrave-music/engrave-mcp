@@ -1,10 +1,14 @@
 #include "schema_defs.h"
 
+#include <cassert>
 #include <initializer_list>
 #include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+
+#include "containers.h"
+#include "op_defs.h"
 
 namespace music::api {
 namespace {
@@ -338,34 +342,15 @@ Json lanes_schema() {
 }
 
 Json op_name_schema() {
-    return choices({"set_property",
-                    "reset_property",
-                    "set_style",
-                    "enter_notes",
-                    "set_pitch",
-                    "set_duration",
-                    "remove",
-                    "insert_measures",
-                    "remove_measures",
-                    "set_time_sig",
-                    "set_key_sig",
-                    "insert_clef",
-                    "set_layout_break",
-                    "add_part",
-                    "remove_part",
-                    "add_staff",
-                    "remove_staff",
-                    "generate_excerpts",
-                    "add_spanner",
-                    "add_tie",
-                    "add_tuplet",
-                    "add_text",
-                    "add",
-                    "add_spanner_to_bar_end",
-                    "set_repeat_barlines",
-                    "add_volta",
-                    "add_grace_chord",
-                    "enter_drums"});
+    Json arr = make_array<Json>();
+    auto &items = arr.get_array();
+    items.reserve(op_specs().size());
+    for (const OpSpec &spec : op_specs()) items.emplace_back(spec.name);
+
+    Json out = make_object<Json>();
+    out["type"] = "string";
+    out["enum"] = std::move(arr);
+    return out;
 }
 
 Json pitches_array_schema() {
@@ -410,53 +395,76 @@ Json op_end_schema() {
                         "set_repeat_barlines: flag. add_spanner: as anchor. add_spanner_to_bar_end: as measure.");
 }
 
-Json ops_schema() {
-    static constexpr FieldSpec fields[] = {
-        {"op", op_name_schema},
-        {"target", ref_schema},
-        {"property", text_schema},
-        {"value", value_schema},
-        {"excerpt", eid_schema},
-        {"style", text_schema},
-        {"at", pos_schema},
-        {"duration", offset_fraction_schema},
-        {"pitches", pitches_array_schema},
-        {"note", ref_schema},
-        {"pitch", pitch_schema},
-        {"tpc", tpc_schema},
-        {"chord_rest", ref_schema},
-        {"before", op_before_schema},
-        {"count", op_count_schema},
-        {"kind", op_kind_schema},
-        {"first", op_first_last_schema},
-        {"last", op_first_last_schema},
-        {"measure", measure_ref_schema},
-        {"sig", time_sig_schema},
-        {"key", key_schema},
-        {"staff", staff_ref_schema},
-        {"clef", text_schema},
-        {"on", boolean_schema},
-        {"instrument_id", text_schema},
-        {"part", part_ref_schema},
-        {"parts", part_ref_array_schema},
-        {"type", text_schema},
-        {"start", op_start_schema},
-        {"end", op_end_schema},
-        {"props", named_props_array_schema},
-        {"end_note", ref_schema},
-        {"actual", n1024_schema},
-        {"normal", n1024_schema},
-        {"text", long_text_schema},
-        {"anchor", anchor_schema},
-        {"first_measure", measure_ref_schema},
-        {"last_measure", measure_ref_schema},
-        {"endings", n1024_array_schema},
-        {"closed", boolean_schema},
-        {"principal", ref_schema},
-        {"event_end", offset_fraction_schema},
-        {"keys", pitch_array_schema},
+SchemaBuilder schema_for_kind(OpFieldKind kind) {
+    switch (kind) {
+        case OpFieldKind::EDIT_REF: return ref_schema;
+        case OpFieldKind::PART_REF: return part_ref_schema;
+        case OpFieldKind::MEASURE_REF: return measure_ref_schema;
+        case OpFieldKind::STAFF_REF: return staff_ref_schema;
+        case OpFieldKind::ANCHOR: return anchor_schema;
+        case OpFieldKind::AT_POS:
+        case OpFieldKind::ENTRY_AT_POS: return pos_schema;
+        case OpFieldKind::SCORE_EXCERPT: return eid_schema;
+        case OpFieldKind::FRACTION: return offset_fraction_schema;
+        case OpFieldKind::TIME_SIG: return time_sig_schema;
+        case OpFieldKind::TEXT:
+        case OpFieldKind::LAYOUT_KIND:
+        case OpFieldKind::MEASURE_KIND:
+        case OpFieldKind::GRACE_KIND: return text_schema;
+        case OpFieldKind::XML_LONG_TEXT: return long_text_schema;
+        case OpFieldKind::BOOL: return boolean_schema;
+        case OpFieldKind::KEY_INT: return key_schema;
+        case OpFieldKind::PITCH_INT: return pitch_schema;
+        case OpFieldKind::TPC_INT: return tpc_schema;
+        case OpFieldKind::INT_1_1024:
+        case OpFieldKind::INT_2_1024: return n1024_schema;
+        case OpFieldKind::PITCH_LIST: return pitches_array_schema;
+        case OpFieldKind::DRUM_KEY_LIST: return pitch_array_schema;
+        case OpFieldKind::PART_REF_LIST: return part_ref_array_schema;
+        case OpFieldKind::INT_1_1024_LIST: return n1024_array_schema;
+        case OpFieldKind::PROP_VALUE:
+        case OpFieldKind::STYLE_VALUE: return value_schema;
+        case OpFieldKind::NAMED_PROPS: return named_props_array_schema;
+    }
+    assert(false);
+    std::unreachable();
+}
+
+SchemaBuilder polymorphic_op_field_schema(std::string_view name) {
+    static constexpr FieldSpec overrides[] = {
+        {"before", op_before_schema},   {"count", op_count_schema}, {"kind", op_kind_schema}, {"first", op_first_last_schema},
+        {"last", op_first_last_schema}, {"start", op_start_schema}, {"end", op_end_schema},
     };
-    Json ops = schema_array(object_from(fields, {"op"}));
+    for (const FieldSpec &entry : overrides) {
+        if (entry.key == name) return entry.build;
+    }
+    return nullptr;
+}
+
+Json ops_schema() {
+    HashMap<std::string_view, SchemaBuilder> builders;
+    builders.emplace("op", op_name_schema);
+    for (const OpSpec &spec : op_specs()) {
+        for (const OpFieldSpec &field : spec.fields) {
+            if (SchemaBuilder poly = polymorphic_op_field_schema(field.name)) {
+                builders.try_emplace(field.name, poly);
+                continue;
+            }
+            SchemaBuilder build = schema_for_kind(field.kind);
+            const auto [it, inserted] = builders.try_emplace(field.name, build);
+            assert(inserted || it->second == build);
+        }
+    }
+    Json props = make_object<Json>();
+    for (const auto &[key, build] : builders) props[key] = build();
+
+    Json item = make_object<Json>();
+    item["type"] = "object";
+    item["properties"] = std::move(props);
+    item["required"] = str_list({"op"});
+    item["additionalProperties"] = false;
+
+    Json ops = schema_array(std::move(item));
     ops["maxItems"] = 1024;
     return ops;
 }

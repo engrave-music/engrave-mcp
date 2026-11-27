@@ -122,43 +122,60 @@ bool consume_test_trigger(const char *env_name) {
 
 // Commits an export to publication: excludes the watchdog's exit 70,
 // cancellation, and a deadline expiring while waiting for the gate. On
-// COMMITTED, `publication` stays locked until the report has been written.
-PublicationAdmission begin_publication(RequestExecution *execution, std::unique_lock<std::recursive_mutex> &publication,
-                                       FnRef<bool()> cancelled, FnRef<bool()> deadline_expired) {
+// COMMITTED, `publication` owns an active_publications token until the report
+// finishes, with no mutex held across disk publication.
+PublicationAdmission begin_publication(RequestExecution *execution, PublicationScope &publication,
+                                       std::chrono::steady_clock::time_point deadline, FnRef<bool()> cancelled,
+                                       FnRef<bool()> deadline_expired) {
     if (!execution) {
         if (cancelled && cancelled()) return PublicationAdmission::CANCELLED;
         if (deadline_expired && deadline_expired()) return PublicationAdmission::DEADLINE_EXCEEDED;
         return PublicationAdmission::COMMITTED;
     }
-    if (test_hooks_enabled()) {
-        if (!publication.try_lock()) {
+    auto check_rejected = [&]() -> std::optional<PublicationAdmission> {
+        if (publication_gate.closing.load(std::memory_order_acquire)) return PublicationAdmission::CANCELLED;
+        std::lock_guard response_lock(execution->response_mutex);
+        if (execution->cancel_before_publication || (cancelled && cancelled())) return PublicationAdmission::CANCELLED;
+        if (deadline_expired && deadline_expired()) return PublicationAdmission::DEADLINE_EXCEEDED;
+        if (execution->state.load(std::memory_order_acquire) != ExecutionState::EXECUTING) return PublicationAdmission::CANCELLED;
+        return std::nullopt;
+    };
+
+    std::unique_lock lock(publication_gate.state_mutex);
+    if (auto rejected = check_rejected()) return *rejected;
+
+    bool logged_waiting = false;
+    while (publication_gate.active_publications > 0 || publication_gate.active_stdout_writes > 0) {
+        if (test_hooks_enabled() && !logged_waiting) {
+            logged_waiting = true;
             std::fprintf(stderr, "PUBLICATION_LOCK_WAITING\n");
             std::fflush(stderr);
-            publication.lock();
         }
-    } else {
-        publication.lock();
-    }
-    if (publication_gate.closing) {
-        publication.unlock();
-        return PublicationAdmission::CANCELLED;
-    }
-    {
-        std::lock_guard lock(execution->response_mutex);
-        if (execution->cancel_before_publication || (cancelled && cancelled())) {
-            publication.unlock();
-            return PublicationAdmission::CANCELLED;
-        }
-        if (deadline_expired && deadline_expired()) {
-            publication.unlock();
+        const auto wake = [&] {
+            return publication_gate.closing.load(std::memory_order_acquire) ||
+                   (publication_gate.active_publications == 0 && publication_gate.active_stdout_writes == 0) ||
+                   check_rejected().has_value();
+        };
+        if (publication_gate.state_cv.wait_until(lock, deadline, wake)) {
+            if (auto rejected = check_rejected()) return *rejected;
+        } else {
+            if (auto rejected = check_rejected()) return *rejected;
             return PublicationAdmission::DEADLINE_EXCEEDED;
         }
+    }
+
+    if (publication_gate.closing.load(std::memory_order_acquire)) return PublicationAdmission::CANCELLED;
+    {
+        std::lock_guard response_lock(execution->response_mutex);
+        if (execution->cancel_before_publication || (cancelled && cancelled())) return PublicationAdmission::CANCELLED;
+        if (deadline_expired && deadline_expired()) return PublicationAdmission::DEADLINE_EXCEEDED;
         auto running = ExecutionState::EXECUTING;
         if (!execution->state.compare_exchange_strong(running, ExecutionState::PUBLISHING, std::memory_order_acq_rel)) {
-            publication.unlock();
             return PublicationAdmission::CANCELLED;
         }
     }
+    ++publication_gate.active_publications;
+    publication.adopt();
     return PublicationAdmission::COMMITTED;
 }
 } // namespace
@@ -244,6 +261,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         if (closing) return;
         closing = true;
         stopping.store(true, std::memory_order_release);
+        publication_gate.notify_state_change();
         auto queued = std::move(audio_queue);
         audio_queue.clear();
         for (const auto &run : queued) abort_queued(*run);
@@ -306,11 +324,11 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
     // PreparedAudio is already destroyed, so the lane may be reused.
     static void finish_audio_task(AudioRun &run, std::exception_ptr error, Json payload) noexcept {
         {
-            std::lock_guard lock(publication_gate.mutex);
-            --publication_gate.owner_tasks;
+            std::lock_guard lock(publication_gate.state_mutex);
+            --publication_gate.active_tasks;
             run.state->state.store(ExecutionState::FINISHED, std::memory_order_release);
         }
-        publication_gate.changed.notify_all();
+        publication_gate.state_cv.notify_all();
         bool release_posted = false;
         try {
             run.release_lane();
@@ -332,14 +350,14 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         PrepareGate gate = PrepareGate::PROCEED;
         bool need_complete = false;
         {
-            std::lock_guard lock(publication_gate.mutex);
-            if (publication_gate.closing) {
+            std::lock_guard lock(publication_gate.state_mutex);
+            if (publication_gate.closing.load(std::memory_order_acquire)) {
                 gate = PrepareGate::DROPPED_CLOSING;
                 need_complete = run->state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED);
             } else if (!run->state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) {
                 gate = PrepareGate::ALREADY_CANCELLED;
             } else {
-                ++publication_gate.owner_tasks;
+                ++publication_gate.active_tasks;
             }
         }
         if (gate == PrepareGate::DROPPED_CLOSING) {
@@ -396,7 +414,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         }
         if (run->prepared) {
             try {
-                // The active task carries over: owner_tasks and EXECUTING stay
+                // The active task carries over: active_tasks and EXECUTING stay
                 // set until the lane finishes, for exit 74 and the watchdog.
                 asio::post(audio_io, [this, run] { finish_audio(run); });
                 return;
@@ -414,15 +432,18 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         Json payload{};
         const char *fatal_report_failure = nullptr;
         std::vector<std::string> visible_paths;
-        std::unique_lock publication(publication_gate.mutex, std::defer_lock);
+        PublicationScope publication;
         auto *execution = run->execution.get();
+        const auto deadline = run->submitted + limits.deadline;
         try {
             auto prepared = std::move(*run->prepared);
             run->prepared.reset();
             auto cancelled = [&] { return audio_cancelled(*run); };
             auto output = finish_audio_export(
                 std::move(prepared), cancelled, *run->timing,
-                [&](FnRef<bool()> deadline_expired) { return begin_publication(execution, publication, cancelled, deadline_expired); },
+                [&](FnRef<bool()> deadline_expired) {
+                    return begin_publication(execution, publication, deadline, cancelled, deadline_expired);
+                },
                 &visible_paths);
             if (!output) {
                 if (output.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
@@ -431,7 +452,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             } else {
                 payload = std::move(*output);
             }
-            if (publication.owns_lock() && execution && execution->report) {
+            if (publication.active() && execution && execution->report) {
                 fatal_report_failure = execution->report(std::move(payload));
                 if (!fatal_report_failure) {
                     execution->mark_report_sent();
@@ -441,25 +462,21 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         } catch (...) {
             error = std::current_exception();
         }
-        if (error && publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING && execution->report) {
+        if (error && publication.active() && execution && execution->state.load() == ExecutionState::PUBLISHING && execution->report) {
             fatal_report_failure = execution->report(Json{}); // terminal: trustworthy report unavailable
         }
         run->prepared.reset();
+        publication.release();
         if (fatal_report_failure) {
-            if (publication.owns_lock()) {
-                --publication_gate.owner_tasks;
-                run->state->state.store(ExecutionState::FINISHED, std::memory_order_release);
-                publication.unlock();
-            } else {
-                std::lock_guard lock(publication_gate.mutex);
-                --publication_gate.owner_tasks;
+            {
+                std::lock_guard lock(publication_gate.state_mutex);
+                --publication_gate.active_tasks;
                 run->state->state.store(ExecutionState::FINISHED, std::memory_order_release);
             }
-            publication_gate.changed.notify_all();
+            publication_gate.state_cv.notify_all();
             if (execution && execution->abort_transport) execution->abort_transport(fatal_report_failure);
             std::_Exit(74);
         }
-        if (publication.owns_lock()) publication.unlock();
         finish_audio_task(*run, error, std::move(payload));
     }
 
@@ -583,7 +600,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         timing->add("owner_dispatch", submitted);
         Json payload;
         std::vector<std::string> visible_paths;
-        std::unique_lock publication(publication_gate.mutex, std::defer_lock);
+        PublicationScope publication;
+        const auto deadline = submitted + limits.deadline;
         auto runtime = host->runtime_options();
         if (!runtime) return error_envelope(runtime.error());
         std::exception_ptr caught;
@@ -599,7 +617,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     auto output = live_export(
                         document, request, limits, cancelled, submitted, *timing, *runtime,
                         [&](FnRef<bool()> deadline_expired) {
-                            return begin_publication(execution.get(), publication, cancelled, deadline_expired);
+                            return begin_publication(execution.get(), publication, deadline, cancelled, deadline_expired);
                         },
                         &visible_paths);
                     if (test_hooks_enabled() && !visible_paths.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
@@ -617,7 +635,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     payload = error_envelope(result.error());
                 }
             }
-            if (!cancelled_result && publication.owns_lock() && execution && execution->report) {
+            if (!cancelled_result && publication.active() && execution && execution->report) {
                 if (const char *failure = execution->report(std::move(payload))) {
                     fatal_failure = failure;
                 } else {
@@ -628,7 +646,7 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         } catch (...) {
             caught = std::current_exception();
         }
-        if ((caught || cancelled_result) && publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING &&
+        if ((caught || cancelled_result) && publication.active() && execution && execution->state.load() == ExecutionState::PUBLISHING &&
             execution->report) {
             fatal_failure = execution->report(Json{});
         }
@@ -706,12 +724,12 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     bool need_complete = false;
                     bool proceed = false;
                     {
-                        std::lock_guard lock(publication_gate.mutex);
-                        if (publication_gate.closing) {
+                        std::lock_guard lock(publication_gate.state_mutex);
+                        if (publication_gate.closing.load(std::memory_order_acquire)) {
                             dropped_closing = true;
                             need_complete = state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED);
                         } else if (state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) {
-                            ++publication_gate.owner_tasks;
+                            ++publication_gate.active_tasks;
                             proceed = true;
                         }
                     }
@@ -744,11 +762,11 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     task->reset();
 
                     {
-                        std::lock_guard lock(publication_gate.mutex);
-                        --publication_gate.owner_tasks;
+                        std::lock_guard lock(publication_gate.state_mutex);
+                        --publication_gate.active_tasks;
                         state->state.store(ExecutionState::FINISHED, std::memory_order_release);
                     }
-                    publication_gate.changed.notify_all();
+                    publication_gate.state_cv.notify_all();
                     if (fatal_report_failure) {
                         if (state->abort_transport) state->abort_transport(fatal_report_failure);
                         std::_Exit(74);

@@ -5,6 +5,7 @@
 
 #include "api_json.h"
 #include "containers.h"
+#include "op_defs.h"
 
 namespace music::api {
 
@@ -83,7 +84,12 @@ void validate_registry() {
     }
     const auto &published =
         definition("score_edit").at("inputSchema").at("properties").at("ops").at("items").at("properties").at("op").at("enum");
-    if (published.size() != operation_names.size()) throw std::logic_error("edit operation count mismatch");
+    if (published.size() != operation_names.size() || op_specs().size() != operation_names.size()) {
+        throw std::logic_error("edit operation count mismatch");
+    }
+    for (std::size_t i = 0; i < op_specs().size(); ++i) {
+        if (published[i] != op_specs()[i].name) throw std::logic_error("edit operation wire order mismatch");
+    }
     for (auto name : operation_names) {
         if (std::ranges::none_of(published.get_array(), [&](const Json &entry) { return entry == name; })) {
             throw std::logic_error("missing edit operation");

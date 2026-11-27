@@ -187,14 +187,19 @@ def barrier(a, dead, report=True):
         else:
             h.send("tools/list", {}, 10)
         h.marker("WRITE_REGISTERED")
-        # The next owner cannot start while the report write holds the mutex.
         enqueued = h.log.count(b"OWNER_ENQUEUED")
         h.export(queued, 31)
         h.wait(lambda: h.log.count(b"OWNER_ENQUEUED") > enqueued, "queued owner admitted")
         if not dead:
             h.send("notifications/cancelled", dict(requestId=31))
         h.send("tools/list", {}, 12)
-        assert not list(queued.iterdir())
+        # When report=True the owner thread is busy on export 30; when report=False
+        # writer_loop holds only stdout_mutex so export 31 may stage on the owner
+        # thread while still blocked before publishing any visible artifact.
+        if report:
+            assert not list(queued.iterdir())
+        else:
+            assert not list(queued.glob("*.svg"))
         if dead:
             h.p.stdout.close()
         release.touch()
@@ -513,6 +518,71 @@ def modern_cancel_before_admission(a):
         h.close()
 
 
+def writer_backpressure_owner_progress(a):
+    """Owner dispatch and execution continue while writer_loop is stalled on stdout."""
+    out = a.output / "writer-backpressure-owner"
+    release = out / "release"
+    h = Host(a, out, dict(ENGRAVE_MCP_TEST_WRITE_BARRIER=str(release)))
+    try:
+        h.send("tools/call", dict(name="score_outline", arguments=dict(document=h.doc)), 3)
+        outline = h.read()["result"]["structuredContent"]
+        base_rev = int(outline["revision"])
+        measure = outline["outline"]["measures"][0]["id"]
+        pages = out / "pages"
+        pages.mkdir()
+
+        Path(str(release) + ".arm").touch()
+        h.send("tools/list", {}, 10)
+        h.marker("WRITE_REGISTERED")
+
+        # score_export guards on base_rev + 1, so reaching PUBLICATION_LOCK_WAITING
+        # proves score_edit already committed on the owner thread and score_export
+        # rendered while writer_loop stayed blocked on stdout.
+        h.send(
+            "tools/call",
+            dict(
+                name="score_edit",
+                arguments=dict(
+                    document=h.doc,
+                    expected_revision=str(base_rev),
+                    ops=[dict(op="set_layout_break", measure=measure, kind="page", on=True)],
+                ),
+            ),
+            11,
+        )
+        h.send(
+            "tools/call",
+            dict(
+                name="score_export",
+                arguments=dict(
+                    document=h.doc,
+                    expected_revision=str(base_rev + 1),
+                    format="svg",
+                    path=str(pages),
+                ),
+            ),
+            12,
+        )
+        h.marker("PUBLICATION_LOCK_WAITING")
+        assert not list(pages.glob("*.svg")), list(pages.glob("*.svg"))
+
+        release.touch()
+        seen = {}
+        while not {10, 11, 12} <= seen.keys():
+            r = h.read()
+            seen[r["id"]] = r
+        assert seen[11]["result"]["structuredContent"]["ok"], seen[11]
+        assert seen[11]["result"]["structuredContent"]["revision"] == str(base_rev + 1), seen[11]
+        assert seen[12]["result"]["structuredContent"]["ok"], seen[12]
+        published = list(pages.glob("*.svg"))
+        assert len(published) >= 2, published
+        assert not list(pages.glob(".engrave-stage-*"))
+        return dict(writer_backpressure_owner_progress=True, published=len(published))
+    finally:
+        release.touch()
+        h.close()
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for k in ("binary", "resources", "output"):
@@ -538,6 +608,7 @@ def main():
         functools.partial(barrier, a, dead, report) for dead, report in ((False, True), (True, True), (True, False))
     ]
     timed_cases += [
+        functools.partial(writer_backpressure_owner_progress, a),
         functools.partial(refused_cleanup, a),
         functools.partial(refused_cleanup, a, True),
         functools.partial(regular_diagnostic, a),

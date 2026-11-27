@@ -410,10 +410,7 @@ struct StagingCleanup {
             fs::remove_all(stage, ec);
         }
         if (ec) {
-            {
-                std::lock_guard lock(publication_gate.mutex);
-                ++publication_gate.cleanup_failures;
-            }
+            publication_gate.cleanup_failures.fetch_add(1, std::memory_order_acq_rel);
             try {
                 terminal_diagnostic("staging cleanup failed: " + stage.string() + ": " + ec.message() + "\n");
             } catch (...) {}
@@ -580,8 +577,8 @@ struct ExportContext {
                 std::fprintf(stderr, "LIVE_NONCOOPERATIVE\n");
                 std::fflush(stderr);
                 if (std::getenv("ENGRAVE_MCP_TEST_OWNER_UNTIL_WRITE_FAILURE")) {
-                    std::unique_lock lock(publication_gate.mutex);
-                    publication_gate.changed.wait(lock, [] { return publication_gate.closing.load(); });
+                    std::unique_lock lock(publication_gate.state_mutex);
+                    publication_gate.state_cv.wait(lock, [] { return publication_gate.closing.load(std::memory_order_acquire); });
                     std::fprintf(stderr, "OWNER_OBSERVED_WRITE_FAILURE\n");
                     std::fflush(stderr);
                 } else if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_NONCOOPERATIVE_BARRIER"); barrier && *barrier) {

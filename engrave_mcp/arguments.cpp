@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
+#include <span>
 #include <utility>
 
 #include "api_json_internal.h"
@@ -26,10 +28,10 @@ Result<void> fail(const std::string &p, View why, View expected) {
 
 std::string child(const std::string &p, View key) { return p.empty() ? std::string(key) : p + "." + std::string(key); }
 
-Result<void> object(const Json &j, const std::string &p, std::initializer_list<Field> fields) {
+Result<void> object(const Json &j, const std::string &p, std::span<const Field> fields) {
     if (!j.is_object()) return fail(p, "wrong type", "an object");
     for (const auto &field : fields) {
-        if (field.required && !j.contains(std::string(field.name))) return fail(child(p, field.name), "missing field", "a value");
+        if (field.required && !j.get_object().contains(field.name)) return fail(child(p, field.name), "missing field", "a value");
     }
     for (const auto &[key, v] : j.get_object()) {
         auto it = std::ranges::find(fields, View(key), &Field::name);
@@ -37,6 +39,10 @@ Result<void> object(const Json &j, const std::string &p, std::initializer_list<F
         if (auto checked = it->check(v, child(p, key)); !checked) return checked;
     }
     return {};
+}
+
+Result<void> object(const Json &j, const std::string &p, std::initializer_list<Field> fields) {
+    return object(j, p, std::span<const Field>(fields));
 }
 
 template <Check Item>
@@ -298,6 +304,41 @@ Result<void> check_midinote(const Json &j, const std::string &p) {
 
 Result<void> check_prop(const Json &j, const std::string &p) { return object(j, p, {{"name", text<4096>, true}, {"value", any, true}}); }
 
+Check op_field_check(OpFieldKind kind) {
+    switch (kind) {
+        case OpFieldKind::EDIT_REF:
+        case OpFieldKind::PART_REF: return check_edit_ref;
+        case OpFieldKind::MEASURE_REF:
+        case OpFieldKind::STAFF_REF: return check_ordinal;
+        case OpFieldKind::ANCHOR: return check_anchor;
+        case OpFieldKind::AT_POS:
+        case OpFieldKind::ENTRY_AT_POS: return check_pos;
+        case OpFieldKind::SCORE_EXCERPT: return check_eid;
+        case OpFieldKind::FRACTION:
+        case OpFieldKind::TIME_SIG: return check_fraction;
+        case OpFieldKind::TEXT:
+        case OpFieldKind::LAYOUT_KIND:
+        case OpFieldKind::MEASURE_KIND: return text<4096>;
+        case OpFieldKind::XML_LONG_TEXT: return text<65536>;
+        case OpFieldKind::GRACE_KIND: return check_grace;
+        case OpFieldKind::BOOL: return boolean;
+        case OpFieldKind::KEY_INT: return integer<-7, 7>;
+        case OpFieldKind::PITCH_INT: return integer<0, 127>;
+        case OpFieldKind::TPC_INT: return integer<-8, 40>;
+        case OpFieldKind::INT_1_1024: return integer<1, 1024>;
+        case OpFieldKind::INT_2_1024: return integer<2, 1024>;
+        case OpFieldKind::PITCH_LIST: return list<check_midinote>;
+        case OpFieldKind::DRUM_KEY_LIST: return list<integer<0, 127>>;
+        case OpFieldKind::PART_REF_LIST: return list<check_edit_ref>;
+        case OpFieldKind::INT_1_1024_LIST: return list<integer<1, 1024>>;
+        case OpFieldKind::PROP_VALUE:
+        case OpFieldKind::STYLE_VALUE: return any;
+        case OpFieldKind::NAMED_PROPS: return list<check_prop>;
+    }
+    assert(false);
+    std::unreachable();
+}
+
 Result<void> validate_arguments(View name, const Json &j) {
     if (name == "score_open") {
         auto checked = object(
@@ -423,135 +464,17 @@ Result<void> validate_op(const Json &j, usize index) {
     const auto path = "ops[" + std::to_string(index) + "]";
     if (!j.is_object() || !j.contains("op")) return fail(path + ".op", "missing operation", "an operation name");
     const auto &name = j.at("op");
-    if (name == "set_property") {
-        return object(j, path,
-                      {{"op", text<4096>, true}, {"target", check_edit_ref, true}, {"property", text<4096>, true}, {"value", any, true}});
+    if (!name.is_string()) return fail(path + ".op", "unknown operation", "a runtime_info ops entry");
+    const OpSpec *spec = find_op_spec(name.get<std::string>());
+    if (!spec) return fail(path + ".op", "unknown operation", "a runtime_info ops entry");
+    constexpr usize max_fields = 8;
+    assert(spec->fields.size() + 1 <= max_fields);
+    std::array<Field, max_fields> fields{};
+    fields[0] = {"op", text<4096>, true};
+    for (usize i = 0; i < spec->fields.size(); ++i) {
+        const auto &f = spec->fields[i];
+        fields[i + 1] = {f.name, op_field_check(f.kind), f.required};
     }
-    if (name == "reset_property") {
-        return object(j, path, {{"op", text<4096>, true}, {"target", check_edit_ref, true}, {"property", text<4096>, true}});
-    }
-    if (name == "set_style") {
-        return object(j, path, {{"op", text<4096>, true}, {"excerpt", check_eid}, {"style", text<4096>, true}, {"value", any, true}});
-    }
-    if (name == "enter_notes") {
-        return object(j, path,
-                      {{"op", text<4096>, true},
-                       {"at", check_pos, true},
-                       {"duration", check_fraction, true},
-                       {"pitches", list<check_midinote>, true}});
-    }
-    if (name == "set_pitch") {
-        return object(
-            j, path,
-            {{"op", text<4096>, true}, {"note", check_edit_ref, true}, {"pitch", integer<0, 127>, true}, {"tpc", integer<-8, 40>}});
-    }
-    if (name == "set_duration") {
-        return object(j, path, {{"op", text<4096>, true}, {"chord_rest", check_edit_ref, true}, {"duration", check_fraction, true}});
-    }
-    if (name == "remove") {
-        return object(j, path, {{"op", text<4096>, true}, {"target", check_edit_ref, true}});
-    }
-    if (name == "insert_measures") {
-        return object(j, path,
-                      {{"op", text<4096>, true}, {"before", check_ordinal}, {"count", integer<1, 1024>, true}, {"kind", text<4096>}});
-    }
-    if (name == "remove_measures") {
-        return object(j, path, {{"op", text<4096>, true}, {"first", check_ordinal, true}, {"last", check_ordinal, true}});
-    }
-    if (name == "set_time_sig") {
-        return object(j, path, {{"op", text<4096>, true}, {"measure", check_ordinal, true}, {"sig", check_fraction, true}});
-    }
-    if (name == "set_key_sig") {
-        return object(
-            j, path, {{"op", text<4096>, true}, {"measure", check_ordinal, true}, {"key", integer<-7, 7>, true}, {"staff", check_ordinal}});
-    }
-    if (name == "insert_clef") {
-        return object(j, path, {{"op", text<4096>, true}, {"at", check_pos, true}, {"clef", text<4096>, true}});
-    }
-    if (name == "set_layout_break") {
-        return object(j, path,
-                      {{"op", text<4096>, true}, {"measure", check_ordinal, true}, {"kind", text<4096>, true}, {"on", boolean, true}});
-    }
-    if (name == "add_part") {
-        return object(j, path, {{"op", text<4096>, true}, {"instrument_id", text<4096>, true}, {"before", check_edit_ref}});
-    }
-    if (name == "remove_part") {
-        return object(j, path, {{"op", text<4096>, true}, {"part", check_edit_ref, true}});
-    }
-    if (name == "add_staff") {
-        return object(j, path, {{"op", text<4096>, true}, {"part", check_edit_ref, true}});
-    }
-    if (name == "remove_staff") {
-        return object(j, path, {{"op", text<4096>, true}, {"staff", check_ordinal, true}});
-    }
-    if (name == "generate_excerpts") {
-        return object(j, path, {{"op", text<4096>, true}, {"parts", list<check_edit_ref>, true}});
-    }
-    if (name == "add_spanner") {
-        return object(j, path,
-                      {{"op", text<4096>, true},
-                       {"type", text<4096>, true},
-                       {"start", check_anchor, true},
-                       {"end", check_anchor, true},
-                       {"props", list<check_prop>}});
-    }
-    if (name == "add_tie") {
-        return object(j, path, {{"op", text<4096>, true}, {"note", check_edit_ref, true}, {"end_note", check_edit_ref}});
-    }
-    if (name == "add_tuplet") {
-        return object(j, path,
-                      {{"op", text<4096>, true},
-                       {"first", check_edit_ref, true},
-                       {"last", check_edit_ref, true},
-                       {"actual", integer<1, 1024>},
-                       {"normal", integer<1, 1024>}});
-    }
-    if (name == "add_text") {
-        return object(j, path,
-                      {{"op", text<4096>, true}, {"at", check_pos, true}, {"style", text<4096>, true}, {"text", text<65536>, true}});
-    }
-    if (name == "add") {
-        return object(j, path,
-                      {{"op", text<4096>, true}, {"anchor", check_anchor, true}, {"type", text<4096>, true}, {"props", list<check_prop>}});
-    }
-    if (name == "add_spanner_to_bar_end") {
-        return object(j, path,
-                      {{"op", text<4096>, true},
-                       {"type", text<4096>, true},
-                       {"start", check_anchor, true},
-                       {"end", check_ordinal, true},
-                       {"props", list<check_prop>}});
-    }
-    if (name == "set_repeat_barlines") {
-        return object(j, path,
-                      {{"op", text<4096>, true},
-                       {"measure", check_ordinal, true},
-                       {"start", boolean},
-                       {"end", boolean},
-                       {"count", integer<2, 1024>}});
-    }
-    if (name == "add_volta") {
-        return object(j, path,
-                      {{"op", text<4096>, true},
-                       {"first_measure", check_ordinal, true},
-                       {"last_measure", check_ordinal, true},
-                       {"endings", list<integer<1, 1024>>, true},
-                       {"closed", boolean}});
-    }
-    if (name == "add_grace_chord") {
-        return object(j, path,
-                      {{"op", text<4096>, true},
-                       {"principal", check_edit_ref, true},
-                       {"kind", check_grace, true},
-                       {"duration", check_fraction, true},
-                       {"pitches", list<check_midinote>, true},
-                       {"event_end", check_fraction}});
-    }
-    if (name == "enter_drums") {
-        return object(
-            j, path,
-            {{"op", text<4096>, true}, {"at", check_pos, true}, {"duration", check_fraction, true}, {"keys", list<integer<0, 127>>, true}});
-    }
-    return fail(path + ".op", "unknown operation", "a runtime_info ops entry");
+    return object(j, path, std::span<const Field>(fields.data(), spec->fields.size() + 1));
 }
 } // namespace music::api::detail

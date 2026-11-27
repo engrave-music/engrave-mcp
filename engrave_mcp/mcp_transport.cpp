@@ -643,6 +643,31 @@ private:
 #endif
     }
 
+    // Tracks an in-flight stdout byte write under stdout_mutex without holding
+    // state_mutex across the OS write call.
+    struct StdoutWriteScope {
+        bool active = false;
+        bool failed = false;
+
+        bool enter() noexcept {
+            std::lock_guard lock(publication_gate.state_mutex);
+            if (publication_gate.closing.load(std::memory_order_acquire)) return false;
+            ++publication_gate.active_stdout_writes;
+            active = true;
+            return true;
+        }
+
+        ~StdoutWriteScope() noexcept {
+            if (!active) return;
+            {
+                std::lock_guard lock(publication_gate.state_mutex);
+                --publication_gate.active_stdout_writes;
+                if (failed) publication_gate.closing.store(true, std::memory_order_release);
+            }
+            publication_gate.state_cv.notify_all();
+        }
+    };
+
     void writer_loop() {
         for (;;) {
             OutputMessage output;
@@ -667,12 +692,13 @@ private:
             }
 
             const auto &message = output.wire;
-            bool written;
+            bool written = false;
             {
-                std::lock_guard lock(publication_gate.mutex);
-                if (publication_gate.closing) return;
+                std::lock_guard stdout_lock(publication_gate.stdout_mutex);
+                StdoutWriteScope write_scope;
+                if (!write_scope.enter()) return;
                 written = write_report_bytes(message);
-                if (!written) publication_gate.closing = true;
+                if (!written) write_scope.failed = true;
             }
 
             {
@@ -713,19 +739,20 @@ private:
         return write_all(message.data(), message.size());
     }
 
-    // Called synchronously on the owner or audio lane with the publication lock held.
-    // Returns nullptr on success; on terminal failure fences closing and returns the
-    // reason so the caller can release its own lock and task count before calling
-    // post_writer_failure(reason).
+    // Called synchronously on the owner or audio lane while a PublicationScope
+    // holds active_publications. Serializes JSON unlocked, then acquires only
+    // stdout_mutex for the raw write. On terminal failure, fences closing and
+    // returns the reason so the caller can release its publication token and
+    // task count before calling post_writer_failure(reason).
     const char *publish_report(const Json &id, Json payload, bool modern) noexcept {
         auto fence_failure = [this](const char *reason) noexcept {
-            publication_gate.closing = true;
-            publication_gate.changed.notify_all();
+            publication_gate.mark_closing();
             {
                 std::lock_guard output_lock(out_mutex_);
                 out_abort_ = true;
                 out_messages_.clear();
             }
+            out_cv_.notify_all();
             return reason;
         };
         try {
@@ -750,7 +777,16 @@ private:
             auto wire = dump_json(Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}});
             wire.push_back('\n');
             if (wire.size() > k_max_response_bytes) return fence_failure("published report exceeds limit");
-            if (!write_report_bytes(wire)) return fence_failure("stdout write failed");
+            bool written = false;
+            {
+                std::lock_guard stdout_lock(publication_gate.stdout_mutex);
+                StdoutWriteScope write_scope;
+                if (write_scope.enter()) {
+                    written = write_report_bytes(wire);
+                    if (!written) write_scope.failed = true;
+                }
+            }
+            if (!written) return fence_failure("stdout write failed");
             return nullptr;
         } catch (...) {
             return fence_failure("cannot construct published report");
@@ -837,18 +873,25 @@ private:
     }
 
     [[noreturn]] void post_writer_failure(const char *reason) noexcept {
-        std::unique_lock lock(publication_gate.mutex);
-        publication_gate.closing = true; // fences both admission and queued owner starts
-        publication_gate.changed.notify_all();
+        {
+            std::unique_lock lock(publication_gate.state_mutex);
+            publication_gate.closing.store(true, std::memory_order_release); // fences both admission and queued owner starts
+            const bool primary = !publication_gate.exit74_claimed;
+            if (primary) publication_gate.exit74_claimed = true;
+            lock.unlock();
+            publication_gate.state_cv.notify_all();
+            if (!primary) {
+                lock.lock();
+                publication_gate.state_cv.wait(lock, [] { return false; });
+            }
+        }
         if (test_hooks_enabled()) {
             if (const auto *barrier = std::getenv("ENGRAVE_MCP_TEST_CLOSING_BARRIER")) {
                 std::fprintf(stderr, "CLOSING_REGISTERED\n");
                 std::fflush(stderr);
-                lock.unlock();
                 while (!std::filesystem::exists(barrier)) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
-                lock.lock();
             }
         }
         {
@@ -856,16 +899,21 @@ private:
             out_abort_ = true;
             out_messages_.clear();
         }
+        out_cv_.notify_all();
         // Active owner and audio-lane tasks clean up their staging; active exports
         // also cancel on `closing`. Never wait indefinitely for engine/filesystem
         // work; exit also reports possibly unfinished cleanup.
-        const bool cleaned =
-            publication_gate.changed.wait_for(lock, std::chrono::milliseconds(500), [] { return publication_gate.owner_tasks == 0; });
+        bool cleaned = false;
+        {
+            std::unique_lock lock(publication_gate.state_mutex);
+            cleaned =
+                publication_gate.state_cv.wait_for(lock, std::chrono::milliseconds(500), [] { return publication_gate.active_tasks == 0; });
+        }
         try {
-            terminal_diagnostic(
-                std::string("mcp transport terminal: ") + reason +
-                "; exit 74 after publication cleanup; cleanup failures=" + std::to_string(publication_gate.cleanup_failures) +
-                (cleaned ? "; owners cleaned; directories may remain\n" : "; cleanup timed out; staging may remain\n"));
+            terminal_diagnostic(std::string("mcp transport terminal: ") + reason +
+                                "; exit 74 after publication cleanup; cleanup failures=" +
+                                std::to_string(publication_gate.cleanup_failures.load(std::memory_order_acquire)) +
+                                (cleaned ? "; owners cleaned; directories may remain\n" : "; cleanup timed out; staging may remain\n"));
         } catch (...) {}
         std::_Exit(74);
     }
@@ -1439,6 +1487,7 @@ private:
                     std::lock_guard lock(target->execution->response_mutex);
                     target->execution->cancel_before_publication = true;
                 }
+                publication_gate.notify_state_change();
                 target->cancel->emit(asio::cancellation_type::terminal);
                 if (first && target->live_export && !target->tool_finished &&
                     target->execution->state.load(std::memory_order_acquire) == ExecutionState::EXECUTING) {
@@ -1456,6 +1505,7 @@ private:
                                                                               std::memory_order_acq_rel)) {
                             return;
                         }
+                        publication_gate.notify_state_change();
                         if (test_hooks_enabled()) {
                             std::fprintf(stderr, "WATCHDOG_CLAIMED\n");
                             std::fflush(stderr);
@@ -1467,7 +1517,7 @@ private:
                         std::thread([execution = target->execution, barrier = std::string(barrier ? barrier : ""),
                                      settle = test_hook_ms("ENGRAVE_MCP_TEST_WATCHDOG_SETTLE_MS", 0, std::chrono::milliseconds(250))] {
                             // The barrier replaces the settle delay so tests can order the
-                            // lock attempt after another request's publication starts.
+                            // fence check after another request's publication starts.
                             if (barrier.empty()) {
                                 std::this_thread::sleep_for(settle);
                             } else {
@@ -1475,17 +1525,19 @@ private:
                                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                                 }
                             }
-                            std::unique_lock lock(publication_gate.mutex, std::defer_lock);
-                            if (test_hooks_enabled()) {
-                                if (!lock.try_lock()) {
+                            std::unique_lock lock(publication_gate.state_mutex);
+                            if (!publication_gate.closing.load(std::memory_order_acquire) &&
+                                (publication_gate.active_publications > 0 || publication_gate.active_stdout_writes > 0)) {
+                                if (test_hooks_enabled()) {
                                     std::fprintf(stderr, "WATCHDOG_LOCK_WAITING\n");
                                     std::fflush(stderr);
-                                    lock.lock();
                                 }
-                            } else {
-                                lock.lock();
+                                publication_gate.state_cv.wait(lock, [] {
+                                    return publication_gate.closing.load(std::memory_order_acquire) ||
+                                           (publication_gate.active_publications == 0 && publication_gate.active_stdout_writes == 0);
+                                });
                             }
-                            if (!publication_gate.closing &&
+                            if (!publication_gate.closing.load(std::memory_order_acquire) &&
                                 execution->state.load(std::memory_order_acquire) == ExecutionState::WATCHDOG_TERMINATING) {
                                 std::_Exit(70);
                             }

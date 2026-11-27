@@ -291,6 +291,21 @@ void publish_output(const std::filesystem::path &staged, const std::filesystem::
                 std::this_thread::sleep_for(delay);
             }
         }
+        if (destination.extension() == ".wav") {
+            if (const char *barrier = std::getenv("ENGRAVE_MCP_TEST_AUDIO_PUBLISH_BARRIER"); barrier && *barrier) {
+                const auto arm = std::filesystem::u8path(std::string(barrier) + ".arm");
+                std::error_code ec;
+                if (std::filesystem::exists(arm, ec)) {
+                    std::filesystem::remove(arm, ec);
+                    std::fprintf(stderr, "AUDIO_PUBLISH_BLOCKED\n");
+                    std::fflush(stderr);
+                    const auto release = std::filesystem::u8path(barrier);
+                    while (!std::filesystem::exists(release, ec)) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    }
+                }
+            }
+        }
         if (std::getenv("ENGRAVE_MCP_TEST_FAIL_FILE_FLUSH")) {
             throw PublicationError(EIO, "Injected staged file flush failure", false);
         }
