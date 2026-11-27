@@ -831,11 +831,6 @@ Result<Json> live_export(engrave::Document &document, const ExportRequest &reque
             auto options = request.score_options;
             options.capture = capture;
             auto output = document.export_score_with_warnings(options);
-            if (!output && output.error().code == engrave::ErrorCode::UNSUPPORTED && options.format == engrave::Format::MIDI) {
-                if (auto ok = context.check(cancelled); !ok) return fail(std::move(ok.error()));
-                options.capture = {};
-                output = document.export_score_with_warnings(options);
-            }
             if (!output) return fail(api_error(output.error()));
             timing.add("engine_call", start);
             context.warnings = std::move(output->warnings);

@@ -2638,6 +2638,53 @@ TEST(HostApi, EndToEndToolContract) {
         ASSERT_TRUE(dl_res) << dl_res.error().code << ": " << dl_res.error().message;
         EXPECT_FALSE(fs::exists(deadline_target));
     }
+    {
+        const auto midi_target = scratch / "bounded-export.mid";
+        auto midi_req = music::api::decode_export({{"document", export_doc}, {"format", "midi"}, {"path", path_text(midi_target)}});
+        ASSERT_TRUE(midi_req) << midi_req.error().message;
+        const auto midi_res = host->with_document(export_doc, {}, [&](engrave::Document &document) -> music::api::Result<void> {
+            music::api::ExportTiming timing("test", midi_target);
+            auto output =
+                music::api::live_export(document, *midi_req, {}, [] { return false; }, music::api::ExportTiming::Clock::now(), timing);
+            if (!output) return std::unexpected(output.error());
+            return {};
+        });
+        ASSERT_TRUE(midi_res) << midi_res.error().code << ": " << midi_res.error().message;
+        EXPECT_TRUE(read(midi_target).starts_with("MThd"));
+        fs::remove(midi_target);
+
+        const auto midi_cancel_target = scratch / "cancelled-export.mid";
+        auto midi_cancel_req =
+            music::api::decode_export({{"document", export_doc}, {"format", "midi"}, {"path", path_text(midi_cancel_target)}});
+        ASSERT_TRUE(midi_cancel_req) << midi_cancel_req.error().message;
+        const auto cancel_res = host->with_document(export_doc, {}, [&](engrave::Document &document) -> music::api::Result<void> {
+            music::api::ExportTiming timing("test", midi_cancel_target);
+            auto output = music::api::live_export(
+                document, *midi_cancel_req, {}, [] { return true; }, music::api::ExportTiming::Clock::now(), timing);
+            if (output) return std::unexpected(music::api::HostError{"EngineFailure", "expected Cancelled"});
+            if (output.error().code != "Cancelled") return std::unexpected(output.error());
+            return {};
+        });
+        ASSERT_TRUE(cancel_res) << cancel_res.error().code << ": " << cancel_res.error().message;
+        EXPECT_FALSE(fs::exists(midi_cancel_target));
+
+        const auto midi_limit_target = scratch / "over-limit-export.mid";
+        auto midi_limit_req =
+            music::api::decode_export({{"document", export_doc}, {"format", "midi"}, {"path", path_text(midi_limit_target)}});
+        ASSERT_TRUE(midi_limit_req) << midi_limit_req.error().message;
+        music::api::ExportLimits tiny;
+        tiny.output_bytes = 1;
+        const auto limit_res = host->with_document(export_doc, {}, [&](engrave::Document &document) -> music::api::Result<void> {
+            music::api::ExportTiming timing("test", midi_limit_target);
+            auto output = music::api::live_export(
+                document, *midi_limit_req, tiny, [] { return false; }, music::api::ExportTiming::Clock::now(), timing);
+            if (output) return std::unexpected(music::api::HostError{"EngineFailure", "expected ResourceLimit"});
+            if (output.error().code != "ResourceLimit") return std::unexpected(output.error());
+            return {};
+        });
+        ASSERT_TRUE(limit_res) << limit_res.error().code << ": " << limit_res.error().message;
+        EXPECT_FALSE(fs::exists(midi_limit_target));
+    }
     ok(*host, "score_close", {{"document", export_doc}});
     ok(*host, "runtime_configure", {{"soundfonts", music::make_array<Json>()}});
     require(!fs::exists(initial_sf) && !fs::exists(selected_path), "replaced assets survived selection removal");

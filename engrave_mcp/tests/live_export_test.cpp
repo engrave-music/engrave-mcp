@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
             const auto out = root / (fixture.path() == fs::path(fs::absolute(fs::u8path(argv[5]))) ? fs::path("created.json") :
                                                                                                      fixture.path().filename());
             fs::create_directories(out);
-            for (const char *fmt : {"svg", "pdf", "png", "mscx", "mscz"}) {
+            for (const char *fmt : {"svg", "pdf", "png", "mscx", "mscz", "midi"}) {
                 const bool svg = std::string(fmt) == "svg" || std::string(fmt) == "png", pdf = std::string(fmt) == "pdf";
                 auto target = out / fmt;
                 if (svg) fs::create_directories(target);
