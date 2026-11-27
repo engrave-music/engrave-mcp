@@ -138,7 +138,7 @@ an MCP tool:
 
 Both the engine (`vendor/engrave/bazel/pch/engraving_pch.h`) and Ring 2 host
 (`bazel/pch/host_pch.h`) use relocatable Clang binary PCH
-containing only stable STL and third-party headers (`@glaze`,
+containing only stable STL and third-party headers (`@glaze`, `@gtl`, and
 `@unordered_dense` for the host), so edits to project headers never invalidate
 the PCH. The engine's PCH rule passes `-Xclang -relocatable-pch` and
 `-Xclang -isysroot -Xclang .`. Consumers use the same sysroot so
@@ -234,11 +234,14 @@ pixi run --locked python scripts/package_linux.py \
   --soundfont .runtime/soundfonts/FluidR3Mono_GM.sf3
 ```
 
-The packagers strip the copied packaged executable by default (pass `--no-strip`
-to keep symbols), leave the staged `build/<profile>` binary untouched, and
-record `unstripped_executable_sha256` in `manifest.json`. Both packagers bundle
-runtime DLL/ELF dependencies and notices and stage assets directly from
-`vendor/engrave`. The Windows packager intentionally omits Microsoft Visual C++
+`package_linux.py` strips the copied ELF executable by default (pass `--no-strip`
+to keep symbols); `package_windows.py` leaves the MSVC-ABI executable untouched
+because release debug symbols live externally in PDB files (it accepts
+`--no-strip` for compatibility). Both packagers leave the staged
+`build/<profile>` binary untouched, record `unstripped_executable_sha256` in
+`manifest.json`, bundle runtime DLL/ELF dependencies and notices, and stage
+assets directly from `vendor/engrave`. The Windows packager intentionally omits
+Microsoft Visual C++
 runtime DLLs (`vcruntime*.dll`, `msvcp*.dll`, etc.); Windows users rely on the
 system [Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist).
 Pass the optional `--soundfont` argument to copy a SoundFont
@@ -298,8 +301,9 @@ pixi run setup-hooks
   database including the engine. Python uses Ruff, Markdown/JSON/YAML use
   Prettier, and TOML uses Taplo regardless of the C++ backend.
 - **Compilation databases**: Root `clice.toml` maps profile databases
-  (`build/release`, `build/debug`, `build/releasedbg`, `build/asan`, `build/tsan`) and
-  excludes vendored third-party code and `.pixi/` headers from lint and format.
+  (`build/release`, `build/dist`, `build/debug`, `build/releasedbg`, `build/asan`,
+  `build/tsan`) and excludes vendored third-party code and `.pixi/` headers from
+  lint and format.
   Generate a profile database with `scripts/bbuild.py --profile <profile> compdb`
   (via `bazel aquery` with inline `xclang` flags). Both `scripts/lint.py` and `vendor/engrave/tools/lint.py`
   auto-select the newest `compile_commands.json` across `build/<profile>/` and

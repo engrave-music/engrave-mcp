@@ -574,8 +574,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             token);
     }
 
-    // Kept out-of-line so its try/catch never merges with dispatch()'s outer
-    // try/catch under Windows ASan + __CxxFrameHandler3.
+    // Keeps catch (...) limited to std::current_exception() (reporting and
+    // rethrow run outside catch$) so Win64 ASan unwinds cleanly alongside
+    // -mllvm -asan-stack-dynamic-alloca=0.
     [[gnu::noinline]] Json run_live_export(const ExportRequest &request, const std::shared_ptr<std::atomic<bool>> &request_cancel,
                                            const std::shared_ptr<ExportTiming> &timing, std::chrono::steady_clock::time_point submitted,
                                            const std::shared_ptr<RequestExecution> &execution) {
@@ -627,7 +628,8 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
         } catch (...) {
             caught = std::current_exception();
         }
-        if (caught && publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING && execution->report) {
+        if ((caught || cancelled_result) && publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING &&
+            execution->report) {
             fatal_failure = execution->report(Json{});
         }
         if (fatal_failure) throw FatalReportFailure{fatal_failure};

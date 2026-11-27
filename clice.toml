@@ -30,6 +30,10 @@ configuration = "release"
 compile_commands = ["build/release"]
 
 [[rules]]
+configuration = "dist"
+compile_commands = ["build/dist"]
+
+[[rules]]
 configuration = "debug"
 compile_commands = ["build/debug"]
 

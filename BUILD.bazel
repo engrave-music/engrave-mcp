@@ -25,7 +25,7 @@ HOST_DEFINES = select({
 HOST_COPTS = [
     "-Wno-deprecated-declarations",
 ] + select({
-    "@engrave//bazel:opt_msvc": [
+    "@engrave//bazel:windows_msvc": [
         "-fstrict-aliasing",
         "-fno-wrapv",
     ],
@@ -67,10 +67,9 @@ HOST_PCH_COPTS = HOST_COPTS + select({
 
 HOST_LINKOPTS = select({
     "@engrave//bazel:windows_msvc": ["-Wl,/STACK:16777216"],
-    "@platforms//os:windows": ["-Wl,--stack,16777216"],
     "//conditions:default": ["-pthread"],
 }) + select({
-    "@engrave//bazel:opt_msvc_gc": ["-Wl,/OPT:ICF"],
+    "@engrave//bazel:opt_msvc_gc": ["-Wl,/OPT:SAFEICF"],
     "@engrave//bazel:opt_linux_gc": ["-Wl,--icf=safe"],
     "//conditions:default": [],
 })
@@ -179,7 +178,6 @@ cc_library(
     copts = HOST_COPTS,
     linkopts = select({
         "@engrave//bazel:windows_msvc": ["-Wl,advapi32.lib"],
-        "@platforms//os:windows": ["-ladvapi32"],
         "//conditions:default": [],
     }),
     deps = [
@@ -203,10 +201,6 @@ cc_library(
         "@engrave//bazel:windows_msvc": [
             "-Wl,ws2_32.lib",
             "-Wl,mswsock.lib",
-        ],
-        "@platforms//os:windows": [
-            "-lws2_32",
-            "-lmswsock",
         ],
         "//conditions:default": [],
     }),

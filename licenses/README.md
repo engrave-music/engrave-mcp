@@ -11,7 +11,7 @@
   - `amc/` for amc 2.8.1
   - `gtl/` for gtl 1.3.1 (Apache-2.0, including its upstream `NOTICE` file attributing `btree.hpp` to The Abseil Authors)
   - `unordered_dense/` for unordered_dense 5.3.3
-  - `dyn/` for `engrave-music/dyn` 0.1.0
+  - `dyn/` for `engrave-music/dyn` 0.1.1
   - `glaze/` for Glaze 9.1.0
   - `utfcpp/` for utfcpp 4.1.1
   - `pugixml/` for pugixml 1.15

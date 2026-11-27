@@ -635,6 +635,19 @@ TEST(Vocabulary, SortedJsonBTreeMap) {
     const auto parsed = music::parse_json<music::Json>(R"({"b":2,"a":1,"nested":{"y":true,"x":null}})");
     ASSERT_TRUE(parsed.has_value());
     EXPECT_EQ(music::dump_json(*parsed), R"({"a":1,"b":2,"nested":{"x":null,"y":true}})");
+
+    // Nested sub-object self-assignment must survive destroying the outer map.
+    music::Json moved_nested = *parsed;
+    moved_nested = std::move(moved_nested["nested"]);
+    EXPECT_EQ(music::dump_json(moved_nested), R"({"x":null,"y":true})");
+
+    music::Json copied_nested = *parsed;
+    copied_nested = copied_nested["nested"];
+    EXPECT_EQ(music::dump_json(copied_nested), R"({"x":null,"y":true})");
+
+    music::Json empty_child_owner{{"child", music::make_object<music::Json>()}, {"keep", 1}};
+    empty_child_owner = empty_child_owner["child"];
+    EXPECT_EQ(music::dump_json(empty_child_owner), "{}");
 }
 
 } // namespace

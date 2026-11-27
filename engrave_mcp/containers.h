@@ -8,6 +8,7 @@
 #include <type_traits>
 
 #include <ankerl/unordered_dense.h>
+#include <gtl/btree.hpp>
 
 namespace music {
 
@@ -39,5 +40,11 @@ using SegmentedHashMap = ankerl::unordered_dense::segmented_map<Key, Value, Hash
 
 template <class Key, class Hash = DefaultHash<Key>, class KeyEqual = DefaultKeyEqual<Key>>
 using SegmentedHashSet = ankerl::unordered_dense::segmented_set<Key, Hash, KeyEqual>;
+
+template <class Key, class Value, class Compare = gtl::Less<Key>>
+using BTreeMap = gtl::btree_map<Key, Value, Compare>;
+
+template <class Key, class Compare = gtl::Less<Key>>
+using BTreeSet = gtl::btree_set<Key, Compare>;
 
 } // namespace music
