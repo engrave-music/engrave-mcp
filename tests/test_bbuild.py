@@ -116,6 +116,87 @@ class BBuildTests(unittest.TestCase):
                 {default.name: b"default", runtime.name: b"sanitizer"},
             )
 
+    def test_stage_bep_outputs_stages_pdb_file_on_windows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src_dir = root / "bazel-out/bin"
+            src_dir.mkdir(parents=True)
+            ext = ".exe" if os.name == "nt" else ""
+            exe_file = src_dir / f"engrave-mcp{ext}"
+            pdb_file = src_dir / "engrave-mcp.pdb"
+            obj_file = src_dir / "main.obj"
+            exe_file.write_bytes(b"binary-payload")
+            pdb_file.write_bytes(b"pdb-payload")
+            obj_file.write_bytes(b"obj-payload")
+            os.chmod(exe_file, 0o755)
+
+            bep_events = [
+                {
+                    "id": {"namedSet": {"id": "0"}},
+                    "namedSetOfFiles": {"files": [{"uri": exe_file.as_uri()}, {"uri": obj_file.as_uri()}]},
+                },
+                {
+                    "id": {"namedSet": {"id": "1"}},
+                    "namedSetOfFiles": {"files": [{"uri": pdb_file.as_uri()}]},
+                },
+                {
+                    "completed": {
+                        "outputGroup": [
+                            {"name": "default", "fileSets": [{"id": "0"}]},
+                            {"name": "pdb_file", "fileSets": [{"id": "1"}]},
+                        ]
+                    }
+                },
+            ]
+            bep_path = root / "bep.json"
+            bep_path.write_text("\n".join(json.dumps(ev) for ev in bep_events) + "\n", encoding="utf-8")
+
+            out_dir = root / "build/releasedbg"
+            rc = bbuild.stage_bep_outputs(bep_path, out_dir)
+            self.assertEqual(rc, 0)
+            self.assertTrue((out_dir / f"engrave-mcp{ext}").is_file())
+            self.assertFalse((out_dir / "main.obj").exists())
+            if os.name == "nt":
+                self.assertEqual((out_dir / "engrave-mcp.pdb").read_bytes(), b"pdb-payload")
+            else:
+                self.assertFalse((out_dir / "engrave-mcp.pdb").exists())
+
+    def test_releasedbg_and_debug_profiles_request_pdb_output_group(self):
+        for profile, expect_pdb in (("releasedbg", True), ("debug", True), ("release", False)):
+            captured: list[list[str]] = []
+
+            def fake_call(cmd, **kwargs):
+                captured.append(cmd)
+                return 0
+
+            with (
+                patch.object(bbuild, "find_bazel", return_value="fake-bazel"),
+                patch.object(bbuild.subprocess, "call", side_effect=fake_call),
+                patch.object(bbuild, "stage_bep_outputs", return_value=0),
+            ):
+                rc = bbuild.main(["--profile", profile, "build", "engrave_mcp"])
+
+            self.assertEqual(rc, 0)
+            bazel_cmds = [cmd for cmd in captured if cmd and cmd[0] == "fake-bazel"]
+            self.assertEqual(len(bazel_cmds), 1)
+            cmd = bazel_cmds[0]
+            self.assertIn(f"--config={profile}", cmd)
+            expected_groups = (
+                "+runtime_dynamic_libraries,+pdb_file"
+                if os.name == "nt" and expect_pdb
+                else "+runtime_dynamic_libraries"
+            )
+            self.assertIn(f"--output_groups={expected_groups}", cmd)
+
+        for rc_path in (
+            REPO_ROOT / "bazel/engrave_mcp.bazelrc",
+            REPO_ROOT / "vendor/engrave/bazel/engrave.bazelrc",
+        ):
+            lines = rc_path.read_text(encoding="utf-8").splitlines()
+            releasedbg_lines = [line for line in lines if line.startswith("build:releasedbg ")]
+            self.assertEqual(len(releasedbg_lines), 1)
+            self.assertIn("--features=generate_pdb_file", releasedbg_lines[0])
+
     def test_generate_compdb_expands_cfg_strips_pch_and_deduplicates_pic(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

@@ -104,6 +104,23 @@ inline std::string_view without_bom(std::string_view text) noexcept {
     return text;
 }
 
+bool is_valid_utf8_tree(const Json &value) noexcept {
+    if (value.is_string()) return valid_utf8(value.get<std::string>());
+    if (value.is_array()) {
+        for (const auto &item : value.get_array()) {
+            if (!is_valid_utf8_tree(item)) return false;
+        }
+        return true;
+    }
+    if (value.is_object()) {
+        for (const auto &[key, item] : value.get_object()) {
+            if (!valid_utf8(key) || !is_valid_utf8_tree(item)) return false;
+        }
+        return true;
+    }
+    return true;
+}
+
 Json sanitize(const Json &value) {
     if (value.is_string()) {
         const auto &text = value.get<std::string>();
@@ -143,6 +160,18 @@ std::string write_with(const J &value) {
     return text ? std::move(*text) : std::string{};
 }
 
+std::string dump_json_unchecked(const Json &value, int indent) {
+    if (indent < 0) return write_with<Json, CompactOpts>(value);
+    switch (indent) {
+        case 0: return write_with<Json, PrettyOpts<0>>(value);
+        case 1: return write_with<Json, PrettyOpts<1>>(value);
+        case 2: return write_with<Json, PrettyOpts<2>>(value);
+        case 3: return write_with<Json, PrettyOpts<3>>(value);
+        case 4: return write_with<Json, PrettyOpts<4>>(value);
+        default: return write_with<Json, PrettyOpts<2>>(value);
+    }
+}
+
 } // namespace
 
 template <>
@@ -155,16 +184,8 @@ std::optional<Json> parse_json<Json>(std::string_view text) {
 }
 
 std::string dump_json(const Json &value, int indent) {
-    const Json clean = sanitize(value);
-    if (indent < 0) return write_with<Json, CompactOpts>(clean);
-    switch (indent) {
-        case 0: return write_with<Json, PrettyOpts<0>>(clean);
-        case 1: return write_with<Json, PrettyOpts<1>>(clean);
-        case 2: return write_with<Json, PrettyOpts<2>>(clean);
-        case 3: return write_with<Json, PrettyOpts<3>>(clean);
-        case 4: return write_with<Json, PrettyOpts<4>>(clean);
-        default: return write_with<Json, PrettyOpts<2>>(clean);
-    }
+    if (is_valid_utf8_tree(value)) return dump_json_unchecked(value, indent);
+    return dump_json_unchecked(sanitize(value), indent);
 }
 
 } // namespace music

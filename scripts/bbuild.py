@@ -91,7 +91,11 @@ def _uri_to_path(uri: str) -> Path | None:
 
 def stage_bep_outputs(bep_path: Path, out_dir: Path) -> int:
     named_sets: dict[str, dict] = {}
-    root_ids: dict[str, list[str]] = {"default": [], "runtime_dynamic_libraries": []}
+    root_ids: dict[str, list[str]] = {
+        "default": [],
+        "runtime_dynamic_libraries": [],
+        "pdb_file": [],
+    }
     for line in bep_path.read_text(encoding="utf-8", errors="replace").splitlines():
         if not line.strip():
             continue
@@ -109,7 +113,7 @@ def stage_bep_outputs(bep_path: Path, out_dir: Path) -> int:
 
     visited: set[str] = set()
     # Default outputs take precedence over runtime files with the same basename.
-    stack = root_ids["runtime_dynamic_libraries"] + root_ids["default"]
+    stack = root_ids["runtime_dynamic_libraries"] + root_ids["pdb_file"] + root_ids["default"]
     files: list[Path] = []
     while stack:
         sid = stack.pop()
@@ -132,7 +136,7 @@ def stage_bep_outputs(bep_path: Path, out_dir: Path) -> int:
     for src in files:
         if not src.is_file():
             continue
-        if os.name == "nt" and src.suffix.lower() not in {".exe", ".dll"}:
+        if os.name == "nt" and src.suffix.lower() not in {".exe", ".dll", ".pdb"}:
             continue
         if os.name != "nt":
             shared_library = src.suffix == ".so" or ".so." in src.name
@@ -547,6 +551,11 @@ def main(argv: list[str] | None = None) -> int:
     if rc != 0:
         return rc
 
+    output_groups = (
+        "+runtime_dynamic_libraries,+pdb_file"
+        if os.name == "nt" and args.profile in ("releasedbg", "debug")
+        else "+runtime_dynamic_libraries"
+    )
     with tempfile.NamedTemporaryFile(dir=root / "build", prefix=".bep-", suffix=".json", delete=False) as tf:
         bep_path = Path(tf.name)
     try:
@@ -555,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
                 bazel,
                 "build",
                 *build_flags,
-                "--output_groups=+runtime_dynamic_libraries",
+                f"--output_groups={output_groups}",
                 f"--build_event_json_file={bep_path}",
                 *labels,
             ],

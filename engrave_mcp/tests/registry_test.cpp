@@ -133,6 +133,53 @@ TEST(Registry, InvalidUtf8Replacement) {
     EXPECT_EQ(parsed->at("text").get<std::string>(), replaced);
     const std::string wrapped = music::dump_json(music::make_tool_result(payload));
     EXPECT_TRUE(music::valid_utf8(wrapped));
+
+    const std::string bad_key = std::string("k") + "\x80" + "y";
+    const std::string fixed_key = music::replace_invalid_utf8(bad_key);
+    EXPECT_EQ(fixed_key, std::string("k") + "\xEF\xBF\xBD" + "y");
+    const std::string truncated_val = "x\xE2\x82";
+    const std::string fixed_val = music::replace_invalid_utf8(truncated_val);
+
+    const music::Json nested_invalid{
+        {bad_key, invalid},
+        {"nested_array",
+         music::json_array<music::Json>({
+             "caf\xC3\xA9",
+             truncated_val,
+             music::Json{{std::string("inner_") + "\xF0\x90\x80", music::json_array<music::Json>({invalid, 42, true, nullptr})}},
+         })},
+        {"valid_subtree", music::Json{{"clef", "G"}, {"glyph", "\xF0\x9F\x8E\xBC"}}},
+    };
+    const music::Json expected_repaired{
+        {fixed_key, replaced},
+        {"nested_array",
+         music::json_array<music::Json>({
+             "caf\xC3\xA9",
+             fixed_val,
+             music::Json{{std::string("inner_") + "\xEF\xBF\xBD", music::json_array<music::Json>({replaced, 42, true, nullptr})}},
+         })},
+        {"valid_subtree", music::Json{{"clef", "G"}, {"glyph", "\xF0\x9F\x8E\xBC"}}},
+    };
+    for (int indent : {-1, 2}) {
+        const std::string repaired_dump = music::dump_json(nested_invalid, indent);
+        EXPECT_TRUE(music::valid_utf8(repaired_dump));
+        EXPECT_EQ(repaired_dump, music::dump_json(expected_repaired, indent));
+        const auto reparsed = music::parse_json<music::Json>(repaired_dump);
+        ASSERT_TRUE(reparsed.has_value());
+        EXPECT_EQ(*reparsed, expected_repaired);
+    }
+
+    const music::Json valid_tree{
+        {"title", "caf\xC3\xA9 \xF0\x9F\x8E\xBC"},
+        {"items", music::json_array<music::Json>({1, false, nullptr, music::Json{{"key_\xC3\xBC", "val"}}})},
+    };
+    for (int indent : {-1, 0, 2}) {
+        const std::string dumped = music::dump_json(valid_tree, indent);
+        EXPECT_TRUE(music::valid_utf8(dumped));
+        const auto reparsed = music::parse_json<music::Json>(dumped);
+        ASSERT_TRUE(reparsed.has_value());
+        EXPECT_EQ(*reparsed, valid_tree);
+    }
 }
 
 TEST(Registry, Handlers) {

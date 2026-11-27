@@ -310,11 +310,13 @@ class TestRenderedPageControls(unittest.TestCase):
 
     def test_reviewed_svg_hash_is_exact_and_platform_specific(self):
         name = "layout_elements.mscx/page-0.svg"
-        index = json.loads(
-            (page.REPO_ROOT / "vendor/engrave/tests/data/golden/linux/index.json").read_text(encoding="utf-8")
-        )
-        digest = index["layout_elements.mscx"]["page-0.svg"]
-        for plat in ("linux", "win32"):
+        for plat, folder in (("linux", "linux"), ("win32", "windows")):
+            index = json.loads(
+                (page.REPO_ROOT / "vendor/engrave/tests/data/golden" / folder / "index.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            digest = index["layout_elements.mscx"]["page-0.svg"]
             with mock.patch.object(page.sys, "platform", plat):
                 self.assertTrue(page.accepted_svg_counts(name, digest))
                 self.assertFalse(page.accepted_svg_counts(name, "0" * 64))

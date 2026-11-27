@@ -80,6 +80,13 @@ The `dist` profile extends `release` with ThinLTO (`-flto=thin` and
 `--features=thinlto_cache`) for release binaries and `.github/workflows/release.yml`
 distribution packages.
 
+The `releasedbg` profile builds `-O2` with debug symbols; on Windows,
+`bazel/engrave_mcp.bazelrc` and `vendor/engrave/bazel/engrave.bazelrc` enable
+`--features=generate_pdb_file`, and `scripts/bbuild.py` requests the `pdb_file`
+output group (`staged_binary_group` in `vendor/engrave/bazel/defs.bzl`) so
+`.pdb` files stage next to `.exe` outputs in `build/releasedbg/` and
+`build/debug/`.
+
 The `asan` profile compiles with `-c fastbuild --strip=never -O1 -gline-tables-only`
 (keeping assertions enabled and `file:line` sanitizer stack traces without full
 DWARF type bloat) and enables AddressSanitizer (ASan) and fatal
