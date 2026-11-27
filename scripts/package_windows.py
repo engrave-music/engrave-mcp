@@ -5,9 +5,7 @@ import hashlib
 import json
 import os
 import shutil
-import stat
 import struct
-import subprocess
 from pathlib import Path
 
 from _package_common import (
@@ -22,26 +20,6 @@ from _package_common import (
 from engrave_testing.paths import pixi_env
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def find_llvm_strip(environment: Path) -> str:
-    candidates = [
-        environment / "Library/bin/llvm-strip.exe",
-        *sorted(
-            (ROOT / "build").glob(
-                f".bazel-symlinks-*/{ROOT.name}/external/*xclang_x86_64-w64-mingw32/bin/llvm-strip.exe"
-            )
-        ),
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
-    tool = shutil.which("llvm-strip.exe")
-    if tool is None:
-        raise RuntimeError(
-            "llvm-strip is required; use the xclang toolchain, put llvm-strip on PATH, or pass --no-strip"
-        )
-    return tool
 
 
 def _pe_imported_dlls(binary: Path) -> list[str]:
@@ -110,7 +88,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/windows-package")
     parser.add_argument("--binary", type=Path, help="Override the built executable")
-    parser.add_argument("--no-strip", action="store_true", help="Keep symbols in the packaged executable")
+    parser.add_argument(
+        "--no-strip",
+        action="store_true",
+        help="Accepted for compatibility; MSVC release binaries carry debug symbols externally in PDB files",
+    )
     parser.add_argument(
         "--source-root",
         type=Path,
@@ -146,7 +128,6 @@ def main():
         raise RuntimeError(f"Missing Windows executable: {source_binary}")
     output.mkdir(parents=True, exist_ok=True)
     environment = pixi_env(ROOT)
-    strip = None if args.no_strip else find_llvm_strip(environment)
     available = build_windows_dll_map(environment / "Library/bin")
     queue = []
     bundled = {}
@@ -158,9 +139,6 @@ def main():
     executable = output / "engrave-mcp.exe"
     copy_binary(source_binary, executable)
     unstripped_executable_sha256 = hashlib.sha256(executable.read_bytes()).hexdigest()
-    if strip is not None:
-        executable.chmod(executable.stat().st_mode | stat.S_IWUSR)
-        subprocess.run([strip, "--strip-all", str(executable)], check=True)
     system = Path(os.environ["SystemRoot"]) / "System32"
     while queue:
         binary = queue.pop()

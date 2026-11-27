@@ -2,17 +2,15 @@
 
 The host and engine are built with **Bazel** (pinned in `.bazelversion`) and a
 hermetic Clang 23 / `libc++` (**xclang**) C++23 toolchain on both Windows and
-Linux. `xclang` module metadata (`MODULE.bazel` and SHA-256–pinned
-`source.json`, fetching the release archive directly from
-`github.com/clice-io/bazel`) is checked into the local registry overlay at
-`vendor/engrave/bazel/registry` ahead of the Bazel Central Registry
-(`https://bcr.bazel.build/`), removing any runtime dependency on
-`https://bazel.clice.io/` (like Pixi/Bazel generally, keep the checkout path
-free of spaces so Bazel's `file:///%workspace%/...` registry URI parses
-cleanly). **Pixi** provides `bazelisk`, Python/lint tools, and
-the pinned `cairo`, `freetype`, and `zlib` native libraries. The engine build
-lives in `vendor/engrave` (`MODULE.bazel`, `BUILD.bazel`) and is consumed by
-the host's `MODULE.bazel` via `local_path_override`.
+Linux (targeting the MSVC ABI on Windows via `@xclang//platforms:x86_64-pc-windows-msvc`).
+Third-party C/C++ modules and `xclang` are resolved via Bzlmod from
+`https://raw.githubusercontent.com/engrave-music/bazel-registry/main` ahead of
+the Bazel Central Registry (`https://bcr.bazel.build/`), configured in
+`bazel/engrave_mcp.bazelrc` and `vendor/engrave/bazel/engrave.bazelrc`.
+**Pixi** provides `bazelisk`, Python/lint tools, and the pinned `cairo`,
+`freetype`, and `zlib` native libraries. The engine build lives in
+`vendor/engrave` (`MODULE.bazel`, `BUILD.bazel`) and is consumed by the host's
+`MODULE.bazel` via `local_path_override`.
 
 ## Prerequisites
 
@@ -51,14 +49,14 @@ pixi run python scripts/prepare.py
   (refusing a modified engine) and stages its asset manifest from committed Git
   blobs into `.runtime/assets`.
 - `scripts/check_build_inputs.py` verifies `.bazelversion`, matching `xclang`
-  pins and checked-in `vendor/engrave/bazel/registry` overlay files
-  (`bazel_registry.json`, `MODULE.bazel`, `source.json`), and `pixi.lock` native
-  package parity (`cairo`, `freetype`, `libfreetype`, `libfreetype6`, `zlib`,
-  `libzlib`) between the host and `vendor/engrave`.
+  pins, `xclang.windows_sdk(accept_license = True)`, the
+  `engrave-music/bazel-registry` / `x86_64-pc-windows-msvc` `.bazelrc` settings,
+  and `pixi.lock` native package parity (`cairo`, `freetype`, `libfreetype`,
+  `libfreetype6`, `zlib`, `libzlib`) between the host and `vendor/engrave`.
 
 ## Development Builds
 
-Use `scripts/bbuild.py` (or `pixi run build`) across `release`, `debug`,
+Use `scripts/bbuild.py` (or `pixi run build`) across `release`, `dist`, `debug`,
 `releasedbg`, `asan`, and `tsan` profiles. Outputs are staged to `build/<profile>`,
 external archives are cached in `build/.bazel_repo_cache`, and Bazel action
 outputs (including relocatable Clang binary precompiled headers) are shared
@@ -78,13 +76,20 @@ The `release` profile uses xclang's `-O2`, LLD section garbage collection, and
 safe identical code folding on Windows and Linux. It keeps ordinary
 development builds free of link-time optimization.
 
+The `dist` profile extends `release` with ThinLTO (`-flto=thin` and
+`--features=thinlto_cache`) for release binaries and `.github/workflows/release.yml`
+distribution packages.
+
 The `asan` profile compiles with `-c fastbuild --strip=never -O1 -gline-tables-only`
 (keeping assertions enabled and `file:line` sanitizer stack traces without full
 DWARF type bloat) and enables AddressSanitizer (ASan) and fatal
 UndefinedBehaviorSanitizer (UBSan) on Linux and Windows x86-64 via xclang's
 `--features=asan --features=ubsan`. ASan enables LeakSanitizer (LSan) on
-Linux x86-64. Windows x86-64 has no LSan support. Only the third-party LAME
-and libFLAC C codec targets disable UBSan. They retain ASan instrumentation.
+Linux x86-64. Windows x86-64 has no LSan support, passes `-fno-sanitize=object-size`
+to avoid MSVC-ABI empty-base `codecvt` UBSan false positives, and passes
+`-mllvm -asan-stack-dynamic-alloca=0` to keep Win64 `.xdata` unwind info intact
+on throws inside `catch$` funclets. Only the third-party LAME and libFLAC C
+codec targets disable UBSan; they retain ASan instrumentation.
 
 The `tsan` profile compiles with `-c fastbuild --strip=never -O1 -gline-tables-only`
 and enables ThreadSanitizer (`--features=tsan`) to verify parallel audio synthesis,

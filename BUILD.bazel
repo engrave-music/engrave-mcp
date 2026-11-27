@@ -17,11 +17,34 @@ HOST_DEFINES = select({
         "_WIN32_WINNT=0x0A00",
     ],
     "//conditions:default": [],
+}) + select({
+    "@engrave//bazel:windows_msvc": ["_MT"],
+    "//conditions:default": [],
 })
 
 HOST_COPTS = [
     "-Wno-deprecated-declarations",
 ] + select({
+    "@engrave//bazel:opt_msvc": [
+        "-fstrict-aliasing",
+        "-fno-wrapv",
+    ],
+    "//conditions:default": [],
+}) + select({
+    # ASan's dynamic stack alloca disables Win64 reserved call frames, causing LLVM to emit
+    # dynamic `subq $0x20, %rsp` before calls inside WinEH catch$ funclets and corrupting
+    # RtlVirtualUnwind establisher frame lookup on rethrow.
+    "@engrave//bazel:asan_msvc": [
+        "-mllvm",
+        "-asan-stack-dynamic-alloca=0",
+    ],
+    "//conditions:default": [],
+}) + select({
+    # Under MSVC ABI, empty secondary base std::codecvt_base sits at the end of
+    # libc++'s std::codecvt with zero tail bytes, tripping UBSan object-size in fs::u8path.
+    "@engrave//bazel:ubsan_msvc": ["-fno-sanitize=object-size"],
+    "//conditions:default": [],
+}) + select({
     "@platforms//os:windows": [],
     "//conditions:default": [
         "-fPIC",
@@ -43,8 +66,13 @@ HOST_PCH_COPTS = HOST_COPTS + select({
 })
 
 HOST_LINKOPTS = select({
+    "@engrave//bazel:windows_msvc": ["-Wl,/STACK:16777216"],
     "@platforms//os:windows": ["-Wl,--stack,16777216"],
     "//conditions:default": ["-pthread"],
+}) + select({
+    "@engrave//bazel:opt_msvc_gc": ["-Wl,/OPT:ICF"],
+    "@engrave//bazel:opt_linux_gc": ["-Wl,--icf=safe"],
+    "//conditions:default": [],
 })
 
 win_manifest_library(
@@ -66,7 +94,10 @@ cc_library(
     name = "host_headers",
     hdrs = glob(["engrave_mcp/*.h"]),
     includes = ["engrave_mcp"],
-    deps = [":host_defines"],
+    deps = [
+        ":host_defines",
+        "@gtl",
+    ],
 )
 
 cc_pch(
@@ -76,6 +107,7 @@ cc_pch(
     deps = [
         ":host_defines",
         "@glaze",
+        "@gtl",
         "@unordered_dense",
     ],
 )
@@ -146,6 +178,7 @@ cc_library(
     srcs = ["engrave_mcp/publication.cpp"],
     copts = HOST_COPTS,
     linkopts = select({
+        "@engrave//bazel:windows_msvc": ["-Wl,advapi32.lib"],
         "@platforms//os:windows": ["-ladvapi32"],
         "//conditions:default": [],
     }),
@@ -167,6 +200,10 @@ cc_library(
     additional_compiler_inputs = HOST_PCH_INPUTS,
     copts = HOST_PCH_COPTS,
     linkopts = HOST_LINKOPTS + select({
+        "@engrave//bazel:windows_msvc": [
+            "-Wl,ws2_32.lib",
+            "-Wl,mswsock.lib",
+        ],
         "@platforms//os:windows": [
             "-lws2_32",
             "-lmswsock",
@@ -179,8 +216,8 @@ cc_library(
         ":host_publication",
         "@amc",
         "@asio",
+        "@dyn",
         "@glaze",
-        "@ngcpp_proxy",
         "@unordered_dense",
     ],
 )

@@ -124,17 +124,26 @@ class BBuildTests(unittest.TestCase):
             src = root / "engrave_mcp/main.cpp"
             src.write_text("int main() { return 0; }\n", encoding="utf-8")
 
-            # Simulate execroot relative paths and xclang config file.
+            # Simulate execroot relative paths and xclang config file (including nested @sdk.cfg).
             (execroot / "engrave_mcp").mkdir(parents=True)
             (execroot / "engrave_mcp/main.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
             cfg_dir = execroot / "external/xclang/bin"
+            sdk_dir = execroot / "external/xclang_sdk"
             sysroot_dir = execroot / "external/xclang/sysroot"
             inc_dir = execroot / "external/xclang/include/c++/v1"
+            msvc_inc_dir = sdk_dir / "VC/include"
             cfg_dir.mkdir(parents=True)
             sysroot_dir.mkdir(parents=True)
             inc_dir.mkdir(parents=True)
+            msvc_inc_dir.mkdir(parents=True)
+            sdk_cfg = sdk_dir / "sdk.cfg"
+            sdk_cfg.write_text(
+                "-Xmicrosoft-windows-sys-root external/xclang_sdk\n-imsvc external/xclang_sdk/VC/include\n",
+                encoding="utf-8",
+            )
             cfg_file = cfg_dir / "x86_64.cfg"
             cfg_file.write_text(
+                "@../../xclang_sdk/sdk.cfg\n"
                 "--target=x86_64-unknown-linux-gnu\n"
                 "--sysroot=external/xclang/sysroot\n"
                 "-stdlib++-isystem external/xclang/include/c++/v1\n",
@@ -204,8 +213,36 @@ class BBuildTests(unittest.TestCase):
             self.assertNotIn("-fno-validate-pch", args)
             self.assertNotIn("-isysroot", args)
             self.assertFalse(any(a.startswith("--config=") for a in args))
+            self.assertFalse(any(a.startswith("@") for a in args))
             self.assertIn("--target=x86_64-unknown-linux-gnu", args)
             self.assertIn(f"--sysroot={str(sysroot_dir.resolve()).replace(chr(92), '/')}", args)
+            self.assertIn("-Xmicrosoft-windows-sys-root", args)
+            self.assertIn(str(sdk_dir.resolve()).replace("\\", "/"), args)
+            self.assertIn("-imsvc", args)
+            self.assertIn(str(msvc_inc_dir.resolve()).replace("\\", "/"), args)
+
+    def test_dist_profile_passes_thinlto_cache_repo_env(self):
+        self.assertIn("dist", bbuild.PROFILES)
+        captured: list[list[str]] = []
+
+        def fake_call(cmd, **kwargs):
+            captured.append(cmd)
+            return 0
+
+        with (
+            patch.object(bbuild, "find_bazel", return_value="fake-bazel"),
+            patch.object(bbuild.subprocess, "call", side_effect=fake_call),
+        ):
+            rc = bbuild.main(["--profile", "dist", "fetch", "engrave_mcp"])
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(captured), 1)
+        cmd = captured[0]
+        self.assertIn("--config=dist", cmd)
+        expected_cache = str((REPO_ROOT / "build/.bazel_thinlto_cache").resolve())
+        self.assertIn(f"--repo_env=XCLANG_THINLTO_CACHE={expected_cache}", cmd)
+        if os.name != "nt":
+            self.assertIn(f"--sandbox_writable_path={expected_cache}", cmd)
 
     def test_prune_disk_cache_evicts_oldest_and_cleans_tmp(self):
         with tempfile.TemporaryDirectory() as directory:

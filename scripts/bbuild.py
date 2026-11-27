@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -14,7 +15,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-PROFILES = ("release", "debug", "releasedbg", "asan", "tsan")
+PROFILES = ("release", "dist", "debug", "releasedbg", "asan", "tsan")
 MIB = 1024 * 1024
 
 HOST_TARGETS: dict[str, list[str]] = {
@@ -166,23 +167,51 @@ def _resolve_bazel_path(rel: str, execroot: Path, output_base: Path) -> Path:
     return cand
 
 
-def _expand_clang_cfg(cfg_path: Path, execroot: Path, output_base: Path) -> list[str]:
+def _expand_clang_cfg(
+    cfg_path: Path,
+    execroot: Path,
+    output_base: Path,
+    seen: set[Path] | None = None,
+) -> list[str]:
+    if seen is None:
+        seen = set()
+    resolved_cfg = cfg_path.resolve()
+    if resolved_cfg in seen:
+        return []
+    seen.add(resolved_cfg)
+
     out: list[str] = []
     for raw_line in cfg_path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
-        tokens = line.split()
+        tokens = shlex.split(line, posix=True)
         i = 0
         while i < len(tokens):
             tok = tokens[i]
-            if tok in {"-stdlib++-isystem", "-isystem", "-idirafter", "-I"} and i + 1 < len(tokens):
+            if tok.startswith("@") and len(tok) > 1:
+                nested = (cfg_path.parent / tok[1:]).resolve()
+                if nested.is_file():
+                    out.extend(_expand_clang_cfg(nested, execroot, output_base, seen))
+                else:
+                    out.append(tok)
+                i += 1
+                continue
+            if tok in {
+                "-stdlib++-isystem",
+                "-isystem",
+                "-idirafter",
+                "-I",
+                "-imsvc",
+                "-L",
+                "-Xmicrosoft-windows-sys-root",
+            } and i + 1 < len(tokens):
                 rel = tokens[i + 1]
                 out.extend([tok, str(_resolve_bazel_path(rel, execroot, output_base)).replace("\\", "/")])
                 i += 2
                 continue
-            for prefix in ("--sysroot=", "-resource-dir="):
-                if tok.startswith(prefix):
+            for prefix in ("--sysroot=", "-resource-dir=", "-imsvc", "/winsysroot:", "-winsysroot:"):
+                if tok.startswith(prefix) and len(tok) > len(prefix):
                     rel = tok[len(prefix) :]
                     tok = prefix + str(_resolve_bazel_path(rel, execroot, output_base)).replace("\\", "/")
                     break
@@ -478,6 +507,12 @@ def main(argv: list[str] | None = None) -> int:
         f"--repo_env=ENGRAVE_PIXI_PREFIX={pixi_prefix}",
         f"--repo_env=ENGRAVE_GIT_REVISION={rev}",
     ]
+    if args.profile == "dist":
+        thinlto_cache = (root / "build/.bazel_thinlto_cache").resolve()
+        thinlto_cache.mkdir(parents=True, exist_ok=True)
+        common_flags.append(f"--repo_env=XCLANG_THINLTO_CACHE={thinlto_cache}")
+        if os.name != "nt":
+            common_flags.append(f"--sandbox_writable_path={thinlto_cache}")
     if args.no_pch:
         common_flags.append("--@engrave//bazel:pch=false")
     if args.playback_harness:

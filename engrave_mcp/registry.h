@@ -33,8 +33,8 @@ struct ToolSpec {
     const Json &input_schema() const;
 };
 
-std::span<const ToolSpec> registry();
-const ToolSpec *find_tool(std::string_view name);
+std::span<const ToolSpec> registry() noexcept;
+const ToolSpec *find_tool(std::string_view name) noexcept;
 Json tools_json();
 
 // Throws on duplicate/missing handlers, mismatched schema table, or Op coverage.

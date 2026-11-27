@@ -52,9 +52,9 @@ std::string ToolSpec::description() const { return definition(name).at("descript
 
 const Json &ToolSpec::input_schema() const { return definition(name).at("inputSchema"); }
 
-std::span<const ToolSpec> registry() { return specs; }
+std::span<const ToolSpec> registry() noexcept { return specs; }
 
-const ToolSpec *find_tool(std::string_view name) {
+const ToolSpec *find_tool(std::string_view name) noexcept {
     for (auto &s : specs) {
         if (s.name == name) return &s;
     }

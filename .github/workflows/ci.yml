@@ -125,7 +125,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.REPO_CACHE }}
-          key: bazel-repo-${{ matrix.name }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl', 'vendor/engrave/bazel/registry/modules/xclang/*/source.json') }}
+          key: bazel-repo-${{ matrix.name }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
           restore-keys: bazel-repo-${{ matrix.name }}-
 
       - name: Restore Bazel disk cache
@@ -153,7 +153,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.REPO_CACHE }}
-          key: bazel-repo-${{ matrix.name }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl', 'vendor/engrave/bazel/registry/modules/xclang/*/source.json') }}
+          key: bazel-repo-${{ matrix.name }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
 
       - name: Prune Bazel disk cache
         id: prune-disk-cache
@@ -298,7 +298,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.REPO_CACHE }}
-          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl', 'vendor/engrave/bazel/registry/modules/xclang/*/source.json') }}
+          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
           restore-keys: bazel-repo-linux-xclang-
 
       - name: Restore ASan Bazel disk cache
@@ -321,7 +321,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.REPO_CACHE }}
-          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl', 'vendor/engrave/bazel/registry/modules/xclang/*/source.json') }}
+          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
 
       - name: Prune ASan Bazel disk cache
         id: prune-disk-cache
@@ -425,7 +425,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.REPO_CACHE }}
-          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl', 'vendor/engrave/bazel/registry/modules/xclang/*/source.json') }}
+          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
           restore-keys: bazel-repo-linux-xclang-
 
       - name: Restore TSan Bazel disk cache
@@ -447,7 +447,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.REPO_CACHE }}
-          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl', 'vendor/engrave/bazel/registry/modules/xclang/*/source.json') }}
+          key: bazel-repo-linux-xclang-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'vendor/engrave/MODULE.bazel', 'vendor/engrave/bazel/deps.bzl') }}
 
       - name: Prune TSan Bazel disk cache
         id: prune-disk-cache

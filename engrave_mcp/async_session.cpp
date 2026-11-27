@@ -440,9 +440,9 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
             }
         } catch (...) {
             error = std::current_exception();
-            if (publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING && execution->report) {
-                fatal_report_failure = execution->report(Json{}); // terminal: trustworthy report unavailable
-            }
+        }
+        if (error && publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING && execution->report) {
+            fatal_report_failure = execution->report(Json{}); // terminal: trustworthy report unavailable
         }
         run->prepared.reset();
         if (fatal_report_failure) {
@@ -529,34 +529,42 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                         }
                     });
                 };
-                bool queued = false;
-                bool slot_assigned = false;
-                try {
-                    self->audio_queue.push_back(run);
-                    queued = true;
-                    if (slot.is_connected()) {
-                        slot.assign([self, run](asio::cancellation_type type) {
-                            if (type == asio::cancellation_type::none) return;
-                            run->cancel->store(true, std::memory_order_release);
-                            auto state = ExecutionState::QUEUED;
-                            if (!run->state->state.compare_exchange_strong(state, ExecutionState::CANCELLED_QUEUED)) return;
-                            // Still in audio_queue, or queued on owner_io where
-                            // prepare_audio observes the cancellation and frees the lane.
-                            std::erase(self->audio_queue, run);
-                            try {
-                                run->complete(aborted(), Json{}, false);
-                            } catch (...) {
-                                fatal_audio_post_failure(run->execution.get(), "audio queued cancel completion post failed");
-                            }
-                        });
-                        slot_assigned = true;
+                struct AudioEnqueueGuard {
+                    std::shared_ptr<Impl> &self;
+                    std::shared_ptr<AudioRun> &run;
+                    decltype(slot) &cancel_slot;
+                    bool queued = false;
+                    bool slot_assigned = false;
+                    bool committed = false;
+
+                    ~AudioEnqueueGuard() noexcept {
+                        if (!committed) {
+                            if (slot_assigned && cancel_slot.is_connected()) cancel_slot.clear();
+                            if (queued) std::erase(self->audio_queue, run);
+                        }
                     }
-                    ++self->owner_pending;
-                } catch (...) {
-                    if (slot_assigned && slot.is_connected()) slot.clear();
-                    if (queued) std::erase(self->audio_queue, run);
-                    throw;
+                } enqueue_guard{self, run, slot};
+                self->audio_queue.push_back(run);
+                enqueue_guard.queued = true;
+                if (slot.is_connected()) {
+                    slot.assign([self, run](asio::cancellation_type type) {
+                        if (type == asio::cancellation_type::none) return;
+                        run->cancel->store(true, std::memory_order_release);
+                        auto state = ExecutionState::QUEUED;
+                        if (!run->state->state.compare_exchange_strong(state, ExecutionState::CANCELLED_QUEUED)) return;
+                        // Still in audio_queue, or queued on owner_io where
+                        // prepare_audio observes the cancellation and frees the lane.
+                        std::erase(self->audio_queue, run);
+                        try {
+                            run->complete(aborted(), Json{}, false);
+                        } catch (...) {
+                            fatal_audio_post_failure(run->execution.get(), "audio queued cancel completion post failed");
+                        }
+                    });
+                    enqueue_guard.slot_assigned = true;
                 }
+                ++self->owner_pending;
+                enqueue_guard.committed = true;
                 if (test_hooks_enabled() && self->audio_busy) {
                     std::fprintf(stderr, "AUDIO_LANE_QUEUED\n");
                     std::fflush(stderr);
@@ -564,6 +572,68 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                 self->start_audio();
             },
             token);
+    }
+
+    // Kept out-of-line so its try/catch never merges with dispatch()'s outer
+    // try/catch under Windows ASan + __CxxFrameHandler3.
+    [[gnu::noinline]] Json run_live_export(const ExportRequest &request, const std::shared_ptr<std::atomic<bool>> &request_cancel,
+                                           const std::shared_ptr<ExportTiming> &timing, std::chrono::steady_clock::time_point submitted,
+                                           const std::shared_ptr<RequestExecution> &execution) {
+        timing->add("owner_dispatch", submitted);
+        Json payload;
+        std::vector<std::string> visible_paths;
+        std::unique_lock publication(publication_gate.mutex, std::defer_lock);
+        auto runtime = host->runtime_options();
+        if (!runtime) return error_envelope(runtime.error());
+        std::exception_ptr caught;
+        const char *fatal_failure = nullptr;
+        bool cancelled_result = false;
+        try {
+            auto result =
+                host->with_document(request.document, request.expected_revision, [&](engrave::Document &document) -> Result<void> {
+                    auto cancelled = [&] {
+                        return request_cancel->load(std::memory_order_acquire) || stopping.load(std::memory_order_acquire) ||
+                               publication_gate.closing.load(std::memory_order_acquire);
+                    };
+                    auto output = live_export(
+                        document, request, limits, cancelled, submitted, *timing, *runtime,
+                        [&](FnRef<bool()> deadline_expired) {
+                            return begin_publication(execution.get(), publication, cancelled, deadline_expired);
+                        },
+                        &visible_paths);
+                    if (test_hooks_enabled() && !visible_paths.empty() && std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
+                        throw 42; // exercise the non-standard exception boundary too
+                    }
+                    if (!output) return std::unexpected(std::move(output.error()));
+                    payload = std::move(*output);
+                    return {};
+                });
+            if (!result) {
+                if (result.error().code == "Cancelled") {
+                    cancelled_result = true;
+                } else {
+                    if (result.error().published_artifacts.empty()) result.error().published_artifacts = std::move(visible_paths);
+                    payload = error_envelope(result.error());
+                }
+            }
+            if (!cancelled_result && publication.owns_lock() && execution && execution->report) {
+                if (const char *failure = execution->report(std::move(payload))) {
+                    fatal_failure = failure;
+                } else {
+                    execution->mark_report_sent();
+                    return Json{};
+                }
+            }
+        } catch (...) {
+            caught = std::current_exception();
+        }
+        if (caught && publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING && execution->report) {
+            fatal_failure = execution->report(Json{});
+        }
+        if (fatal_failure) throw FatalReportFailure{fatal_failure};
+        if (caught) std::rethrow_exception(caught);
+        if (cancelled_result) throw asio::system_error(asio::error::operation_aborted);
+        return payload;
     }
 
     template <class Function>
@@ -616,70 +686,77 @@ struct AsyncSession::Impl : std::enable_shared_from_this<Impl> {
                     });
                 }
                 ++self->owner_pending;
-                try {
-                    asio::post(self->owner_io, [self, task, complete, state, running_cancel, preserve_completed]() mutable {
-                        auto queued = ExecutionState::QUEUED;
-                        bool dropped_closing = false;
-                        bool need_complete = false;
-                        bool proceed = false;
-                        {
-                            std::lock_guard lock(publication_gate.mutex);
-                            if (publication_gate.closing) {
-                                dropped_closing = true;
-                                need_complete = state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED);
-                            } else if (state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) {
-                                ++publication_gate.owner_tasks;
-                                proceed = true;
-                            }
-                        }
-                        if (dropped_closing) {
-                            if (test_hooks_enabled()) {
-                                std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n");
-                                std::fflush(stderr);
-                            }
-                            if (need_complete) {
-                                task->reset();
-                                complete(aborted(), Json{});
-                            }
-                            return;
-                        }
-                        if (!proceed) return;
-                        std::exception_ptr error;
-                        Json result{};
-                        const char *fatal_report_failure = nullptr;
-                        try {
-                            if (self->stopping.load(std::memory_order_acquire)) throw asio::system_error(asio::error::operation_aborted);
-                            result = (**task)();
-                            if (!preserve_completed && running_cancel && running_cancel->load(std::memory_order_acquire)) {
-                                throw asio::system_error(asio::error::operation_aborted);
-                            }
-                        } catch (const FatalReportFailure &fatal) {
-                            fatal_report_failure = fatal.reason;
-                        } catch (...) {
-                            error = std::current_exception();
-                        }
-                        task->reset();
+                struct PostGuard {
+                    std::shared_ptr<Impl> &self;
+                    decltype(slot) &cancel_slot;
+                    bool committed = false;
 
-                        {
-                            std::lock_guard lock(publication_gate.mutex);
-                            --publication_gate.owner_tasks;
-                            state->state.store(ExecutionState::FINISHED, std::memory_order_release);
+                    ~PostGuard() noexcept {
+                        if (!committed) {
+                            --self->owner_pending;
+                            if (cancel_slot.is_connected()) cancel_slot.clear();
                         }
-                        publication_gate.changed.notify_all();
-                        if (fatal_report_failure) {
-                            if (state->abort_transport) state->abort_transport(fatal_report_failure);
-                            std::_Exit(74);
-                        }
-                        complete(error, std::move(result));
-                    });
-                    if (test_hooks_enabled()) {
-                        std::fprintf(stderr, "OWNER_ENQUEUED\n");
-                        std::fflush(stderr);
                     }
-                } catch (...) {
-                    --self->owner_pending;
-                    if (slot.is_connected()) slot.clear();
-                    throw;
+                } post_guard{self, slot};
+                asio::post(self->owner_io, [self, task, complete, state, running_cancel, preserve_completed]() mutable {
+                    auto queued = ExecutionState::QUEUED;
+                    bool dropped_closing = false;
+                    bool need_complete = false;
+                    bool proceed = false;
+                    {
+                        std::lock_guard lock(publication_gate.mutex);
+                        if (publication_gate.closing) {
+                            dropped_closing = true;
+                            need_complete = state->state.compare_exchange_strong(queued, ExecutionState::CANCELLED_QUEUED);
+                        } else if (state->state.compare_exchange_strong(queued, ExecutionState::EXECUTING)) {
+                            ++publication_gate.owner_tasks;
+                            proceed = true;
+                        }
+                    }
+                    if (dropped_closing) {
+                        if (test_hooks_enabled()) {
+                            std::fprintf(stderr, "OWNER_DROPPED_CLOSING\n");
+                            std::fflush(stderr);
+                        }
+                        if (need_complete) {
+                            task->reset();
+                            complete(aborted(), Json{});
+                        }
+                        return;
+                    }
+                    if (!proceed) return;
+                    std::exception_ptr error;
+                    Json result{};
+                    const char *fatal_report_failure = nullptr;
+                    try {
+                        if (self->stopping.load(std::memory_order_acquire)) throw asio::system_error(asio::error::operation_aborted);
+                        result = (**task)();
+                        if (!preserve_completed && running_cancel && running_cancel->load(std::memory_order_acquire)) {
+                            throw asio::system_error(asio::error::operation_aborted);
+                        }
+                    } catch (const FatalReportFailure &fatal) {
+                        fatal_report_failure = fatal.reason;
+                    } catch (...) {
+                        error = std::current_exception();
+                    }
+                    task->reset();
+
+                    {
+                        std::lock_guard lock(publication_gate.mutex);
+                        --publication_gate.owner_tasks;
+                        state->state.store(ExecutionState::FINISHED, std::memory_order_release);
+                    }
+                    publication_gate.changed.notify_all();
+                    if (fatal_report_failure) {
+                        if (state->abort_transport) state->abort_transport(fatal_report_failure);
+                        std::_Exit(74);
+                    }
+                    complete(error, std::move(result));
+                });
+                post_guard.committed = true;
+                if (test_hooks_enabled()) {
+                    std::fprintf(stderr, "OWNER_ENQUEUED\n");
+                    std::fflush(stderr);
                 }
             },
             token);
@@ -753,58 +830,7 @@ asio::awaitable<Json> AsyncSession::call(std::string name, Json arguments, std::
         } else {
             payload = co_await self->dispatch(
                 [self, request = *request, request_cancel, timing, submitted, execution] {
-                    timing->add("owner_dispatch", submitted);
-                    Json payload;
-                    std::vector<std::string> visible_paths;
-                    std::unique_lock publication(publication_gate.mutex, std::defer_lock);
-                    auto runtime = self->host->runtime_options();
-                    if (!runtime) return error_envelope(runtime.error());
-                    try {
-                        auto result = self->host->with_document(
-                            request.document, request.expected_revision, [&](engrave::Document &document) -> Result<void> {
-                                auto cancelled = [&] {
-                                    return request_cancel->load(std::memory_order_acquire) ||
-                                           self->stopping.load(std::memory_order_acquire) ||
-                                           publication_gate.closing.load(std::memory_order_acquire);
-                                };
-                                auto output = live_export(
-                                    document, request, self->limits, cancelled, submitted, *timing, *runtime,
-                                    [&](FnRef<bool()> deadline_expired) {
-                                        return begin_publication(execution.get(), publication, cancelled, deadline_expired);
-                                    },
-                                    &visible_paths);
-                                if (test_hooks_enabled() && !visible_paths.empty() &&
-                                    std::getenv("ENGRAVE_MCP_TEST_THROW_DOCUMENT_CALLBACK")) {
-                                    throw 42; // exercise the non-standard exception boundary too
-                                }
-                                if (!output) return std::unexpected(std::move(output.error()));
-                                payload = std::move(*output);
-                                return {};
-                            });
-                        if (!result) {
-                            if (result.error().code == "Cancelled") throw asio::system_error(asio::error::operation_aborted);
-                            if (result.error().published_artifacts.empty()) result.error().published_artifacts = std::move(visible_paths);
-                            payload = error_envelope(result.error());
-                        }
-                        if (publication.owns_lock() && execution && execution->report) {
-                            if (const char *failure = execution->report(std::move(payload))) {
-                                throw FatalReportFailure{failure};
-                            }
-                            execution->mark_report_sent();
-                            return Json{};
-                        }
-                        return payload;
-                    } catch (const FatalReportFailure &) {
-                        throw;
-                    } catch (...) {
-                        if (publication.owns_lock() && execution && execution->state.load() == ExecutionState::PUBLISHING &&
-                            execution->report) {
-                            if (const char *failure = execution->report(Json{})) {
-                                throw FatalReportFailure{failure};
-                            }
-                        }
-                        throw;
-                    }
+                    return self->run_live_export(request, request_cancel, timing, submitted, execution);
                 },
                 request_cancel, true, execution);
         }

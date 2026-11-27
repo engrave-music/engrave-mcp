@@ -603,6 +603,40 @@ TEST(Vocabulary, HashContainersTransparentStringLookup) {
     EXPECT_FALSE(sset.contains(std::string_view("seg-2")));
 }
 
+TEST(Vocabulary, SortedJsonBTreeMap) {
+    static_assert(std::is_nothrow_move_constructible_v<music::SortedJsonMap<music::Json>>);
+    static_assert(std::is_nothrow_move_assignable_v<music::SortedJsonMap<music::Json>>);
+
+    music::Json empty = music::make_object<music::Json>();
+    EXPECT_TRUE(empty.empty());
+    EXPECT_EQ(empty.size(), 0u);
+    EXPECT_EQ(empty.get_object().begin(), empty.get_object().end());
+    EXPECT_EQ(empty.get_object().find(std::string_view("missing")), empty.get_object().end());
+    EXPECT_EQ(music::dump_json(empty), "{}");
+
+    music::Json obj = music::make_object<music::Json>();
+    obj["zeta"] = 3;
+    obj["alpha"] = 1;
+    obj["mu"] = 2;
+    EXPECT_EQ(music::dump_json(obj), R"({"alpha":1,"mu":2,"zeta":3})");
+
+    const std::string_view sv = "mu";
+    EXPECT_TRUE(obj.contains(sv));
+    EXPECT_EQ(music::json_value<int>(obj, sv, -1), 2);
+    music::json_erase(obj, sv);
+    EXPECT_FALSE(obj.contains(sv));
+    EXPECT_EQ(music::dump_json(obj), R"({"alpha":1,"zeta":3})");
+
+    music::Json copy = obj;
+    copy["beta"] = 4;
+    EXPECT_EQ(music::dump_json(obj), R"({"alpha":1,"zeta":3})");
+    EXPECT_EQ(music::dump_json(copy), R"({"alpha":1,"beta":4,"zeta":3})");
+
+    const auto parsed = music::parse_json<music::Json>(R"({"b":2,"a":1,"nested":{"y":true,"x":null}})");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(music::dump_json(*parsed), R"({"a":1,"b":2,"nested":{"x":null,"y":true}})");
+}
+
 } // namespace
 
 int main(int argc, char **argv) {

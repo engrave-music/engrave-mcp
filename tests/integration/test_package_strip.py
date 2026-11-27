@@ -22,7 +22,7 @@ def sha256(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def pe_metadata(binary: Path) -> tuple[int, bytes, bytes, list[str]]:
+def pe_metadata(binary: Path) -> tuple[int, bytes, bytes, list[str], list[str]]:
     data = binary.read_bytes()
     pe = struct.unpack_from("<I", data, 0x3C)[0]
     coff = pe + 4
@@ -93,7 +93,8 @@ def pe_metadata(binary: Path) -> tuple[int, bytes, bytes, list[str]]:
             imports.append(data[noff:end].decode("ascii", errors="replace").lower())
             off += 20
 
-    return symbols, pdata, xdata, sorted(imports)
+    section_names = [name.decode("ascii", errors="replace") for name, *_ in sections]
+    return symbols, pdata, xdata, sorted(imports), section_names
 
 
 def elf_sections(binary: Path) -> set[str]:
@@ -123,16 +124,17 @@ def check_package(packager: Path, source: Path, directory: Path, no_strip: bool,
     executable = directory / ("engrave-mcp.exe" if windows else "engrave-mcp")
     if windows:
         src_meta = pe_metadata(source)
-        symbols, pdata, xdata, imports = pe_metadata(executable)
+        symbols, pdata, xdata, imports, section_names = pe_metadata(executable)
         assert pdata and pdata == src_meta[1]
         assert xdata and xdata == src_meta[2]
         assert imports and imports == src_meta[3]
         lower_imports = {name.lower() for name in imports}
         assert {"cairo.dll", "freetype.dll", "zlib.dll"} <= lower_imports, imports
-        if no_strip:
-            assert symbols > 0 and sha256(executable) == source_sha256
-        else:
-            assert symbols == 0
+        assert symbols == 0, f"unexpected COFF symbols in MSVC PE binary: {symbols}"
+        debug_sections = [name for name in section_names if name.startswith(".debug")]
+        assert not debug_sections, f"unexpected DWARF debug sections in MSVC PE binary: {debug_sections}"
+        assert sha256(executable) == source_sha256
+        if not no_strip:
             manifest_check = REPO_ROOT / "tests/integration/test_windows_manifest.py"
             subprocess.run([sys.executable, str(manifest_check), str(executable)], check=True)
     else:
@@ -204,7 +206,8 @@ def main() -> None:
         root = Path(directory)
         stripped = check_package(packager, source, root / "stripped", False, source_sha256)
         unstripped = check_package(packager, source, root / "unstripped", True, source_sha256)
-        assert stripped.stat().st_size < unstripped.stat().st_size
+        if not windows:
+            assert stripped.stat().st_size < unstripped.stat().st_size
 
         soundfont = stripped.parent / "soundfonts/FluidR3Mono_GM.sf3"
         if soundfont.is_file():

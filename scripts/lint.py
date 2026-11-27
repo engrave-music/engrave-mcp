@@ -380,15 +380,6 @@ def run_clang_tidy(args: argparse.Namespace, repo_root: Path, cpp_files: list[Pa
                 temporary = None
 
     command = ["clang-tidy", "--quiet", "-p", str(package)]
-    if sys.platform == "win32":
-        # MSVC vector algorithms use intrinsics unsupported by clang-tidy;
-        # clang-tidy's MSVC-compat frontend also trips ngcpp-proxy's clang-cl
-        # [[msvc::no_unique_address]] layout guard (llvm/llvm-project#143245),
-        # whereas cl.exe compiles the actual binary.
-        command += [
-            "--extra-arg=-D_USE_STD_VECTOR_ALGORITHMS=0",
-            "--extra-arg=-DMSFT_PROXY_V4_DETAIL_COMPATIBILITY_CHECK_H_",
-        ]
     if args.fix:
         command += ["--fix-errors", "--format-style=file"]
 

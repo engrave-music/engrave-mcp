@@ -12,7 +12,7 @@ constexpr std::string_view replacement = "\xEF\xBF\xBD";
 
 // Returns the length of a valid UTF-8 sequence starting at i, or the number of
 // bytes to consume for one replacement (the lead plus its valid continuations).
-std::size_t utf8_step(std::string_view text, std::size_t i, bool &valid) {
+std::size_t utf8_step(std::string_view text, std::size_t i, bool &valid) noexcept {
     const auto byte = static_cast<unsigned char>(text[i]);
     if (byte < 0x80) {
         valid = true;
@@ -63,7 +63,7 @@ std::size_t utf8_step(std::string_view text, std::size_t i, bool &valid) {
 
 } // namespace
 
-bool valid_utf8(std::string_view text) {
+bool valid_utf8(std::string_view text) noexcept {
     for (std::size_t i = 0; i < text.size();) {
         bool valid = false;
         const auto length = utf8_step(text, i, valid);
@@ -96,7 +96,7 @@ struct ReadOpts : glz::opts {
     bool validate_trailing_whitespace = true;
 };
 
-inline std::string_view without_bom(std::string_view text) {
+inline std::string_view without_bom(std::string_view text) noexcept {
     if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB &&
         static_cast<unsigned char>(text[2]) == 0xBF) {
         text.remove_prefix(3);

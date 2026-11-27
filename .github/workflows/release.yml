@@ -98,7 +98,7 @@ jobs:
       run:
         shell: pwsh
     env:
-      BUILD_DIR: build/release
+      BUILD_DIR: build/dist
       REPO_CACHE: build/.bazel_repo_cache
       DISK_CACHE: build/.bazel_disk_cache
       BUNDLE_NAME: engrave-mcp-${{ needs.validate.outputs.release_tag }}-${{ matrix.platform }}
@@ -141,12 +141,12 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.DISK_CACHE }}
-          key: bazel-disk-${{ matrix.cache_name }}-${{ hashFiles('bazel/engrave_mcp.bazelrc') }}-${{ github.sha }}
-          restore-keys: bazel-disk-${{ matrix.cache_name }}-${{ hashFiles('bazel/engrave_mcp.bazelrc') }}-
+          key: bazel-disk-${{ matrix.cache_name }}-dist-${{ hashFiles('bazel/engrave_mcp.bazelrc') }}-${{ github.sha }}
+          restore-keys: bazel-disk-${{ matrix.cache_name }}-dist-${{ hashFiles('bazel/engrave_mcp.bazelrc') }}-
 
       - name: Build release executable
         id: build
-        run: pixi run --locked python scripts/bbuild.py --profile release --build-directory $env:BUILD_DIR -j 4 build engrave_mcp
+        run: pixi run --locked python scripts/bbuild.py --profile dist --build-directory $env:BUILD_DIR -j 4 build engrave_mcp
 
       - name: Save Bazel repository cache
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.repo-cache.outputs.cache-hit != 'true' }}
@@ -165,7 +165,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.DISK_CACHE }}
-          key: bazel-disk-${{ matrix.cache_name }}-${{ hashFiles('bazel/engrave_mcp.bazelrc') }}-${{ github.sha }}
+          key: bazel-disk-${{ matrix.cache_name }}-dist-${{ hashFiles('bazel/engrave_mcp.bazelrc') }}-${{ github.sha }}
 
       - name: Package, smoke-test, and archive the release
         env:

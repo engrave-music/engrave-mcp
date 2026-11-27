@@ -6,12 +6,12 @@
   (SHA-256 `09926f9451f751408abd65162c99343f840234d2a708584808fd46427633063f`).
 - `codecs/` contains the license texts from FLAC 1.4.3, LAME 3.100, Opus
   1.5.2, and libopusenc 0.2.1 (including its bundled `resample.c` BSD-3-Clause
-  notice), pinned in `vendor/engrave/bazel/deps.bzl`.
+  notice), pinned in `vendor/engrave/MODULE.bazel`.
 - `deps/` contains the notices from statically built Bazel dependencies.
   - `amc/` for amc 2.8.1
   - `gtl/` for gtl 1.3.1 (Apache-2.0, including its upstream `NOTICE` file attributing `btree.hpp` to The Abseil Authors)
   - `unordered_dense/` for unordered_dense 5.3.3
-  - `ngcpp_proxy/` for Proxy 4.1.0
+  - `dyn/` for `engrave-music/dyn` 0.1.0
   - `glaze/` for Glaze 9.1.0
   - `utfcpp/` for utfcpp 4.1.1
   - `pugixml/` for pugixml 1.15
@@ -27,4 +27,4 @@
 
 Portions of this software are copyright © 2026 The FreeType Project (www.freetype.org). All rights reserved.
 
-Binaries are compiled with the hermetic LLVM/xclang toolchain (`Apache-2.0 WITH LLVM-exception`; MinGW-w64 runtime on Windows). At package time, the packagers select matching notices from `licenses/runtime/` and retain filtered `licenses/conda-meta/` provenance for the Pixi packages that supply bundled shared libraries. The FreeType notice above covers the bundled FreeType libraries.
+Binaries are compiled with the hermetic LLVM/xclang toolchain (`Apache-2.0 WITH LLVM-exception`; Clang/libc++ targeting the MSVC ABI on Windows). At package time, the packagers select matching notices from `licenses/runtime/` and retain filtered `licenses/conda-meta/` provenance for the Pixi packages that supply bundled shared libraries. The FreeType notice above covers the bundled FreeType libraries.

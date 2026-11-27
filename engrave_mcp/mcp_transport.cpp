@@ -28,7 +28,10 @@
 #include <vector>
 
 #include <asio.hpp>
-#include <proxy/proxy.h>
+#if !defined(ASIO_HAS_THREADS)
+#error "Asio thread support (ASIO_HAS_THREADS) must be enabled; ensure _MT is defined on Windows MSVC"
+#endif
+#include <dyn/dyn.h>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -211,8 +214,7 @@ struct OutputMessage {
     std::string wire;
 };
 
-using OutputWaiterFacade = pro::facade_builder::add_convention<pro::operator_dispatch<"()">, void() && noexcept>::build;
-using OutputWaiter = pro::proxy<OutputWaiterFacade>;
+using OutputWaiter = dyn::SmallBox<dyn::FnOnce<void() noexcept>, 32>;
 
 struct ArmedWaiter {
     OutputWaiter waiter;
@@ -966,7 +968,7 @@ private:
         auto token = asio::use_awaitable;
         co_await asio::async_initiate<decltype(token), void()>(
             [this](auto handler) {
-                output_waiters_.push_back(pro::make_proxy<OutputWaiterFacade>([h = std::move(handler)]() mutable noexcept {
+                output_waiters_.push_back(OutputWaiter::from([h = std::move(handler)]() mutable noexcept {
                     try {
                         auto fn = std::move(h);
                         fn();

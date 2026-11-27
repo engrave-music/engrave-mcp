@@ -33,7 +33,7 @@
 namespace music::api {
 
 namespace detail {
-// Alphabetical member order matches Json (glz::generic_sorted_u64) key order;
+// Alphabetical member order matches Json (gtl::btree_map-backed) key order;
 // external linkage is required by Glaze's pure reflection.
 struct PositionElementWire {
     i32 id = 0;

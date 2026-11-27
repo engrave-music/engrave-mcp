@@ -64,7 +64,8 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
         "engine .bazelversion": source_root / ".bazelversion",
         "engine bazel defs": source_root / "bazel" / "defs.bzl",
         "engine bazel deps": source_root / "bazel" / "deps.bzl",
-        "engine xclang registry config": source_root / "bazel" / "registry" / "bazel_registry.json",
+        "host bazelrc": project_root / "bazel" / "engrave_mcp.bazelrc",
+        "engine bazelrc": source_root / "bazel" / "engrave.bazelrc",
         "native env cairo header": native_root / "include" / "cairo" / "cairo.h",
         "native env zlib header": native_root / "include" / "zlib.h",
     }
@@ -72,20 +73,34 @@ def validate(project_root: Path, source_root: Path) -> list[str]:
         if not path.is_file():
             errors.append(f"missing {label}: {path}")
     xclang_re = re.compile(r'bazel_dep\(\s*name\s*=\s*"xclang"\s*,\s*version\s*=\s*"([^"]+)"\s*\)')
+    win_sdk_re = re.compile(r"xclang\.windows_sdk\(\s*accept_license\s*=\s*True\s*\)")
     host_mod = project_root / "MODULE.bazel"
     eng_mod = source_root / "MODULE.bazel"
     if host_mod.is_file() and eng_mod.is_file():
-        hm = xclang_re.search(host_mod.read_text(encoding="utf-8"))
-        em = xclang_re.search(eng_mod.read_text(encoding="utf-8"))
+        host_text = host_mod.read_text(encoding="utf-8")
+        eng_text = eng_mod.read_text(encoding="utf-8")
+        hm = xclang_re.search(host_text)
+        em = xclang_re.search(eng_text)
         if not hm or not em:
             errors.append("missing xclang bazel_dep pin in host or engine MODULE.bazel")
-        else:
-            if hm.group(1) != em.group(1):
-                errors.append(f"xclang version mismatch: host {hm.group(1)!r} != engine {em.group(1)!r}")
-            overlay_dir = source_root / "bazel" / "registry" / "modules" / "xclang" / em.group(1)
-            for name in ("MODULE.bazel", "source.json"):
-                if not (overlay_dir / name).is_file():
-                    errors.append(f"missing engine xclang registry {name}: {overlay_dir / name}")
+        elif hm.group(1) != em.group(1):
+            errors.append(f"xclang version mismatch: host {hm.group(1)!r} != engine {em.group(1)!r}")
+        if not win_sdk_re.search(host_text):
+            errors.append("missing xclang.windows_sdk(accept_license = True) in host MODULE.bazel")
+        if not win_sdk_re.search(eng_text):
+            errors.append("missing xclang.windows_sdk(accept_license = True) in engine MODULE.bazel")
+    expected_registry = "--registry=https://raw.githubusercontent.com/engrave-music/bazel-registry/main"
+    expected_platform = "--platforms=@xclang//platforms:x86_64-pc-windows-msvc"
+    for label, rc_path in (
+        ("host bazelrc", project_root / "bazel" / "engrave_mcp.bazelrc"),
+        ("engine bazelrc", source_root / "bazel" / "engrave.bazelrc"),
+    ):
+        if rc_path.is_file():
+            rc_text = rc_path.read_text(encoding="utf-8")
+            if expected_registry not in rc_text:
+                errors.append(f"missing {expected_registry} in {label}: {rc_path}")
+            if expected_platform not in rc_text:
+                errors.append(f"missing {expected_platform} in {label}: {rc_path}")
     ft_headers = (
         native_root / "include" / "ft2build.h",
         native_root / "include" / "freetype2" / "ft2build.h",
