@@ -467,8 +467,7 @@ Result<void> validate_op(const Json &j, usize index) {
     if (!name.is_string()) return fail(path + ".op", "unknown operation", "a runtime_info ops entry");
     const OpSpec *spec = find_op_spec(name.get<std::string>());
     if (!spec) return fail(path + ".op", "unknown operation", "a runtime_info ops entry");
-    constexpr usize max_fields = 8;
-    assert(spec->fields.size() + 1 <= max_fields);
+    constexpr usize max_fields = max_op_fields() + 1;
     std::array<Field, max_fields> fields{};
     fields[0] = {"op", text<4096>, true};
     for (usize i = 0; i < spec->fields.size(); ++i) {

@@ -698,7 +698,9 @@ private:
                 StdoutWriteScope write_scope;
                 if (!write_scope.enter()) return;
                 written = write_report_bytes(message);
-                if (!written) write_scope.failed = true;
+                if (!written && !writer_abort_.load(std::memory_order_acquire)) {
+                    write_scope.failed = true;
+                }
             }
 
             {
@@ -901,13 +903,15 @@ private:
         }
         out_cv_.notify_all();
         // Active owner and audio-lane tasks clean up their staging; active exports
-        // also cancel on `closing`. Never wait indefinitely for engine/filesystem
-        // work; exit also reports possibly unfinished cleanup.
+        // also cancel on `closing` and finish any already-committed publication.
+        // Never wait indefinitely for engine/filesystem work; exit also reports
+        // possibly unfinished cleanup.
         bool cleaned = false;
         {
             std::unique_lock lock(publication_gate.state_mutex);
-            cleaned =
-                publication_gate.state_cv.wait_for(lock, std::chrono::milliseconds(500), [] { return publication_gate.active_tasks == 0; });
+            cleaned = publication_gate.state_cv.wait_for(lock, std::chrono::milliseconds(500), [] {
+                return publication_gate.active_tasks == 0 && publication_gate.active_publications == 0;
+            });
         }
         try {
             terminal_diagnostic(std::string("mcp transport terminal: ") + reason +

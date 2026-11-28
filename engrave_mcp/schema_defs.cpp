@@ -1,8 +1,10 @@
 #include "schema_defs.h"
 
 #include <cassert>
+#include <cstddef>
 #include <initializer_list>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -169,6 +171,8 @@ Json pitch_schema() { return integer(0, 127); }
 Json tpc_schema() { return integer(-8, 40); }
 
 Json n1024_schema() { return integer(1, 1024); }
+
+Json n2_1024_schema() { return integer(2, 1024); }
 
 Json from_op_schema() { return integer(0, 1023); }
 
@@ -395,7 +399,7 @@ Json op_end_schema() {
                         "set_repeat_barlines: flag. add_spanner: as anchor. add_spanner_to_bar_end: as measure.");
 }
 
-SchemaBuilder schema_for_kind(OpFieldKind kind) {
+constexpr SchemaBuilder schema_for_kind(OpFieldKind kind) {
     switch (kind) {
         case OpFieldKind::EDIT_REF: return ref_schema;
         case OpFieldKind::PART_REF: return part_ref_schema;
@@ -416,8 +420,8 @@ SchemaBuilder schema_for_kind(OpFieldKind kind) {
         case OpFieldKind::KEY_INT: return key_schema;
         case OpFieldKind::PITCH_INT: return pitch_schema;
         case OpFieldKind::TPC_INT: return tpc_schema;
-        case OpFieldKind::INT_1_1024:
-        case OpFieldKind::INT_2_1024: return n1024_schema;
+        case OpFieldKind::INT_1_1024: return n1024_schema;
+        case OpFieldKind::INT_2_1024: return n2_1024_schema;
         case OpFieldKind::PITCH_LIST: return pitches_array_schema;
         case OpFieldKind::DRUM_KEY_LIST: return pitch_array_schema;
         case OpFieldKind::PART_REF_LIST: return part_ref_array_schema;
@@ -426,11 +430,10 @@ SchemaBuilder schema_for_kind(OpFieldKind kind) {
         case OpFieldKind::STYLE_VALUE: return value_schema;
         case OpFieldKind::NAMED_PROPS: return named_props_array_schema;
     }
-    assert(false);
     std::unreachable();
 }
 
-SchemaBuilder polymorphic_op_field_schema(std::string_view name) {
+constexpr SchemaBuilder polymorphic_op_field_schema(std::string_view name) {
     static constexpr FieldSpec overrides[] = {
         {"before", op_before_schema},   {"count", op_count_schema}, {"kind", op_kind_schema}, {"first", op_first_last_schema},
         {"last", op_first_last_schema}, {"start", op_start_schema}, {"end", op_end_schema},
@@ -440,6 +443,24 @@ SchemaBuilder polymorphic_op_field_schema(std::string_view name) {
     }
     return nullptr;
 }
+
+consteval bool verify_op_field_schemas() {
+    for (std::size_t i = 0; i < wire_op_specs.size(); ++i) {
+        for (const OpFieldSpec &f : wire_op_specs[i].fields) {
+            if (f.name == "op") return false;
+            if (polymorphic_op_field_schema(f.name) != nullptr) continue;
+            const SchemaBuilder expected = schema_for_kind(f.kind);
+            for (std::size_t j = i; j < wire_op_specs.size(); ++j) {
+                for (const OpFieldSpec &g : wire_op_specs[j].fields) {
+                    if (g.name == f.name && schema_for_kind(g.kind) != expected) return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+static_assert(verify_op_field_schemas());
 
 Json ops_schema() {
     HashMap<std::string_view, SchemaBuilder> builders;
@@ -452,7 +473,7 @@ Json ops_schema() {
             }
             SchemaBuilder build = schema_for_kind(field.kind);
             const auto [it, inserted] = builders.try_emplace(field.name, build);
-            assert(inserted || it->second == build);
+            if (!inserted && it->second != build) throw std::logic_error("conflicting op field schema");
         }
     }
     Json props = make_object<Json>();

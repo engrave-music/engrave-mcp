@@ -432,6 +432,14 @@ inline constexpr auto wire_op_specs = detail::build_wire_op_specs(static_cast<Wi
 
 constexpr std::span<const OpSpec> op_specs() noexcept { return wire_op_specs; }
 
+consteval std::size_t max_op_fields() noexcept {
+    std::size_t max_count = 0;
+    for (const auto &spec : wire_op_specs) {
+        if (spec.fields.size() > max_count) max_count = spec.fields.size();
+    }
+    return max_count;
+}
+
 constexpr const OpSpec *find_op_spec(std::string_view name) noexcept {
     for (const auto &spec : wire_op_specs) {
         if (spec.name == name) return &spec;
